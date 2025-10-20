@@ -20,18 +20,18 @@ export function useAuth() {
     error,
     isLoading,
   } = useQuery<User | undefined, Error>({
-    queryKey: ["/api/user"],
+    queryKey: ["/api/auth/user"],
     retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginUser) => {
-      const res = await apiRequest("/api/login", "POST", credentials);
+      const res = await apiRequest("POST", "/api/login", credentials);
       return await res.json();
     },
     onSuccess: (user: User) => {
-      queryClient.setQueryData(["/api/user"], user);
+      queryClient.setQueryData(["/api/auth/user"], user);
       toast({
         title: "Welcome back!",
         description: `Logged in as ${user.firstName || user.username}`,
@@ -48,11 +48,11 @@ export function useAuth() {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: RegisterUser) => {
-      const res = await apiRequest("/api/register", "POST", credentials);
+      const res = await apiRequest("POST", "/api/register", credentials);
       return await res.json();
     },
     onSuccess: (user: User) => {
-      queryClient.setQueryData(["/api/user"], user);
+      queryClient.setQueryData(["/api/auth/user"], user);
       toast({
         title: "Account created!",
         description: "Welcome to Inspect360",
@@ -69,14 +69,16 @@ export function useAuth() {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("/api/logout", "POST");
+      await apiRequest("POST", "/api/logout");
     },
     onSuccess: () => {
-      queryClient.setQueryData(["/api/user"], null);
+      queryClient.setQueryData(["/api/auth/user"], null);
       toast({
         title: "Logged out",
         description: "You have been logged out successfully",
       });
+      // Force page reload to show landing page
+      window.location.href = "/";
     },
     onError: (error: Error) => {
       toast({

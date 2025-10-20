@@ -67,6 +67,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Organization name is required" });
       }
 
+      // Get current user data
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
       // Create organization
       const organization = await storage.createOrganization({
         name,
@@ -74,9 +80,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         creditsRemaining: 5, // Give 5 free credits to start
       });
 
-      // Update user with organization ID and set role to owner
+      // Update user with organization ID and set role to owner (preserving all existing fields)
       await storage.upsertUser({
-        id: userId,
+        ...user,
         organizationId: organization.id,
         role: "owner",
       });

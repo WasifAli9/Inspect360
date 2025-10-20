@@ -8,6 +8,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
+import Auth from "@/pages/Auth";
+import ForgotPassword from "@/pages/ForgotPassword";
 import Dashboard from "@/pages/Dashboard";
 import Properties from "@/pages/Properties";
 import PropertyDetail from "@/pages/PropertyDetail";
@@ -20,54 +22,45 @@ import Comparisons from "@/pages/Comparisons";
 import OrganizationSetup from "@/pages/OrganizationSetup";
 import Team from "@/pages/Team";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
-
-function Router() {
-  const { isAuthenticated, isLoading, user } = useAuth();
-
-  return (
-    <Switch>
-      {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : user && !user.organizationId ? (
-        <Route path="*" component={OrganizationSetup} />
-      ) : (
-        <>
-          <Route path="/" component={Dashboard} />
-          <Route path="/dashboard" component={Dashboard} />
-          <Route path="/properties" component={Properties} />
-          <Route path="/properties/:id" component={PropertyDetail} />
-          <Route path="/credits" component={Credits} />
-          <Route path="/inspections" component={Inspections} />
-          <Route path="/inspections/:id" component={InspectionDetail} />
-          <Route path="/compliance" component={Compliance} />
-          <Route path="/maintenance" component={Maintenance} />
-          <Route path="/comparisons" component={Comparisons} />
-          <Route path="/team" component={Team} />
-        </>
-      )}
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
+import { LogOut, Loader2 } from "lucide-react";
 
 function AppContent() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  // Always call hooks at the top level
+  const { isAuthenticated, user, logoutMutation } = useAuth();
 
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
 
-  if (isLoading || !isAuthenticated || (user && !user.organizationId)) {
+  // Not authenticated - show public routes
+  if (!isAuthenticated) {
     return (
       <TooltipProvider>
-        <Router />
+        <Switch>
+          <Route path="/" component={Landing} />
+          <Route path="/auth" component={Auth} />
+          <Route path="/forgot-password" component={ForgotPassword} />
+          <Route component={NotFound} />
+        </Switch>
         <Toaster />
       </TooltipProvider>
     );
   }
 
+  // Authenticated but no organization - show onboarding
+  if (user && !user.organizationId) {
+    return (
+      <TooltipProvider>
+        <Switch>
+          <Route path="*" component={OrganizationSetup} />
+        </Switch>
+        <Toaster />
+      </TooltipProvider>
+    );
+  }
+
+  // Authenticated with organization - show app with sidebar
   return (
     <TooltipProvider>
       <SidebarProvider style={style as React.CSSProperties}>
@@ -79,7 +72,8 @@ function AppContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => (window.location.href = "/api/logout")}
+                onClick={() => logoutMutation.mutate()}
+                disabled={logoutMutation.isPending}
                 data-testid="button-logout"
               >
                 <LogOut className="w-4 h-4 mr-2" />
@@ -87,7 +81,20 @@ function AppContent() {
               </Button>
             </header>
             <main className="flex-1 overflow-auto bg-background">
-              <Router />
+              <Switch>
+                <Route path="/" component={Dashboard} />
+                <Route path="/dashboard" component={Dashboard} />
+                <Route path="/properties" component={Properties} />
+                <Route path="/properties/:id" component={PropertyDetail} />
+                <Route path="/credits" component={Credits} />
+                <Route path="/inspections" component={Inspections} />
+                <Route path="/inspections/:id" component={InspectionDetail} />
+                <Route path="/compliance" component={Compliance} />
+                <Route path="/maintenance" component={Maintenance} />
+                <Route path="/comparisons" component={Comparisons} />
+                <Route path="/team" component={Team} />
+                <Route component={NotFound} />
+              </Switch>
             </main>
           </div>
         </div>

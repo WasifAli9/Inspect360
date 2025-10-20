@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building2, ClipboardCheck, Sparkles, Shield, Users, TrendingUp } from "lucide-react";
+import { useLocation } from "wouter";
 
 export default function Landing() {
+  const [, navigate] = useLocation();
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
       {/* Header/Nav */}
@@ -13,7 +15,7 @@ export default function Landing() {
             <span className="text-2xl font-bold text-primary">Inspect360</span>
           </div>
           <Button
-            onClick={() => (window.location.href = "/api/login")}
+            onClick={() => (navigate("/auth"))}
             variant="outline"
             data-testid="button-login-header"
           >
@@ -39,7 +41,7 @@ export default function Landing() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Button
               size="lg"
-              onClick={() => (window.location.href = "/api/login")}
+              onClick={() => (navigate("/auth"))}
               className="text-lg px-8"
               data-testid="button-get-started"
             >
@@ -48,7 +50,7 @@ export default function Landing() {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => (window.location.href = "/api/login")}
+              onClick={() => (navigate("/auth"))}
               className="text-lg px-8"
               data-testid="button-sign-in"
             >
@@ -183,7 +185,7 @@ export default function Landing() {
           <Button
             size="lg"
             variant="secondary"
-            onClick={() => (window.location.href = "/api/login")}
+            onClick={() => (navigate("/auth"))}
             className="text-lg px-8"
             data-testid="button-cta-bottom"
           >

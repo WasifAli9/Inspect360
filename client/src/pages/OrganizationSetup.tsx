@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ type OrganizationForm = z.infer<typeof organizationSchema>;
 
 export default function OrganizationSetup() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<OrganizationForm>({
@@ -38,8 +40,9 @@ export default function OrganizationSetup() {
         title: "Success",
         description: "Organization created successfully!",
       });
+      // Navigate to dashboard after creating organization
       setTimeout(() => {
-        window.location.reload();
+        navigate("/dashboard");
       }, 500);
     },
     onError: (error: Error) => {

@@ -64,6 +64,10 @@ export const registerUserSchema = insertUserSchema.pick({
   email: true,
   firstName: true,
   lastName: true,
+  role: true,
+}).extend({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
 });
 
 export const loginUserSchema = z.object({
