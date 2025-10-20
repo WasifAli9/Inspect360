@@ -141,6 +141,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/properties/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const property = await storage.getProperty(id);
+      
+      if (!property) {
+        return res.status(404).json({ message: "Property not found" });
+      }
+
+      res.json(property);
+    } catch (error) {
+      console.error("Error fetching property:", error);
+      res.status(500).json({ message: "Failed to fetch property" });
+    }
+  });
+
   // ==================== UNIT ROUTES ====================
   
   app.post("/api/units", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
