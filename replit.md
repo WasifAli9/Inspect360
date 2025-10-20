@@ -18,8 +18,15 @@ Inspect360 is a comprehensive PWA-first building inspection platform designed fo
 - ✅ Sidebar navigation with role-aware menu items
 - ✅ Owner Dashboard with KPIs and credit alerts
 - ✅ Properties management page with CRUD operations
+- ✅ Units management with property association
 - ✅ Credits management with Stripe checkout flow
-- 🚧 Remaining pages (Inspections, Compliance, Maintenance, Comparisons) - planned for next iteration
+- ✅ Compliance document management with expiry tracking
+- ✅ Maintenance tracking with status workflow
+- ✅ Comparison reports UI with side-by-side inspection viewing
+- ✅ Organization onboarding flow for new users
+- ✅ Team management page for viewing and managing team member roles
+- 🚧 Inspection detail with photo upload - planned for next iteration
+- 🚧 Real dashboard data aggregation - planned for next iteration
 - 🚧 PWA manifest and service worker - planned for next iteration
 
 ## Tech Stack
@@ -116,6 +123,10 @@ Inspect360 is a comprehensive PWA-first building inspection platform designed fo
 
 **Organizations:**
 - `POST /api/organizations` - Create organization
+
+**Team Management:**
+- `GET /api/team` - List team members (owner only)
+- `PATCH /api/team/:userId/role` - Update user role (owner only)
 
 **Properties:**
 - `POST /api/properties` - Create property

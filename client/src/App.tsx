@@ -17,16 +17,20 @@ import InspectionDetail from "@/pages/InspectionDetail";
 import Compliance from "@/pages/Compliance";
 import Maintenance from "@/pages/Maintenance";
 import Comparisons from "@/pages/Comparisons";
+import OrganizationSetup from "@/pages/OrganizationSetup";
+import Team from "@/pages/Team";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   return (
     <Switch>
       {isLoading || !isAuthenticated ? (
         <Route path="/" component={Landing} />
+      ) : user && !user.organizationId ? (
+        <Route path="*" component={OrganizationSetup} />
       ) : (
         <>
           <Route path="/" component={Dashboard} />
@@ -39,6 +43,7 @@ function Router() {
           <Route path="/compliance" component={Compliance} />
           <Route path="/maintenance" component={Maintenance} />
           <Route path="/comparisons" component={Comparisons} />
+          <Route path="/team" component={Team} />
         </>
       )}
       <Route component={NotFound} />
@@ -47,14 +52,14 @@ function Router() {
 }
 
 function AppContent() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
 
-  if (isLoading || !isAuthenticated) {
+  if (isLoading || !isAuthenticated || (user && !user.organizationId)) {
     return (
       <TooltipProvider>
         <Router />

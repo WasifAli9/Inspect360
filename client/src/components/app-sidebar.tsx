@@ -64,6 +64,12 @@ export function AppSidebar() {
       roles: ["owner", "tenant"],
     },
     {
+      title: "Team",
+      url: "/team",
+      icon: Users,
+      roles: ["owner"],
+    },
+    {
       title: "Credits",
       url: "/credits",
       icon: CreditCard,

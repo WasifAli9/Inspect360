@@ -96,6 +96,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== TEAM MANAGEMENT ROUTES ====================
+  
+  app.get("/api/team", isAuthenticated, requireRole("owner"), async (req: any, res) => {
+    try {
+      const organizationId = req.dbUser.organizationId;
+      
+      if (!organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const teamMembers = await storage.getUsersByOrganization(organizationId);
+      res.json(teamMembers);
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      res.status(500).json({ message: "Failed to fetch team members" });
+    }
+  });
+
+  app.patch("/api/team/:userId/role", isAuthenticated, requireRole("owner"), async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { role } = req.body;
+      const organizationId = req.dbUser.organizationId;
+
+      if (!organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      if (!role || !["owner", "clerk", "compliance", "tenant"].includes(role)) {
+        return res.status(400).json({ message: "Invalid role" });
+      }
+
+      // Verify the user belongs to the same organization
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser || targetUser.organizationId !== organizationId) {
+        return res.status(403).json({ message: "User not found in your organization" });
+      }
+
+      // Prevent changing own role
+      if (userId === req.user.claims.sub) {
+        return res.status(400).json({ message: "Cannot change your own role" });
+      }
+
+      const updatedUser = await storage.updateUserRole(userId, role);
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user role:", error);
+      res.status(500).json({ message: "Failed to update user role" });
+    }
+  });
+
   // ==================== PROPERTY ROUTES ====================
   
   app.post("/api/properties", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
