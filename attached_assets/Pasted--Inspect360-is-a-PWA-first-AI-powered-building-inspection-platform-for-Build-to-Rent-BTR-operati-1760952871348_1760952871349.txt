@@ -1,0 +1,177 @@
+
+Inspect360 is a PWA-first, AI-powered building inspection platform for Build-to-Rent (BTR) operations. It manages blocks, properties, inventories, inspections (check-in, routine, check-out), AI image analysis, AI comparison reports, compliance documents, and internal maintenance. It includes a tenant portal for logging/tracking requests and threaded discussions on comparison reports. Access is role-based with tailored dashboards for Owner Operator, Inventory Clerk, Compliance Officer, Contractor, and Tenant. Subscriptions are volume-based (inspection credits) using Stripe. Backend is Supabase (Auth, Postgres, Storage, Edge Functions, RLS). The app must be installable (PWA), work offline for field inspections, and sync images/notes when back online.
+Primary user stories (MVP):
+1.	Schedule inspections, assign to clerks, complete on mobile PWA with photos and offline mode, auto-raise maintenance items.
+2.	Run AI analysis on photos and generate comparison reports (check-in vs check-out) with a liability suggestion for manager/tenant discussion.
+3.	Track compliance docs (upload, expiry alerts), view dashboards per role, manage contacts with tags, and operate a tenant portal for maintenance requests.
+4.	Enforce RLS so each role only sees what they should; block submissions when inspection credits are exhausted unless plan is upgraded.
+________________________________________
+Visual Design System (from logo)
+Extracted palette from the supplied logo:
+•	Navy: #003764 (brand primary)
+•	Fresh Green: #59B677 (accent / success / CTA highlights)
+•	Deep Blue: #000092 (secondary accent for emphasis/badges)
+•	Black: #000000 (text on light backgrounds)
+Use Navy for primary surfaces/components, Green for positive states and primary CTAs, Deep Blue for secondary CTAs or data accents. Prefer generous white/near-white backgrounds for readability and a clean, enterprise feel.
+Tailwind theme extension (paste into tailwind.config.ts)
+theme: {
+  extend: {
+    colors: {
+      brand: {
+        navy: '#003764',
+        green: '#59B677',
+        deep: '#000092',
+        black: '#000000'
+      },
+      surface: {
+        base: '#ffffff',
+        muted: '#f6f8fa'
+      }
+    },
+    boxShadow: {
+      card: '0 6px 24px rgba(0,0,0,0.08)'
+    },
+    borderRadius: {
+      xl2: '1rem'
+    }
+  }
+}
+Global CSS variables (optional)
+:root{
+  --brand-navy:#003764;
+  --brand-green:#59B677;
+  --brand-deep:#000092;
+  --text-strong:#000000;
+  --bg:#ffffff;
+  --bg-muted:#f6f8fa;
+}
+Component style guidance
+•	Cards: white background, rounded-xl2, shadow-card, subtle borders on muted surfaces.
+•	Primary Button: navy background, white text, hover: slightly darker navy; focus ring green.
+•	Secondary Button: outline navy or deep blue; hover: tint fill.
+•	CTA (Tenant / Submit): green background, white text, bold, short labels.
+•	Inputs: large hit-areas, labels always visible, helpful text below.
+•	Badges/Status: use deep blue for info, green for success, amber for warnings, red for critical.
+•	Charts: single-color emphasis (deep blue) with green highlights for positives.
+•	Icons: simple line icons; avoid clutter; use navy stroke.
+Layout & Navigation
+•	Left rail (persistent) with role-aware nav.
+•	Top bar with search, quick actions (“New Inspection”), org switcher, user menu.
+•	Content grid: responsive 12-col; cards snap to 4/6/12 spans.
+•	Density: enterprise-light; ample whitespace; no cramped tables.
+Accessibility & Motion
+•	Color contrast ≥ 4.5:1 (navy/green on white is safe).
+•	Focus rings visible (green).
+•	Motion minimal; micro-transitions on hover/press.
+•	Keyboard + screen-reader friendly (semantic headings, ARIA for status).
+________________________________________
+First-run Screens (copy this structure)
+1.	Auth / Registration
+o	Create organisation → invite team → connect Stripe (deferred)
+2.	Role Select & Onboarding Checklist
+o	Owner: “Add block → add properties → choose inventory template → invite clerks → create first schedule → set up Stripe.”
+3.	Owner Dashboard
+o	KPIs: credits used vs plan, inspections due today, expiring compliance, open maintenance, AI high-risk flags.
+4.	Clerk “My Day” (PWA)
+o	Assigned inspections, offline sync center, one-tap start, quick photo capture, condition/cleanliness sliders.
+5.	Compliance Center
+o	Expiring docs (30/60/90), upload flows, rule tracking.
+6.	Tenant Portal
+o	New request → track status → view comparison summary → comment thread.
+________________________________________
+Example UI microcopy (to keep tone consistent)
+•	Primary CTA: “Start Inspection”, “Create Comparison”, “Log Maintenance”
+•	Empty states: “No inspections today—schedule one or enjoy the calm.”
+•	Alerts: “Inspection credits low – upgrade to avoid blocking submissions.”
+
+
+Awesome—here’s a tight, “drop into Replit” description that gives the model full context and a clear UI brief using the logo colors.
+________________________________________
+Inspect360 — Context Description for Replit
+What it is:
+Inspect360 is a PWA-first, AI-powered building inspection platform for Build-to-Rent (BTR) operations. It manages blocks, properties, inventories, inspections (check-in, routine, check-out), AI image analysis, AI comparison reports, compliance documents, and internal maintenance. It includes a tenant portal for logging/tracking requests and threaded discussions on comparison reports. Access is role-based with tailored dashboards for Owner Operator, Inventory Clerk, Compliance Officer, Contractor, and Tenant. Subscriptions are volume-based (inspection credits) using Stripe. Backend is Supabase (Auth, Postgres, Storage, Edge Functions, RLS). The app must be installable (PWA), work offline for field inspections, and sync images/notes when back online.
+Primary user stories (MVP):
+1.	Schedule inspections, assign to clerks, complete on mobile PWA with photos and offline mode, auto-raise maintenance items.
+2.	Run AI analysis on photos and generate comparison reports (check-in vs check-out) with a liability suggestion for manager/tenant discussion.
+3.	Track compliance docs (upload, expiry alerts), view dashboards per role, manage contacts with tags, and operate a tenant portal for maintenance requests.
+4.	Enforce RLS so each role only sees what they should; block submissions when inspection credits are exhausted unless plan is upgraded.
+________________________________________
+Visual Design System (from logo)
+Extracted palette from the supplied logo:
+•	Navy: #003764 (brand primary)
+•	Fresh Green: #59B677 (accent / success / CTA highlights)
+•	Deep Blue: #000092 (secondary accent for emphasis/badges)
+•	Black: #000000 (text on light backgrounds)
+Use Navy for primary surfaces/components, Green for positive states and primary CTAs, Deep Blue for secondary CTAs or data accents. Prefer generous white/near-white backgrounds for readability and a clean, enterprise feel.
+Tailwind theme extension (paste into tailwind.config.ts)
+theme: {
+  extend: {
+    colors: {
+      brand: {
+        navy: '#003764',
+        green: '#59B677',
+        deep: '#000092',
+        black: '#000000'
+      },
+      surface: {
+        base: '#ffffff',
+        muted: '#f6f8fa'
+      }
+    },
+    boxShadow: {
+      card: '0 6px 24px rgba(0,0,0,0.08)'
+    },
+    borderRadius: {
+      xl2: '1rem'
+    }
+  }
+}
+Global CSS variables (optional)
+:root{
+  --brand-navy:#003764;
+  --brand-green:#59B677;
+  --brand-deep:#000092;
+  --text-strong:#000000;
+  --bg:#ffffff;
+  --bg-muted:#f6f8fa;
+}
+Component style guidance
+•	Cards: white background, rounded-xl2, shadow-card, subtle borders on muted surfaces.
+•	Primary Button: navy background, white text, hover: slightly darker navy; focus ring green.
+•	Secondary Button: outline navy or deep blue; hover: tint fill.
+•	CTA (Tenant / Submit): green background, white text, bold, short labels.
+•	Inputs: large hit-areas, labels always visible, helpful text below.
+•	Badges/Status: use deep blue for info, green for success, amber for warnings, red for critical.
+•	Charts: single-color emphasis (deep blue) with green highlights for positives.
+•	Icons: simple line icons; avoid clutter; use navy stroke.
+Layout & Navigation
+•	Left rail (persistent) with role-aware nav.
+•	Top bar with search, quick actions (“New Inspection”), org switcher, user menu.
+•	Content grid: responsive 12-col; cards snap to 4/6/12 spans.
+•	Density: enterprise-light; ample whitespace; no cramped tables.
+Accessibility & Motion
+•	Color contrast ≥ 4.5:1 (navy/green on white is safe).
+•	Focus rings visible (green).
+•	Motion minimal; micro-transitions on hover/press.
+•	Keyboard + screen-reader friendly (semantic headings, ARIA for status).
+________________________________________
+First-run Screens (copy this structure)
+1.	Auth / Registration
+o	Create organisation → invite team → connect Stripe (deferred)
+2.	Role Select & Onboarding Checklist
+o	Owner: “Add block → add properties → choose inventory template → invite clerks → create first schedule → set up Stripe.”
+3.	Owner Dashboard
+o	KPIs: credits used vs plan, inspections due today, expiring compliance, open maintenance, AI high-risk flags.
+4.	Clerk “My Day” (PWA)
+o	Assigned inspections, offline sync center, one-tap start, quick photo capture, condition/cleanliness sliders.
+5.	Compliance Center
+o	Expiring docs (30/60/90), upload flows, rule tracking.
+6.	Tenant Portal
+o	New request → track status → view comparison summary → comment thread.
+________________________________________
+Example UI microcopy (to keep tone consistent)
+•	Primary CTA: “Start Inspection”, “Create Comparison”, “Log Maintenance”
+•	Empty states: “No inspections today—schedule one or enjoy the calm.”
+•	Alerts: “Inspection credits low – upgrade to avoid blocking submissions.”
+________________________________________
+
