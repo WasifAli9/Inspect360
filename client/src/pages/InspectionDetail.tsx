@@ -4,13 +4,29 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Calendar, MapPin, User, CheckCircle } from "lucide-react";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import { ArrowLeft, Calendar, MapPin, User, CheckCircle, Plus, Upload, Sparkles, Camera } from "lucide-react";
 import { format } from "date-fns";
+import { useState } from "react";
 
 export default function InspectionDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newItem, setNewItem] = useState({
+    category: "",
+    itemName: "",
+    photoUrl: "",
+    conditionRating: 5,
+    notes: "",
+  });
 
   const { data: inspection, isLoading } = useQuery<any>({
     queryKey: ["/api/inspections", id],
@@ -39,6 +55,63 @@ export default function InspectionDetail() {
       });
     },
   });
+
+  const addItemMutation = useMutation({
+    mutationFn: async (itemData: any) => {
+      return await apiRequest("/api/inspection-items", "POST", {
+        inspectionId: id,
+        ...itemData,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
+      setShowAddForm(false);
+      setNewItem({ category: "", itemName: "", photoUrl: "", conditionRating: 5, notes: "" });
+      toast({
+        title: "Success",
+        description: "Inspection item added successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to add inspection item",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const analyzePhotoMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+      return await apiRequest("/api/ai/analyze-photo", "POST", { itemId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
+      toast({
+        title: "Success",
+        description: "AI analysis completed (1 credit used)",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to analyze photo",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAddItem = () => {
+    if (!newItem.category || !newItem.itemName) {
+      toast({
+        title: "Validation Error",
+        description: "Category and item name are required",
+        variant: "destructive",
+      });
+      return;
+    }
+    addItemMutation.mutate(newItem);
+  };
 
   if (isLoading) {
     return (
@@ -70,11 +143,11 @@ export default function InspectionDetail() {
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { variant: any; label: string }> = {
-      draft: { variant: "secondary", label: "Draft" },
+      scheduled: { variant: "secondary", label: "Scheduled" },
       in_progress: { variant: "default", label: "In Progress" },
       completed: { variant: "outline", label: "Completed" },
     };
-    const config = variants[status] || variants.draft;
+    const config = variants[status] || variants.scheduled;
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
@@ -87,6 +160,8 @@ export default function InspectionDetail() {
     };
     return <Badge variant="outline">{labels[type] || type}</Badge>;
   };
+
+  const items = inspection.items || [];
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -192,22 +267,229 @@ export default function InspectionDetail() {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Inspection Items</CardTitle>
-          <CardDescription>
-            Photos and condition assessments for this inspection
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <p className="text-muted-foreground mb-4">
-              Photo upload and AI analysis coming soon
-            </p>
-            <p className="text-sm text-muted-foreground">
-              This section will allow clerks to capture photos, rate conditions,
-              and trigger AI analysis for each inspection item
-            </p>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
+          <div>
+            <CardTitle>Inspection Items</CardTitle>
+            <CardDescription>
+              Photos and condition assessments for this inspection
+            </CardDescription>
           </div>
+          {inspection.status !== "completed" && (
+            <Button
+              onClick={() => setShowAddForm(!showAddForm)}
+              size="sm"
+              data-testid="button-add-item"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Item
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {showAddForm && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Add New Inspection Item</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="category">Category / Room</Label>
+                  <Select
+                    value={newItem.category}
+                    onValueChange={(value) => setNewItem({ ...newItem, category: value })}
+                  >
+                    <SelectTrigger id="category" data-testid="select-category">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Kitchen">Kitchen</SelectItem>
+                      <SelectItem value="Bathroom">Bathroom</SelectItem>
+                      <SelectItem value="Living Room">Living Room</SelectItem>
+                      <SelectItem value="Bedroom">Bedroom</SelectItem>
+                      <SelectItem value="Hallway">Hallway</SelectItem>
+                      <SelectItem value="Exterior">Exterior</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="itemName">Item / Feature</Label>
+                  <Input
+                    id="itemName"
+                    placeholder="e.g., Walls, Floors, Countertops, Appliances"
+                    value={newItem.itemName}
+                    onChange={(e) => setNewItem({ ...newItem, itemName: e.target.value })}
+                    data-testid="input-item-name"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Photo (Optional)</Label>
+                  <ObjectUploader
+                    onGetUploadParameters={async () => {
+                      const response = await fetch('/api/objects/upload', {
+                        method: 'POST',
+                        credentials: 'include',
+                      });
+                      const { uploadURL } = await response.json();
+                      return {
+                        method: 'PUT',
+                        url: uploadURL,
+                      };
+                    }}
+                    onComplete={async (result) => {
+                      if (result.successful && result.successful[0]) {
+                        const uploadURL = result.successful[0].uploadURL;
+                        const response = await fetch('/api/objects/set-acl', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ photoUrl: uploadURL }),
+                        });
+                        const { objectPath } = await response.json();
+                        setNewItem({ ...newItem, photoUrl: objectPath });
+                        toast({
+                          title: "Photo uploaded",
+                          description: "Photo uploaded successfully",
+                        });
+                      }
+                    }}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {newItem.photoUrl ? "Change Photo" : "Upload Photo"}
+                  </ObjectUploader>
+                  {newItem.photoUrl && (
+                    <p className="text-sm text-muted-foreground">Photo uploaded</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Condition Rating: {newItem.conditionRating}/10</Label>
+                  <Slider
+                    value={[newItem.conditionRating]}
+                    onValueChange={(value) => setNewItem({ ...newItem, conditionRating: value[0] })}
+                    min={0}
+                    max={10}
+                    step={1}
+                    className="w-full"
+                    data-testid="slider-condition"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    0 = Poor condition, 10 = Excellent condition
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes (Optional)</Label>
+                  <Textarea
+                    id="notes"
+                    placeholder="Add any additional observations or details..."
+                    value={newItem.notes}
+                    onChange={(e) => setNewItem({ ...newItem, notes: e.target.value })}
+                    rows={3}
+                    data-testid="textarea-notes"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleAddItem}
+                    disabled={addItemMutation.isPending}
+                    data-testid="button-save-item"
+                  >
+                    {addItemMutation.isPending ? "Saving..." : "Save Item"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setNewItem({ category: "", itemName: "", photoUrl: "", conditionRating: 5, notes: "" });
+                    }}
+                    data-testid="button-cancel"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {items.length === 0 && !showAddForm && (
+            <div className="text-center py-8">
+              <Camera className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground mb-2">No inspection items yet</p>
+              <p className="text-sm text-muted-foreground">
+                Add inspection items to document the condition of this property
+              </p>
+            </div>
+          )}
+
+          {items.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {items.map((item: any) => (
+                <Card key={item.id} data-testid={`card-item-${item.id}`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-base">{item.itemName}</CardTitle>
+                        <CardDescription>{item.category}</CardDescription>
+                      </div>
+                      <Badge variant="secondary" data-testid={`badge-rating-${item.id}`}>
+                        {item.conditionRating != null ? `${item.conditionRating}/10` : 'N/A'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {item.photoUrl && (
+                      <div className="relative aspect-video rounded-md overflow-hidden bg-muted">
+                        <img
+                          src={`/objects/${item.photoUrl}`}
+                          alt={item.itemName}
+                          className="object-cover w-full h-full"
+                          data-testid={`img-item-${item.id}`}
+                        />
+                      </div>
+                    )}
+                    
+                    {item.notes && (
+                      <div className="p-3 bg-muted/50 rounded-md">
+                        <p className="text-sm" data-testid={`text-notes-${item.id}`}>
+                          {item.notes}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {item.aiAnalysis && (
+                      <div className="p-3 bg-muted rounded-md">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-medium">AI Analysis</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground" data-testid={`text-ai-${item.id}`}>
+                          {item.aiAnalysis}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {!item.aiAnalysis && item.photoUrl && inspection.status !== "completed" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => analyzePhotoMutation.mutate(item.id)}
+                        disabled={analyzePhotoMutation.isPending}
+                        data-testid={`button-analyze-${item.id}`}
+                        className="w-full"
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        {analyzePhotoMutation.isPending ? "Analyzing..." : "Analyze with AI (1 credit)"}
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -141,6 +141,7 @@ export const inspectionItems = pgTable("inspection_items", {
   itemName: varchar("item_name").notNull(), // e.g., "Walls", "Floors", "Appliances"
   photoUrl: text("photo_url"),
   conditionRating: integer("condition_rating"), // 1-5 slider
+  notes: text("notes"),
   aiAnalysis: text("ai_analysis"),
   createdAt: timestamp("created_at").defaultNow(),
 });

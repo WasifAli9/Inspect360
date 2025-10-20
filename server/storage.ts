@@ -128,7 +128,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(users)
-      .where(and(eq(users.organizationId, organizationId), eq(users.role, role)));
+      .where(and(eq(users.organizationId, organizationId), eq(users.role, role as any)));
   }
 
   async updateUserRole(id: string, role: string): Promise<User> {
@@ -330,6 +330,11 @@ export class DatabaseStorage implements IStorage {
       .from(inspectionItems)
       .where(eq(inspectionItems.inspectionId, inspectionId))
       .orderBy(inspectionItems.category, inspectionItems.itemName);
+  }
+
+  async getInspectionItem(id: string): Promise<InspectionItem | undefined> {
+    const [item] = await db.select().from(inspectionItems).where(eq(inspectionItems.id, id));
+    return item;
   }
 
   async updateInspectionItemAI(id: string, aiAnalysis: string): Promise<InspectionItem> {

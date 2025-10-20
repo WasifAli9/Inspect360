@@ -10,7 +10,7 @@ import OpenAI from "openai";
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-12-18.acacia",
+  apiVersion: "2025-09-30.clover",
 });
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
@@ -386,7 +386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/inspection-items", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { inspectionId, category, itemName, photoUrl, conditionRating } = req.body;
+      const { inspectionId, category, itemName, photoUrl, conditionRating, notes } = req.body;
       
       if (!inspectionId || !category || !itemName) {
         return res.status(400).json({ message: "Inspection ID, category, and item name are required" });
@@ -398,6 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         itemName,
         photoUrl: photoUrl || null,
         conditionRating: conditionRating || null,
+        notes: notes || null,
       });
 
       res.json(item);
@@ -411,22 +412,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/ai/analyze-photo", isAuthenticated, async (req: any, res) => {
     try {
-      const { photoUrl, category, itemName } = req.body;
+      const { itemId } = req.body;
       
-      if (!photoUrl) {
-        return res.status(400).json({ message: "Photo URL is required" });
+      if (!itemId) {
+        return res.status(400).json({ message: "Item ID is required" });
       }
 
-      // Check credits
+      // Get the inspection item
+      const item = await storage.getInspectionItem(itemId);
+      
+      if (!item || !item.photoUrl) {
+        return res.status(400).json({ message: "Inspection item not found or has no photo" });
+      }
+
+      // Get user and verify organization membership
       const user = await storage.getUser(req.user.claims.sub);
       if (!user?.organizationId) {
         return res.status(400).json({ message: "User must belong to an organization" });
       }
 
+      // Verify the inspection item belongs to the user's organization
+      // Get the inspection, then the unit, then the property to check ownership
+      const inspection = await storage.getInspection(item.inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      const unit = await storage.getUnit(inspection.unitId);
+      if (!unit) {
+        return res.status(404).json({ message: "Unit not found" });
+      }
+
+      const property = await storage.getProperty(unit.propertyId);
+      if (!property) {
+        return res.status(404).json({ message: "Property not found" });
+      }
+
+      // Verify property belongs to user's organization
+      if (property.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied: Inspection item does not belong to your organization" });
+      }
+
+      // Check credits AFTER verifying ownership
       const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || organization.creditsRemaining < 1) {
+      if (!organization || (organization.creditsRemaining ?? 0) < 1) {
         return res.status(402).json({ message: "Insufficient credits" });
       }
+
+      // Construct full photo URL
+      const photoUrl = item.photoUrl.startsWith("http") 
+        ? item.photoUrl 
+        : `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/objects/${item.photoUrl}`;
 
       // Call OpenAI Vision API
       const response = await getOpenAI().chat.completions.create({
@@ -437,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             content: [
               {
                 type: "text",
-                text: `Analyze this ${category} - ${itemName} photo from a property inspection. Provide a detailed condition assessment including any damage, wear, cleanliness issues, or notable features. Be specific and objective.`
+                text: `Analyze this ${item.category} - ${item.itemName} photo from a property inspection. Provide a detailed condition assessment including any damage, wear, cleanliness issues, or notable features. Be specific and objective.`
               },
               {
                 type: "image_url",
@@ -453,17 +489,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const analysis = response.choices[0]?.message?.content || "Unable to analyze image";
 
+      // Update the item with AI analysis
+      await storage.updateInspectionItemAI(itemId, analysis);
+
       // Deduct credit
       await storage.updateOrganizationCredits(
         organization.id,
-        organization.creditsRemaining - 1
+        (organization.creditsRemaining ?? 0) - 1
       );
 
       await storage.createCreditTransaction({
         organizationId: organization.id,
         amount: -1,
         type: "inspection",
-        description: `AI photo analysis: ${category} - ${itemName}`,
+        description: `AI photo analysis: ${item.category} - ${item.itemName}`,
       });
 
       res.json({ analysis });
@@ -488,7 +527,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || organization.creditsRemaining < 2) {
+      if (!organization || (organization.creditsRemaining ?? 0) < 2) {
         return res.status(402).json({ message: "Insufficient credits (2 required for comparison)" });
       }
 
@@ -531,7 +570,7 @@ Provide a structured comparison highlighting differences in condition ratings an
       // Deduct credits
       await storage.updateOrganizationCredits(
         organization.id,
-        organization.creditsRemaining - 2
+        (organization.creditsRemaining ?? 0) - 2
       );
 
       await storage.createCreditTransaction({
@@ -760,7 +799,7 @@ Provide a structured comparison highlighting differences in condition ratings an
         if (organization) {
           await storage.updateOrganizationCredits(
             organizationId,
-            organization.creditsRemaining + credits
+            (organization.creditsRemaining ?? 0) + credits
           );
 
           await storage.createCreditTransaction({
