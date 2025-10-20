@@ -1,0 +1,276 @@
+# Inspect360 - Comprehensive Feature Specification
+
+This document contains the full product specification for Inspect360, including planned features beyond the current MVP implementation.
+
+## Current Implementation Status
+
+The current MVP uses:
+- **Backend:** Express.js + PostgreSQL + Drizzle ORM
+- **Frontend:** React + Vite + Wouter
+- **Auth:** Passport.js Local Strategy (username/password)
+- **Storage:** Google Cloud Storage via Replit Object Storage
+- **AI:** OpenAI Vision API via Replit AI Integrations
+- **Payments:** Stripe
+
+This specification document describes an alternative architecture (Supabase + Next.js) and extended features. We reference this spec for feature ideas while maintaining our current tech stack.
+
+---
+
+## 1. Team Structure & Roles
+
+Each user belongs to an organisation and has one role. Dashboards and permissions are role-scoped via RLS.
+
+**Owner Operator:** full org control, billing/credits, invite users, all data visibility.
+
+**Inventory Clerk (Inspector):** sees assigned inspections, creates/edits their inspections, no billing.
+
+**Compliance Officer:** CRUD compliance docs/checks, read inspections, no billing.
+
+**Contractor:** reads assigned work orders, uploads logs/photos, limited PII.
+
+**Tenant:** portal access for their property only; can log maintenance, view summaries/comparisons, comment.
+
+## 2. Data Model
+
+All tables have id uuid pk default gen_random_uuid(), created_at timestamptz default now(), updated_at timestamptz default now().
+
+### 2.1 Core tenancy
+
+**organisations**(name, billing_email, stripe_customer_id, stripe_sub_id, plan, monthly_credits int, credits_used int, billing_period_start, billing_period_end)
+
+**profiles**(user_id uuid, organisation_id uuid, full_name, role enum, phone, current_property_id uuid nullable)
+
+**memberships**(organisation_id, user_id, role, status enum(invited|active|disabled))
+
+### 2.2 Estate
+
+**blocks**(organisation_id, name, address_json, notes)
+
+**properties**(organisation_id, block_id, unit_ref, bedrooms, bathrooms, floor, sqft, status enum(occupied|vacant), current_tenant_profile_id uuid nullable)
+
+### 2.3 Contacts & Tags
+
+**contacts**(organisation_id, type enum(person|company), name, email, phone, role_note)
+
+**tags**(organisation_id, label, color)
+
+**tag_links**(tag_id, entity_type text, entity_id uuid)
+entity_type in ['contact','document','inspection','property','maintenance_request']
+
+### 2.4 Compliance
+
+**compliance_docs**(organisation_id, block_id?, property_id?, title, type, issuer, reference_no, issue_date, expiry_date, file_url, status enum(valid|expiring|expired))
+
+**compliance_rules**(code, name, description, frequency_days int, applies_to enum(block|property)) (seed)
+
+**compliance_checks**(organisation_id, rule_id, target_type enum(block|property), target_id uuid, due_date, status enum(due|done|overdue), completed_by uuid nullable)
+
+### 2.5 Inventory
+
+**inventory_templates**(organisation_id, name, json_schema jsonb)
+
+**inventories**(organisation_id, property_id, template_id, version int, is_active bool)
+
+**inventory_items**(inventory_id, path text, item_name, baseline_condition int, baseline_cleanliness int, baseline_photos text[])
+
+### 2.6 Inspections
+
+**inspections**(organisation_id, property_id, type enum(check_in|check_out|routine), scheduled_at, assigned_to uuid, started_at, submitted_at, status enum(scheduled|in_progress|submitted|approved), latitude numeric, longitude numeric, offline_id text)
+
+**inspection_entries**(inspection_id, inventory_item_id, condition_rating int, cleanliness_rating int, notes text, photos text[], defects_json jsonb, maintenance_flag bool)
+
+**ai_image_analyses**(inspection_entry_id, model text, result_json jsonb, confidence numeric, annotations_url text)
+
+**comparison_reports**(organisation_id, property_id, baseline_inspection_id, target_inspection_id, diff_json jsonb, liability enum(tenant|operator|shared|none), summary_text text, resolved bool)
+
+**comparison_comments**(report_id, author_profile_id, message text, role_at_time text, resolved bool)
+
+### 2.7 Maintenance
+
+**maintenance_requests**(organisation_id, property_id, raised_by_type enum(tenant|staff), raised_by_profile_id uuid, source enum(tenant_portal|internal|inspection), title, description, priority enum(low|med|high|urgent), status enum(new|triage|assigned|in_progress|waiting_parts|completed|rejected), photos text[])
+
+**work_orders**(organisation_id, request_id, contractor_profile_id, sla_due timestamptz, cost_estimate numeric, cost_actual numeric, variation_json jsonb, completed_at)
+
+**work_logs**(work_order_id, note, photos text[], time_spent_minutes int)
+
+### 2.8 Scheduling & Credits
+
+**schedules**(organisation_id, assignee_profile_id, inspection_id, start_at, end_at, status enum(assigned|accepted|declined|done))
+
+**credit_ledger**(organisation_id, reason enum(inspection_submit|manual_adjust|stripe_renewal), delta int, balance_after int, meta_json jsonb)
+
+### 2.9 Documents & Audit
+
+**documents**(organisation_id, entity_type text, entity_id uuid, title, file_url, mime_type, uploaded_by uuid, tags text[])
+
+**audit_events**(organisation_id, actor_profile_id, action, entity_type, entity_id, diff_json jsonb, ip text, user_agent text)
+
+**Indexes:**
+Composite (organisation_id, property_id), (organisation_id, status), (organisation_id, scheduled_at) on hot tables; GIN on JSONB where needed.
+
+## 3. RLS (Row-Level Security) – Policy Sketch
+
+Enable RLS on all tables.
+
+**Org member read:** organisation_id IN (SELECT organisation_id FROM memberships WHERE user_id = auth.uid() AND status='active')
+
+**Role-based write:** Allow per role on specific tables (e.g., inspectors can insert/update their inspections where assigned_to = profiles.id).
+
+**Tenant scoping:** Tenants can select rows where properties.id = profiles.current_property_id.
+
+**Contractor scoping:** Contractors can select work_orders where contractor_profile_id = profiles.id.
+
+## 4. Storage Buckets
+
+- inspection-photos/ORG/INSPECTION/...
+- compliance-docs/ORG/...
+- work-order-photos/ORG/...
+- reports/ORG/... (PDFs)
+
+Use short-TTL signed URLs client-side; uploads via PWA queue when offline.
+
+## 5. PWA (Priority #1)
+
+### Manifest
+
+```json
+{
+  "name": "Inspect360",
+  "short_name": "Inspect360",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#003764",
+  "background_color": "#ffffff",
+  "icons": [{ "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }]
+}
+```
+
+### Service Worker Requirements
+
+- Cache app shell (/, CSS/JS) using stale-while-revalidate.
+- Cache inspection forms & reference data (inventory) for offline.
+- Background Sync queue: inspections, photos, maintenance requests.
+- Local store mapping offline_id → server id to dedupe on retry.
+- "Sync Center" UI to show pending uploads & retry.
+
+## 6. AI Edge Functions
+
+### ai_analyse_image
+- Input: { inspection_entry_id, image_urls[] }
+- Output: { result_json (labels,bboxes,scores), annotations_url }
+- Write to ai_image_analyses.
+
+### generate_comparison_report
+- Input: { baseline_inspection_id, target_inspection_id }
+- Process: Match by inventory_item_id, compute deltas (condition/cleanliness), merge AI detections, suggest liability.
+- Output: insert into comparison_reports + return report_id.
+
+## 7. Stripe Billing & Credits
+
+**Plans:** Starter (100), Growth (500), Scale (2000). Annual variants. Optional metered overage.
+
+### Flow
+
+Checkout → customer.subscription.updated webhook → set organisations.plan, monthly_credits, credits_used=0 and ledger entry stripe_renewal.
+
+On inspection submit: server check credits_used < monthly_credits; increment credits_used and write ledger inspection_submit. If exceeded and no overage → block with upgrade CTA.
+
+### Edge Function: stripe_webhook
+Handle checkout.session.completed, customer.subscription.updated, invoice.paid, customer.subscription.deleted. Idempotency via Stripe event.id + audit_events.
+
+## 8. App Routes (Next.js App Router)
+
+- /login | /register
+- /app (layout)
+  - /app/dashboard (role-aware)
+  - /app/blocks | /app/blocks/[id]
+  - /app/properties | /app/properties/[id]
+  - /app/inspections | /app/inspections/[id]
+  - /app/inspections/new
+  - /app/comparisons/[id]
+  - /app/maintenance | /app/maintenance/[id]
+  - /app/compliance | /app/compliance/upload
+  - /app/contacts | /app/tags
+  - /app/billing
+  - /app/settings
+
+- /tenant (separate layout)
+  - /tenant/login (magic link)
+  - /tenant/home
+  - /tenant/maintenance
+  - /tenant/comparisons/[id]
+
+## 9. Key Screens & UX
+
+**Owner Dashboard:** credits used vs plan, inspections this period, compliance %, high-risk AI flags, open maintenance.
+
+**Clerk "My Day" (PWA):** assigned list, start inspection, offline banner, photo capture, autosave, submit.
+
+**Compliance Center:** expiring in 30/60/90, upload doc, status chips.
+
+**Maintenance Board:** Kanban by status; SLA highlighting; contractor assignment.
+
+**Tenant Portal:** log request, track status, view comparison, comment thread.
+
+## 10. API/Handlers (server)
+
+- POST /api/inspections/:id/submit → validate, consume credit, queue AI batch.
+- POST /api/ai/analyse → proxy to Edge Function.
+- POST /api/comparisons → create report.
+- POST /api/maintenance → create request.
+- POST /api/stripe/webhook → billing sync.
+- GET /api/dashboards/role → role metrics payload.
+
+JWT from Supabase; server verifies and enforces org/role.
+
+## 11. Seed Data
+
+**Inventory templates:** Studio, 1-bed, 2-bed with standard rooms/items.
+
+**Compliance rules:** Gas, EICR, Fire Alarm with frequencies.
+
+**Tags:** mold-risk, water-ingress, H&S, VIP, warranty.
+
+## 12. Env Vars
+
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+AI_PROVIDER=openai
+AI_API_KEY=
+```
+
+## 13. Definition of Done (MVP)
+
+- PWA installable; offline inspection capture with background sync.
+- RLS correctly restricts all roles/orgs.
+- Create → assign → submit inspection with photos; AI analysis recorded.
+- Comparison report generation and thread with tenant.
+- Tenant portal logs/reads maintenance and comparison summaries.
+- Compliance upload + expiry status with alerts.
+- Stripe checkout + credits gating on submission.
+- Role dashboards populated.
+- Audit trail on key mutations.
+
+## 14. Nice-to-Have (Phase 2)
+
+Route optimization for clerks, push notifications, contractor marketplace, OCR for compliance docs, photo de-dup/compression, white-label org themes.
+
+## 15. Brand/UI Notes
+
+**Palette (from logo):**
+- Navy #003764 (primary)
+- Green #59B677 (CTA/success)
+- Deep Blue #000092 (secondary accents)
+- Black #000000 (text)
+
+**Components:**
+- Cards: white, rounded-xl, subtle shadows.
+- Primary button: navy; focus ring green. 
+- CTA button: green.
+- Accessibility: WCAG AA contrast; visible focus states.

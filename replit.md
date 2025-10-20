@@ -4,6 +4,8 @@
 
 Inspect360 is a comprehensive PWA-first building inspection platform designed for Build-to-Rent (BTR) operations. The platform provides role-based access for Owner Operators, Inventory Clerks, Compliance Officers, and Tenants, with offline mobile inspection capabilities, AI-powered photo analysis using OpenAI Vision API, comparison report generation, compliance document tracking with expiry alerts, tenant portal, internal maintenance tracking, and an inspection credit system powered by Stripe.
 
+**Reference Specification:** A comprehensive feature specification is available at `attached_assets/SPECIFICATION.md` which outlines extended features and alternative architecture approaches (Supabase + Next.js). We maintain our current tech stack (Express + PostgreSQL + React) and reference this spec for feature ideas and future enhancements.
+
 ## Project Status
 
 **Current Implementation (MVP Complete):**
