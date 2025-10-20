@@ -86,14 +86,36 @@ export default function Compliance() {
     const daysUntilExpiry = differenceInDays(expiryDate, new Date());
     
     if (isPast(expiryDate)) {
-      return <Badge variant="destructive" data-testid={`badge-status-${doc.id}`}>Expired</Badge>;
+      return (
+        <Badge variant="destructive" data-testid={`badge-status-${doc.id}`}>
+          Expired
+        </Badge>
+      );
     } else if (daysUntilExpiry <= 30) {
-      return <Badge className="bg-yellow-500" data-testid={`badge-status-${doc.id}`}>Expiring Soon ({daysUntilExpiry}d)</Badge>;
+      return (
+        <Badge 
+          className="bg-yellow-600 dark:bg-yellow-500 text-white dark:text-black" 
+          data-testid={`badge-status-${doc.id}`}
+        >
+          Expiring Soon ({daysUntilExpiry}d)
+        </Badge>
+      );
     } else if (daysUntilExpiry <= 90) {
-      return <Badge className="bg-blue-500" data-testid={`badge-status-${doc.id}`}>Expiring in {daysUntilExpiry}d</Badge>;
+      return (
+        <Badge 
+          className="bg-blue-600 dark:bg-blue-500 text-white dark:text-black" 
+          data-testid={`badge-status-${doc.id}`}
+        >
+          Expiring in {daysUntilExpiry}d
+        </Badge>
+      );
     }
     
-    return <Badge className="bg-accent" data-testid={`badge-status-${doc.id}`}>Current</Badge>;
+    return (
+      <Badge variant="outline" data-testid={`badge-status-${doc.id}`}>
+        Current
+      </Badge>
+    );
   };
 
   // Check if user has permission to access compliance
@@ -311,7 +333,7 @@ export default function Compliance() {
               </CardHeader>
               <CardContent>
                 <div className="text-sm text-muted-foreground">
-                  Uploaded {format(new Date(doc.createdAt.toString()), 'PPP')}
+                  {doc.createdAt && `Uploaded ${format(new Date(doc.createdAt.toString()), 'PPP')}`}
                 </div>
               </CardContent>
             </Card>
