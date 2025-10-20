@@ -74,7 +74,7 @@ export default function Landing() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
           <Card className="hover-elevate">
             <CardHeader>
-              <Building2 className="w-12 h-12 text-primary mb-2" />
+              <Building2 className="w-12 h-12 text-accent mb-2" />
               <CardTitle>Property Management</CardTitle>
               <CardDescription>
                 Manage multiple properties and units with ease. Track inspections, maintenance, and tenant assignments all in one place.
@@ -84,7 +84,7 @@ export default function Landing() {
 
           <Card className="hover-elevate">
             <CardHeader>
-              <ClipboardCheck className="w-12 h-12 text-primary mb-2" />
+              <ClipboardCheck className="w-12 h-12 text-accent mb-2" />
               <CardTitle>Mobile Inspections</CardTitle>
               <CardDescription>
                 PWA-ready offline inspections with photo capture. Conduct inspections in the field without internet connectivity.
@@ -104,7 +104,7 @@ export default function Landing() {
 
           <Card className="hover-elevate">
             <CardHeader>
-              <Shield className="w-12 h-12 text-primary mb-2" />
+              <Shield className="w-12 h-12 text-accent mb-2" />
               <CardTitle>Compliance Tracking</CardTitle>
               <CardDescription>
                 Track certificates, licenses, and documents with expiry alerts. Stay compliant with automated reminders.
@@ -114,7 +114,7 @@ export default function Landing() {
 
           <Card className="hover-elevate">
             <CardHeader>
-              <Users className="w-12 h-12 text-primary mb-2" />
+              <Users className="w-12 h-12 text-accent mb-2" />
               <CardTitle>Tenant Portal</CardTitle>
               <CardDescription>
                 Self-service portal for tenants to submit maintenance requests and view comparison reports for their units.
