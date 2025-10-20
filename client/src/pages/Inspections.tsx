@@ -42,6 +42,7 @@ const createInspectionSchema = z.object({
   unitId: z.string().min(1, "Unit is required"),
   type: z.enum(["check_in", "check_out", "routine", "maintenance"]),
   scheduledDate: z.string().min(1, "Scheduled date is required"),
+  clerkId: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -65,6 +66,10 @@ export default function Inspections() {
     enabled: !!selectedPropertyId,
   });
 
+  const { data: clerks = [] } = useQuery<any[]>({
+    queryKey: ["/api/users/clerks"],
+  });
+
   const form = useForm<CreateInspectionData>({
     resolver: zodResolver(createInspectionSchema),
     defaultValues: {
@@ -72,6 +77,7 @@ export default function Inspections() {
       unitId: "",
       type: "routine",
       scheduledDate: new Date().toISOString().split("T")[0],
+      clerkId: "",
       notes: "",
     },
   });
@@ -256,6 +262,31 @@ export default function Inspections() {
                           data-testid="input-scheduled-date"
                         />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="clerkId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assign to Clerk (Optional)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-clerk">
+                            <SelectValue placeholder="Select clerk" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {clerks.map((clerk: any) => (
+                            <SelectItem key={clerk.id} value={clerk.id}>
+                              {clerk.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}

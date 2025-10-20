@@ -157,6 +157,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== USER ROUTES ====================
+  
+  app.get("/api/users/clerks", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.json([]);
+      }
+
+      const users = await storage.getUsersByOrganizationAndRole(user.organizationId, "clerk");
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching clerks:", error);
+      res.status(500).json({ message: "Failed to fetch clerks" });
+    }
+  });
+
   // ==================== UNIT ROUTES ====================
   
   app.post("/api/units", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
@@ -196,15 +215,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/inspections", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { unitId, type, scheduledDate, notes } = req.body;
+      const currentUser = await storage.getUser(userId);
+      const { unitId, type, scheduledDate, notes, clerkId } = req.body;
       
       if (!unitId || !type) {
         return res.status(400).json({ message: "Unit ID and type are required" });
       }
 
+      if (!currentUser?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Use provided clerkId if available, otherwise assign to current user
+      let inspectorId = userId;
+      
+      if (clerkId) {
+        // Validate that the clerk belongs to the same organization
+        const clerk = await storage.getUser(clerkId);
+        if (!clerk || clerk.organizationId !== currentUser.organizationId) {
+          return res.status(400).json({ message: "Invalid clerk assignment - clerk must belong to your organization" });
+        }
+        inspectorId = clerkId;
+      }
+
       const inspection = await storage.createInspection({
         unitId,
-        inspectorId: userId,
+        inspectorId,
         type,
         scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(),
         notes,
@@ -220,7 +256,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/inspections/my", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const inspections = await storage.getInspectionsByInspector(userId);
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.json([]);
+      }
+
+      // Owners see all inspections in their organization
+      // Clerks see only inspections assigned to them
+      let inspections;
+      if (user.role === "owner" || user.role === "compliance") {
+        inspections = await storage.getInspectionsByOrganization(user.organizationId);
+      } else {
+        inspections = await storage.getInspectionsByInspector(userId);
+      }
+      
       res.json(inspections);
     } catch (error) {
       console.error("Error fetching inspections:", error);

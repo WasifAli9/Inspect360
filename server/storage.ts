@@ -37,6 +37,7 @@ export interface IStorage {
   // User operations (required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  getUsersByOrganizationAndRole(organizationId: string, role: string): Promise<User[]>;
   
   // Organization operations
   createOrganization(org: InsertOrganization): Promise<Organization>;
@@ -58,7 +59,8 @@ export interface IStorage {
   // Inspection operations
   createInspection(inspection: InsertInspection): Promise<Inspection>;
   getInspectionsByUnit(unitId: string): Promise<Inspection[]>;
-  getInspectionsByInspector(inspectorId: string): Promise<Inspection[]>;
+  getInspectionsByInspector(inspectorId: string): Promise<any[]>; // Returns inspections with unit and property
+  getInspectionsByOrganization(organizationId: string): Promise<any[]>; // Returns inspections with unit and property
   getInspection(id: string): Promise<Inspection | undefined>;
   updateInspectionStatus(id: string, status: string, completedDate?: Date): Promise<Inspection>;
   
@@ -109,6 +111,13 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
+  }
+
+  async getUsersByOrganizationAndRole(organizationId: string, role: string): Promise<User[]> {
+    return await db
+      .select()
+      .from(users)
+      .where(and(eq(users.organizationId, organizationId), eq(users.role, role)));
   }
 
   // Organization operations
@@ -205,12 +214,54 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(inspections.scheduledDate));
   }
 
-  async getInspectionsByInspector(inspectorId: string): Promise<Inspection[]> {
-    return await db
-      .select()
+  async getInspectionsByInspector(inspectorId: string): Promise<any[]> {
+    const results = await db
+      .select({
+        inspection: inspections,
+        unit: units,
+        property: properties,
+        clerk: users,
+      })
       .from(inspections)
+      .innerJoin(units, eq(inspections.unitId, units.id))
+      .innerJoin(properties, eq(units.propertyId, properties.id))
+      .leftJoin(users, eq(inspections.inspectorId, users.id))
       .where(eq(inspections.inspectorId, inspectorId))
       .orderBy(desc(inspections.scheduledDate));
+    
+    // Flatten the structure to match frontend expectations
+    return results.map(r => ({
+      ...r.inspection,
+      propertyId: r.unit.propertyId,
+      unit: r.unit,
+      property: r.property,
+      clerk: r.clerk,
+    }));
+  }
+
+  async getInspectionsByOrganization(organizationId: string): Promise<any[]> {
+    const results = await db
+      .select({
+        inspection: inspections,
+        unit: units,
+        property: properties,
+        clerk: users,
+      })
+      .from(inspections)
+      .innerJoin(units, eq(inspections.unitId, units.id))
+      .innerJoin(properties, eq(units.propertyId, properties.id))
+      .leftJoin(users, eq(inspections.inspectorId, users.id))
+      .where(eq(properties.organizationId, organizationId))
+      .orderBy(desc(inspections.scheduledDate));
+    
+    // Flatten the structure to match frontend expectations
+    return results.map(r => ({
+      ...r.inspection,
+      propertyId: r.unit.propertyId,
+      unit: r.unit,
+      property: r.property,
+      clerk: r.clerk,
+    }));
   }
 
   async getInspection(id: string): Promise<Inspection | undefined> {
