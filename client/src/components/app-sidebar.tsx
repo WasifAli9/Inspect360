@@ -10,6 +10,7 @@ import {
   CreditCard,
   Boxes,
   Clipboard,
+  Package,
 } from "lucide-react";
 import {
   Sidebar,
@@ -76,6 +77,12 @@ export function AppSidebar() {
       url: "/comparisons",
       icon: FileText,
       roles: ["owner", "tenant"],
+    },
+    {
+      title: "Asset Inventory",
+      url: "/asset-inventory",
+      icon: Package,
+      roles: ["owner", "clerk", "compliance"],
     },
     {
       title: "Team",

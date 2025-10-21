@@ -32,7 +32,7 @@ The platform follows a PWA-first approach with a robust web architecture.
 - **Backend**: Express.js, PostgreSQL (Neon) for the database, Drizzle ORM, Passport.js with Local Strategy for custom username/password authentication, and Express-session for session management.
 - **Authentication**: Custom username/password authentication with Passport.js, utilizing `req.user.id` for user identification across API routes.
 - **Object Storage**: Google Cloud Storage for inspection photos and compliance documents with ACL policies.
-- **Database Schema**: Core tables include `users` (with roles: owner, clerk, compliance, tenant, contractor), `organizations`, `properties`, `units`, `blocks`, `inspections`, `inspection_items`, `compliance_documents`, `maintenance_requests`, `work_orders`, `work_logs`, `comparison_reports`, and `credit_transactions`.
+- **Database Schema**: Core tables include `users` (with roles: owner, clerk, compliance, tenant, contractor), `organizations`, `properties`, `units`, `blocks`, `inspections`, `inspection_items`, `compliance_documents`, `maintenance_requests`, `work_orders`, `work_logs`, `comparison_reports`, `credit_transactions`, and `asset_inventory`.
 - **Role-Based Access**: Granular access control for Owner Operators (full access), Inventory Clerks (inspections, photo uploads), Compliance Officers (document management, expiry tracking), Tenants (unit-specific reports, maintenance requests), and Contractors (assigned work orders). Secure unit filtering ensures tenants only access their own units.
 - **Credit System**: AI photo analysis (1 credit), AI comparison reports (2 credits). Credits are purchased via Stripe, and organizations receive 5 free credits initially.
 - **AI Features**:
@@ -42,7 +42,8 @@ The platform follows a PWA-first approach with a robust web architecture.
 - **Performance**: Optimized database queries (e.g., `getBlocksWithStats` uses batched queries) and Zod validation for robust API error handling.
 
 ### Feature Specifications
-- **Core Modules**: Properties, Units, Inspections, Compliance, Maintenance, Credit Management.
+- **Core Modules**: Properties, Units, Inspections, Compliance, Maintenance, Credit Management, Asset Inventory.
+- **Asset Inventory**: Track physical assets and equipment across properties and blocks with photos, supplier information, purchase dates, condition tracking (excellent, good, fair, poor, needs_replacement), and expected lifespan. Supports filtering by property or block, full CRUD operations, and image uploads via Uppy.
 - **Dashboards**: Role-specific dashboards with KPIs (properties, units, inspections, credits, occupancy, compliance status).
 - **Tenant Portal**: Secure access to unit-specific reports and maintenance request submission.
 - **Team Management**: Owner-controlled user and role management.

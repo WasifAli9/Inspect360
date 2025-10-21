@@ -34,6 +34,7 @@ export const maintenanceStatusEnum = pgEnum("maintenance_status", ["open", "in_p
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["active", "inactive", "cancelled"]);
 export const unitStatusEnum = pgEnum("unit_status", ["occupied", "vacant"]);
 export const workOrderStatusEnum = pgEnum("work_order_status", ["assigned", "in_progress", "waiting_parts", "completed", "rejected"]);
+export const assetConditionEnum = pgEnum("asset_condition", ["excellent", "good", "fair", "poor", "needs_replacement"]);
 
 // User storage table
 export const users = pgTable("users", {
@@ -401,6 +402,34 @@ export const insertWorkLogSchema = createInsertSchema(workLogs).omit({
 export type WorkLog = typeof workLogs.$inferSelect;
 export type InsertWorkLog = z.infer<typeof insertWorkLogSchema>;
 
+// Asset Inventory (Physical assets/equipment for properties and blocks)
+export const assetInventory = pgTable("asset_inventory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  propertyId: varchar("property_id"),
+  blockId: varchar("block_id"),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  supplier: varchar("supplier"),
+  datePurchased: timestamp("date_purchased"),
+  condition: assetConditionEnum("condition").notNull(),
+  expectedLifespanYears: integer("expected_lifespan_years"),
+  photoUrl: text("photo_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAssetInventorySchema = createInsertSchema(assetInventory).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).refine(
+  (data) => data.propertyId || data.blockId,
+  { message: "Either propertyId or blockId must be provided" }
+);
+export type AssetInventory = typeof assetInventory.$inferSelect;
+export type InsertAssetInventory = z.infer<typeof insertAssetInventorySchema>;
+
 // Relations
 export const usersRelations = relations(users, ({ one }) => ({
   organization: one(organizations, {
@@ -417,6 +446,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   creditTransactions: many(creditTransactions),
   inventoryTemplates: many(inventoryTemplates),
   workOrders: many(workOrders),
+  assetInventory: many(assetInventory),
 }));
 
 export const blocksRelations = relations(blocks, ({ one, many }) => ({
@@ -425,6 +455,7 @@ export const blocksRelations = relations(blocks, ({ one, many }) => ({
     references: [organizations.id],
   }),
   properties: many(properties),
+  assetInventory: many(assetInventory),
 }));
 
 export const propertiesRelations = relations(properties, ({ one, many }) => ({
@@ -440,6 +471,7 @@ export const propertiesRelations = relations(properties, ({ one, many }) => ({
   maintenanceRequests: many(maintenanceRequests),
   inventories: many(inventories),
   comparisonReports: many(comparisonReports),
+  assetInventory: many(assetInventory),
 }));
 
 export const inspectionCategoriesRelations = relations(inspectionCategories, ({ one, many }) => ({
@@ -528,5 +560,20 @@ export const workLogsRelations = relations(workLogs, ({ one }) => ({
   workOrder: one(workOrders, {
     fields: [workLogs.workOrderId],
     references: [workOrders.id],
+  }),
+}));
+
+export const assetInventoryRelations = relations(assetInventory, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [assetInventory.organizationId],
+    references: [organizations.id],
+  }),
+  property: one(properties, {
+    fields: [assetInventory.propertyId],
+    references: [properties.id],
+  }),
+  block: one(blocks, {
+    fields: [assetInventory.blockId],
+    references: [blocks.id],
   }),
 }));

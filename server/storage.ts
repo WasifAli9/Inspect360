@@ -15,6 +15,7 @@ import {
   inventoryItems,
   workOrders,
   workLogs,
+  assetInventory,
   type User,
   type UpsertUser,
   type Organization,
@@ -47,6 +48,8 @@ import {
   type InsertWorkOrder,
   type WorkLog,
   type InsertWorkLog,
+  type AssetInventory,
+  type InsertAssetInventory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne } from "drizzle-orm";
@@ -158,6 +161,15 @@ export interface IStorage {
   // Work Log operations
   createWorkLog(log: InsertWorkLog): Promise<WorkLog>;
   getWorkLogs(workOrderId: string): Promise<WorkLog[]>;
+
+  // Asset Inventory operations
+  createAssetInventory(asset: InsertAssetInventory): Promise<AssetInventory>;
+  getAssetInventoryByOrganization(organizationId: string): Promise<AssetInventory[]>;
+  getAssetInventoryByProperty(propertyId: string): Promise<AssetInventory[]>;
+  getAssetInventoryByBlock(blockId: string): Promise<AssetInventory[]>;
+  getAssetInventory(id: string): Promise<AssetInventory | undefined>;
+  updateAssetInventory(id: string, updates: Partial<InsertAssetInventory>): Promise<AssetInventory>;
+  deleteAssetInventory(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1074,6 +1086,57 @@ export class DatabaseStorage implements IStorage {
       .from(workLogs)
       .where(eq(workLogs.workOrderId, workOrderId))
       .orderBy(desc(workLogs.createdAt));
+  }
+
+  // Asset Inventory operations
+  async createAssetInventory(assetData: InsertAssetInventory): Promise<AssetInventory> {
+    const [asset] = await db.insert(assetInventory).values(assetData).returning();
+    return asset;
+  }
+
+  async getAssetInventoryByOrganization(organizationId: string): Promise<AssetInventory[]> {
+    return await db
+      .select()
+      .from(assetInventory)
+      .where(eq(assetInventory.organizationId, organizationId))
+      .orderBy(desc(assetInventory.createdAt));
+  }
+
+  async getAssetInventoryByProperty(propertyId: string): Promise<AssetInventory[]> {
+    return await db
+      .select()
+      .from(assetInventory)
+      .where(eq(assetInventory.propertyId, propertyId))
+      .orderBy(desc(assetInventory.createdAt));
+  }
+
+  async getAssetInventoryByBlock(blockId: string): Promise<AssetInventory[]> {
+    return await db
+      .select()
+      .from(assetInventory)
+      .where(eq(assetInventory.blockId, blockId))
+      .orderBy(desc(assetInventory.createdAt));
+  }
+
+  async getAssetInventory(id: string): Promise<AssetInventory | undefined> {
+    const [asset] = await db
+      .select()
+      .from(assetInventory)
+      .where(eq(assetInventory.id, id));
+    return asset;
+  }
+
+  async updateAssetInventory(id: string, updates: Partial<InsertAssetInventory>): Promise<AssetInventory> {
+    const [asset] = await db
+      .update(assetInventory)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(assetInventory.id, id))
+      .returning();
+    return asset;
+  }
+
+  async deleteAssetInventory(id: string): Promise<void> {
+    await db.delete(assetInventory).where(eq(assetInventory.id, id));
   }
 }
 

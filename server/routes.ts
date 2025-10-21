@@ -13,7 +13,8 @@ import {
   insertInventorySchema,
   insertInventoryItemSchema,
   insertWorkOrderSchema,
-  insertWorkLogSchema
+  insertWorkLogSchema,
+  insertAssetInventorySchema
 } from "@shared/schema";
 
 // Initialize Stripe
@@ -1010,6 +1011,182 @@ Provide a structured comparison highlighting differences in condition ratings an
     } catch (error) {
       console.error("Error deleting block:", error);
       res.status(500).json({ error: "Failed to delete block" });
+    }
+  });
+
+  // ==================== ASSET INVENTORY ROUTES ====================
+
+  app.post("/api/asset-inventory", isAuthenticated, requireRole("owner", "clerk", "compliance"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const validatedData = insertAssetInventorySchema.parse(req.body);
+
+      const asset = await storage.createAssetInventory({
+        ...validatedData,
+        organizationId: user.organizationId,
+      });
+      res.status(201).json(asset);
+    } catch (error: any) {
+      console.error("Error creating asset inventory:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid request data", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create asset inventory" });
+    }
+  });
+
+  app.get("/api/asset-inventory", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const assets = await storage.getAssetInventoryByOrganization(user.organizationId);
+      res.json(assets);
+    } catch (error) {
+      console.error("Error fetching asset inventory:", error);
+      res.status(500).json({ error: "Failed to fetch asset inventory" });
+    }
+  });
+
+  app.get("/api/asset-inventory/property/:propertyId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify property belongs to user's organization
+      const property = await storage.getProperty(req.params.propertyId);
+      if (!property) {
+        return res.status(404).json({ error: "Property not found" });
+      }
+      if (property.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const assets = await storage.getAssetInventoryByProperty(req.params.propertyId);
+      res.json(assets);
+    } catch (error) {
+      console.error("Error fetching property asset inventory:", error);
+      res.status(500).json({ error: "Failed to fetch property asset inventory" });
+    }
+  });
+
+  app.get("/api/asset-inventory/block/:blockId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify block belongs to user's organization
+      const block = await storage.getBlock(req.params.blockId);
+      if (!block) {
+        return res.status(404).json({ error: "Block not found" });
+      }
+      if (block.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const assets = await storage.getAssetInventoryByBlock(req.params.blockId);
+      res.json(assets);
+    } catch (error) {
+      console.error("Error fetching block asset inventory:", error);
+      res.status(500).json({ error: "Failed to fetch block asset inventory" });
+    }
+  });
+
+  app.get("/api/asset-inventory/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const asset = await storage.getAssetInventory(req.params.id);
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+
+      // Verify organization ownership
+      if (asset.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json(asset);
+    } catch (error) {
+      console.error("Error fetching asset inventory:", error);
+      res.status(500).json({ error: "Failed to fetch asset inventory" });
+    }
+  });
+
+  app.patch("/api/asset-inventory/:id", isAuthenticated, requireRole("owner", "clerk", "compliance"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify organization ownership
+      const existing = await storage.getAssetInventory(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      if (existing.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Validate request body (partial update) with Zod
+      const parseResult = insertAssetInventorySchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: parseResult.error.errors 
+        });
+      }
+
+      const asset = await storage.updateAssetInventory(req.params.id, parseResult.data);
+      res.json(asset);
+    } catch (error: any) {
+      console.error("Error updating asset inventory:", error);
+      res.status(500).json({ error: "Failed to update asset inventory" });
+    }
+  });
+
+  app.delete("/api/asset-inventory/:id", isAuthenticated, requireRole("owner", "clerk", "compliance"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify organization ownership
+      const existing = await storage.getAssetInventory(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      if (existing.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteAssetInventory(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting asset inventory:", error);
+      res.status(500).json({ error: "Failed to delete asset inventory" });
     }
   });
 
