@@ -6,6 +6,9 @@ import {
   inspections,
   inspectionItems,
   inspectionCategories,
+  inspectionTemplates,
+  inspectionTemplatePoints,
+  inspectionResponses,
   complianceDocuments,
   maintenanceRequests,
   comparisonReports,
@@ -30,6 +33,12 @@ import {
   type InsertInspectionItem,
   type InspectionCategory,
   type InsertInspectionCategory,
+  type InspectionTemplate,
+  type InsertInspectionTemplate,
+  type InspectionTemplatePoint,
+  type InsertInspectionTemplatePoint,
+  type InspectionResponse,
+  type InsertInspectionResponse,
   type ComplianceDocument,
   type InsertComplianceDocument,
   type MaintenanceRequest,
@@ -170,6 +179,26 @@ export interface IStorage {
   getAssetInventory(id: string): Promise<AssetInventory | undefined>;
   updateAssetInventory(id: string, updates: Partial<InsertAssetInventory>): Promise<AssetInventory>;
   deleteAssetInventory(id: string): Promise<void>;
+
+  // Inspection Template operations
+  createInspectionTemplate(template: InsertInspectionTemplate): Promise<InspectionTemplate>;
+  getInspectionTemplatesByOrganization(organizationId: string): Promise<InspectionTemplate[]>;
+  getInspectionTemplate(id: string): Promise<InspectionTemplate | undefined>;
+  updateInspectionTemplate(id: string, updates: Partial<InsertInspectionTemplate>): Promise<InspectionTemplate>;
+  deleteInspectionTemplate(id: string): Promise<void>;
+
+  // Inspection Template Point operations
+  createInspectionTemplatePoint(point: InsertInspectionTemplatePoint): Promise<InspectionTemplatePoint>;
+  getInspectionTemplatePoints(templateId: string): Promise<InspectionTemplatePoint[]>;
+  getInspectionTemplatePoint(id: string): Promise<InspectionTemplatePoint | undefined>;
+  updateInspectionTemplatePoint(id: string, updates: Partial<InsertInspectionTemplatePoint>): Promise<InspectionTemplatePoint>;
+  deleteInspectionTemplatePoint(id: string): Promise<void>;
+
+  // Inspection Response operations
+  createInspectionResponse(response: InsertInspectionResponse): Promise<InspectionResponse>;
+  getInspectionResponses(inspectionId: string): Promise<InspectionResponse[]>;
+  updateInspectionResponse(id: string, updates: Partial<InsertInspectionResponse>): Promise<InspectionResponse>;
+  deleteInspectionResponse(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1137,6 +1166,106 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAssetInventory(id: string): Promise<void> {
     await db.delete(assetInventory).where(eq(assetInventory.id, id));
+  }
+
+  // Inspection Template operations
+  async createInspectionTemplate(templateData: InsertInspectionTemplate): Promise<InspectionTemplate> {
+    const [template] = await db.insert(inspectionTemplates).values(templateData).returning();
+    return template;
+  }
+
+  async getInspectionTemplatesByOrganization(organizationId: string): Promise<InspectionTemplate[]> {
+    return await db
+      .select()
+      .from(inspectionTemplates)
+      .where(eq(inspectionTemplates.organizationId, organizationId))
+      .orderBy(desc(inspectionTemplates.createdAt));
+  }
+
+  async getInspectionTemplate(id: string): Promise<InspectionTemplate | undefined> {
+    const [template] = await db
+      .select()
+      .from(inspectionTemplates)
+      .where(eq(inspectionTemplates.id, id));
+    return template;
+  }
+
+  async updateInspectionTemplate(id: string, updates: Partial<InsertInspectionTemplate>): Promise<InspectionTemplate> {
+    const [template] = await db
+      .update(inspectionTemplates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(inspectionTemplates.id, id))
+      .returning();
+    return template;
+  }
+
+  async deleteInspectionTemplate(id: string): Promise<void> {
+    // First delete all template points associated with this template
+    await db.delete(inspectionTemplatePoints).where(eq(inspectionTemplatePoints.templateId, id));
+    // Then delete the template itself
+    await db.delete(inspectionTemplates).where(eq(inspectionTemplates.id, id));
+  }
+
+  // Inspection Template Point operations
+  async createInspectionTemplatePoint(pointData: InsertInspectionTemplatePoint): Promise<InspectionTemplatePoint> {
+    const [point] = await db.insert(inspectionTemplatePoints).values(pointData).returning();
+    return point;
+  }
+
+  async getInspectionTemplatePoints(templateId: string): Promise<InspectionTemplatePoint[]> {
+    return await db
+      .select()
+      .from(inspectionTemplatePoints)
+      .where(eq(inspectionTemplatePoints.templateId, templateId))
+      .orderBy(inspectionTemplatePoints.sortOrder);
+  }
+
+  async getInspectionTemplatePoint(id: string): Promise<InspectionTemplatePoint | undefined> {
+    const [point] = await db
+      .select()
+      .from(inspectionTemplatePoints)
+      .where(eq(inspectionTemplatePoints.id, id));
+    return point;
+  }
+
+  async updateInspectionTemplatePoint(id: string, updates: Partial<InsertInspectionTemplatePoint>): Promise<InspectionTemplatePoint> {
+    const [point] = await db
+      .update(inspectionTemplatePoints)
+      .set(updates)
+      .where(eq(inspectionTemplatePoints.id, id))
+      .returning();
+    return point;
+  }
+
+  async deleteInspectionTemplatePoint(id: string): Promise<void> {
+    await db.delete(inspectionTemplatePoints).where(eq(inspectionTemplatePoints.id, id));
+  }
+
+  // Inspection Response operations
+  async createInspectionResponse(responseData: InsertInspectionResponse): Promise<InspectionResponse> {
+    const [response] = await db.insert(inspectionResponses).values(responseData).returning();
+    return response;
+  }
+
+  async getInspectionResponses(inspectionId: string): Promise<InspectionResponse[]> {
+    return await db
+      .select()
+      .from(inspectionResponses)
+      .where(eq(inspectionResponses.inspectionId, inspectionId))
+      .orderBy(inspectionResponses.createdAt);
+  }
+
+  async updateInspectionResponse(id: string, updates: Partial<InsertInspectionResponse>): Promise<InspectionResponse> {
+    const [response] = await db
+      .update(inspectionResponses)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(inspectionResponses.id, id))
+      .returning();
+    return response;
+  }
+
+  async deleteInspectionResponse(id: string): Promise<void> {
+    await db.delete(inspectionResponses).where(eq(inspectionResponses.id, id));
   }
 }
 
