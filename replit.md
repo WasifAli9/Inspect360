@@ -269,6 +269,14 @@ npm run db:studio
 
 ## Recent Changes
 
+- 2025-10-21: **CRITICAL BUG FIXES & PERFORMANCE IMPROVEMENTS**
+  - **Bug Fix**: Fixed requireRole middleware across all routes - changed from array syntax `requireRole(["owner"])` to spread syntax `requireRole("owner", "compliance")`
+  - **Bug Fix**: Fixed req.dbUser references in 3 routes (properties, team) - changed to proper Passport.js pattern using req.user.id
+  - **Bug Fix**: Fixed apiRequest call in Properties.tsx - corrected parameter order from (url, method, data) to (method, url, data)
+  - **Performance**: Rewrote getBlocksWithStats to eliminate N+1 query problem - now uses batched queries and in-memory grouping
+  - **SQL Compatibility**: Replaced Postgres-specific raw SQL (ANY, NOW()) with portable Drizzle queries using sql.join and JavaScript Date objects
+  - **Validation**: Added Zod validation to block creation and update routes with safeParse for better error handling
+  - **Feature**: Block statistics dashboard now calculates occupancy, compliance, inspections due, and overdue metrics efficiently
 - 2025-10-20: **BLOCKS, WORK ORDERS & PWA COMPLETE** - Extended features and PWA foundation
   - Database: Added blocks, inventory_templates, inventories, inventory_items, work_orders, work_logs tables
   - Database: Added contractor role to userRoleEnum; enhanced units table with bedrooms, bathrooms, floor, sqft, status

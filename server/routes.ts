@@ -136,11 +136,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/team", isAuthenticated, requireRole("owner"), async (req: any, res) => {
     try {
-      const organizationId = req.dbUser.organizationId;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
       
-      if (!organizationId) {
+      if (!user?.organizationId) {
         return res.status(400).json({ message: "User must belong to an organization" });
       }
+      
+      const organizationId = user.organizationId;
 
       const teamMembers = await storage.getUsersByOrganization(organizationId);
       res.json(teamMembers);
@@ -152,13 +155,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/team/:userId/role", isAuthenticated, requireRole("owner"), async (req: any, res) => {
     try {
-      const { userId } = req.params;
-      const { role } = req.body;
-      const organizationId = req.dbUser.organizationId;
-
-      if (!organizationId) {
+      const requesterId = req.user.id;
+      const requester = await storage.getUser(requesterId);
+      
+      if (!requester?.organizationId) {
         return res.status(400).json({ message: "User must belong to an organization" });
       }
+      
+      const { userId } = req.params;
+      const { role } = req.body;
+      const organizationId = requester.organizationId;
 
       if (!role || !["owner", "clerk", "compliance", "tenant"].includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
@@ -187,21 +193,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/properties", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
     try {
-      const { name, address } = req.body;
-      const organizationId = req.dbUser.organizationId;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
       
-      if (!organizationId) {
+      if (!user?.organizationId) {
         return res.status(400).json({ message: "User must belong to an organization" });
       }
+      
+      const { name, address, blockId } = req.body;
       
       if (!name || !address) {
         return res.status(400).json({ message: "Name and address are required" });
       }
 
       const property = await storage.createProperty({
-        organizationId,
+        organizationId: user.organizationId,
         name,
         address,
+        blockId: blockId || null,
       });
 
       res.json(property);
@@ -881,19 +890,22 @@ Provide a structured comparison highlighting differences in condition ratings an
         return res.status(403).json({ error: "No organization found" });
       }
 
-      // Validate request body
-      const validatedData = insertBlockSchema.parse(req.body);
+      // Validate request body with Zod
+      const parseResult = insertBlockSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: parseResult.error.errors 
+        });
+      }
 
       const block = await storage.createBlock({
-        ...validatedData,
+        ...parseResult.data,
         organizationId: user.organizationId,
       });
       res.status(201).json(block);
     } catch (error: any) {
       console.error("Error creating block:", error);
-      if (error.name === "ZodError") {
-        return res.status(400).json({ error: "Invalid request data", details: error.errors });
-      }
       res.status(500).json({ error: "Failed to create block" });
     }
   });
@@ -956,16 +968,19 @@ Provide a structured comparison highlighting differences in condition ratings an
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Validate request body (partial update)
-      const validatedData = insertBlockSchema.partial().parse(req.body);
+      // Validate request body (partial update) with Zod
+      const parseResult = insertBlockSchema.partial().safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: parseResult.error.errors 
+        });
+      }
 
-      const block = await storage.updateBlock(req.params.id, validatedData);
+      const block = await storage.updateBlock(req.params.id, parseResult.data);
       res.json(block);
     } catch (error: any) {
       console.error("Error updating block:", error);
-      if (error.name === "ZodError") {
-        return res.status(400).json({ error: "Invalid request data", details: error.errors });
-      }
       res.status(500).json({ error: "Failed to update block" });
     }
   });

@@ -29,7 +29,7 @@ export default function Properties() {
 
   const createProperty = useMutation({
     mutationFn: async (data: { name: string; address: string }) => {
-      return await apiRequest("/api/properties", "POST", data);
+      return await apiRequest("POST", "/api/properties", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
