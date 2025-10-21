@@ -22,6 +22,7 @@ import Comparisons from "@/pages/Comparisons";
 import OrganizationSetup from "@/pages/OrganizationSetup";
 import Team from "@/pages/Team";
 import Blocks from "@/pages/Blocks";
+import BlockDetail from "@/pages/BlockDetail";
 import WorkOrders from "@/pages/WorkOrders";
 import { Button } from "@/components/ui/button";
 import { LogOut, Loader2 } from "lucide-react";
@@ -86,7 +87,8 @@ function AppContent() {
               <Switch>
                 <Route path="/" component={Dashboard} />
                 <Route path="/dashboard" component={Dashboard} />
-                <Route path="/blocks" component={Blocks} />
+                <Route path="/blocks/:id" component={BlockDetail} />
+              <Route path="/blocks" component={Blocks} />
                 <Route path="/properties" component={Properties} />
                 <Route path="/properties/:id" component={PropertyDetail} />
                 <Route path="/credits" component={Credits} />

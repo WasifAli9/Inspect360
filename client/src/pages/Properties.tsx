@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Building2, MapPin } from "lucide-react";
+import { Plus, Building2, MapPin, Search } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
@@ -30,6 +30,7 @@ export default function Properties() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [blockId, setBlockId] = useState<string | undefined>();
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data: properties = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/properties"],
@@ -38,6 +39,16 @@ export default function Properties() {
   const { data: blocks = [] } = useQuery<any[]>({
     queryKey: ["/api/blocks"],
   });
+
+  // Filter properties by search query
+  const filteredProperties = useMemo(() => {
+    if (!searchQuery.trim()) return properties;
+    const query = searchQuery.toLowerCase();
+    return properties.filter(property => 
+      property.name.toLowerCase().includes(query) ||
+      property.address.toLowerCase().includes(query)
+    );
+  }, [properties, searchQuery]);
 
   const createProperty = useMutation({
     mutationFn: async (data: { name: string; address: string; blockId?: string }) => {
@@ -160,6 +171,20 @@ export default function Properties() {
         </Dialog>
       </div>
 
+      {/* Search Filter */}
+      {properties.length > 0 && (
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Input
+            placeholder="Search properties by name or address..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+            data-testid="input-search-properties"
+          />
+        </div>
+      )}
+
       {properties.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
@@ -168,9 +193,20 @@ export default function Properties() {
             <p className="text-muted-foreground mb-4">Get started by adding your first property</p>
           </CardContent>
         </Card>
+      ) : filteredProperties.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <Search className="w-16 h-16 text-muted-foreground mb-4" />
+            <p className="text-lg font-medium mb-2">No properties found</p>
+            <p className="text-muted-foreground mb-4">Try adjusting your search query</p>
+            <Button variant="outline" onClick={() => setSearchQuery("")}>
+              Clear Search
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {properties.map((property: any) => {
+          {filteredProperties.map((property: any) => {
             const propertyBlock = blocks.find((b: any) => b.id === property.blockId);
             return (
               <Link key={property.id} href={`/properties/${property.id}`}>

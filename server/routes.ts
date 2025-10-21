@@ -951,6 +951,30 @@ Provide a structured comparison highlighting differences in condition ratings an
     }
   });
 
+  app.get("/api/blocks/:id/properties", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const blockId = req.params.id;
+      
+      // Verify block belongs to user's organization
+      const block = await storage.getBlock(blockId);
+      if (!block || block.organizationId !== user.organizationId) {
+        return res.status(404).json({ error: "Block not found" });
+      }
+
+      const properties = await storage.getPropertiesWithStatsByBlock(blockId);
+      res.json(properties);
+    } catch (error) {
+      console.error("Error fetching block properties:", error);
+      res.status(500).json({ error: "Failed to fetch block properties" });
+    }
+  });
+
   app.patch("/api/blocks/:id", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
     try {
       const userId = req.user.id;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle } from "lucide-react";
+import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "wouter";
 
 interface BlockStats {
   totalProperties: number;
@@ -38,11 +39,22 @@ export default function Blocks() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
   const { data: blocks = [], isLoading } = useQuery<Block[]>({
     queryKey: ["/api/blocks"],
   });
+
+  // Filter blocks by search query
+  const filteredBlocks = useMemo(() => {
+    if (!searchQuery.trim()) return blocks;
+    const query = searchQuery.toLowerCase();
+    return blocks.filter(block => 
+      block.name.toLowerCase().includes(query) ||
+      block.address.toLowerCase().includes(query)
+    );
+  }, [blocks, searchQuery]);
 
   const createBlockMutation = useMutation({
     mutationFn: async (data: { name: string; address: string; notes?: string }) => {
@@ -162,6 +174,22 @@ export default function Blocks() {
         </Button>
       </div>
 
+      {/* Search Filter */}
+      {blocks.length > 0 && (
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search blocks by name or address..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+              data-testid="input-search-blocks"
+            />
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-center py-8">Loading blocks...</div>
       ) : blocks.length === 0 ? (
@@ -178,21 +206,39 @@ export default function Blocks() {
             </Button>
           </CardContent>
         </Card>
+      ) : filteredBlocks.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Search className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No blocks found</h3>
+            <p className="text-muted-foreground text-center mb-4">
+              Try adjusting your search query
+            </p>
+            <Button variant="outline" onClick={() => setSearchQuery("")}>
+              Clear Search
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {blocks.map((block) => (
-            <Card key={block.id} data-testid={`card-block-${block.id}`}>
+          {filteredBlocks.map((block) => (
+            <Card key={block.id} data-testid={`card-block-${block.id}`} className="hover-elevate">
               <CardHeader>
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Building className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-lg">{block.name}</CardTitle>
-                  </div>
+                  <Link href={`/blocks/${block.id}`} className="flex-1">
+                    <div className="flex items-center gap-2 cursor-pointer">
+                      <Building className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-lg">{block.name}</CardTitle>
+                    </div>
+                  </Link>
                   <div className="flex gap-1">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleOpenEdit(block)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleOpenEdit(block);
+                      }}
                       data-testid={`button-edit-block-${block.id}`}
                     >
                       <Pencil className="h-4 w-4" />
@@ -200,14 +246,19 @@ export default function Blocks() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(block.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleDelete(block.id);
+                      }}
                       data-testid={`button-delete-block-${block.id}`}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
                 </div>
-                <CardDescription className="line-clamp-2">{block.address}</CardDescription>
+                <Link href={`/blocks/${block.id}`}>
+                  <CardDescription className="line-clamp-2 cursor-pointer">{block.address}</CardDescription>
+                </Link>
               </CardHeader>
               <CardContent className="space-y-3">
                 {/* Occupancy Level */}

@@ -291,6 +291,120 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(properties.createdAt));
   }
 
+  async getPropertiesWithStatsByBlock(blockId: string): Promise<any[]> {
+    // Get all properties for this block
+    const blockProperties = await db
+      .select()
+      .from(properties)
+      .where(eq(properties.blockId, blockId));
+
+    if (blockProperties.length === 0) {
+      return [];
+    }
+
+    const propertyIds = blockProperties.map(p => p.id);
+
+    // Batch fetch all units for these properties
+    const allUnits = await db
+      .select()
+      .from(units)
+      .where(sql`${units.propertyId} IN (${sql.join(propertyIds.map(id => sql`${id}`), sql`, `)})`);
+
+    // Group units by property
+    const unitsByProperty = new Map<string, typeof allUnits>();
+    allUnits.forEach(unit => {
+      if (!unitsByProperty.has(unit.propertyId)) {
+        unitsByProperty.set(unit.propertyId, []);
+      }
+      unitsByProperty.get(unit.propertyId)!.push(unit);
+    });
+
+    // Batch fetch all inspections for these units
+    const unitIds = allUnits.map(u => u.id);
+    let allInspections: any[] = [];
+    if (unitIds.length > 0) {
+      allInspections = await db
+        .select()
+        .from(inspections)
+        .where(sql`${inspections.unitId} IN (${sql.join(unitIds.map(id => sql`${id}`), sql`, `)})`);
+    }
+
+    // Group inspections by unit
+    const inspectionsByUnit = new Map<string, typeof allInspections>();
+    allInspections.forEach(inspection => {
+      if (!inspectionsByUnit.has(inspection.unitId)) {
+        inspectionsByUnit.set(inspection.unitId, []);
+      }
+      inspectionsByUnit.get(inspection.unitId)!.push(inspection);
+    });
+
+    // Calculate date ranges once
+    const now = new Date();
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(now.getDate() + 30);
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(now.getDate() - 90);
+
+    // Build stats for each property
+    const propertiesWithStats = blockProperties.map(property => {
+      const propertyUnits = unitsByProperty.get(property.id) || [];
+      const totalUnits = propertyUnits.length;
+      const occupiedUnits = propertyUnits.filter(u => u.status === 'occupied').length;
+      const occupancyStatus = totalUnits > 0 
+        ? `${occupiedUnits}/${totalUnits} occupied` 
+        : 'No units';
+
+      // Get all inspections for this property's units
+      const propertyInspections = propertyUnits.flatMap(unit => 
+        inspectionsByUnit.get(unit.id) || []
+      );
+
+      // Count inspections due in next 30 days
+      const inspectionsDue = propertyInspections.filter(insp => {
+        const scheduledDate = new Date(insp.scheduledDate);
+        return scheduledDate >= now && 
+               scheduledDate <= thirtyDaysFromNow && 
+               insp.status !== 'completed';
+      }).length;
+
+      // Count overdue inspections
+      const inspectionsOverdue = propertyInspections.filter(insp => {
+        const scheduledDate = new Date(insp.scheduledDate);
+        return scheduledDate < now && insp.status !== 'completed';
+      }).length;
+
+      // Calculate compliance rate (units with recent completed inspections)
+      let complianceRate = 0;
+      let complianceStatus = 'No data';
+      if (totalUnits > 0) {
+        const unitsWithRecentInspections = new Set<string>();
+        propertyInspections.forEach(insp => {
+          const scheduledDate = new Date(insp.scheduledDate);
+          if (scheduledDate >= ninetyDaysAgo && insp.status === 'completed') {
+            unitsWithRecentInspections.add(insp.unitId);
+          }
+        });
+        complianceRate = Math.round((unitsWithRecentInspections.size / totalUnits) * 100);
+        complianceStatus = `${complianceRate}% compliant`;
+      }
+
+      return {
+        ...property,
+        stats: {
+          totalUnits,
+          occupiedUnits,
+          occupancyStatus,
+          complianceRate,
+          complianceStatus,
+          inspectionsDue,
+          inspectionsOverdue,
+        },
+      };
+    });
+
+    return propertiesWithStats;
+  }
+
   async getProperty(id: string): Promise<Property | undefined> {
     const [property] = await db.select().from(properties).where(eq(properties.id, id));
     return property;
