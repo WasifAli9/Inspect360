@@ -197,6 +197,7 @@ export interface IStorage {
   // Inspection Response operations
   createInspectionResponse(response: InsertInspectionResponse): Promise<InspectionResponse>;
   getInspectionResponses(inspectionId: string): Promise<InspectionResponse[]>;
+  getInspectionResponse(id: string): Promise<InspectionResponse | undefined>;
   updateInspectionResponse(id: string, updates: Partial<InsertInspectionResponse>): Promise<InspectionResponse>;
   deleteInspectionResponse(id: string): Promise<void>;
 }
@@ -1253,6 +1254,14 @@ export class DatabaseStorage implements IStorage {
       .from(inspectionResponses)
       .where(eq(inspectionResponses.inspectionId, inspectionId))
       .orderBy(inspectionResponses.createdAt);
+  }
+
+  async getInspectionResponse(id: string): Promise<InspectionResponse | undefined> {
+    const [response] = await db
+      .select()
+      .from(inspectionResponses)
+      .where(eq(inspectionResponses.id, id));
+    return response;
   }
 
   async updateInspectionResponse(id: string, updates: Partial<InsertInspectionResponse>): Promise<InspectionResponse> {

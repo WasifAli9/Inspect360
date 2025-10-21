@@ -633,6 +633,170 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== INSPECTION RESPONSE ROUTES ====================
+
+  // Create or update inspection response
+  app.post("/api/inspections/:inspectionId/responses", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify inspection exists
+      const inspection = await storage.getInspection(req.params.inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ error: "Inspection not found" });
+      }
+
+      // Verify inspection belongs to user's organization via property or block
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property || property.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block || block.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      // Prevent inspectionId override from request body
+      const { inspectionId: _, ...safeBody } = req.body;
+      const response = await storage.createInspectionResponse({
+        ...safeBody,
+        inspectionId: req.params.inspectionId,
+      });
+
+      res.json(response);
+    } catch (error) {
+      console.error("Error creating inspection response:", error);
+      res.status(500).json({ error: "Failed to create inspection response" });
+    }
+  });
+
+  // Get all responses for an inspection
+  app.get("/api/inspections/:inspectionId/responses", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify inspection exists
+      const inspection = await storage.getInspection(req.params.inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ error: "Inspection not found" });
+      }
+
+      // Verify inspection belongs to user's organization via property or block
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property || property.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block || block.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      const responses = await storage.getInspectionResponses(req.params.inspectionId);
+      res.json(responses);
+    } catch (error) {
+      console.error("Error fetching inspection responses:", error);
+      res.status(500).json({ error: "Failed to fetch inspection responses" });
+    }
+  });
+
+  // Update inspection response
+  app.patch("/api/inspection-responses/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Get the response to find its inspection
+      const existingResponse = await storage.getInspectionResponse(req.params.id);
+      if (!existingResponse) {
+        return res.status(404).json({ error: "Response not found" });
+      }
+
+      // Verify the inspection belongs to user's organization
+      const inspection = await storage.getInspection(existingResponse.inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ error: "Inspection not found" });
+      }
+
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property || property.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block || block.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      // Prevent inspectionId changes in updates
+      const { inspectionId: _, ...safeUpdates } = req.body;
+      const updated = await storage.updateInspectionResponse(req.params.id, safeUpdates);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating inspection response:", error);
+      res.status(500).json({ error: "Failed to update inspection response" });
+    }
+  });
+
+  // Delete inspection response
+  app.delete("/api/inspection-responses/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Get the response to find its inspection
+      const existingResponse = await storage.getInspectionResponse(req.params.id);
+      if (!existingResponse) {
+        return res.status(404).json({ error: "Response not found" });
+      }
+
+      // Verify the inspection belongs to user's organization
+      const inspection = await storage.getInspection(existingResponse.inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ error: "Inspection not found" });
+      }
+
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property || property.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block || block.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      await storage.deleteInspectionResponse(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting inspection response:", error);
+      res.status(500).json({ error: "Failed to delete inspection response" });
+    }
+  });
+
   // ==================== INSPECTION ITEM ROUTES ====================
   
   app.post("/api/inspection-items", isAuthenticated, async (req: any, res) => {
