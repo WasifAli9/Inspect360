@@ -14,9 +14,18 @@ Inspect360 is a PWA-first building inspection platform for Build-to-Rent (BTR) o
 The platform follows a PWA-first approach with a robust web architecture.
 
 ### UI/UX Decisions
+- **Modern Design System (October 2025)**:
+  - **Typography**: Inter font system with bold headers (text-4xl/5xl) and clear hierarchy
+  - **Glassmorphic Cards**: Backdrop-blur effects with semi-transparent backgrounds for depth
+  - **Shadows**: Refined shadow system (8px-32px blur, 0.04-0.60 opacity) for subtle elevation
+  - **Border Radius**: Modern 1rem (16px) for cards, 0.75rem (12px) for smaller elements
+  - **Transitions**: Smooth 150-250ms transitions for all interactive elements
+  - **Spacing**: Generous spacing with p-8/p-12 containers and gap-6/gap-8 grids
+  - **Visual Feedback**: Color-coded icons with background circles, hover lift effects
+  - **Loading States**: Modern animated spinners and skeleton loaders with shimmer
 - **Color Scheme**: Navy (#003764) for primary surfaces, Fresh Green (#59B677) for accents/CTAs, and Deep Blue (#000092) for secondary accents/badges.
-- **Components**: White cards with subtle shadows, Navy primary buttons, Green CTA buttons, and Deep Blue badges.
-- **Layout**: Left sidebar navigation with role-aware menu items, top bar with toggle and logout, responsive grid layout, and enterprise-light spacing.
+- **Components**: Glassmorphic cards with backdrop blur, modern icon badges, elevated hover states.
+- **Layout**: Left sidebar navigation with role-aware menu items, top bar with toggle and logout, responsive grid layout with generous spacing.
 
 ### Technical Implementations
 - **Frontend**: React with TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, Shadcn UI components, Tailwind CSS for styling, and Uppy for file uploads.
