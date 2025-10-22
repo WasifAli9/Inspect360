@@ -120,6 +120,7 @@ export const blocks = pgTable("blocks", {
 
 export const insertBlockSchema = createInsertSchema(blocks).omit({
   id: true,
+  organizationId: true,
   createdAt: true,
   updatedAt: true,
 });
