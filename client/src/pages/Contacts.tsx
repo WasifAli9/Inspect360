@@ -1,0 +1,596 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit } from "lucide-react";
+import type { Contact } from "@shared/schema";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+const contactTypeLabels: Record<string, string> = {
+  internal: "Internal",
+  contractor: "Contractor",
+  lead: "Lead",
+  company: "Company",
+  partner: "Partner",
+  vendor: "Vendor",
+  other: "Other",
+};
+
+const contactTypeBadgeVariants: Record<string, "default" | "secondary" | "outline"> = {
+  internal: "default",
+  contractor: "secondary",
+  lead: "outline",
+  company: "default",
+  partner: "default",
+  vendor: "secondary",
+  other: "outline",
+};
+
+export default function Contacts() {
+  const { toast } = useToast();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<string>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+
+  const { data: contacts, isLoading } = useQuery<Contact[]>({
+    queryKey: ["/api/contacts"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest("POST", "/api/contacts", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      setDialogOpen(false);
+      setEditingContact(null);
+      toast({
+        title: "Success",
+        description: "Contact saved successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to save contact",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await apiRequest("PATCH", `/api/contacts/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      setDialogOpen(false);
+      setEditingContact(null);
+      toast({
+        title: "Success",
+        description: "Contact updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to update contact",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/contacts/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      toast({
+        title: "Success",
+        description: "Contact deleted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to delete contact",
+      });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    const data = {
+      type: formData.get("type") as string,
+      firstName: formData.get("firstName") as string,
+      lastName: formData.get("lastName") as string,
+      email: formData.get("email") as string || undefined,
+      phone: formData.get("phone") as string || undefined,
+      countryCode: formData.get("countryCode") as string || "+1",
+      companyName: formData.get("companyName") as string || undefined,
+      jobTitle: formData.get("jobTitle") as string || undefined,
+      address: formData.get("address") as string || undefined,
+      city: formData.get("city") as string || undefined,
+      state: formData.get("state") as string || undefined,
+      postalCode: formData.get("postalCode") as string || undefined,
+      country: formData.get("country") as string || undefined,
+      website: formData.get("website") as string || undefined,
+      notes: formData.get("notes") as string || undefined,
+    };
+
+    if (editingContact) {
+      updateMutation.mutate({ id: editingContact.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const filteredContacts = contacts?.filter((contact) => {
+    const matchesSearch =
+      searchTerm === "" ||
+      `${contact.firstName} ${contact.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.companyName?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesType = filterType === "all" || contact.type === filterType;
+
+    return matchesSearch && matchesType;
+  });
+
+  const getInitials = (firstName: string, lastName: string) => {
+    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <Users className="w-8 h-8 text-primary" />
+            <div>
+              <h1 className="text-3xl font-semibold">Contacts</h1>
+              <p className="text-muted-foreground">Loading contacts...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Users className="w-8 h-8 text-primary" />
+            <div>
+              <h1 className="text-3xl font-semibold">Contacts</h1>
+              <p className="text-muted-foreground">
+                Manage internal team members and external contacts
+              </p>
+            </div>
+          </div>
+
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => setEditingContact(null)}
+                data-testid="button-add-contact"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Contact
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingContact ? "Edit Contact" : "Add New Contact"}
+                </DialogTitle>
+                <DialogDescription>
+                  {editingContact
+                    ? "Update contact information"
+                    : "Create a new contact entry"}
+                </DialogDescription>
+              </DialogHeader>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="type">Contact Type *</Label>
+                    <Select
+                      name="type"
+                      defaultValue={editingContact?.type || "other"}
+                      required
+                    >
+                      <SelectTrigger data-testid="select-contact-type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="internal">Internal</SelectItem>
+                        <SelectItem value="contractor">Contractor</SelectItem>
+                        <SelectItem value="lead">Lead</SelectItem>
+                        <SelectItem value="company">Company</SelectItem>
+                        <SelectItem value="partner">Partner</SelectItem>
+                        <SelectItem value="vendor">Vendor</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="companyName">Company Name</Label>
+                    <Input
+                      id="companyName"
+                      name="companyName"
+                      defaultValue={editingContact?.companyName || ""}
+                      placeholder="Acme Corporation"
+                      data-testid="input-company-name"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name *</Label>
+                    <Input
+                      id="firstName"
+                      name="firstName"
+                      defaultValue={editingContact?.firstName || ""}
+                      required
+                      placeholder="John"
+                      data-testid="input-first-name"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="lastName">Last Name *</Label>
+                    <Input
+                      id="lastName"
+                      name="lastName"
+                      defaultValue={editingContact?.lastName || ""}
+                      required
+                      placeholder="Doe"
+                      data-testid="input-last-name"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      defaultValue={editingContact?.email || ""}
+                      placeholder="john@example.com"
+                      data-testid="input-email"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="jobTitle">Job Title</Label>
+                    <Input
+                      id="jobTitle"
+                      name="jobTitle"
+                      defaultValue={editingContact?.jobTitle || ""}
+                      placeholder="Property Manager"
+                      data-testid="input-job-title"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="countryCode">Country Code</Label>
+                    <Input
+                      id="countryCode"
+                      name="countryCode"
+                      defaultValue={editingContact?.countryCode || "+1"}
+                      placeholder="+1"
+                      data-testid="input-country-code"
+                    />
+                  </div>
+
+                  <div className="col-span-2">
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input
+                      id="phone"
+                      name="phone"
+                      type="tel"
+                      defaultValue={editingContact?.phone || ""}
+                      placeholder="(555) 123-4567"
+                      data-testid="input-phone"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="address">Address</Label>
+                  <Input
+                    id="address"
+                    name="address"
+                    defaultValue={editingContact?.address || ""}
+                    placeholder="123 Main Street"
+                    data-testid="input-address"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="city">City</Label>
+                    <Input
+                      id="city"
+                      name="city"
+                      defaultValue={editingContact?.city || ""}
+                      placeholder="New York"
+                      data-testid="input-city"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="state">State</Label>
+                    <Input
+                      id="state"
+                      name="state"
+                      defaultValue={editingContact?.state || ""}
+                      placeholder="NY"
+                      data-testid="input-state"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="postalCode">Postal Code</Label>
+                    <Input
+                      id="postalCode"
+                      name="postalCode"
+                      defaultValue={editingContact?.postalCode || ""}
+                      placeholder="10001"
+                      data-testid="input-postal-code"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="country">Country</Label>
+                    <Input
+                      id="country"
+                      name="country"
+                      defaultValue={editingContact?.country || ""}
+                      placeholder="United States"
+                      data-testid="input-country"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="website">Website</Label>
+                    <Input
+                      id="website"
+                      name="website"
+                      type="url"
+                      defaultValue={editingContact?.website || ""}
+                      placeholder="https://example.com"
+                      data-testid="input-website"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    name="notes"
+                    defaultValue={editingContact?.notes || ""}
+                    placeholder="Additional notes or information"
+                    data-testid="input-notes"
+                    rows={3}
+                  />
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDialogOpen(false);
+                      setEditingContact(null);
+                    }}
+                    data-testid="button-cancel"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                    data-testid="button-submit-contact"
+                  >
+                    {editingContact ? "Update Contact" : "Create Contact"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <div className="flex gap-4 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search contacts by name, email, or company..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-contacts"
+            />
+          </div>
+
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-48" data-testid="select-filter-type">
+              <SelectValue placeholder="Filter by type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="internal">Internal</SelectItem>
+              <SelectItem value="contractor">Contractor</SelectItem>
+              <SelectItem value="lead">Lead</SelectItem>
+              <SelectItem value="company">Company</SelectItem>
+              <SelectItem value="partner">Partner</SelectItem>
+              <SelectItem value="vendor">Vendor</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {!filteredContacts || filteredContacts.length === 0 ? (
+          <Card>
+            <CardContent className="p-12 text-center">
+              <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">
+                {searchTerm || filterType !== "all" ? "No Contacts Found" : "No Contacts Yet"}
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                {searchTerm || filterType !== "all"
+                  ? "Try adjusting your search or filters"
+                  : "Get started by adding your first contact"}
+              </p>
+              {!searchTerm && filterType === "all" && (
+                <Button onClick={() => setDialogOpen(true)} data-testid="button-add-first-contact">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Your First Contact
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredContacts.map((contact) => (
+              <Card key={contact.id} className="hover-elevate" data-testid={`card-contact-${contact.id}`}>
+                <CardContent className="p-6 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <Avatar>
+                        <AvatarImage src={contact.profileImageUrl || undefined} />
+                        <AvatarFallback className="bg-primary/10 text-primary">
+                          {getInitials(contact.firstName, contact.lastName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold truncate" data-testid={`text-name-${contact.id}`}>
+                          {contact.firstName} {contact.lastName}
+                        </h3>
+                        <Badge
+                          variant={contactTypeBadgeVariants[contact.type]}
+                          className="mt-1"
+                          data-testid={`badge-type-${contact.id}`}
+                        >
+                          {contactTypeLabels[contact.type]}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditingContact(contact);
+                          setDialogOpen(true);
+                        }}
+                        data-testid={`button-edit-${contact.id}`}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          if (confirm("Are you sure you want to delete this contact?")) {
+                            deleteMutation.mutate(contact.id);
+                          }
+                        }}
+                        data-testid={`button-delete-${contact.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    {contact.companyName && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{contact.companyName}</span>
+                      </div>
+                    )}
+
+                    {contact.jobTitle && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Briefcase className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{contact.jobTitle}</span>
+                      </div>
+                    )}
+
+                    {contact.email && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="w-4 h-4 shrink-0" />
+                        <span className="truncate" data-testid={`text-email-${contact.id}`}>
+                          {contact.email}
+                        </span>
+                      </div>
+                    )}
+
+                    {contact.phone && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="w-4 h-4 shrink-0" />
+                        <span className="truncate" data-testid={`text-phone-${contact.id}`}>
+                          {contact.countryCode} {contact.phone}
+                        </span>
+                      </div>
+                    )}
+
+                    {contact.city && contact.state && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <MapPin className="w-4 h-4 shrink-0" />
+                        <span className="truncate">
+                          {contact.city}, {contact.state}
+                        </span>
+                      </div>
+                    )}
+
+                    {contact.website && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Globe className="w-4 h-4 shrink-0" />
+                        <a
+                          href={contact.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate hover:text-primary transition-colors"
+                        >
+                          {contact.website}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

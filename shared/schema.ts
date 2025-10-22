@@ -38,6 +38,7 @@ export const assetConditionEnum = pgEnum("asset_condition", ["excellent", "good"
 export const inspectionPointDataTypeEnum = pgEnum("inspection_point_data_type", ["text", "number", "checkbox", "photo", "rating"]);
 export const conditionRatingEnum = pgEnum("condition_rating", ["excellent", "good", "fair", "poor", "not_applicable"]);
 export const cleanlinessRatingEnum = pgEnum("cleanliness_rating", ["very_clean", "clean", "acceptable", "needs_cleaning", "not_applicable"]);
+export const contactTypeEnum = pgEnum("contact_type", ["internal", "contractor", "lead", "company", "partner", "vendor", "other"]);
 
 // User storage table
 export const users = pgTable("users", {
@@ -106,6 +107,41 @@ export const insertOrganizationSchema = createInsertSchema(organizations).omit({
 });
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+
+// Contacts (Internal team members and external contacts)
+export const contacts = pgTable("contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  type: contactTypeEnum("type").notNull().default("other"),
+  firstName: varchar("first_name").notNull(),
+  lastName: varchar("last_name").notNull(),
+  email: varchar("email"),
+  phone: varchar("phone"),
+  countryCode: varchar("country_code").default("+1"),
+  companyName: varchar("company_name"),
+  jobTitle: varchar("job_title"),
+  address: text("address"),
+  city: varchar("city"),
+  state: varchar("state"),
+  postalCode: varchar("postal_code"),
+  country: varchar("country"),
+  website: varchar("website"),
+  notes: text("notes"),
+  profileImageUrl: varchar("profile_image_url"),
+  tags: text("tags").array(),
+  linkedUserId: varchar("linked_user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertContactSchema = createInsertSchema(contacts).omit({
+  id: true,
+  organizationId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type Contact = typeof contacts.$inferSelect;
+export type InsertContact = z.infer<typeof insertContactSchema>;
 
 // Blocks (Buildings/Complexes)
 export const blocks = pgTable("blocks", {
@@ -647,5 +683,16 @@ export const assetInventoryRelations = relations(assetInventory, ({ one }) => ({
   block: one(blocks, {
     fields: [assetInventory.blockId],
     references: [blocks.id],
+  }),
+}));
+
+export const contactsRelations = relations(contacts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [contacts.organizationId],
+    references: [organizations.id],
+  }),
+  linkedUser: one(users, {
+    fields: [contacts.linkedUserId],
+    references: [users.id],
   }),
 }));

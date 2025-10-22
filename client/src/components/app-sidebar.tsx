@@ -12,6 +12,7 @@ import {
   Clipboard,
   Package,
   List,
+  Contact,
 } from "lucide-react";
 import {
   Sidebar,
@@ -96,6 +97,12 @@ export function AppSidebar() {
       url: "/team",
       icon: Users,
       roles: ["owner"],
+    },
+    {
+      title: "Contacts",
+      url: "/contacts",
+      icon: Contact,
+      roles: ["owner", "clerk", "compliance"],
     },
     {
       title: "Credits",

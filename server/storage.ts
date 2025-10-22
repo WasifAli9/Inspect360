@@ -1,6 +1,7 @@
 import {
   users,
   organizations,
+  contacts,
   blocks,
   properties,
   inspections,
@@ -23,6 +24,8 @@ import {
   type UpsertUser,
   type Organization,
   type InsertOrganization,
+  type Contact,
+  type InsertContact,
   type Block,
   type InsertBlock,
   type Property,
@@ -83,6 +86,13 @@ export interface IStorage {
   updateOrganizationCredits(id: string, credits: number): Promise<Organization>;
   updateOrganizationStripe(id: string, customerId: string, status: string): Promise<Organization>;
   
+  // Contact operations
+  createContact(contact: InsertContact & { organizationId: string }): Promise<Contact>;
+  getContactsByOrganization(organizationId: string): Promise<Contact[]>;
+  getContact(id: string): Promise<Contact | undefined>;
+  updateContact(id: string, updates: Partial<InsertContact>): Promise<Contact>;
+  deleteContact(id: string): Promise<void>;
+  
   // Property operations (Properties ARE units in the new schema)
   createProperty(property: InsertProperty): Promise<Property>;
   getPropertiesByOrganization(organizationId: string): Promise<Property[]>;
@@ -134,7 +144,7 @@ export interface IStorage {
   getCreditTransactions(organizationId: string): Promise<CreditTransaction[]>;
 
   // Block operations
-  createBlock(block: InsertBlock): Promise<Block>;
+  createBlock(block: InsertBlock & { organizationId: string }): Promise<Block>;
   getBlocksByOrganization(organizationId: string): Promise<Block[]>;
   getBlocksWithStats(organizationId: string): Promise<any[]>;
   getBlock(id: string): Promise<Block | undefined>;
@@ -321,6 +331,38 @@ export class DatabaseStorage implements IStorage {
       .where(eq(organizations.id, id))
       .returning();
     return org;
+  }
+
+  // Contact operations
+  async createContact(contactData: InsertContact & { organizationId: string }): Promise<Contact> {
+    const [contact] = await db.insert(contacts).values(contactData).returning();
+    return contact;
+  }
+
+  async getContactsByOrganization(organizationId: string): Promise<Contact[]> {
+    return await db
+      .select()
+      .from(contacts)
+      .where(eq(contacts.organizationId, organizationId))
+      .orderBy(contacts.lastName, contacts.firstName);
+  }
+
+  async getContact(id: string): Promise<Contact | undefined> {
+    const [contact] = await db.select().from(contacts).where(eq(contacts.id, id));
+    return contact;
+  }
+
+  async updateContact(id: string, updates: Partial<InsertContact>): Promise<Contact> {
+    const [contact] = await db
+      .update(contacts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(contacts.id, id))
+      .returning();
+    return contact;
+  }
+
+  async deleteContact(id: string): Promise<void> {
+    await db.delete(contacts).where(eq(contacts.id, id));
   }
 
   // Property operations
@@ -752,7 +794,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Block operations
-  async createBlock(blockData: InsertBlock): Promise<Block> {
+  async createBlock(blockData: InsertBlock & { organizationId: string }): Promise<Block> {
     const [block] = await db.insert(blocks).values(blockData).returning();
     return block;
   }

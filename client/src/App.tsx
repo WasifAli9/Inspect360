@@ -27,6 +27,7 @@ import WorkOrders from "@/pages/WorkOrders";
 import Settings from "@/pages/Settings";
 import AssetInventory from "@/pages/AssetInventory";
 import InspectionTemplates from "@/pages/InspectionTemplates";
+import Contacts from "@/pages/Contacts";
 import { Button } from "@/components/ui/button";
 import { LogOut, Loader2 } from "lucide-react";
 
@@ -102,6 +103,7 @@ function AppContent() {
                 <Route path="/work-orders" component={WorkOrders} />
                 <Route path="/comparisons" component={Comparisons} />
                 <Route path="/team" component={Team} />
+                <Route path="/contacts" component={Contacts} />
                 <Route path="/asset-inventory" component={AssetInventory} />
                 <Route path="/inspection-templates" component={InspectionTemplates} />
                 <Route path="/settings" component={Settings} />

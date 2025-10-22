@@ -9,6 +9,7 @@ import Stripe from "stripe";
 import OpenAI from "openai";
 import {
   insertBlockSchema,
+  insertContactSchema,
   insertInventoryTemplateSchema,
   insertInventorySchema,
   insertInventoryItemSchema,
@@ -187,6 +188,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating user role:", error);
       res.status(500).json({ message: "Failed to update user role" });
+    }
+  });
+
+  // ==================== CONTACT ROUTES ====================
+
+  app.get("/api/contacts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+      
+      const contacts = await storage.getContactsByOrganization(user.organizationId);
+      res.json(contacts);
+    } catch (error) {
+      console.error("Error fetching contacts:", error);
+      res.status(500).json({ error: "Failed to fetch contacts" });
+    }
+  });
+
+  app.get("/api/contacts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+      
+      const contact = await storage.getContact(req.params.id);
+      
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      
+      if (contact.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      res.json(contact);
+    } catch (error) {
+      console.error("Error fetching contact:", error);
+      res.status(500).json({ error: "Failed to fetch contact" });
+    }
+  });
+
+  app.post("/api/contacts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+      
+      const validation = insertContactSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: "Invalid request data", details: validation.error });
+      }
+      
+      const contact = await storage.createContact({
+        ...validation.data,
+        organizationId: user.organizationId
+      });
+      
+      res.status(201).json(contact);
+    } catch (error) {
+      console.error("Error creating contact:", error);
+      res.status(500).json({ error: "Failed to create contact" });
+    }
+  });
+
+  app.patch("/api/contacts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+      
+      const contact = await storage.getContact(req.params.id);
+      
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      
+      if (contact.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      const { organizationId: _, ...updateData } = req.body;
+      
+      const updatedContact = await storage.updateContact(req.params.id, updateData);
+      res.json(updatedContact);
+    } catch (error) {
+      console.error("Error updating contact:", error);
+      res.status(500).json({ error: "Failed to update contact" });
+    }
+  });
+
+  app.delete("/api/contacts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+      
+      const contact = await storage.getContact(req.params.id);
+      
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      
+      if (contact.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      await storage.deleteContact(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting contact:", error);
+      res.status(500).json({ error: "Failed to delete contact" });
     }
   });
 
@@ -1547,16 +1675,10 @@ Provide a structured comparison highlighting differences in condition ratings an
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Validate request body (partial update) with Zod
-      const parseResult = insertAssetInventorySchema.partial().safeParse(req.body);
-      if (!parseResult.success) {
-        return res.status(400).json({ 
-          error: "Invalid request data", 
-          details: parseResult.error.errors 
-        });
-      }
+      // Remove organizationId from request body (should not be updated)
+      const { organizationId: _, ...updateData } = req.body;
 
-      const asset = await storage.updateAssetInventory(req.params.id, parseResult.data);
+      const asset = await storage.updateAssetInventory(req.params.id, updateData);
       res.json(asset);
     } catch (error: any) {
       console.error("Error updating asset inventory:", error);
