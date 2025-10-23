@@ -687,3 +687,146 @@ export const contactsRelations = relations(contacts, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// Tags system
+export const tags = pgTable("tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: varchar("name").notNull(),
+  color: varchar("color"), // Hex color code for the tag
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Tag join tables
+export const blockTags = pgTable("block_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  blockId: varchar("block_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const propertyTags = pgTable("property_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const userTags = pgTable("user_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const complianceDocumentTags = pgTable("compliance_document_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  complianceDocumentId: varchar("compliance_document_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const assetInventoryTags = pgTable("asset_inventory_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assetInventoryId: varchar("asset_inventory_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const maintenanceRequestTags = pgTable("maintenance_request_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  maintenanceRequestId: varchar("maintenance_request_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Tag schemas
+export const insertTagSchema = createInsertSchema(tags).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type Tag = typeof tags.$inferSelect;
+export type InsertTag = z.infer<typeof insertTagSchema>;
+
+// Tag relations
+export const tagsRelations = relations(tags, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [tags.organizationId],
+    references: [organizations.id],
+  }),
+  blockTags: many(blockTags),
+  propertyTags: many(propertyTags),
+  userTags: many(userTags),
+  complianceDocumentTags: many(complianceDocumentTags),
+  assetInventoryTags: many(assetInventoryTags),
+  maintenanceRequestTags: many(maintenanceRequestTags),
+}));
+
+export const blockTagsRelations = relations(blockTags, ({ one }) => ({
+  block: one(blocks, {
+    fields: [blockTags.blockId],
+    references: [blocks.id],
+  }),
+  tag: one(tags, {
+    fields: [blockTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const propertyTagsRelations = relations(propertyTags, ({ one }) => ({
+  property: one(properties, {
+    fields: [propertyTags.propertyId],
+    references: [properties.id],
+  }),
+  tag: one(tags, {
+    fields: [propertyTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const userTagsRelations = relations(userTags, ({ one }) => ({
+  user: one(users, {
+    fields: [userTags.userId],
+    references: [users.id],
+  }),
+  tag: one(tags, {
+    fields: [userTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const complianceDocumentTagsRelations = relations(complianceDocumentTags, ({ one }) => ({
+  complianceDocument: one(complianceDocuments, {
+    fields: [complianceDocumentTags.complianceDocumentId],
+    references: [complianceDocuments.id],
+  }),
+  tag: one(tags, {
+    fields: [complianceDocumentTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const assetInventoryTagsRelations = relations(assetInventoryTags, ({ one }) => ({
+  assetInventory: one(assetInventory, {
+    fields: [assetInventoryTags.assetInventoryId],
+    references: [assetInventory.id],
+  }),
+  tag: one(tags, {
+    fields: [assetInventoryTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const maintenanceRequestTagsRelations = relations(maintenanceRequestTags, ({ one }) => ({
+  maintenanceRequest: one(maintenanceRequests, {
+    fields: [maintenanceRequestTags.maintenanceRequestId],
+    references: [maintenanceRequests.id],
+  }),
+  tag: one(tags, {
+    fields: [maintenanceRequestTags.tagId],
+    references: [tags.id],
+  }),
+}));
