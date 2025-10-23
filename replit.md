@@ -42,9 +42,19 @@ The platform follows a PWA-first approach with a robust web architecture.
 - **Performance**: Optimized database queries (e.g., `getBlocksWithStats` uses batched queries) and Zod validation for robust API error handling.
 
 ### Feature Specifications
-- **Core Modules**: Properties, Blocks, Inspections, Compliance, Maintenance, Credit Management, Asset Inventory, Contacts.
+- **Core Modules**: Properties, Blocks, Inspections, Compliance, Maintenance, Credit Management, Asset Inventory, Contacts, Tagging System.
 - **Asset Inventory**: Track physical assets and equipment across properties and blocks with photos, supplier information, purchase dates, condition tracking (excellent, good, fair, poor, needs_replacement), and expected lifespan. Supports filtering by property or block, full CRUD operations, and image uploads via Uppy.
 - **Contacts Management**: Comprehensive contact management system for tracking internal team members and external contacts (contractors, leads, companies, partners, vendors). Features include contact type categorization, full profile details (name, company, contact info, location, job title, notes), search and filtering by type/name/company, card-based UI with avatars and badges, and full CRUD operations. Accessible to owner, clerk, and compliance roles.
+- **Tagging System (October 2025 - In Progress)**: Comprehensive tagging infrastructure for organizing and searching all entities. Features include:
+  - **Tag Management**: Create, edit, and delete tags with customizable colors. Tags are organization-scoped.
+  - **Backend Infrastructure**: Complete backend implementation with full CRUD API routes for tags and tag-entity associations for Blocks, Properties, Users, Compliance Documents, Asset Inventory, and Maintenance Requests.
+  - **Database Schema**: Tags table with many-to-many join tables (block_tags, property_tags, user_tags, compliance_document_tags, asset_inventory_tags, maintenance_request_tags) fully implemented and synced to database.
+  - **Global Search**: Functional TagSearch component accessible from Dashboard that searches across all entity types and displays categorized results.
+  - **Reusable Components**: TagInput component with autocomplete, tag creation, and badge display ready for use in entity forms.
+  - **Current Integration Status**: 
+    - ✅ Blocks: Full tag assignment UI integrated in create/edit forms
+    - ⏳ Properties, Users, Compliance Documents, Asset Inventory, Maintenance Requests: Backend ready, frontend integration pending
+  - **Extension Pattern**: The TagInput component and tag persistence logic from Blocks serves as a reusable pattern for integrating tags into remaining entity forms.
 - **Dashboards**: Role-specific dashboards with KPIs (properties, blocks, inspections, credits, compliance status).
 - **Tenant Portal**: Secure access to property-specific reports and maintenance request submission.
 - **Team Management**: Owner-controlled user and role management.

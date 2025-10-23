@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle, Search, Package, ClipboardCheck, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { TagInput } from "@/components/TagInput";
+import type { Tag } from "@shared/schema";
 
 interface BlockStats {
   totalProperties: number;
@@ -39,6 +41,7 @@ export default function Blocks() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
@@ -108,14 +111,27 @@ export default function Blocks() {
     setName("");
     setAddress("");
     setNotes("");
+    setSelectedTags([]);
     setIsCreateOpen(true);
   };
 
-  const handleOpenEdit = (block: Block) => {
+  const handleOpenEdit = async (block: Block) => {
     setEditingBlock(block);
     setName(block.name);
     setAddress(block.address);
     setNotes(block.notes || "");
+    
+    // Fetch tags for this block
+    try {
+      const res = await fetch(`/api/blocks/${block.id}/tags`, { credentials: "include" });
+      if (res.ok) {
+        const tags = await res.json();
+        setSelectedTags(tags);
+      }
+    } catch (error) {
+      console.error("Error fetching block tags:", error);
+    }
+    
     setIsCreateOpen(true);
   };
 
@@ -125,9 +141,10 @@ export default function Blocks() {
     setName("");
     setAddress("");
     setNotes("");
+    setSelectedTags([]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!name || !address) {
@@ -139,19 +156,65 @@ export default function Blocks() {
       return;
     }
 
-    if (editingBlock) {
-      updateBlockMutation.mutate({ 
-        id: editingBlock.id, 
-        name, 
-        address, 
-        notes: notes || undefined 
-      });
-    } else {
-      createBlockMutation.mutate({ 
-        name, 
-        address, 
-        notes: notes || undefined 
-      });
+    try {
+      if (editingBlock) {
+        // Update the block
+        const res = await apiRequest("PATCH", `/api/blocks/${editingBlock.id}`, { 
+          name, 
+          address, 
+          notes: notes || undefined 
+        });
+        
+        // Update tags
+        await updateBlockTags(editingBlock.id, selectedTags);
+        
+        queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+        toast({ title: "Block updated successfully" });
+        handleCloseDialog();
+      } else {
+        // Create the block
+        const res = await apiRequest("POST", "/api/blocks", { 
+          name, 
+          address, 
+          notes: notes || undefined 
+        });
+        const newBlock = await res.json();
+        
+        // Add tags to the new block
+        await updateBlockTags(newBlock.id, selectedTags);
+        
+        queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+        toast({ title: "Block created successfully" });
+        handleCloseDialog();
+      }
+    } catch (error: any) {
+      console.error("Error saving block:", error);
+      const message = error?.message || "Failed to save block";
+      toast({ title: message, variant: "destructive" });
+    }
+  };
+
+  const updateBlockTags = async (blockId: string, tags: Tag[]) => {
+    // Get current tags for the block
+    try {
+      const res = await fetch(`/api/blocks/${blockId}/tags`, { credentials: "include" });
+      const currentTags = res.ok ? await res.json() : [];
+      
+      // Remove tags that are no longer selected
+      for (const currentTag of currentTags) {
+        if (!tags.find(t => t.id === currentTag.id)) {
+          await apiRequest("DELETE", `/api/blocks/${blockId}/tags/${currentTag.id}`);
+        }
+      }
+      
+      // Add new tags
+      for (const tag of tags) {
+        if (!currentTags.find((t: Tag) => t.id === tag.id)) {
+          await apiRequest("POST", `/api/blocks/${blockId}/tags/${tag.id}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating block tags:", error);
     }
   };
 
@@ -448,6 +511,15 @@ export default function Blocks() {
                 placeholder="Additional information about this block"
                 rows={3}
                 data-testid="input-block-notes"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <TagInput
+                selectedTags={selectedTags}
+                onTagsChange={setSelectedTags}
+                placeholder="Add tags to organize this block..."
               />
             </div>
 

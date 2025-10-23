@@ -1,12 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, ClipboardCheck, FileText, CreditCard, AlertCircle } from "lucide-react";
+import { Building2, ClipboardCheck, FileText, CreditCard, AlertCircle, Search } from "lucide-react";
 import { Link } from "wouter";
+import { TagSearch } from "@/components/TagSearch";
 import type { Property, Inspection, ComplianceDocument, MaintenanceRequest, Block } from "@shared/schema";
 
 // Extended inspection type with nested property and block
@@ -19,6 +20,7 @@ type InspectionWithDetails = Inspection & {
 export default function Dashboard() {
   const { toast } = useToast();
   const { user, isLoading, isAuthenticated } = useAuth();
+  const [tagSearchOpen, setTagSearchOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -84,13 +86,25 @@ export default function Dashboard() {
   return (
     <div className="p-6 md:p-8 lg:p-12 space-y-8 md:space-y-12">
       {/* Header Section */}
-      <div className="space-y-2">
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground" data-testid="text-dashboard-title">
-          Dashboard
-        </h1>
-        <p className="text-lg text-muted-foreground">
-          Welcome back, <span className="font-medium text-foreground">{user?.firstName || user?.email}</span>
-        </p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="space-y-2">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground" data-testid="text-dashboard-title">
+            Dashboard
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            Welcome back, <span className="font-medium text-foreground">{user?.firstName || user?.email}</span>
+          </p>
+        </div>
+        <Button 
+          onClick={() => setTagSearchOpen(true)} 
+          size="lg"
+          variant="outline"
+          className="gap-2"
+          data-testid="button-search-tags"
+        >
+          <Search className="h-5 w-5" />
+          Search by Tags
+        </Button>
       </div>
 
       {/* Credits Low Alert - Glassmorphic */}
@@ -337,6 +351,9 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Tag Search Dialog */}
+      <TagSearch open={tagSearchOpen} onOpenChange={setTagSearchOpen} />
     </div>
   );
 }
