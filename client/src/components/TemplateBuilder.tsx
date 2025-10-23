@@ -129,6 +129,7 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
         description: template ? "Template updated successfully" : "Template created successfully",
       });
       onSave();
+      onClose(); // Close the modal after successful save
     },
     onError: (error: Error) => {
       toast({

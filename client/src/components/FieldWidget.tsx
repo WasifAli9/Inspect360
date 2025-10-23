@@ -183,10 +183,12 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
         imageUrl: photoUrl,
         context: `Analyze this photo for ${field.label}. Provide a detailed assessment of the condition, noting any issues, damage, or concerns.`,
       });
+      
+      const result = await response.json();
 
       setAiAnalyses((prev) => ({
         ...prev,
-        [photoUrl]: response,
+        [photoUrl]: result,
       }));
 
       toast({

@@ -53,6 +53,10 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Organization Onboarding**: Streamlined setup process.
 - **Search and Filters**: Functionality for properties and blocks.
 - **Block-Property Relationship**: Properties assigned to blocks, with associated metrics.
+- **Photo & Video Upload**: Uppy integration with Google Cloud Storage for photo, photo_array, and video field types with 10MB/100MB limits respectively.
+- **AI Photo Analysis**: OpenAI Vision API integration (1 credit per analysis) with inline results display in inspection capture.
+- **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection, manual sync, and status indicators.
+- **AI Comparison Reports**: Check-in vs check-out inspection comparisons using OpenAI (2 credits), with automatic report selection and inline display.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.

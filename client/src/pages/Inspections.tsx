@@ -86,7 +86,7 @@ export default function Inspections() {
 
   const createInspection = useMutation({
     mutationFn: async (data: CreateInspectionData) => {
-      return await apiRequest("/api/inspections", "POST", data);
+      return await apiRequest("POST", "/api/inspections", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inspections/my"] });

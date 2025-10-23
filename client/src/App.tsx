@@ -18,7 +18,7 @@ import Inspections from "@/pages/Inspections";
 import InspectionDetail from "@/pages/InspectionDetail";
 import Compliance from "@/pages/Compliance";
 import Maintenance from "@/pages/Maintenance";
-import Comparisons from "@/pages/Comparisons";
+import ComparisonReports from "@/pages/ComparisonReports";
 import OrganizationSetup from "@/pages/OrganizationSetup";
 import Team from "@/pages/Team";
 import Blocks from "@/pages/Blocks";
@@ -105,7 +105,7 @@ function AppContent() {
                 <Route path="/compliance" component={Compliance} />
                 <Route path="/maintenance" component={Maintenance} />
                 <Route path="/work-orders" component={WorkOrders} />
-                <Route path="/comparisons" component={Comparisons} />
+                <Route path="/comparisons" component={ComparisonReports} />
                 <Route path="/team" component={Team} />
                 <Route path="/contacts" component={Contacts} />
                 <Route path="/asset-inventory" component={AssetInventory} />

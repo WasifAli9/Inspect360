@@ -507,7 +507,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(inspection);
     } catch (error) {
       console.error("Error creating inspection:", error);
-      res.status(500).json({ message: "Failed to create inspection" });
+      console.error("Request body:", req.body);
+      console.error("Error details:", error instanceof Error ? error.message : String(error));
+      res.status(500).json({ 
+        message: "Failed to create inspection",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 

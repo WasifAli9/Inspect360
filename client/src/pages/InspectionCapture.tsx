@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Save, CheckCircle2, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Save, CheckCircle2, AlertCircle, Wifi, WifiOff, Cloud } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Inspection } from "@shared/schema";
 import { FieldWidget } from "@/components/FieldWidget";
+import { offlineQueue, useOnlineStatus } from "@/lib/offlineQueue";
 
 interface TemplateSection {
   id: string;
@@ -48,6 +49,9 @@ export default function InspectionCapture() {
   const { toast } = useToast();
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [entries, setEntries] = useState<Record<string, InspectionEntry>>({});
+  const isOnline = useOnlineStatus();
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Fetch inspection with template snapshot
   const { data: inspection, isLoading } = useQuery<Inspection>({
@@ -71,6 +75,55 @@ export default function InspectionCapture() {
       setEntries(entriesMap);
     }
   }, [existingEntries]);
+
+  // Update pending count periodically
+  useEffect(() => {
+    const updateCount = () => {
+      setPendingCount(offlineQueue.getPendingCount());
+    };
+    updateCount();
+    const interval = setInterval(updateCount, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-sync when coming online
+  useEffect(() => {
+    if (isOnline && pendingCount > 0 && !isSyncing) {
+      handleSync();
+    }
+  }, [isOnline]);
+
+  const handleSync = async () => {
+    if (isSyncing || pendingCount === 0) return;
+    
+    setIsSyncing(true);
+    try {
+      const result = await offlineQueue.syncAll(apiRequest);
+      if (result.success > 0) {
+        toast({
+          title: "Sync Complete",
+          description: `${result.success} ${result.success === 1 ? 'entry' : 'entries'} synced successfully`,
+        });
+        queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
+      }
+      if (result.failed > 0) {
+        toast({
+          variant: "destructive",
+          title: "Sync Issues",
+          description: `${result.failed} ${result.failed === 1 ? 'entry' : 'entries'} failed to sync`,
+        });
+      }
+      setPendingCount(offlineQueue.getPendingCount());
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Sync Failed",
+        description: "Unable to sync offline entries",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Parse template structure from snapshot
   const templateStructure = inspection?.templateSnapshotJson as { sections: TemplateSection[] } | null;
@@ -141,6 +194,40 @@ export default function InspectionCapture() {
       if (!note && (!photos || photos.length === 0)) {
         return; // Nothing to save
       }
+    }
+
+    // If offline, queue the entry
+    if (!isOnline) {
+      offlineQueue.enqueue({
+        inspectionId: id!,
+        sectionRef: currentSection.id,
+        fieldKey,
+        fieldType: field.type,
+        valueJson: value,
+        note,
+        photos,
+      });
+      
+      // Update local state optimistically
+      setEntries(prev => ({
+        ...prev,
+        [entryKey]: {
+          sectionRef: currentSection.id,
+          fieldKey,
+          fieldType: field.type,
+          valueJson: value,
+          note,
+          photos,
+        }
+      }));
+      
+      setPendingCount(offlineQueue.getPendingCount());
+      
+      toast({
+        title: "Saved Offline",
+        description: "Entry will sync when connection is restored",
+      });
+      return;
     }
 
     const entry: InspectionEntry = {
@@ -265,6 +352,37 @@ export default function InspectionCapture() {
           </p>
         </div>
         <div className="flex items-center gap-4">
+          {/* Online/Offline status */}
+          <Badge 
+            variant={isOnline ? "default" : "secondary"}
+            data-testid="badge-online-status"
+            className="gap-2"
+          >
+            {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+            {isOnline ? "Online" : "Offline"}
+          </Badge>
+          
+          {/* Pending sync count */}
+          {pendingCount > 0 && (
+            <Badge variant="outline" data-testid="badge-pending-sync">
+              <Cloud className="w-3 h-3 mr-1" />
+              {pendingCount} pending
+            </Badge>
+          )}
+          
+          {/* Manual sync button */}
+          {isOnline && pendingCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSync}
+              disabled={isSyncing}
+              data-testid="button-sync"
+            >
+              {isSyncing ? "Syncing..." : "Sync Now"}
+            </Button>
+          )}
+          
           <Badge variant="secondary" data-testid="badge-progress">
             {completedFields} / {totalFields} fields
           </Badge>
