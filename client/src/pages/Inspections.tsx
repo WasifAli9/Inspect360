@@ -68,8 +68,7 @@ export default function Inspections() {
 
   // Fetch active templates filtered by property scope
   const { data: templates = [] } = useQuery<any[]>({
-    queryKey: ["/api/inspection-templates", { scope: "property", active: "true" }],
-    enabled: true,
+    queryKey: ["/api/inspection-templates?scope=property&active=true"],
   });
 
   const form = useForm<CreateInspectionData>({
@@ -78,7 +77,7 @@ export default function Inspections() {
       propertyId: "",
       type: "routine",
       scheduledDate: new Date().toISOString().split("T")[0],
-      templateId: "",
+      templateId: "__none__",
       clerkId: "",
       notes: "",
     },
@@ -108,7 +107,20 @@ export default function Inspections() {
   });
 
   const onSubmit = (data: CreateInspectionData) => {
-    createInspection.mutate(data);
+    // Create payload and remove sentinel values
+    const payload: any = { ...data };
+    
+    // Remove templateId if it's the sentinel or empty
+    if (payload.templateId === "__none__" || !payload.templateId) {
+      delete payload.templateId;
+    }
+    
+    // Remove clerkId if it's the sentinel or empty
+    if (payload.clerkId === "__none__" || !payload.clerkId) {
+      delete payload.clerkId;
+    }
+    
+    createInspection.mutate(payload);
   };
 
   const getStatusBadge = (status: string) => {
@@ -227,14 +239,14 @@ export default function Inspections() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Template (Optional)</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value || "__none__"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-template">
-                            <SelectValue placeholder="Select template" />
+                            <SelectValue placeholder="No template" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">No Template</SelectItem>
+                          <SelectItem value="__none__">No Template</SelectItem>
                           {templates.map((template: any) => (
                             <SelectItem key={template.id} value={template.id}>
                               {template.name}
