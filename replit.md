@@ -84,3 +84,65 @@ The platform follows a PWA-first approach with a robust web architecture.
 - **Shadcn UI**: UI component library.
 - **Tailwind CSS**: Utility-first CSS framework.
 - **Uppy**: File upload library.
+
+### Inspection Templates System (October 2025 - In Progress)
+Comprehensive JSON-based inspection template system with flexible structure editor, offline support, and AI integration.
+
+**Architecture**:
+- **JSON-First Design**: Templates use a flexible `structureJson` field instead of normalized tables, allowing dynamic field types and validation rules
+- **Database Tables**: 
+  - `inspection_templates`: Template metadata with JSON structure (replacing old `inspection_template_points`)
+  - `template_categories`: Optional categorization with color-coding
+  - `template_inventory_links`: Bind templates to inventory templates for auto-generation
+  - `inspection_entries`: Field-level data capture with offline sync support
+  - `ai_image_analyses`: AI-powered photo analysis results
+- **Versioning**: Templates support versioning with `parentTemplateId` and incremental `version` numbers for template evolution
+- **Snapshot System**: Inspections store `templateSnapshotJson` and `inventorySnapshotJson` at creation time to preserve structure even if templates change
+
+**Template Builder UI (Task 4 - Complete)**:
+- Full-screen visual editor for creating/editing templates
+- **Metadata Editor**: Configure name, description, scope (property/block/both), category, active status
+- **Structure Builder**: Visual interface for sections and fields
+  - Add/remove/reorder sections with drag-and-drop indicators
+  - Collapsible sections for better organization
+  - Repeatable sections (e.g., multiple bedrooms)
+  - Section descriptions for inspector guidance
+- **Field Editor**: Rich field configuration within each section
+  - 15 supported field types: short_text, long_text, number, rating (1-5), select, multiselect, boolean, date, time, datetime, photo, photo[], video, gps, signature
+  - Required field toggle
+  - Placeholder and option configuration
+  - Validation rules and conditional visibility (depends_on)
+- **Preview Mode**: JSON structure preview for debugging
+- **Responsive Design**: Works on desktop and tablet devices
+- **Component**: `TemplateBuilder.tsx` with collapsible sections and field management
+
+**Templates List Page**:
+- Card-based grid layout showing all templates
+- Filter by category and active status
+- Template cards display: name, description, category badge, scope, version number, active toggle
+- Quick actions: Edit, Clone (create new version), Delete
+- Category management dialog with color picker
+- Empty state with CTA for first template creation
+
+**API Routes (21 endpoints)**:
+- Template Categories: GET, POST, PUT, DELETE
+- Inspection Templates: GET (list with filtering), GET (single), POST, PUT, DELETE, POST (clone for versioning)
+- Template Inventory Links: GET (by template), POST, DELETE
+- Inspection Entries: GET (by inspection), GET (single), POST, POST (batch with conflict resolution), PUT, DELETE
+- AI Image Analyses: GET (by inspection), GET (by entry), POST (with OpenAI integration and credit deduction)
+
+**Key Features**:
+- **Offline Sync**: Batch entry creation with idempotent conflict resolution using `offlineId` unique constraint
+- **AI Integration**: OpenAI GPT-5 Vision analysis with credit management (1 credit per photo)
+- **Role-Based Access**: Owner/Clerk can create/edit, Compliance can view
+- **Template Cloning**: Easy versioning by cloning with auto-incremented version number
+- **Active/Inactive Toggle**: Hide unused templates without deletion
+- **Query Filtering**: Filter templates by scope, category, and active status
+- **Zod Validation**: All API inputs validated with Drizzle-Zod schemas
+
+**Pending Tasks**:
+- Task 5: Templates list page enhancements (filtering UI)
+- Task 6: Update inspection creation flow to support template selection and snapshot creation
+- Tasks 7-18: Inspector capture UI, field widgets, offline queue, review screens, comparison reports
+- Task 19: Full documentation update
+- Task 20: End-to-end testing

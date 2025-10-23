@@ -211,6 +211,7 @@ export const templateCategories = pgTable("template_categories", {
   organizationId: varchar("organization_id").notNull(),
   name: varchar("name").notNull(),
   description: text("description"),
+  color: varchar("color").default("#5AB5E8"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

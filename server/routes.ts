@@ -7,6 +7,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import Stripe from "stripe";
 import OpenAI from "openai";
+import { devRouter } from "./devRoutes";
 import {
   insertBlockSchema,
   insertContactSchema,
@@ -48,6 +49,11 @@ function getOpenAI(): OpenAI {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
+
+  // ==================== DEV ROUTES (Development Only) ====================
+  if (process.env.NODE_ENV === "development") {
+    app.use("/api/dev", devRouter);
+  }
 
   // ==================== AUTH ROUTES ====================
   
@@ -432,12 +438,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "No organization found" });
       }
 
-      const { name, description, isActive } = req.body;
+      const { name, description, scope, categoryId, isActive, structureJson, version } = req.body;
+      
+      // Validate required fields
+      if (!name || !scope || !structureJson) {
+        return res.status(400).json({ error: "Missing required fields: name, scope, and structureJson are required" });
+      }
+
       const template = await storage.createInspectionTemplate({
         organizationId: user.organizationId,
+        createdBy: userId,
         name,
-        description,
+        description: description || null,
+        scope,
+        categoryId: categoryId || null,
         isActive: isActive !== undefined ? isActive : true,
+        structureJson: typeof structureJson === 'string' ? structureJson : JSON.stringify(structureJson),
+        version: version || 1,
       });
 
       res.json(template);
