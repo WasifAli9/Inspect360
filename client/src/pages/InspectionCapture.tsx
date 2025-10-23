@@ -182,7 +182,7 @@ export default function InspectionCapture() {
 
   // Handle field value change
   const handleFieldChange = (fieldKey: string, value: any, note?: string | undefined, photos?: string[] | undefined) => {
-    const field = currentSection.fields.find(f => f.id === fieldKey);
+    const field = currentSection.fields.find(f => f.key === fieldKey);
     if (!field) return;
 
     const entryKey = `${currentSection.id}-${fieldKey}`;
@@ -438,19 +438,19 @@ export default function InspectionCapture() {
           </CardHeader>
           <CardContent className="space-y-6">
             {currentSection.fields.map((field) => {
-              const entryKey = `${currentSection.id}-${field.id}`;
+              const entryKey = `${currentSection.id}-${field.key}`;
               const entry = entries[entryKey];
 
               return (
                 <FieldWidget
-                  key={field.id}
+                  key={field.key}
                   field={field}
                   value={entry?.valueJson}
                   note={entry?.note}
                   photos={entry?.photos}
                   inspectionId={id}
                   entryId={entry?.id}
-                  onChange={(value: any, note?: string, photos?: string[]) => handleFieldChange(field.id, value, note, photos)}
+                  onChange={(value: any, note?: string, photos?: string[]) => handleFieldChange(field.key, value, note, photos)}
                 />
               );
             })}

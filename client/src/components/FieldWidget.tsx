@@ -214,7 +214,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             value={value || ""}
             onChange={(e) => handleValueChange(e.target.value)}
             placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
-            data-testid={`input-${field.id}`}
+            data-testid={`input-${field.key}`}
           />
         );
 
@@ -225,7 +225,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             onChange={(e) => handleValueChange(e.target.value)}
             placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
             rows={4}
-            data-testid={`textarea-${field.id}`}
+            data-testid={`textarea-${field.key}`}
           />
         );
 
@@ -236,7 +236,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             value={value || ""}
             onChange={(e) => handleValueChange(parseFloat(e.target.value) || 0)}
             placeholder={field.placeholder || "Enter number"}
-            data-testid={`input-number-${field.id}`}
+            data-testid={`input-number-${field.key}`}
           />
         );
 
@@ -249,7 +249,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
                 type="button"
                 onClick={() => handleValueChange(rating)}
                 className="focus:outline-none"
-                data-testid={`button-rating-${rating}-${field.id}`}
+                data-testid={`button-rating-${rating}-${field.key}`}
               >
                 <Star
                   className={`w-8 h-8 ${
@@ -271,7 +271,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
       case "select":
         return (
           <Select value={value || ""} onValueChange={handleValueChange}>
-            <SelectTrigger data-testid={`select-${field.id}`}>
+            <SelectTrigger data-testid={`select-${field.key}`}>
               <SelectValue placeholder={field.placeholder || "Select an option"} />
             </SelectTrigger>
             <SelectContent>
@@ -312,7 +312,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
                 }
               }}
             >
-              <SelectTrigger data-testid={`select-multiselect-${field.id}`}>
+              <SelectTrigger data-testid={`select-multiselect-${field.key}`}>
                 <SelectValue placeholder="Add option..." />
               </SelectTrigger>
               <SelectContent>
@@ -334,7 +334,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             <Checkbox
               checked={value || false}
               onCheckedChange={handleValueChange}
-              data-testid={`checkbox-${field.id}`}
+              data-testid={`checkbox-${field.key}`}
             />
             <label className="text-sm cursor-pointer">
               {field.placeholder || "Yes"}
@@ -350,7 +350,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               type="date"
               value={value || ""}
               onChange={(e) => handleValueChange(e.target.value)}
-              data-testid={`input-date-${field.id}`}
+              data-testid={`input-date-${field.key}`}
             />
           </div>
         );
@@ -363,7 +363,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               type="time"
               value={value || ""}
               onChange={(e) => handleValueChange(e.target.value)}
-              data-testid={`input-time-${field.id}`}
+              data-testid={`input-time-${field.key}`}
             />
           </div>
         );
@@ -374,7 +374,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             type="datetime-local"
             value={value || ""}
             onChange={(e) => handleValueChange(e.target.value)}
-            data-testid={`input-datetime-${field.id}`}
+            data-testid={`input-datetime-${field.key}`}
           />
         );
 
@@ -446,7 +446,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               variant="outline"
               onClick={() => setShowPhotoUpload(true)}
               disabled={field.type === "photo" && localPhotos.length >= 1}
-              data-testid={`button-upload-photo-${field.id}`}
+              data-testid={`button-upload-photo-${field.key}`}
             >
               <Upload className="w-4 h-4 mr-2" />
               {localPhotos.length > 0 ? "Add More Photos" : "Upload Photo"}
@@ -469,14 +469,14 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
                 src={value}
                 controls
                 className="w-full max-h-64 rounded-lg"
-                data-testid={`video-preview-${field.id}`}
+                data-testid={`video-preview-${field.key}`}
               />
             )}
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowPhotoUpload(true)}
-              data-testid={`button-upload-video-${field.id}`}
+              data-testid={`button-upload-video-${field.key}`}
             >
               <Upload className="w-4 h-4 mr-2" />
               {value ? "Replace Video" : "Upload Video"}
@@ -499,7 +499,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               value={value || ""}
               onChange={(e) => handleValueChange(e.target.value)}
               placeholder="Latitude, Longitude"
-              data-testid={`input-gps-${field.id}`}
+              data-testid={`input-gps-${field.key}`}
             />
           </div>
         );
@@ -529,14 +529,14 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             value={value || ""}
             onChange={(e) => handleValueChange(e.target.value)}
             placeholder={field.placeholder || "Enter value"}
-            data-testid={`input-default-${field.id}`}
+            data-testid={`input-default-${field.key}`}
           />
         );
     }
   };
 
   return (
-    <div className="space-y-3" data-testid={`field-widget-${field.id}`}>
+    <div className="space-y-3" data-testid={`field-widget-${field.key}`}>
       <Label className="text-base font-medium flex items-center gap-2">
         {field.label}
         {field.required && <span className="text-destructive">*</span>}
@@ -546,17 +546,17 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
 
       {/* Optional notes */}
       <div className="pt-2">
-        <Label htmlFor={`note-${field.id}`} className="text-sm text-muted-foreground">
+        <Label htmlFor={`note-${field.key}`} className="text-sm text-muted-foreground">
           Notes (optional)
         </Label>
         <Textarea
-          id={`note-${field.id}`}
+          id={`note-${field.key}`}
           value={localNote}
           onChange={(e) => handleNoteChange(e.target.value)}
           placeholder="Add any observations or notes..."
           rows={2}
           className="mt-1"
-          data-testid={`textarea-note-${field.id}`}
+          data-testid={`textarea-note-${field.key}`}
         />
       </div>
     </div>
