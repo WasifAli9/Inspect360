@@ -10,6 +10,10 @@ import {
   inspectionTemplates,
   inspectionTemplatePoints,
   inspectionResponses,
+  templateCategories,
+  templateInventoryLinks,
+  inspectionEntries,
+  aiImageAnalyses,
   complianceDocuments,
   maintenanceRequests,
   comparisonReports,
@@ -50,6 +54,14 @@ import {
   type InsertInspectionTemplatePoint,
   type InspectionResponse,
   type InsertInspectionResponse,
+  type TemplateCategory,
+  type InsertTemplateCategory,
+  type TemplateInventoryLink,
+  type InsertTemplateInventoryLink,
+  type InspectionEntry,
+  type InsertInspectionEntry,
+  type AiImageAnalysis,
+  type InsertAiImageAnalysis,
   type ComplianceDocument,
   type InsertComplianceDocument,
   type MaintenanceRequest,
@@ -215,12 +227,43 @@ export interface IStorage {
   updateInspectionTemplatePoint(id: string, updates: Partial<InsertInspectionTemplatePoint>): Promise<InspectionTemplatePoint>;
   deleteInspectionTemplatePoint(id: string): Promise<void>;
 
-  // Inspection Response operations
+  // Inspection Response operations (Legacy - kept for backward compatibility)
   createInspectionResponse(response: InsertInspectionResponse): Promise<InspectionResponse>;
   getInspectionResponses(inspectionId: string): Promise<InspectionResponse[]>;
   getInspectionResponse(id: string): Promise<InspectionResponse | undefined>;
   updateInspectionResponse(id: string, updates: Partial<InsertInspectionResponse>): Promise<InspectionResponse>;
   deleteInspectionResponse(id: string): Promise<void>;
+
+  // Template Category operations
+  createTemplateCategory(category: InsertTemplateCategory): Promise<TemplateCategory>;
+  getTemplateCategoriesByOrganization(organizationId: string): Promise<TemplateCategory[]>;
+  getTemplateCategory(id: string): Promise<TemplateCategory | undefined>;
+  updateTemplateCategory(id: string, updates: Partial<InsertTemplateCategory>): Promise<TemplateCategory>;
+  deleteTemplateCategory(id: string): Promise<void>;
+
+  // Template Inventory Link operations
+  createTemplateInventoryLink(link: InsertTemplateInventoryLink): Promise<TemplateInventoryLink>;
+  getTemplateInventoryLinks(templateId: string): Promise<TemplateInventoryLink[]>;
+  deleteTemplateInventoryLink(id: string): Promise<void>;
+
+  // Inspection Entry operations (New JSON-based system)
+  createInspectionEntry(entry: InsertInspectionEntry): Promise<InspectionEntry>;
+  createInspectionEntriesBatch(entries: InsertInspectionEntry[]): Promise<InspectionEntry[]>;
+  getInspectionEntries(inspectionId: string): Promise<InspectionEntry[]>;
+  getInspectionEntry(id: string): Promise<InspectionEntry | undefined>;
+  updateInspectionEntry(id: string, updates: Partial<InsertInspectionEntry>): Promise<InspectionEntry>;
+  deleteInspectionEntry(id: string): Promise<void>;
+  getEntriesByOfflineId(offlineId: string): Promise<InspectionEntry | undefined>;
+
+  // AI Image Analysis operations
+  createAiImageAnalysis(analysis: InsertAiImageAnalysis): Promise<AiImageAnalysis>;
+  getAiImageAnalysesByInspection(inspectionId: string): Promise<AiImageAnalysis[]>;
+  getAiImageAnalysesByEntry(entryId: string): Promise<AiImageAnalysis[]>;
+  getAiImageAnalysis(id: string): Promise<AiImageAnalysis | undefined>;
+
+  // Inspection Snapshot operations
+  updateInspectionSnapshots(id: string, templateSnapshot: any, inventorySnapshot: any, version: number): Promise<Inspection>;
+  getInspectionWithSnapshots(id: string): Promise<Inspection | undefined>;
 
   // Tag operations
   createTag(tag: InsertTag): Promise<Tag>;
@@ -1670,6 +1713,175 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return created;
     }
+  }
+
+  // Template Category operations
+  async createTemplateCategory(categoryData: InsertTemplateCategory): Promise<TemplateCategory> {
+    const [category] = await db.insert(templateCategories).values(categoryData).returning();
+    return category;
+  }
+
+  async getTemplateCategoriesByOrganization(organizationId: string): Promise<TemplateCategory[]> {
+    return await db
+      .select()
+      .from(templateCategories)
+      .where(eq(templateCategories.organizationId, organizationId))
+      .orderBy(desc(templateCategories.createdAt));
+  }
+
+  async getTemplateCategory(id: string): Promise<TemplateCategory | undefined> {
+    const [category] = await db.select().from(templateCategories).where(eq(templateCategories.id, id));
+    return category;
+  }
+
+  async updateTemplateCategory(id: string, updates: Partial<InsertTemplateCategory>): Promise<TemplateCategory> {
+    const [updated] = await db
+      .update(templateCategories)
+      .set(updates)
+      .where(eq(templateCategories.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTemplateCategory(id: string): Promise<void> {
+    await db.delete(templateCategories).where(eq(templateCategories.id, id));
+  }
+
+  // Template Inventory Link operations
+  async createTemplateInventoryLink(linkData: InsertTemplateInventoryLink): Promise<TemplateInventoryLink> {
+    const [link] = await db.insert(templateInventoryLinks).values(linkData).returning();
+    return link;
+  }
+
+  async getTemplateInventoryLinks(templateId: string): Promise<TemplateInventoryLink[]> {
+    return await db
+      .select()
+      .from(templateInventoryLinks)
+      .where(eq(templateInventoryLinks.templateId, templateId));
+  }
+
+  async deleteTemplateInventoryLink(id: string): Promise<void> {
+    await db.delete(templateInventoryLinks).where(eq(templateInventoryLinks.id, id));
+  }
+
+  // Inspection Entry operations (New JSON-based system)
+  async createInspectionEntry(entryData: InsertInspectionEntry): Promise<InspectionEntry> {
+    const [entry] = await db.insert(inspectionEntries).values(entryData).returning();
+    return entry;
+  }
+
+  async createInspectionEntriesBatch(entriesData: InsertInspectionEntry[]): Promise<InspectionEntry[]> {
+    if (entriesData.length === 0) return [];
+    // Use onConflictDoUpdate to handle offline sync retries idempotently
+    // If offlineId exists, update the entry; otherwise insert new
+    const entries = await db
+      .insert(inspectionEntries)
+      .values(entriesData)
+      .onConflictDoUpdate({
+        target: inspectionEntries.offlineId,
+        set: {
+          sectionRef: sql`EXCLUDED.section_ref`,
+          itemRef: sql`EXCLUDED.item_ref`,
+          fieldKey: sql`EXCLUDED.field_key`,
+          fieldType: sql`EXCLUDED.field_type`,
+          valueJson: sql`EXCLUDED.value_json`,
+          note: sql`EXCLUDED.note`,
+          photos: sql`EXCLUDED.photos`,
+          videos: sql`EXCLUDED.videos`,
+          maintenanceFlag: sql`EXCLUDED.maintenance_flag`,
+          defectsJson: sql`EXCLUDED.defects_json`,
+          updatedAt: new Date()
+        }
+      })
+      .returning();
+    return entries;
+  }
+
+  async getInspectionEntries(inspectionId: string): Promise<InspectionEntry[]> {
+    return await db
+      .select()
+      .from(inspectionEntries)
+      .where(eq(inspectionEntries.inspectionId, inspectionId))
+      .orderBy(inspectionEntries.createdAt);
+  }
+
+  async getInspectionEntry(id: string): Promise<InspectionEntry | undefined> {
+    const [entry] = await db.select().from(inspectionEntries).where(eq(inspectionEntries.id, id));
+    return entry;
+  }
+
+  async updateInspectionEntry(id: string, updates: Partial<InsertInspectionEntry>): Promise<InspectionEntry> {
+    const [updated] = await db
+      .update(inspectionEntries)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(inspectionEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteInspectionEntry(id: string): Promise<void> {
+    await db.delete(inspectionEntries).where(eq(inspectionEntries.id, id));
+  }
+
+  async getEntriesByOfflineId(offlineId: string): Promise<InspectionEntry | undefined> {
+    const [entry] = await db
+      .select()
+      .from(inspectionEntries)
+      .where(eq(inspectionEntries.offlineId, offlineId));
+    return entry;
+  }
+
+  // AI Image Analysis operations
+  async createAiImageAnalysis(analysisData: InsertAiImageAnalysis): Promise<AiImageAnalysis> {
+    const [analysis] = await db.insert(aiImageAnalyses).values(analysisData).returning();
+    return analysis;
+  }
+
+  async getAiImageAnalysesByInspection(inspectionId: string): Promise<AiImageAnalysis[]> {
+    return await db
+      .select()
+      .from(aiImageAnalyses)
+      .where(eq(aiImageAnalyses.inspectionId, inspectionId))
+      .orderBy(desc(aiImageAnalyses.createdAt));
+  }
+
+  async getAiImageAnalysesByEntry(entryId: string): Promise<AiImageAnalysis[]> {
+    return await db
+      .select()
+      .from(aiImageAnalyses)
+      .where(eq(aiImageAnalyses.inspectionEntryId, entryId))
+      .orderBy(desc(aiImageAnalyses.createdAt));
+  }
+
+  async getAiImageAnalysis(id: string): Promise<AiImageAnalysis | undefined> {
+    const [analysis] = await db.select().from(aiImageAnalyses).where(eq(aiImageAnalyses.id, id));
+    return analysis;
+  }
+
+  // Inspection Snapshot operations
+  async updateInspectionSnapshots(
+    id: string,
+    templateSnapshot: any,
+    inventorySnapshot: any,
+    version: number
+  ): Promise<Inspection> {
+    const [updated] = await db
+      .update(inspections)
+      .set({
+        templateSnapshotJson: templateSnapshot,
+        inventorySnapshotJson: inventorySnapshot,
+        templateVersion: version,
+        startedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(inspections.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getInspectionWithSnapshots(id: string): Promise<Inspection | undefined> {
+    const [inspection] = await db.select().from(inspections).where(eq(inspections.id, id));
+    return inspection;
   }
 }
 

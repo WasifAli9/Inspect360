@@ -447,6 +447,7 @@ export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSc
 // Maintenance Requests (Internal tracking)
 export const maintenanceRequests = pgTable("maintenance_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
   propertyId: varchar("property_id").notNull(),
   reportedBy: varchar("reported_by").notNull(),
   assignedTo: varchar("assigned_to"),
