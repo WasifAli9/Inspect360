@@ -275,6 +275,14 @@ export async function setupAuth(app: Express) {
 
 // Middleware to check if user is authenticated
 export function isAuthenticated(req: any, res: any, next: any) {
+  console.log("🔍 Auth Check:", {
+    url: req.url,
+    cookies: req.headers.cookie,
+    sessionID: req.sessionID,
+    isAuth: req.isAuthenticated(),
+    userID: req.user?.id
+  });
+  
   if (req.isAuthenticated()) {
     return next();
   }
