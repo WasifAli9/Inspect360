@@ -7,6 +7,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import Stripe from "stripe";
 import OpenAI from "openai";
+import bcrypt from "bcryptjs";
 import { devRouter } from "./devRoutes";
 import {
   insertBlockSchema,
@@ -2976,7 +2977,6 @@ Provide a structured comparison highlighting differences in condition ratings an
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      const bcrypt = require("bcryptjs");
       const isValidPassword = await bcrypt.compare(password, adminUser.password);
       
       if (!isValidPassword) {
@@ -3099,7 +3099,6 @@ Provide a structured comparison highlighting differences in condition ratings an
         return res.status(400).json({ message: "All fields are required" });
       }
 
-      const bcrypt = require("bcryptjs");
       const hashedPassword = await bcrypt.hash(password, 10);
 
       const admin = await storage.createAdmin({
@@ -3128,7 +3127,6 @@ Provide a structured comparison highlighting differences in condition ratings an
       const updateData: any = { email, firstName, lastName };
 
       if (password) {
-        const bcrypt = require("bcryptjs");
         updateData.password = await bcrypt.hash(password, 10);
       }
 

@@ -46,7 +46,7 @@ export default function AdminTeam() {
   });
 
   // Fetch current admin user
-  const { data: currentAdmin } = useQuery({
+  const { data: currentAdmin, isLoading: isLoadingAdmin } = useQuery({
     queryKey: ["/api/admin/me"],
     retry: false,
   });
@@ -66,8 +66,8 @@ export default function AdminTeam() {
       }
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/team"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/team"] });
       setCreateDialog(false);
       setFormData({ email: "", password: "", firstName: "", lastName: "" });
       toast({
@@ -96,8 +96,8 @@ export default function AdminTeam() {
       if (!response.ok) throw new Error("Failed to update admin");
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/team"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/team"] });
       setEditDialog(false);
       toast({
         title: "Admin Updated",
@@ -118,8 +118,8 @@ export default function AdminTeam() {
         throw new Error(error.message || "Failed to delete admin");
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/team"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/team"] });
       setDeleteDialog(false);
       setSelectedAdmin(null);
       toast({
@@ -181,6 +181,19 @@ export default function AdminTeam() {
     }
   };
 
+  // Show loading state while checking authentication
+  if (isLoadingAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect to login if not authenticated
   if (!currentAdmin) {
     navigate("/admin/login");
     return null;

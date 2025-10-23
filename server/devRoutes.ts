@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { storage } from "./storage";
 import { hashPassword } from "./auth";
+import bcrypt from "bcryptjs";
 
 const router = Router();
 
@@ -82,7 +83,6 @@ router.post("/seed-admin", async (req, res) => {
   }
 
   try {
-    const bcrypt = require("bcryptjs");
     const hashedPassword = await bcrypt.hash("admin123", 10);
 
     // Check if admin already exists
