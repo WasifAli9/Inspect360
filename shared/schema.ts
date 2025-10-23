@@ -38,6 +38,9 @@ export const inspectionPointDataTypeEnum = pgEnum("inspection_point_data_type", 
 export const conditionRatingEnum = pgEnum("condition_rating", ["excellent", "good", "fair", "poor", "not_applicable"]);
 export const cleanlinessRatingEnum = pgEnum("cleanliness_rating", ["very_clean", "clean", "acceptable", "needs_cleaning", "not_applicable"]);
 export const contactTypeEnum = pgEnum("contact_type", ["internal", "contractor", "lead", "company", "partner", "vendor", "other"]);
+export const templateScopeEnum = pgEnum("template_scope", ["block", "property", "both"]);
+export const fieldTypeEnum = pgEnum("field_type", ["short_text", "long_text", "number", "select", "multiselect", "boolean", "rating", "date", "time", "datetime", "photo", "photo_array", "video", "gps", "signature"]);
+export const maintenanceSourceEnum = pgEnum("maintenance_source", ["manual", "inspection", "tenant_portal", "routine"]);
 
 // User storage table
 export const users = pgTable("users", {
@@ -202,13 +205,34 @@ export const insertInspectionCategorySchema = createInsertSchema(inspectionCateg
 export type InspectionCategory = typeof inspectionCategories.$inferSelect;
 export type InsertInspectionCategory = z.infer<typeof insertInspectionCategorySchema>;
 
-// Inspection Templates
+// Template Categories (optional grouping for templates)
+export const templateCategories = pgTable("template_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTemplateCategorySchema = createInsertSchema(templateCategories).omit({
+  id: true,
+  createdAt: true,
+});
+export type TemplateCategory = typeof templateCategories.$inferSelect;
+export type InsertTemplateCategory = z.infer<typeof insertTemplateCategorySchema>;
+
+// Inspection Templates (JSON-based flexible structure)
 export const inspectionTemplates = pgTable("inspection_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
   name: varchar("name").notNull(),
   description: text("description"),
+  scope: templateScopeEnum("scope").notNull().default("property"),
+  version: integer("version").notNull().default(1),
   isActive: boolean("is_active").default(true),
+  structureJson: jsonb("structure_json").notNull(), // Full template schema with sections/fields
+  categoryId: varchar("category_id"), // Optional link to template_categories
+  createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -220,6 +244,23 @@ export const insertInspectionTemplateSchema = createInsertSchema(inspectionTempl
 });
 export type InspectionTemplate = typeof inspectionTemplates.$inferSelect;
 export type InsertInspectionTemplate = z.infer<typeof insertInspectionTemplateSchema>;
+
+// Template Inventory Links (bind templates to inventory templates)
+export const templateInventoryLinks = pgTable("template_inventory_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull(),
+  inventoryTemplateId: varchar("inventory_template_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("template_inventory_links_template_id_idx").on(table.templateId),
+]);
+
+export const insertTemplateInventoryLinkSchema = createInsertSchema(templateInventoryLinks).omit({
+  id: true,
+  createdAt: true,
+});
+export type TemplateInventoryLink = typeof templateInventoryLinks.$inferSelect;
+export type InsertTemplateInventoryLink = z.infer<typeof insertTemplateInventoryLinkSchema>;
 
 // Inspection Template Points (the items to inspect within a template)
 export const inspectionTemplatePoints = pgTable("inspection_template_points", {
@@ -246,7 +287,11 @@ export type InsertInspectionTemplatePoint = z.infer<typeof insertInspectionTempl
 // Inspections (can be on blocks OR properties)
 export const inspections = pgTable("inspections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
   templateId: varchar("template_id"), // Link to inspection template (optional for backward compatibility)
+  templateVersion: integer("template_version"), // Snapshot of template version used
+  templateSnapshotJson: jsonb("template_snapshot_json"), // Copy of template structure at inspection start
+  inventorySnapshotJson: jsonb("inventory_snapshot_json"), // Copy of inventory layout at inspection start
   // Inspection can be on either a block or a property (at least one must be set)
   blockId: varchar("block_id"),
   propertyId: varchar("property_id"),
@@ -254,11 +299,15 @@ export const inspections = pgTable("inspections", {
   type: inspectionTypeEnum("type").notNull(),
   status: inspectionStatusEnum("status").notNull().default("scheduled"),
   scheduledDate: timestamp("scheduled_date"),
+  startedAt: timestamp("started_at"), // When inspector begins capture
   completedDate: timestamp("completed_date"),
+  submittedAt: timestamp("submitted_at"), // When inspector submits
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("inspections_organization_id_idx").on(table.organizationId),
+]);
 
 export const insertInspectionSchema = createInsertSchema(inspections).omit({
   id: true,
@@ -318,6 +367,61 @@ export const insertInspectionResponseSchema = createInsertSchema(inspectionRespo
 export type InspectionResponse = typeof inspectionResponses.$inferSelect;
 export type InsertInspectionResponse = z.infer<typeof insertInspectionResponseSchema>;
 
+// Inspection Entries (new flexible JSON-based system for template inspections)
+export const inspectionEntries = pgTable("inspection_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  inspectionId: varchar("inspection_id").notNull(),
+  sectionRef: text("section_ref").notNull(), // Path to section in template (e.g., "Bedrooms/Bedroom 1")
+  itemRef: text("item_ref"), // Path to item if inventory-based (e.g., "Bedrooms/Bedroom 1/Wardrobe")
+  fieldKey: varchar("field_key").notNull(), // Field identifier from template
+  fieldType: fieldTypeEnum("field_type").notNull(),
+  valueJson: jsonb("value_json"), // Flexible value storage (text, number, boolean, array, etc.)
+  note: text("note"),
+  photos: text("photos").array(), // Array of photo URLs
+  videos: text("videos").array(), // Array of video URLs
+  maintenanceFlag: boolean("maintenance_flag").default(false),
+  defectsJson: jsonb("defects_json"), // Array of defect tags/types
+  offlineId: varchar("offline_id").unique(), // For offline sync reconciliation (unique for idempotency)
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("inspection_entries_inspection_id_idx").on(table.inspectionId),
+  index("inspection_entries_offline_id_idx").on(table.offlineId),
+]);
+
+export const insertInspectionEntrySchema = createInsertSchema(inspectionEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InspectionEntry = typeof inspectionEntries.$inferSelect;
+export type InsertInspectionEntry = z.infer<typeof insertInspectionEntrySchema>;
+
+// AI Image Analyses (results from OpenAI Vision API)
+export const aiImageAnalyses = pgTable("ai_image_analyses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  inspectionEntryId: varchar("inspection_entry_id"), // Link to entry if from inspection
+  inspectionId: varchar("inspection_id"), // Direct link to inspection for easier queries
+  mediaUrl: text("media_url").notNull(),
+  mediaType: varchar("media_type").notNull().default("photo"), // "photo" or "video"
+  model: varchar("model").notNull().default("gpt-4o"), // AI model used
+  resultJson: jsonb("result_json"), // Full AI response
+  confidence: integer("confidence"), // 0-100 confidence score
+  detectionsJson: jsonb("detections_json"), // Detected issues (mold, cracks, etc.) with bboxes
+  annotationsUrl: text("annotations_url"), // URL to annotated image if generated
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("ai_image_analyses_entry_id_idx").on(table.inspectionEntryId),
+  index("ai_image_analyses_inspection_id_idx").on(table.inspectionId),
+]);
+
+export const insertAiImageAnalysisSchema = createInsertSchema(aiImageAnalyses).omit({
+  id: true,
+  createdAt: true,
+});
+export type AiImageAnalysis = typeof aiImageAnalyses.$inferSelect;
+export type InsertAiImageAnalysis = z.infer<typeof insertAiImageAnalysisSchema>;
+
 // Compliance Documents
 export const complianceDocuments = pgTable("compliance_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -349,8 +453,11 @@ export const maintenanceRequests = pgTable("maintenance_requests", {
   title: varchar("title").notNull(),
   description: text("description"),
   status: maintenanceStatusEnum("status").notNull().default("open"),
-  priority: varchar("priority").notNull().default("medium"), // low, medium, high
+  priority: varchar("priority").notNull().default("medium"), // low, medium, high, urgent
   photoUrl: text("photo_url"),
+  source: maintenanceSourceEnum("source").notNull().default("manual"), // Track origin
+  inspectionId: varchar("inspection_id"), // Link to source inspection if auto-created
+  inspectionEntryId: varchar("inspection_entry_id"), // Link to specific entry that flagged it
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
