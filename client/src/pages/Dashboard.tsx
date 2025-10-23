@@ -1,26 +1,160 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, ClipboardCheck, FileText, CreditCard, AlertCircle, Search } from "lucide-react";
+import { 
+  Building2, 
+  ClipboardCheck, 
+  FileText, 
+  CreditCard, 
+  AlertCircle, 
+  Search, 
+  Settings,
+  TrendingUp,
+  Users,
+  Wrench,
+  Package,
+  Eye,
+  EyeOff
+} from "lucide-react";
 import { Link } from "wouter";
 import { TagSearch } from "@/components/TagSearch";
+import { 
+  BarChart, 
+  Bar, 
+  LineChart, 
+  Line, 
+  PieChart, 
+  Pie, 
+  Cell,
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from "recharts";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Property, Inspection, ComplianceDocument, MaintenanceRequest, Block } from "@shared/schema";
 
-// Extended inspection type with nested property and block
 type InspectionWithDetails = Inspection & {
   property?: Property;
   block?: Block;
   clerk?: { firstName: string | null; lastName: string | null };
 };
 
+type PanelType = 
+  | "stats" 
+  | "inspections" 
+  | "compliance" 
+  | "maintenance" 
+  | "assets"
+  | "workOrders"
+  | "inspectionTrend"
+  | "statusDistribution"
+  | "credits";
+
+interface PanelConfig {
+  id: PanelType;
+  title: string;
+  icon: any;
+  roles: string[];
+  description: string;
+}
+
+const AVAILABLE_PANELS: PanelConfig[] = [
+  { 
+    id: "stats", 
+    title: "Quick Stats", 
+    icon: TrendingUp, 
+    roles: ["owner", "clerk", "compliance"],
+    description: "Overview of properties, blocks, and inspections"
+  },
+  { 
+    id: "inspections", 
+    title: "Recent Inspections", 
+    icon: ClipboardCheck, 
+    roles: ["owner", "clerk"],
+    description: "Latest inspection activities"
+  },
+  { 
+    id: "compliance", 
+    title: "Compliance Documents", 
+    icon: FileText, 
+    roles: ["owner", "compliance"],
+    description: "Expiring compliance documents"
+  },
+  { 
+    id: "maintenance", 
+    title: "Maintenance Requests", 
+    icon: Wrench, 
+    roles: ["owner", "clerk"],
+    description: "Open maintenance requests"
+  },
+  { 
+    id: "assets", 
+    title: "Asset Inventory", 
+    icon: Package, 
+    roles: ["owner", "clerk"],
+    description: "Assets needing attention"
+  },
+  { 
+    id: "workOrders", 
+    title: "Work Orders", 
+    icon: Users, 
+    roles: ["owner", "contractor"],
+    description: "Active work orders"
+  },
+  { 
+    id: "inspectionTrend", 
+    title: "Inspection Trend", 
+    icon: TrendingUp, 
+    roles: ["owner", "clerk"],
+    description: "Inspection activity over time"
+  },
+  { 
+    id: "statusDistribution", 
+    title: "Status Distribution", 
+    icon: TrendingUp, 
+    roles: ["owner", "clerk", "compliance"],
+    description: "Distribution of inspection statuses"
+  },
+  { 
+    id: "credits", 
+    title: "AI Credits", 
+    icon: CreditCard, 
+    roles: ["owner"],
+    description: "Credit usage and balance"
+  },
+];
+
+const COLORS = ['hsl(199, 79%, 63%)', 'hsl(214, 100%, 50%)', 'hsl(142, 71%, 45%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)'];
+
 export default function Dashboard() {
   const { toast } = useToast();
   const { user, isLoading, isAuthenticated } = useAuth();
   const [tagSearchOpen, setTagSearchOpen] = useState(false);
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [viewRole, setViewRole] = useState<string>("");
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -34,7 +168,10 @@ export default function Dashboard() {
       }, 500);
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+    if (user && !viewRole) {
+      setViewRole(user.role);
+    }
+  }, [isAuthenticated, isLoading, toast, user, viewRole]);
 
   const { data: properties = [] } = useQuery<Property[]>({
     queryKey: ["/api/properties"],
@@ -61,7 +198,16 @@ export default function Dashboard() {
     enabled: isAuthenticated && (user?.role === "owner" || user?.role === "clerk"),
   });
 
-  // Fetch organization data for credits
+  const { data: assets = [] } = useQuery<any[]>({
+    queryKey: ["/api/asset-inventory"],
+    enabled: isAuthenticated && (user?.role === "owner" || user?.role === "clerk"),
+  });
+
+  const { data: workOrders = [] } = useQuery<any[]>({
+    queryKey: ["/api/work-orders"],
+    enabled: isAuthenticated,
+  });
+
   const { data: organization } = useQuery<{creditsRemaining: number | null}>({
     queryKey: ["/api/organizations", user?.organizationId],
     queryFn: async () => {
@@ -71,6 +217,71 @@ export default function Dashboard() {
     },
     enabled: isAuthenticated && !!user?.organizationId && user?.role === "owner",
   });
+
+  const { data: preferences } = useQuery<{ enabledPanels: string[] }>({
+    queryKey: ["/api/dashboard/preferences"],
+    enabled: isAuthenticated,
+  });
+
+  const updatePreferences = useMutation({
+    mutationFn: async (enabledPanels: string[]) => {
+      return await apiRequest("PUT", "/api/dashboard/preferences", { enabledPanels });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/preferences"] });
+      toast({
+        title: "Success",
+        description: "Dashboard preferences updated",
+      });
+    },
+  });
+
+  const enabledPanels = useMemo(() => {
+    if (preferences?.enabledPanels) {
+      if (typeof preferences.enabledPanels === "string") {
+        return JSON.parse(preferences.enabledPanels as any);
+      }
+      return preferences.enabledPanels;
+    }
+    return ["stats", "inspections", "compliance", "maintenance"];
+  }, [preferences]);
+
+  const availablePanelsForRole = useMemo(() => {
+    return AVAILABLE_PANELS.filter(panel => panel.roles.includes(viewRole));
+  }, [viewRole]);
+
+  const togglePanel = (panelId: PanelType) => {
+    const newPanels = enabledPanels.includes(panelId)
+      ? enabledPanels.filter((p: string) => p !== panelId)
+      : [...enabledPanels, panelId];
+    updatePreferences.mutate(newPanels);
+  };
+
+  const inspectionTrendData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      return date.toISOString().split('T')[0];
+    });
+
+    return last7Days.map(date => {
+      const count = inspections.filter(i => 
+        i.createdAt && new Date(i.createdAt).toISOString().split('T')[0] === date
+      ).length;
+      return {
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        count
+      };
+    });
+  }, [inspections]);
+
+  const statusDistributionData = useMemo(() => {
+    const statusCounts: Record<string, number> = {};
+    inspections.forEach(i => {
+      statusCounts[i.status] = (statusCounts[i.status] || 0) + 1;
+    });
+    return Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
+  }, [inspections]);
 
   if (isLoading) {
     return (
@@ -83,8 +294,13 @@ export default function Dashboard() {
   const creditsRemaining = organization?.creditsRemaining ?? 0;
   const creditsLow = creditsRemaining < 5;
 
+  const shouldShowPanel = (panelId: PanelType) => {
+    const panel = AVAILABLE_PANELS.find(p => p.id === panelId);
+    return panel && panel.roles.includes(viewRole) && enabledPanels.includes(panelId);
+  };
+
   return (
-    <div className="p-6 md:p-8 lg:p-12 space-y-8 md:space-y-12">
+    <div className="p-6 md:p-8 lg:p-12 space-y-8">
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="space-y-2">
@@ -95,22 +311,84 @@ export default function Dashboard() {
             Welcome back, <span className="font-medium text-foreground">{user?.firstName || user?.email}</span>
           </p>
         </div>
-        <Button 
-          onClick={() => setTagSearchOpen(true)} 
-          size="lg"
-          variant="outline"
-          className="gap-2"
-          data-testid="button-search-tags"
-        >
-          <Search className="h-5 w-5" />
-          Search by Tags
-        </Button>
+        <div className="flex items-center gap-3">
+          {user?.role === "owner" && (
+            <Select value={viewRole} onValueChange={setViewRole}>
+              <SelectTrigger className="w-48" data-testid="select-view-role">
+                <SelectValue placeholder="View as..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="owner" data-testid="option-owner">Owner View</SelectItem>
+                <SelectItem value="clerk" data-testid="option-clerk">Clerk View</SelectItem>
+                <SelectItem value="compliance" data-testid="option-compliance">Compliance View</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="lg" className="gap-2" data-testid="button-configure-panels">
+                <Settings className="h-5 w-5" />
+                Configure
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Configure Dashboard Panels</DialogTitle>
+                <DialogDescription>
+                  Select which panels you want to see on your dashboard
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                {availablePanelsForRole.map((panel) => {
+                  const Icon = panel.icon;
+                  const isEnabled = enabledPanels.includes(panel.id);
+                  return (
+                    <div 
+                      key={panel.id} 
+                      className="flex items-start gap-4 p-4 border rounded-xl hover-elevate cursor-pointer"
+                      onClick={() => togglePanel(panel.id)}
+                      data-testid={`panel-config-${panel.id}`}
+                    >
+                      <Checkbox 
+                        checked={isEnabled} 
+                        onCheckedChange={() => togglePanel(panel.id)}
+                        data-testid={`checkbox-panel-${panel.id}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Icon className="h-4 w-4 text-primary" />
+                          <span className="font-semibold">{panel.title}</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{panel.description}</p>
+                      </div>
+                      {isEnabled ? (
+                        <Eye className="h-5 w-5 text-primary" />
+                      ) : (
+                        <EyeOff className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Button 
+            onClick={() => setTagSearchOpen(true)} 
+            size="lg"
+            variant="outline"
+            className="gap-2"
+            data-testid="button-search-tags"
+          >
+            <Search className="h-5 w-5" />
+            Search by Tags
+          </Button>
+        </div>
       </div>
 
-      {/* Credits Low Alert - Glassmorphic */}
+      {/* Credits Low Alert */}
       {creditsLow && user?.role === "owner" && (
-        <Card className="glass-card-strong border-destructive/30 bg-destructive/5">
-          <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-6 md:p-8">
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-6">
             <div className="flex items-center gap-4 flex-1">
               <div className="flex-shrink-0 w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
                 <AlertCircle className="w-6 h-6 text-destructive" />
@@ -123,7 +401,7 @@ export default function Dashboard() {
               </div>
             </div>
             <Link href="/credits">
-              <Button variant="destructive" size="lg" className="w-full sm:w-auto transition-smooth" data-testid="button-purchase-credits">
+              <Button variant="default" size="lg" data-testid="button-purchase-credits">
                 Purchase Credits
               </Button>
             </Link>
@@ -131,117 +409,153 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* KPI Cards Grid */}
-      <div className="grid gap-6 md:gap-8 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Properties Card */}
-        <Card className="glass-card card-hover-lift">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Properties</CardTitle>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Building2 className="h-5 w-5 text-primary" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl md:text-4xl font-bold tracking-tight" data-testid="text-properties-count">{properties.length}</div>
-            <p className="text-sm text-muted-foreground mt-2">Total managed buildings</p>
-          </CardContent>
-        </Card>
-
-        {/* Blocks Card */}
-        <Card className="glass-card card-hover-lift">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Blocks</CardTitle>
-            <div className="w-10 h-10 rounded-xl bg-chart-3/10 flex items-center justify-center">
-              <Building2 className="h-5 w-5 text-chart-3" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl md:text-4xl font-bold tracking-tight" data-testid="text-blocks-count">{blocks.length}</div>
-            <p className="text-sm text-muted-foreground mt-2">Total blocks</p>
-          </CardContent>
-        </Card>
-
-        {/* Inspections Card */}
-        <Card className="glass-card card-hover-lift">
-          <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Inspections</CardTitle>
-            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
-              <ClipboardCheck className="h-5 w-5 text-accent" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl md:text-4xl font-bold tracking-tight" data-testid="text-inspections-count">{inspections.length}</div>
-            <p className="text-sm text-muted-foreground mt-2">
-              {user?.role === "clerk" ? "Assigned to you" : "Total inspections"}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Credits Card (Owner Only) */}
-        {user?.role === "owner" && (
-          <Card className={`glass-card card-hover-lift ${creditsLow ? 'border-destructive/30 bg-destructive/5' : ''}`}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Credits</CardTitle>
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${creditsLow ? 'bg-destructive/10' : 'bg-accent/10'}`}>
-                <CreditCard className={`h-5 w-5 ${creditsLow ? 'text-destructive' : 'text-accent'}`} />
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 md:gap-8">
+        {/* Quick Stats Panel */}
+        {shouldShowPanel("stats") && (
+          <Card className="xl:col-span-3" data-testid="panel-stats">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                <TrendingUp className="h-6 w-6 text-primary" />
+                Quick Stats
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl md:text-4xl font-bold tracking-tight" data-testid="text-credits-remaining">
-                {creditsRemaining}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-6 bg-card/50 rounded-xl border" data-testid="stat-properties">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-primary" />
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold">{properties.length}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Properties</p>
+                </div>
+                <div className="p-6 bg-card/50 rounded-xl border" data-testid="stat-blocks">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-primary" />
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold">{blocks.length}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Blocks</p>
+                </div>
+                <div className="p-6 bg-card/50 rounded-xl border" data-testid="stat-inspections">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <ClipboardCheck className="w-5 h-5 text-primary" />
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold">{inspections.length}</p>
+                  <p className="text-sm text-muted-foreground mt-1">Inspections</p>
+                </div>
+                {user?.role === "owner" && (
+                  <div className="p-6 bg-card/50 rounded-xl border" data-testid="stat-credits">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                        <CreditCard className="w-5 h-5 text-primary" />
+                      </div>
+                    </div>
+                    <p className="text-3xl font-bold">{creditsRemaining}</p>
+                    <p className="text-sm text-muted-foreground mt-1">AI Credits</p>
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-muted-foreground mt-2">AI inspection credits</p>
             </CardContent>
           </Card>
         )}
 
-        {/* Expiring Soon Card (Compliance Only) */}
-        {user?.role === "compliance" && (
-          <Card className="glass-card card-hover-lift">
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Expiring Soon</CardTitle>
-              <div className="w-10 h-10 rounded-xl bg-chart-1/10 flex items-center justify-center">
-                <FileText className="h-5 w-5 text-chart-1" />
-              </div>
+        {/* Inspection Trend Chart */}
+        {shouldShowPanel("inspectionTrend") && (
+          <Card className="lg:col-span-2" data-testid="panel-inspection-trend">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold">Inspection Activity (Last 7 Days)</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl md:text-4xl font-bold tracking-tight" data-testid="text-expiring-count">{compliance.length}</div>
-              <p className="text-xs text-muted-foreground">Compliance documents</p>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={inspectionTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                  <YAxis stroke="hsl(var(--muted-foreground))" />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '0.75rem'
+                    }} 
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="count" 
+                    stroke="hsl(199, 79%, 63%)" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(199, 79%, 63%)', r: 4 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
         )}
-      </div>
 
-      {/* Clerk Inspections List */}
-      {user?.role === "clerk" && (
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold">My Inspections</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {inspections.length === 0 ? (
-              <div className="text-center py-12">
-                <ClipboardCheck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">No inspections assigned to you.</p>
-              </div>
-            ) : (
+        {/* Status Distribution Chart */}
+        {shouldShowPanel("statusDistribution") && (
+          <Card data-testid="panel-status-distribution">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold">Inspection Status</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={statusDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {statusDistributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--background))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '0.75rem'
+                    }} 
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Recent Inspections */}
+        {shouldShowPanel("inspections") && inspections.length > 0 && (
+          <Card className="lg:col-span-2" data-testid="panel-inspections">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                <ClipboardCheck className="h-6 w-6 text-primary" />
+                Recent Inspections
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-3">
                 {inspections.slice(0, 5).map((inspection) => (
                   <Link key={inspection.id} href={`/inspections/${inspection.id}`}>
                     <div
-                      className="flex items-center justify-between gap-4 p-5 border border-border/50 rounded-2xl hover-elevate cursor-pointer transition-smooth bg-card/50"
+                      className="flex items-center justify-between gap-4 p-5 border rounded-xl hover-elevate cursor-pointer transition-all bg-card/50"
                       data-testid={`card-inspection-${inspection.id}`}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-lg truncate">{inspection.type} Inspection</p>
-                        <p className="text-sm text-muted-foreground truncate mt-1">
-                          {inspection.property?.name || inspection.block?.name}
+                        <p className="font-semibold text-lg truncate">
+                          {inspection.property?.name || inspection.block?.name || "Unknown Property"}
                         </p>
-                        {inspection.scheduledDate && (
-                          <p className="text-xs text-muted-foreground truncate mt-1">
-                            {new Date(inspection.scheduledDate).toLocaleDateString()}
-                          </p>
-                        )}
+                        <p className="text-sm text-muted-foreground truncate mt-1">
+                          {inspection.type} • {new Date(inspection.scheduledDate).toLocaleDateString()}
+                        </p>
                       </div>
                       <Badge
                         variant={
@@ -260,97 +574,180 @@ export default function Dashboard() {
                   </Link>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Owner Recent Inspections */}
-      {user?.role === "owner" && inspections.length > 0 && (
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold">Recent Inspections</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {inspections.slice(0, 5).map((inspection) => (
-                <Link key={inspection.id} href={`/inspections/${inspection.id}`}>
-                  <div
-                    className="flex items-center justify-between gap-4 p-5 border border-border/50 rounded-2xl hover-elevate cursor-pointer transition-smooth bg-card/50"
-                    data-testid={`card-inspection-${inspection.id}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-lg truncate">{inspection.type} Inspection</p>
-                      <p className="text-sm text-muted-foreground truncate mt-1">
-                        {inspection.property?.name || inspection.block?.name}
-                      </p>
-                      {inspection.scheduledDate && (
-                        <p className="text-xs text-muted-foreground truncate mt-1">
-                          {new Date(inspection.scheduledDate).toLocaleDateString()}
+        {/* Compliance Documents */}
+        {shouldShowPanel("compliance") && compliance.length > 0 && (
+          <Card data-testid="panel-compliance">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                <FileText className="h-6 w-6 text-primary" />
+                Expiring Soon
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {compliance.slice(0, 5).map((doc) => (
+                  <Link key={doc.id} href="/compliance">
+                    <div
+                      className="flex items-center justify-between gap-4 p-5 border rounded-xl hover-elevate cursor-pointer transition-all bg-card/50"
+                      data-testid={`card-compliance-${doc.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-lg truncate">{doc.documentType}</p>
+                        <p className="text-sm text-muted-foreground truncate mt-1">
+                          Expires: {new Date(doc.expiryDate).toLocaleDateString()}
                         </p>
-                      )}
+                      </div>
+                      <Badge
+                        variant={
+                          doc.status === "current"
+                            ? "default"
+                            : doc.status === "expiring_soon"
+                            ? "secondary"
+                            : "destructive"
+                        }
+                        className="whitespace-nowrap"
+                        data-testid={`badge-status-${doc.id}`}
+                      >
+                        {doc.status}
+                      </Badge>
                     </div>
-                    <Badge
-                      variant={
-                        inspection.status === "completed"
-                          ? "default"
-                          : inspection.status === "in_progress"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className="whitespace-nowrap"
-                      data-testid={`badge-status-${inspection.id}`}
-                    >
-                      {inspection.status}
-                    </Badge>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Maintenance Requests */}
-      {(user?.role === "owner" || user?.role === "clerk") && maintenance.length > 0 && (
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold">Recent Maintenance Requests</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {maintenance.slice(0, 5).map((request) => (
-                <Link key={request.id} href="/maintenance">
-                  <div
-                    className="flex items-center justify-between gap-4 p-5 border border-border/50 rounded-2xl hover-elevate cursor-pointer transition-smooth bg-card/50"
-                    data-testid={`card-maintenance-${request.id}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-lg truncate">{request.title}</p>
-                      <p className="text-sm text-muted-foreground truncate mt-1">
-                        Priority: <span className="font-medium">{request.priority}</span>
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        request.status === "completed"
-                          ? "default"
-                          : request.status === "in_progress"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className="whitespace-nowrap"
-                      data-testid={`badge-status-${request.id}`}
+        {/* Maintenance Requests */}
+        {shouldShowPanel("maintenance") && maintenance.length > 0 && (
+          <Card data-testid="panel-maintenance">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                <Wrench className="h-6 w-6 text-primary" />
+                Maintenance Requests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {maintenance.slice(0, 5).map((request) => (
+                  <Link key={request.id} href="/maintenance">
+                    <div
+                      className="flex items-center justify-between gap-4 p-5 border rounded-xl hover-elevate cursor-pointer transition-all bg-card/50"
+                      data-testid={`card-maintenance-${request.id}`}
                     >
-                      {request.status}
-                    </Badge>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-lg truncate">{request.title}</p>
+                        <p className="text-sm text-muted-foreground truncate mt-1">
+                          Priority: <span className="font-medium">{request.priority}</span>
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          request.status === "completed"
+                            ? "default"
+                            : request.status === "in_progress"
+                            ? "secondary"
+                            : "outline"
+                        }
+                        className="whitespace-nowrap"
+                        data-testid={`badge-status-${request.id}`}
+                      >
+                        {request.status}
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Asset Inventory */}
+        {shouldShowPanel("assets") && assets.length > 0 && (
+          <Card data-testid="panel-assets">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                <Package className="h-6 w-6 text-primary" />
+                Assets Needing Attention
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {assets.filter(a => a.condition === "poor" || a.condition === "needs_replacement").slice(0, 5).map((asset) => (
+                  <Link key={asset.id} href="/inventory">
+                    <div
+                      className="flex items-center justify-between gap-4 p-5 border rounded-xl hover-elevate cursor-pointer transition-all bg-card/50"
+                      data-testid={`card-asset-${asset.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-lg truncate">{asset.name}</p>
+                        <p className="text-sm text-muted-foreground truncate mt-1">
+                          {asset.category}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={asset.condition === "needs_replacement" ? "destructive" : "secondary"}
+                        className="whitespace-nowrap"
+                        data-testid={`badge-condition-${asset.id}`}
+                      >
+                        {asset.condition}
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Work Orders */}
+        {shouldShowPanel("workOrders") && workOrders.length > 0 && (
+          <Card data-testid="panel-work-orders">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold flex items-center gap-2">
+                <Users className="h-6 w-6 text-primary" />
+                Active Work Orders
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {workOrders.filter(wo => wo.status !== "completed").slice(0, 5).map((workOrder) => (
+                  <Link key={workOrder.id} href="/work-orders">
+                    <div
+                      className="flex items-center justify-between gap-4 p-5 border rounded-xl hover-elevate cursor-pointer transition-all bg-card/50"
+                      data-testid={`card-work-order-${workOrder.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-lg truncate">{workOrder.title}</p>
+                        <p className="text-sm text-muted-foreground truncate mt-1">
+                          {workOrder.description}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={
+                          workOrder.status === "completed"
+                            ? "default"
+                            : workOrder.status === "in_progress"
+                            ? "secondary"
+                            : "outline"
+                        }
+                        className="whitespace-nowrap"
+                        data-testid={`badge-status-${workOrder.id}`}
+                      >
+                        {workOrder.status}
+                      </Badge>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Tag Search Dialog */}
       <TagSearch open={tagSearchOpen} onOpenChange={setTagSearchOpen} />
