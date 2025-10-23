@@ -41,6 +41,7 @@ const createInspectionSchema = z.object({
   propertyId: z.string().min(1, "Property is required"),
   type: z.enum(["check_in", "check_out", "routine", "maintenance"]),
   scheduledDate: z.string().min(1, "Scheduled date is required"),
+  templateId: z.string().optional(),
   clerkId: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -65,12 +66,19 @@ export default function Inspections() {
     queryKey: ["/api/users/clerks"],
   });
 
+  // Fetch active templates filtered by property scope
+  const { data: templates = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspection-templates", { scope: "property", active: "true" }],
+    enabled: true,
+  });
+
   const form = useForm<CreateInspectionData>({
     resolver: zodResolver(createInspectionSchema),
     defaultValues: {
       propertyId: "",
       type: "routine",
       scheduledDate: new Date().toISOString().split("T")[0],
+      templateId: "",
       clerkId: "",
       notes: "",
     },
@@ -206,6 +214,33 @@ export default function Inspections() {
                           <SelectItem value="check_out">Check Out</SelectItem>
                           <SelectItem value="routine">Routine</SelectItem>
                           <SelectItem value="maintenance">Maintenance</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="templateId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Template (Optional)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-template">
+                            <SelectValue placeholder="Select template" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">No Template</SelectItem>
+                          {templates.map((template: any) => (
+                            <SelectItem key={template.id} value={template.id}>
+                              {template.name}
+                              {template.version > 1 && ` (v${template.version})`}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

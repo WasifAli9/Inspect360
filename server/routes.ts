@@ -433,7 +433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.id;
       const currentUser = await storage.getUser(userId);
-      const { propertyId, blockId, type, scheduledDate, notes, clerkId } = req.body;
+      const { propertyId, blockId, type, scheduledDate, notes, clerkId, templateId } = req.body;
       
       // Must specify either propertyId OR blockId (not both)
       if ((!propertyId && !blockId) || (propertyId && blockId)) {
@@ -460,13 +460,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         inspectorId = clerkId;
       }
 
+      // Handle template snapshot creation
+      let templateSnapshotJson = null;
+      let templateVersion = null;
+      
+      if (templateId) {
+        const template = await storage.getInspectionTemplate(templateId);
+        if (!template) {
+          return res.status(404).json({ message: "Template not found" });
+        }
+        
+        // Verify template belongs to same organization
+        if (template.organizationId !== currentUser.organizationId) {
+          return res.status(403).json({ message: "Template does not belong to your organization" });
+        }
+        
+        // Verify template scope matches the inspection target
+        const isPropertyInspection = !!propertyId;
+        const isBlockInspection = !!blockId;
+        
+        if (isPropertyInspection && template.scope === 'block') {
+          return res.status(400).json({ message: "Cannot use block-scoped template for property inspection" });
+        }
+        if (isBlockInspection && template.scope === 'property') {
+          return res.status(400).json({ message: "Cannot use property-scoped template for block inspection" });
+        }
+        
+        // Create template snapshot
+        templateSnapshotJson = template.structureJson;
+        templateVersion = template.version;
+      }
+
       const inspection = await storage.createInspection({
+        organizationId: currentUser.organizationId,
         propertyId: propertyId || null,
         blockId: blockId || null,
         inspectorId,
         type,
         scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(),
         notes,
+        templateId: templateId || null,
+        templateVersion,
+        templateSnapshotJson,
       });
 
       res.json(inspection);
