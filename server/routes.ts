@@ -2523,6 +2523,38 @@ Provide a structured comparison highlighting differences in condition ratings an
     }
   });
 
+  // ==================== DASHBOARD PREFERENCES ROUTES ====================
+  
+  // Get dashboard preferences
+  app.get("/api/dashboard/preferences", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const prefs = await storage.getDashboardPreferences(userId);
+      res.json(prefs || { enabledPanels: ["stats", "inspections", "compliance", "maintenance"] });
+    } catch (error) {
+      console.error("Error fetching dashboard preferences:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard preferences" });
+    }
+  });
+
+  // Update dashboard preferences
+  app.put("/api/dashboard/preferences", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { enabledPanels } = req.body;
+      
+      if (!Array.isArray(enabledPanels)) {
+        return res.status(400).json({ error: "enabledPanels must be an array" });
+      }
+
+      const prefs = await storage.updateDashboardPreferences(userId, enabledPanels);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Error updating dashboard preferences:", error);
+      res.status(500).json({ error: "Failed to update dashboard preferences" });
+    }
+  });
+
   // ==================== OBJECT STORAGE ROUTES ====================
   
   app.get("/objects/:objectPath(*)", isAuthenticated, async (req: any, res) => {

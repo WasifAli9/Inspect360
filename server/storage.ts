@@ -27,6 +27,7 @@ import {
   complianceDocumentTags,
   assetInventoryTags,
   maintenanceRequestTags,
+  dashboardPreferences,
   type User,
   type UpsertUser,
   type Organization,
@@ -71,6 +72,8 @@ import {
   type InsertAssetInventory,
   type Tag,
   type InsertTag,
+  type DashboardPreferences,
+  type InsertDashboardPreferences,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne } from "drizzle-orm";
@@ -260,6 +263,10 @@ export interface IStorage {
     assetInventory: any[];
     maintenanceRequests: any[];
   }>;
+  
+  // Dashboard preferences operations
+  getDashboardPreferences(userId: string): Promise<any | undefined>;
+  updateDashboardPreferences(userId: string, enabledPanels: string[]): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1629,6 +1636,40 @@ export class DatabaseStorage implements IStorage {
     results.maintenanceRequests = maintenanceResult.map(r => r.request);
 
     return results;
+  }
+
+  // Dashboard preferences operations
+  async getDashboardPreferences(userId: string): Promise<DashboardPreferences | undefined> {
+    const [prefs] = await db
+      .select()
+      .from(dashboardPreferences)
+      .where(eq(dashboardPreferences.userId, userId));
+    return prefs;
+  }
+
+  async updateDashboardPreferences(userId: string, enabledPanels: string[]): Promise<DashboardPreferences> {
+    const existing = await this.getDashboardPreferences(userId);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(dashboardPreferences)
+        .set({ 
+          enabledPanels: JSON.stringify(enabledPanels),
+          updatedAt: new Date()
+        })
+        .where(eq(dashboardPreferences.userId, userId))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(dashboardPreferences)
+        .values({
+          userId,
+          enabledPanels: JSON.stringify(enabledPanels)
+        })
+        .returning();
+      return created;
+    }
   }
 }
 

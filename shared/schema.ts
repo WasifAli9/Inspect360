@@ -830,3 +830,21 @@ export const maintenanceRequestTagsRelations = relations(maintenanceRequestTags,
     references: [tags.id],
   }),
 }));
+
+// Dashboard Preferences
+export const dashboardPreferences = pgTable("dashboard_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  enabledPanels: jsonb("enabled_panels").notNull().default('["stats", "inspections", "compliance", "maintenance"]'),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDashboardPreferencesSchema = createInsertSchema(dashboardPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
+export type InsertDashboardPreferences = z.infer<typeof insertDashboardPreferencesSchema>;
