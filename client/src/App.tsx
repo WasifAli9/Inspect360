@@ -38,7 +38,7 @@ import { LogOut, Loader2 } from "lucide-react";
 
 function AppContent() {
   // Always call hooks at the top level
-  const { isAuthenticated, user, logoutMutation } = useAuth();
+  const { isAuthenticated, user, logoutMutation, isLoading } = useAuth();
 
   const style = {
     "--sidebar-width": "16rem",
@@ -46,7 +46,7 @@ function AppContent() {
   };
 
   // Not authenticated - show public routes (including admin routes)
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isLoading) {
     return (
       <TooltipProvider>
         <Switch>
@@ -60,6 +60,15 @@ function AppContent() {
         </Switch>
         <Toaster />
       </TooltipProvider>
+    );
+  }
+
+  // Show loading while checking authentication status
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
     );
   }
 

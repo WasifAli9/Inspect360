@@ -21,6 +21,22 @@ export function useAuth() {
     isLoading,
   } = useQuery<User | undefined, Error>({
     queryKey: ["/api/auth/user"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/user", {
+        credentials: "include",
+      });
+      
+      // Return null if not authenticated (don't throw)
+      if (res.status === 401) {
+        return null;
+      }
+      
+      if (!res.ok) {
+        throw new Error(`Auth check failed: ${res.statusText}`);
+      }
+      
+      return await res.json();
+    },
     retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });

@@ -306,7 +306,7 @@ export default function PropertyDetail() {
         <TabsContent value="inspections" className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Inspections</h2>
-            <Link href={`/inspections/new?propertyId=${propertyId}`}>
+            <Link href="/inspections">
               <Button data-testid="button-new-inspection">
                 <ClipboardCheck className="mr-2 h-4 w-4" />
                 New Inspection
