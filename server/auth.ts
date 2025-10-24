@@ -164,15 +164,23 @@ export async function setupAuth(app: Express) {
         req.login(user, (err) => {
           if (err) return next(err);
           
-          // Don't send password to client
-          const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
-          console.log('[LOGIN SUCCESS] User object being sent:', JSON.stringify({
-            id: userWithoutPassword.id,
-            email: userWithoutPassword.email,
-            role: userWithoutPassword.role,
-            organizationId: userWithoutPassword.organizationId,
-          }));
-          res.json(userWithoutPassword);
+          // Explicitly save the session before responding
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error('[LOGIN ERROR] Session save failed:', saveErr);
+              return next(saveErr);
+            }
+            
+            // Don't send password to client
+            const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+            console.log('[LOGIN SUCCESS] User object being sent:', JSON.stringify({
+              id: userWithoutPassword.id,
+              email: userWithoutPassword.email,
+              role: userWithoutPassword.role,
+              organizationId: userWithoutPassword.organizationId,
+            }));
+            res.json(userWithoutPassword);
+          });
         });
       })(req, res, next);
     } catch (error: any) {
