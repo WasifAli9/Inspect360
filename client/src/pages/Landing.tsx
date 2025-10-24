@@ -13,7 +13,6 @@ export default function Landing() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src={logoUrl} alt="Inspect360" className="h-10" />
-            <span className="text-2xl font-bold text-primary">Inspect360</span>
           </div>
           <Button
             onClick={() => (navigate("/auth"))}
