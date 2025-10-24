@@ -46,6 +46,14 @@ The platform employs a PWA-first approach with a robust web architecture.
 
 ### Feature Specifications
 - **Core Modules**: Properties, Blocks, Inspections, Compliance, Maintenance, Credit Management, Asset Inventory, Contacts, Tagging System.
+- **Property Detail Page**: Comprehensive BTR-focused property view with 5 tabs:
+  - **Overview Stats**: Occupancy status, compliance rate, inspection counts (due + overdue), open maintenance requests
+  - **Inspections Tab**: Shows inspector names, scheduled dates, status badges, with links to detail pages
+  - **Tenants Tab**: Displays assigned tenant users with avatars, emails, and badges
+  - **Inventory Tab**: Shows asset items with purchase dates, lifespan years, condition badges (excellent/good/fair/poor)
+  - **Compliance Tab**: Three-state expiry tracking (expired=red, expiring ≤30 days=orange, valid=green) with automatic status calculation
+  - **Maintenance Tab**: Displays requests with priority badges, reported by/assigned to names, status indicators
+  - All tabs enhanced with BTR-relevant metadata from enriched backend APIs
 - **Asset Inventory**: Tracks physical assets with detailed information, condition, and image uploads.
 - **Contacts Management**: Comprehensive system for internal and external contacts with categorization and full CRUD.
 - **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, and integration across entities like Blocks, Properties, Users, Compliance Documents, Asset Inventory, and Maintenance Requests. Features a global search.
