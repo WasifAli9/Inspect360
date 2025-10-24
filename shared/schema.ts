@@ -486,7 +486,9 @@ export const maintenanceRequests = pgTable("maintenance_requests", {
   description: text("description"),
   status: maintenanceStatusEnum("status").notNull().default("open"),
   priority: varchar("priority").notNull().default("medium"), // low, medium, high, urgent
-  photoUrl: text("photo_url"),
+  photoUrls: text("photo_urls").array(), // Multiple photo support for maintenance teams
+  aiSuggestedFixes: text("ai_suggested_fixes"), // AI-generated fix suggestions for tenant portal
+  aiAnalysisJson: jsonb("ai_analysis_json"), // Full AI analysis data
   source: maintenanceSourceEnum("source").notNull().default("manual"), // Track origin
   inspectionId: varchar("inspection_id"), // Link to source inspection if auto-created
   inspectionEntryId: varchar("inspection_entry_id"), // Link to specific entry that flagged it
