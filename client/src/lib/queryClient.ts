@@ -61,6 +61,7 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
+      refetchOnMount: true, // Refetch when component mounts (after invalidation)
       staleTime: 0, // Allow queries to refetch after invalidation
       retry: false,
     },

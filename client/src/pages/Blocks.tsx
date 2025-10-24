@@ -63,8 +63,8 @@ export default function Blocks() {
     mutationFn: async (data: { name: string; address: string; notes?: string }) => {
       return apiRequest("POST", "/api/blocks", data);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block created successfully" });
       handleCloseDialog();
     },
@@ -83,8 +83,8 @@ export default function Blocks() {
         notes: data.notes 
       });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block updated successfully" });
       handleCloseDialog();
     },
@@ -97,8 +97,8 @@ export default function Blocks() {
     mutationFn: async (id: string) => {
       return apiRequest("DELETE", `/api/blocks/${id}`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block deleted successfully" });
     },
     onError: () => {
@@ -168,7 +168,7 @@ export default function Blocks() {
         // Update tags
         await updateBlockTags(editingBlock.id, selectedTags);
         
-        queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
         toast({ title: "Block updated successfully" });
         handleCloseDialog();
       } else {
@@ -183,7 +183,7 @@ export default function Blocks() {
         // Add tags to the new block
         await updateBlockTags(newBlock.id, selectedTags);
         
-        queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
         toast({ title: "Block created successfully" });
         handleCloseDialog();
       }
