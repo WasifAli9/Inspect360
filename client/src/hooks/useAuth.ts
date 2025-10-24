@@ -31,6 +31,8 @@ export function useAuth() {
       return await res.json();
     },
     onSuccess: (user: User) => {
+      console.log('[LOGIN] User received from API:', user);
+      console.log('[LOGIN] User organizationId:', user.organizationId);
       queryClient.setQueryData(["/api/auth/user"], user);
       toast({
         title: "Welcome back!",

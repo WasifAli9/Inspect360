@@ -166,6 +166,12 @@ export async function setupAuth(app: Express) {
           
           // Don't send password to client
           const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+          console.log('[LOGIN SUCCESS] User object being sent:', JSON.stringify({
+            id: userWithoutPassword.id,
+            email: userWithoutPassword.email,
+            role: userWithoutPassword.role,
+            organizationId: userWithoutPassword.organizationId,
+          }));
           res.json(userWithoutPassword);
         });
       })(req, res, next);
