@@ -559,7 +559,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const inventory = await storage.getAssetInventoryByProperty(id);
-      res.json(inventory);
+      
+      // Enhance with formatted data for BTR managers
+      const enhancedInventory = inventory.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        category: item.supplier || 'General', // Use supplier as category for now
+        condition: item.condition,
+        quantity: 1, // Default quantity
+        datePurchased: item.datePurchased,
+        expectedLifespanYears: item.expectedLifespanYears,
+        photoUrl: item.photoUrl,
+      }));
+
+      res.json(enhancedInventory);
     } catch (error) {
       console.error("Error fetching property inventory:", error);
       res.status(500).json({ message: "Failed to fetch inventory" });
@@ -585,12 +599,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allComplianceDocs = await storage.getComplianceDocuments(user.organizationId);
       const complianceDocs = allComplianceDocs.filter((d: any) => d.propertyId === id);
       
-      // Add status based on expiry
+      // Add status based on expiry and enhance with names
       const now = new Date();
-      const enhancedDocs = complianceDocs.map((doc: any) => ({
-        ...doc,
-        status: !doc.expiryDate || new Date(doc.expiryDate) > now ? 'valid' : 'expired',
-      }));
+      const enhancedDocs = complianceDocs.map((doc: any) => {
+        let status = 'valid';
+        if (doc.expiryDate) {
+          const expiryDate = new Date(doc.expiryDate);
+          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysUntilExpiry < 0) {
+            status = 'expired';
+          } else if (daysUntilExpiry <= 30) {
+            status = 'expiring';
+          } else {
+            status = 'valid';
+          }
+        }
+        
+        return {
+          id: doc.id,
+          documentName: doc.documentType, // Use documentType as name
+          documentType: doc.documentType,
+          documentUrl: doc.documentUrl,
+          expiryDate: doc.expiryDate,
+          status,
+          uploadedAt: doc.createdAt,
+        };
+      });
 
       res.json(enhancedDocs);
     } catch (error) {
@@ -616,7 +651,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const maintenance = await storage.getMaintenanceRequestsByProperty(id);
-      res.json(maintenance);
+      
+      // Enhance with user info
+      const enhancedMaintenance = await Promise.all(maintenance.map(async (request: any) => {
+        let reportedByName = 'Unknown';
+        if (request.reportedBy) {
+          const reporter = await storage.getUser(request.reportedBy);
+          if (reporter) reportedByName = `${reporter.firstName} ${reporter.lastName}`;
+        }
+
+        let assignedToName = undefined;
+        if (request.assignedTo) {
+          const assignee = await storage.getUser(request.assignedTo);
+          if (assignee) assignedToName = `${assignee.firstName} ${assignee.lastName}`;
+        }
+
+        return {
+          id: request.id,
+          title: request.title,
+          description: request.description,
+          priority: request.priority,
+          status: request.status,
+          category: request.source || 'general', // Use source as category for now
+          createdAt: request.createdAt,
+          reportedByName,
+          assignedToName,
+          photoUrl: request.photoUrl,
+        };
+      }));
+
+      res.json(enhancedMaintenance);
     } catch (error) {
       console.error("Error fetching property maintenance:", error);
       res.status(500).json({ message: "Failed to fetch maintenance requests" });

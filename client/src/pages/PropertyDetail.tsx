@@ -52,6 +52,7 @@ interface Inspection {
   scheduledDate: string;
   status: string;
   inspectorName?: string;
+  type?: string;
 }
 
 interface InventoryItem {
@@ -60,6 +61,9 @@ interface InventoryItem {
   category: string;
   condition: string;
   quantity: number;
+  datePurchased?: string | null;
+  expectedLifespanYears?: number | null;
+  description?: string | null;
 }
 
 interface ComplianceDoc {
@@ -77,6 +81,9 @@ interface MaintenanceRequest {
   status: string;
   createdAt: string;
   category: string;
+  description?: string;
+  reportedByName?: string;
+  assignedToName?: string;
 }
 
 export default function PropertyDetail() {
@@ -320,12 +327,20 @@ export default function PropertyDetail() {
                 <Link key={inspection.id} href={`/inspections/${inspection.id}`}>
                   <Card className="hover-elevate cursor-pointer" data-testid={`card-inspection-${inspection.id}`}>
                     <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-2 flex-1">
                           <CardTitle className="text-base">{inspection.templateName}</CardTitle>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(inspection.scheduledDate).toLocaleDateString()}
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              <span>{new Date(inspection.scheduledDate).toLocaleDateString()}</span>
+                            </div>
+                            {inspection.inspectorName && (
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                <span>{inspection.inspectorName}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <Badge variant={
@@ -333,7 +348,7 @@ export default function PropertyDetail() {
                           inspection.status === 'in_progress' ? 'secondary' :
                           'outline'
                         }>
-                          {inspection.status}
+                          {inspection.status.replace('_', ' ')}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -358,13 +373,24 @@ export default function PropertyDetail() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {tenants.map((tenant) => (
-                <Card key={tenant.id} data-testid={`card-tenant-${tenant.id}`}>
+                <Card key={tenant.id} data-testid={`card-tenant-${tenant.id}`} className="hover-elevate">
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <User className="h-5 w-5 text-primary" />
-                      {tenant.firstName} {tenant.lastName}
-                    </CardTitle>
-                    <CardDescription>{tenant.email}</CardDescription>
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <User className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-base mb-1">
+                          {tenant.firstName} {tenant.lastName}
+                        </CardTitle>
+                        <CardDescription className="text-sm break-all">
+                          {tenant.email}
+                        </CardDescription>
+                        <Badge variant="outline" className="mt-2 text-xs">
+                          Tenant
+                        </Badge>
+                      </div>
+                    </div>
                   </CardHeader>
                 </Card>
               ))}
@@ -394,19 +420,32 @@ export default function PropertyDetail() {
           ) : (
             <div className="space-y-3">
               {inventory.map((item) => (
-                <Link key={item.id} href={`/asset-inventory/${item.id}`}>
-                  <Card className="hover-elevate cursor-pointer" data-testid={`card-inventory-${item.id}`}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-base">{item.name}</CardTitle>
-                          <CardDescription>{item.category}</CardDescription>
+                <Card key={item.id} data-testid={`card-inventory-${item.id}`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-2 flex-1">
+                        <CardTitle className="text-base">{item.name}</CardTitle>
+                        <CardDescription className="line-clamp-1">{item.description || item.category}</CardDescription>
+                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          {item.datePurchased && (
+                            <span>Purchased: {new Date(item.datePurchased).toLocaleDateString()}</span>
+                          )}
+                          {item.expectedLifespanYears && (
+                            <span>Lifespan: {item.expectedLifespanYears} years</span>
+                          )}
                         </div>
-                        <Badge variant="outline">{item.condition}</Badge>
                       </div>
-                    </CardHeader>
-                  </Card>
-                </Link>
+                      <Badge variant={
+                        item.condition === 'excellent' ? 'default' :
+                        item.condition === 'good' ? 'secondary' :
+                        item.condition === 'fair' ? 'outline' :
+                        'destructive'
+                      }>
+                        {item.condition}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                </Card>
               ))}
             </div>
           )}
@@ -433,35 +472,59 @@ export default function PropertyDetail() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {compliance.map((doc) => (
-                <Link key={doc.id} href={`/compliance/${doc.id}`}>
-                  <Card className="hover-elevate cursor-pointer" data-testid={`card-compliance-${doc.id}`}>
+              {compliance.map((doc) => {
+                const expiryDate = doc.expiryDate ? new Date(doc.expiryDate) : null;
+                const now = new Date();
+                const daysUntilExpiry = expiryDate ? Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
+                
+                return (
+                  <Card key={doc.id} data-testid={`card-compliance-${doc.id}`}>
                     <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-2 flex-1">
                           <CardTitle className="text-base">{doc.documentName}</CardTitle>
                           <CardDescription>{doc.documentType}</CardDescription>
-                          {doc.expiryDate && (
-                            <div className="flex items-center gap-2 text-sm">
-                              {new Date(doc.expiryDate) < new Date() ? (
-                                <AlertCircle className="h-3 w-3 text-destructive" />
-                              ) : (
-                                <CheckCircle2 className="h-3 w-3 text-green-600" />
-                              )}
-                              <span className={new Date(doc.expiryDate) < new Date() ? "text-destructive" : ""}>
-                                Expires: {new Date(doc.expiryDate).toLocaleDateString()}
-                              </span>
+                          {expiryDate && (
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2 text-sm">
+                                {doc.status === 'expired' ? (
+                                  <>
+                                    <AlertCircle className="h-3 w-3 text-destructive" />
+                                    <span className="text-destructive font-medium">
+                                      Expired {new Date(expiryDate).toLocaleDateString()}
+                                    </span>
+                                  </>
+                                ) : doc.status === 'expiring' ? (
+                                  <>
+                                    <AlertCircle className="h-3 w-3 text-orange-500" />
+                                    <span className="text-orange-500 font-medium">
+                                      Expires in {daysUntilExpiry} days ({new Date(expiryDate).toLocaleDateString()})
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                    <span className="text-muted-foreground">
+                                      Expires: {new Date(expiryDate).toLocaleDateString()}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
-                        <Badge variant={doc.status === 'valid' ? 'default' : 'destructive'}>
-                          {doc.status}
+                        <Badge variant={
+                          doc.status === 'expired' ? 'destructive' :
+                          doc.status === 'expiring' ? 'outline' :
+                          'default'
+                        }>
+                          {doc.status === 'expired' ? 'Expired' : doc.status === 'expiring' ? 'Expiring Soon' : 'Valid'}
                         </Badge>
                       </div>
                     </CardHeader>
                   </Card>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -488,33 +551,40 @@ export default function PropertyDetail() {
           ) : (
             <div className="space-y-3">
               {maintenance.map((request) => (
-                <Link key={request.id} href={`/maintenance/${request.id}`}>
-                  <Card className="hover-elevate cursor-pointer" data-testid={`card-maintenance-${request.id}`}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base">{request.title}</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">{request.category}</Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(request.createdAt).toLocaleDateString()}
-                            </span>
+                <Card key={request.id} data-testid={`card-maintenance-${request.id}`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-2 flex-1">
+                        <CardTitle className="text-base">{request.title}</CardTitle>
+                        {request.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2">{request.description}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            <span>{new Date(request.createdAt).toLocaleDateString()}</span>
                           </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <Badge variant={
-                            request.priority === 'urgent' ? 'destructive' :
-                            request.priority === 'high' ? 'default' :
-                            'secondary'
-                          }>
-                            {request.priority}
-                          </Badge>
-                          <Badge variant="outline">{request.status}</Badge>
+                          {request.reportedByName && (
+                            <span>Reported by: {request.reportedByName}</span>
+                          )}
+                          {request.assignedToName && (
+                            <span>Assigned to: {request.assignedToName}</span>
+                          )}
                         </div>
                       </div>
-                    </CardHeader>
-                  </Card>
-                </Link>
+                      <div className="flex flex-col items-end gap-2">
+                        <Badge variant={
+                          request.priority === 'urgent' ? 'destructive' :
+                          request.priority === 'high' ? 'default' :
+                          'secondary'
+                        }>
+                          {request.priority}
+                        </Badge>
+                        <Badge variant="outline">{request.status.replace('_', ' ')}</Badge>
+                      </div>
+                    </div>
+                  </CardHeader>
+                </Card>
               ))}
             </div>
           )}
