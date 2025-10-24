@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Wrench } from "lucide-react";
+import { Plus, Wrench, Upload, Sparkles, Loader2, X } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -38,6 +38,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertMaintenanceRequestSchema } from "@shared/schema";
 import type { MaintenanceRequest, Property, User } from "@shared/schema";
 import { z } from "zod";
+import Uppy from "@uppy/core";
+import AwsS3 from "@uppy/aws-s3";
+import { Dashboard } from "@uppy/react";
 
 type MaintenanceRequestWithDetails = MaintenanceRequest & {
   property?: { name: string; address: string };
@@ -56,6 +59,11 @@ export default function Maintenance() {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<string>("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [currentStep, setCurrentStep] = useState<"form" | "images" | "suggestions" | "review">("form");
+  const uppyRef = useRef<Uppy | null>(null);
 
   // Fetch maintenance requests
   const { data: requests = [], isLoading } = useQuery<MaintenanceRequestWithDetails[]>({
@@ -73,15 +81,105 @@ export default function Maintenance() {
     enabled: user?.role === "owner",
   });
 
+  // Initialize Uppy for image uploads
+  useEffect(() => {
+    if (isCreateOpen && user?.role === "tenant" && !uppyRef.current) {
+      const uppy = new Uppy({
+        restrictions: {
+          maxFileSize: 10 * 1024 * 1024, // 10MB
+          maxNumberOfFiles: 5,
+          allowedFileTypes: ["image/*"],
+        },
+        autoProceed: false,
+      });
+
+      uppy.use(AwsS3, {
+        shouldUseMultipart: false,
+        async getUploadParameters(file) {
+          const response = await fetch("/api/uploads/sign-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              contentType: file.type,
+            }),
+            credentials: "include",
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to get upload URL");
+          }
+
+          const { url, publicUrl } = await response.json();
+          return {
+            method: "PUT" as const,
+            url,
+            headers: {
+              "Content-Type": file.type || "application/octet-stream",
+            },
+            fields: {},
+          };
+        },
+      });
+
+      uppy.on("upload-success", (file, response) => {
+        if (file && file.name) {
+          const publicUrl = `${import.meta.env.VITE_PUBLIC_OBJECT_URL}/${file.name}`;
+          setUploadedImages((prev) => [...prev, publicUrl]);
+        }
+      });
+
+      uppyRef.current = uppy;
+    }
+
+    return () => {
+      if (uppyRef.current) {
+        uppyRef.current.clear();
+        uppyRef.current = null;
+      }
+    };
+  }, [isCreateOpen, user?.role]);
+
+  // AI analyze image mutation
+  const analyzeMutation = useMutation({
+    mutationFn: async ({ imageUrl, description }: { imageUrl: string; description: string }) => {
+      return apiRequest("/api/maintenance/analyze-image", "POST", {
+        imageUrl,
+        issueDescription: description,
+      });
+    },
+    onSuccess: (data: any) => {
+      setAiSuggestions(data.suggestedFixes);
+      setCurrentStep("suggestions");
+      toast({
+        title: "AI Analysis Complete",
+        description: "Review the suggested fixes below",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Analysis Failed",
+        description: error.message || "Failed to analyze image",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Create maintenance request mutation
   const createMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof createMaintenanceSchema>) => {
+    mutationFn: async (data: z.infer<typeof createMaintenanceSchema> & { 
+      photoUrls?: string[]; 
+      aiSuggestedFixes?: string;
+    }) => {
       return apiRequest("/api/maintenance", "POST", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/maintenance"] });
       setIsCreateOpen(false);
       form.reset();
+      setUploadedImages([]);
+      setAiSuggestions("");
+      setCurrentStep("form");
       toast({
         title: "Success",
         description: "Maintenance request created successfully",
@@ -128,8 +226,42 @@ export default function Maintenance() {
     },
   });
 
+  const handleImageStep = async () => {
+    if (uploadedImages.length === 0) {
+      toast({
+        title: "Image Required",
+        description: "Please upload at least one image of the issue",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Get AI analysis
+    setIsAnalyzing(true);
+    try {
+      await analyzeMutation.mutateAsync({
+        imageUrl: uploadedImages[0],
+        description: form.getValues("description") || form.getValues("title"),
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const onSubmit = (data: z.infer<typeof createMaintenanceSchema>) => {
-    createMutation.mutate({ ...data, reportedBy: user?.id || "" });
+    // For tenants, require images and show AI suggestions first
+    if (user?.role === "tenant" && currentStep === "form") {
+      setCurrentStep("images");
+      return;
+    }
+
+    // Submit with images and AI suggestions
+    createMutation.mutate({ 
+      ...data, 
+      reportedBy: user?.id || "",
+      photoUrls: uploadedImages.length > 0 ? uploadedImages : undefined,
+      aiSuggestedFixes: aiSuggestions || undefined,
+    });
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -182,106 +314,207 @@ export default function Maintenance() {
               New Request
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Create Maintenance Request</DialogTitle>
+              <DialogTitle>
+                {user?.role === "tenant" ? "Report Maintenance Issue" : "Create Maintenance Request"}
+              </DialogTitle>
               <DialogDescription>
-                Submit a new maintenance request for a property
+                {user?.role === "tenant" && currentStep === "images" 
+                  ? "Upload photos of the issue for AI analysis"
+                  : user?.role === "tenant" && currentStep === "suggestions"
+                  ? "Review AI-suggested fixes before submitting"
+                  : "Submit a new maintenance request for a property"}
               </DialogDescription>
             </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="title"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Title</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="e.g., Leaking faucet in bathroom" 
-                          {...field}
-                          data-testid="input-title"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="propertyId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Property</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+
+            {/* Tenant Multi-Step Flow */}
+            {user?.role === "tenant" ? (
+              <div className="space-y-4">
+                {/* Step 1: Basic Form */}
+                {currentStep === "form" && (
+                  <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="title"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>What's the issue?</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., Leaking faucet" data-testid="input-title" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="propertyId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Which property?</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-property">
+                                  <SelectValue placeholder="Select your property" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {properties.map((property) => (
+                                  <SelectItem key={property.id} value={property.id}>{property.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Details</FormLabel>
+                            <FormControl>
+                              <Textarea {...field} value={field.value || ""} placeholder="Describe the issue..." data-testid="input-description" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button type="submit" className="w-full">
+                        Next: Upload Photos <Upload className="w-4 h-4 ml-2" />
+                      </Button>
+                    </form>
+                  </Form>
+                )}
+
+                {/* Step 2: Image Upload */}
+                {currentStep === "images" && uppyRef.current && (
+                  <div className="space-y-4">
+                    <Dashboard uppy={uppyRef.current} proudlyDisplayPoweredByUppy={false} height={300} />
+                    <div className="flex flex-col gap-2">
+                      {uploadedImages.length > 0 && (
+                        <p className="text-sm text-muted-foreground">{uploadedImages.length} image(s) uploaded</p>
+                      )}
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setCurrentStep("form")} className="flex-1">Back</Button>
+                        <Button onClick={handleImageStep} disabled={isAnalyzing} className="flex-1">
+                          {isAnalyzing ? (
+                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...</>
+                          ) : (
+                            <><Sparkles className="w-4 h-4 mr-2" /> Get AI Suggestions</>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: AI Suggestions */}
+                {currentStep === "suggestions" && (
+                  <div className="space-y-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Sparkles className="w-5 h-5 text-primary" />
+                          AI-Suggested Fixes
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <p className="text-sm whitespace-pre-wrap">{aiSuggestions}</p>
+                      </CardContent>
+                    </Card>
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => setCurrentStep("images")} className="flex-1">Back</Button>
+                      <Button onClick={form.handleSubmit(onSubmit)} disabled={createMutation.isPending} className="flex-1">
+                        {createMutation.isPending ? "Submitting..." : "Submit Request"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Standard Form for Non-Tenants */
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Title</FormLabel>
                         <FormControl>
-                          <SelectTrigger data-testid="select-property">
-                            <SelectValue placeholder="Select a property" />
-                          </SelectTrigger>
+                          <Input {...field} placeholder="e.g., Leaking faucet" data-testid="input-title" />
                         </FormControl>
-                        <SelectContent>
-                          {properties.map((property) => (
-                            <SelectItem key={property.id} value={property.id} data-testid={`option-property-${property.id}`}>
-                              {property.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="priority"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Priority</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="propertyId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Property</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-property">
+                              <SelectValue placeholder="Select a property" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {properties.map((property) => (
+                              <SelectItem key={property.id} value={property.id}>{property.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="priority"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Priority</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-priority">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description</FormLabel>
                         <FormControl>
-                          <SelectTrigger data-testid="select-priority">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Textarea {...field} value={field.value || ""} placeholder="Provide details..." data-testid="input-description" />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="low" data-testid="option-priority-low">Low</SelectItem>
-                          <SelectItem value="medium" data-testid="option-priority-medium">Medium</SelectItem>
-                          <SelectItem value="high" data-testid="option-priority-high">High</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Provide additional details..."
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-description"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button 
-                  type="submit" 
-                  className="w-full" 
-                  disabled={createMutation.isPending}
-                  data-testid="button-submit-request"
-                >
-                  {createMutation.isPending ? "Creating..." : "Create Request"}
-                </Button>
-              </form>
-            </Form>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-request">
+                    {createMutation.isPending ? "Creating..." : "Create Request"}
+                  </Button>
+                </form>
+              </Form>
+            )}
           </DialogContent>
         </Dialog>
       </div>
