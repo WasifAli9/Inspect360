@@ -33,7 +33,8 @@ const templateMetaSchema = z.object({
 type TemplateMetaForm = z.infer<typeof templateMetaSchema>;
 
 interface TemplateField {
-  key: string;
+  id: string; // Primary identifier for the field
+  key: string; // Legacy property kept for compatibility
   label: string;
   type: string;
   required?: boolean;
@@ -87,9 +88,21 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
   const [previewMode, setPreviewMode] = useState(false);
   
   // Parse existing structure or create default
-  const initialStructure: TemplateStructure = template?.structureJson 
+  const rawStructure: TemplateStructure = template?.structureJson 
     ? (typeof template.structureJson === 'string' ? JSON.parse(template.structureJson) : template.structureJson as TemplateStructure)
     : { sections: [] };
+  
+  // Migrate old templates: ensure all fields have both id and key
+  const initialStructure: TemplateStructure = {
+    sections: rawStructure.sections.map(section => ({
+      ...section,
+      fields: section.fields.map(field => ({
+        ...field,
+        id: field.id || field.key, // Use existing id or fall back to key
+        key: field.key || field.id, // Ensure key exists too
+      })),
+    })),
+  };
 
   const [structure, setStructure] = useState<TemplateStructure>(initialStructure);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
@@ -179,8 +192,10 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
     const section = structure.sections.find((s) => s.id === sectionId);
     if (!section) return;
 
+    const fieldId = `field_${Date.now()}`;
     const newField: TemplateField = {
-      key: `field_${Date.now()}`,
+      id: fieldId,
+      key: fieldId, // Keep key same as id for compatibility
       label: "New Field",
       type: "short_text",
       required: false,
