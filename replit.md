@@ -58,6 +58,7 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Contacts Management**: Comprehensive system for internal and external contacts with categorization, full CRUD, and tag integration:
   - **Contact Tags**: Organization-scoped tag assignment via `contactTags` join table
   - **Tag Management UI**: Multi-select tag interface in contact create/edit dialog with visual badges
+  - **Inline Tag Creation**: Create new tags directly from contact form without leaving the dialog (auto-selects new tag, random color assignment)
   - **Tag Display**: Colored tag badges on contact cards with tag icon
   - **Tag Filtering**: Dropdown filter to show only contacts with specific tags
 - **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, and integration across entities like Blocks, Properties, Users, Compliance Documents, Asset Inventory, Maintenance Requests, and Contacts. Features a global search.
