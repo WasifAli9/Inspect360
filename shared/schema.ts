@@ -895,6 +895,13 @@ export const maintenanceRequestTags = pgTable("maintenance_request_tags", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const contactTags = pgTable("contact_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Tag schemas
 export const insertTagSchema = createInsertSchema(tags).omit({
   id: true,
@@ -917,6 +924,7 @@ export const tagsRelations = relations(tags, ({ one, many }) => ({
   complianceDocumentTags: many(complianceDocumentTags),
   assetInventoryTags: many(assetInventoryTags),
   maintenanceRequestTags: many(maintenanceRequestTags),
+  contactTags: many(contactTags),
 }));
 
 export const blockTagsRelations = relations(blockTags, ({ one }) => ({
@@ -981,6 +989,17 @@ export const maintenanceRequestTagsRelations = relations(maintenanceRequestTags,
   }),
   tag: one(tags, {
     fields: [maintenanceRequestTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const contactTagsRelations = relations(contactTags, ({ one }) => ({
+  contact: one(contacts, {
+    fields: [contactTags.contactId],
+    references: [contacts.id],
+  }),
+  tag: one(tags, {
+    fields: [contactTags.tagId],
     references: [tags.id],
   }),
 }));
