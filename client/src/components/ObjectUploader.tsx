@@ -4,8 +4,8 @@ import Uppy from "@uppy/core";
 import { DashboardModal } from "@uppy/react";
 import AwsS3 from "@uppy/aws-s3";
 import Webcam from "@uppy/webcam";
-// NOTE: Uppy CSS imports removed due to Vite bundling issues
-// The upload modal will be functional but may not have full styling
+// NOTE: Uppy CSS not imported due to package export issues
+// Using locale string customization to clean up the UI instead
 import type { UploadResult } from "@uppy/core";
 import { Button } from "@/components/ui/button";
 
@@ -43,7 +43,7 @@ export function ObjectUploader({
       .use(Webcam, {
         modes: ['picture'],
         facingMode: 'environment',
-      })
+      } as any)
       .use(AwsS3, {
         shouldUseMultipart: false,
         getUploadParameters: onGetUploadParameters,
@@ -65,6 +65,19 @@ export function ObjectUploader({
         onRequestClose={() => setShowModal(false)}
         proudlyDisplayPoweredByUppy={false}
         plugins={['Webcam']}
+        note=""
+        locale={{
+          strings: {
+            dropHint: '',
+            dropPasteImportBoth: '%{browseFiles} or use camera',
+            dropPasteBoth: '%{browseFiles} or use camera',
+            dropPasteFiles: '%{browseFiles} or use camera',
+            dropPasteFolders: '%{browseFiles} or use camera',
+            dropPasteImportFiles: '%{browseFiles} or use camera',
+            dropPasteImportFolders: '%{browseFiles} or use camera',
+            browseFiles: 'choose files',
+          }
+        }}
       />
     </div>
   );
