@@ -43,7 +43,7 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Asset Inventory**: Comprehensive BTR asset management with categories, detailed tracking, financial management (depreciation), condition & cleanliness ratings, maintenance tracking, warranty management, supplier info, multi-photo support, flexible assignment, search & filtering, and full CRUD operations.
 - **Contacts Management**: System for internal/external contacts with categorization, full CRUD, organization-scoped tags, tag management UI (with inline creation), tag display, and filtering.
 - **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, integrated across Blocks, Properties, Users, Compliance Documents, Asset Inventory, Maintenance Requests, and Contacts, with global search.
-- **Configurable Role-Based Dashboards**: Role-specific views with 9 panel types, user customization, persistence, charts, and owner-only role switching.
+- **Configurable Role-Based Dashboards**: Role-specific views with 9 panel types, user customization, persistence, charts, and owner-only role switching; fully mobile-optimized with responsive layouts, single-column stats on mobile, reduced chart heights (250px mobile/300px desktop), shortened button labels, and optimized spacing.
 - **Tenant Portal**: Secure access for property reports and maintenance requests.
 - **Team Management**: Comprehensive team member profiles with basic info, professional details (skills, education), address management, role assignment, account status management (active/inactive), and owner controls for full administration.
 - **Photo & Video Upload**: Uppy integration with Google Cloud Storage for photo, photo_array, and video field types (10MB/100MB limits).
