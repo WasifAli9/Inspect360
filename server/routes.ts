@@ -350,7 +350,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const contacts = await storage.getContactsByOrganization(user.organizationId);
-      res.json(contacts);
+      
+      // Fetch tags for each contact
+      const contactsWithTags = await Promise.all(
+        contacts.map(async (contact) => {
+          const tags = await storage.getTagsForContact(contact.id);
+          return { ...contact, tags };
+        })
+      );
+      
+      res.json(contactsWithTags);
     } catch (error) {
       console.error("Error fetching contacts:", error);
       res.status(500).json({ error: "Failed to fetch contacts" });

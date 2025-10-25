@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit } from "lucide-react";
-import type { Contact } from "@shared/schema";
+import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit, Tag, X } from "lucide-react";
+import type { Contact, Tag as TagType } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+type ContactWithTags = Contact & { tags: TagType[] };
 
 const contactTypeLabels: Record<string, string> = {
   internal: "Internal",
@@ -38,11 +40,17 @@ export default function Contacts() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
+  const [filterTag, setFilterTag] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [editingContact, setEditingContact] = useState<ContactWithTags | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-  const { data: contacts, isLoading } = useQuery<Contact[]>({
+  const { data: contacts, isLoading } = useQuery<ContactWithTags[]>({
     queryKey: ["/api/contacts"],
+  });
+
+  const { data: allTags } = useQuery<TagType[]>({
+    queryKey: ["/api/tags"],
   });
 
   const createMutation = useMutation({
@@ -109,7 +117,25 @@ export default function Contacts() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const addTagMutation = useMutation({
+    mutationFn: async ({ contactId, tagId }: { contactId: string; tagId: string }) => {
+      return await apiRequest("POST", `/api/contacts/${contactId}/tags/${tagId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+    },
+  });
+
+  const removeTagMutation = useMutation({
+    mutationFn: async ({ contactId, tagId }: { contactId: string; tagId: string }) => {
+      return await apiRequest("DELETE", `/api/contacts/${contactId}/tags/${tagId}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+    },
+  });
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
@@ -131,10 +157,40 @@ export default function Contacts() {
       notes: formData.get("notes") as string || undefined,
     };
 
-    if (editingContact) {
-      updateMutation.mutate({ id: editingContact.id, data });
-    } else {
-      createMutation.mutate(data);
+    try {
+      let contactId: string;
+      
+      if (editingContact) {
+        await updateMutation.mutateAsync({ id: editingContact.id, data });
+        contactId = editingContact.id;
+        
+        // Update tags: remove old tags, add new tags
+        const oldTagIds = editingContact.tags?.map(t => t.id) || [];
+        const tagsToRemove = oldTagIds.filter(id => !selectedTags.includes(id));
+        const tagsToAdd = selectedTags.filter(id => !oldTagIds.includes(id));
+        
+        for (const tagId of tagsToRemove) {
+          await removeTagMutation.mutateAsync({ contactId, tagId });
+        }
+        for (const tagId of tagsToAdd) {
+          await addTagMutation.mutateAsync({ contactId, tagId });
+        }
+      } else {
+        const result = await createMutation.mutateAsync(data);
+        contactId = result.id;
+        
+        // Add tags to new contact
+        for (const tagId of selectedTags) {
+          await addTagMutation.mutateAsync({ contactId, tagId });
+        }
+      }
+      
+      setDialogOpen(false);
+      setEditingContact(null);
+      setSelectedTags([]);
+      await queryClient.refetchQueries({ queryKey: ["/api/contacts"] });
+    } catch (error) {
+      // Error handling is done in mutations
     }
   };
 
@@ -147,7 +203,9 @@ export default function Contacts() {
 
     const matchesType = filterType === "all" || contact.type === filterType;
 
-    return matchesSearch && matchesType;
+    const matchesTag = filterTag === "all" || contact.tags?.some(tag => tag.id === filterTag);
+
+    return matchesSearch && matchesType && matchesTag;
   });
 
   const getInitials = (firstName: string, lastName: string) => {
@@ -401,6 +459,50 @@ export default function Contacts() {
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <Label>Tags</Label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {selectedTags.map((tagId) => {
+                      const tag = allTags?.find(t => t.id === tagId);
+                      if (!tag) return null;
+                      return (
+                        <Badge
+                          key={tagId}
+                          variant="outline"
+                          className="gap-1"
+                          style={{ borderColor: tag.color || undefined }}
+                          data-testid={`badge-selected-tag-${tagId}`}
+                        >
+                          {tag.name}
+                          <X
+                            className="w-3 h-3 cursor-pointer hover:text-destructive"
+                            onClick={() => setSelectedTags(prev => prev.filter(id => id !== tagId))}
+                          />
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                  <Select
+                    value=""
+                    onValueChange={(value) => {
+                      if (value && !selectedTags.includes(value)) {
+                        setSelectedTags(prev => [...prev, value]);
+                      }
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-add-tag">
+                      <SelectValue placeholder="Add a tag..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allTags?.filter(tag => !selectedTags.includes(tag.id)).map((tag) => (
+                        <SelectItem key={tag.id} value={tag.id}>
+                          {tag.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <DialogFooter>
                   <Button
                     type="button"
@@ -451,6 +553,20 @@ export default function Contacts() {
               <SelectItem value="partner">Partner</SelectItem>
               <SelectItem value="vendor">Vendor</SelectItem>
               <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterTag} onValueChange={setFilterTag}>
+            <SelectTrigger className="w-48" data-testid="select-filter-tag">
+              <SelectValue placeholder="Filter by tag" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Tags</SelectItem>
+              {allTags?.map((tag) => (
+                <SelectItem key={tag.id} value={tag.id}>
+                  {tag.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -508,6 +624,7 @@ export default function Contacts() {
                         variant="ghost"
                         onClick={() => {
                           setEditingContact(contact);
+                          setSelectedTags(contact.tags?.map(t => t.id) || []);
                           setDialogOpen(true);
                         }}
                         data-testid={`button-edit-${contact.id}`}
@@ -585,6 +702,26 @@ export default function Contacts() {
                       </div>
                     )}
                   </div>
+
+                  {contact.tags && contact.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-2 border-t">
+                      {contact.tags.map((tag) => (
+                        <Badge
+                          key={tag.id}
+                          variant="secondary"
+                          className="text-xs"
+                          style={{
+                            borderColor: tag.color || undefined,
+                            backgroundColor: tag.color ? `${tag.color}15` : undefined,
+                          }}
+                          data-testid={`badge-tag-${tag.id}`}
+                        >
+                          <Tag className="w-3 h-3 mr-1" />
+                          {tag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
