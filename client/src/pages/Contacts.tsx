@@ -44,6 +44,7 @@ export default function Contacts() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ContactWithTags | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [newTagName, setNewTagName] = useState("");
 
   const { data: contacts, isLoading } = useQuery<ContactWithTags[]>({
     queryKey: ["/api/contacts"],
@@ -134,6 +135,45 @@ export default function Contacts() {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
     },
   });
+
+  const createTagMutation = useMutation({
+    mutationFn: async (data: { name: string; color?: string }) => {
+      return await apiRequest("POST", "/api/tags", data);
+    },
+    onSuccess: async (newTag: TagType) => {
+      await queryClient.refetchQueries({ queryKey: ["/api/tags"] });
+      setSelectedTags(prev => [...prev, newTag.id]);
+      setNewTagName("");
+      toast({
+        title: "Success",
+        description: "Tag created successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to create tag",
+      });
+    },
+  });
+
+  const handleCreateTag = () => {
+    if (!newTagName.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter a tag name",
+      });
+      return;
+    }
+    
+    // Generate a random color for the new tag
+    const colors = ["#00D5CC", "#3B7A8C", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    
+    createTagMutation.mutate({ name: newTagName.trim(), color: randomColor });
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -491,7 +531,7 @@ export default function Contacts() {
                     }}
                   >
                     <SelectTrigger data-testid="select-add-tag">
-                      <SelectValue placeholder="Add a tag..." />
+                      <SelectValue placeholder="Add existing tag..." />
                     </SelectTrigger>
                     <SelectContent>
                       {allTags?.filter(tag => !selectedTags.includes(tag.id)).map((tag) => (
@@ -501,6 +541,36 @@ export default function Contacts() {
                       ))}
                     </SelectContent>
                   </Select>
+                  
+                  <div className="flex gap-2 items-end pt-2">
+                    <div className="flex-1">
+                      <Label htmlFor="new-tag-name" className="text-sm text-muted-foreground">
+                        Or create new tag
+                      </Label>
+                      <Input
+                        id="new-tag-name"
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        placeholder="Enter new tag name..."
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleCreateTag();
+                          }
+                        }}
+                        data-testid="input-new-tag-name"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleCreateTag}
+                      disabled={createTagMutation.isPending || !newTagName.trim()}
+                      data-testid="button-create-tag"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Tag
+                    </Button>
+                  </div>
                 </div>
 
                 <DialogFooter>
