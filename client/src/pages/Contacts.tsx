@@ -14,7 +14,7 @@ import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, 
 import type { Contact, Tag as TagType } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-type ContactWithTags = Contact & { tags: TagType[] };
+type ContactWithTags = Omit<Contact, 'tags'> & { tags?: TagType[] };
 
 const contactTypeLabels: Record<string, string> = {
   internal: "Internal",
@@ -56,7 +56,8 @@ export default function Contacts() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("POST", "/api/contacts", data);
+      const res = await apiRequest("POST", "/api/contacts", data);
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
@@ -78,7 +79,8 @@ export default function Contacts() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return await apiRequest("PATCH", `/api/contacts/${id}`, data);
+      const res = await apiRequest("PATCH", `/api/contacts/${id}`, data);
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
@@ -138,7 +140,8 @@ export default function Contacts() {
 
   const createTagMutation = useMutation({
     mutationFn: async (data: { name: string; color?: string }) => {
-      return await apiRequest("POST", "/api/tags", data);
+      const res = await apiRequest("POST", "/api/tags", data);
+      return await res.json() as TagType;
     },
     onSuccess: async (newTag: TagType) => {
       await queryClient.refetchQueries({ queryKey: ["/api/tags"] });
