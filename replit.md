@@ -62,3 +62,20 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Shadcn UI**: UI component library.
 - **Tailwind CSS**: Styling framework.
 - **Uppy**: File upload library.
+
+## Backend API Implementations
+- **Credit Management**:
+  - `storage.deductCredit()`: Deducts credits from organization balance with transaction logging, validates sufficient credits, throws errors for overdrafts
+  - Automatic credit transaction creation with negative amounts for usage tracking
+  - Full audit trail of all credit usage through creditTransactions table
+- **Organization Management**:
+  - `storage.updateOrganization()`: Generic update method for organization fields (subscription level, credits, active status)
+  - Used by admin routes for instance management and configuration
+- **Maintenance Requests**:
+  - Automatically includes organizationId from user session
+  - Full validation of property ownership before creation
+  - AI-powered image analysis with credit deduction using OpenAI Vision API
+- **Null Safety**:
+  - Proper null coalescing for credit checks
+  - Lazy OpenAI client initialization via getOpenAI()
+  - Type-safe session handling for admin authentication

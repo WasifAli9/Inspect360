@@ -48,11 +48,13 @@ type MaintenanceRequestWithDetails = MaintenanceRequest & {
   assignedToUser?: { firstName: string; lastName: string };
 };
 
-const createMaintenanceSchema = insertMaintenanceRequestSchema.extend({
-  title: z.string().min(1, "Title is required"),
-  propertyId: z.string().min(1, "Property is required"),
-  priority: z.enum(["low", "medium", "high"]),
-});
+const createMaintenanceSchema = insertMaintenanceRequestSchema
+  .omit({ organizationId: true }) // Backend adds this from session
+  .extend({
+    title: z.string().min(1, "Title is required"),
+    propertyId: z.string().min(1, "Property is required"),
+    priority: z.enum(["low", "medium", "high"]),
+  });
 
 export default function Maintenance() {
   const { user } = useAuth();
@@ -65,15 +67,18 @@ export default function Maintenance() {
   const [currentStep, setCurrentStep] = useState<"form" | "images" | "suggestions" | "review">("form");
   const uppyRef = useRef<Uppy | null>(null);
 
-  // Reset state when dialog closes
+  // Handle dialog state change
   const handleDialogChange = (open: boolean) => {
     setIsCreateOpen(open);
-    if (!open) {
+    if (open) {
+      // Reset form when opening dialog for a new request
+      form.reset();
       setCurrentStep("form");
       setUploadedImages([]);
       setAiSuggestions("");
-      form.reset();
     }
+    // Don't reset when closing - it would cancel any pending form submission
+    // Form will be reset in the mutation onSuccess callback after successful submission
   };
 
   // Fetch maintenance requests
@@ -158,10 +163,11 @@ export default function Maintenance() {
   // AI analyze image mutation
   const analyzeMutation = useMutation({
     mutationFn: async ({ imageUrl, description }: { imageUrl: string; description: string }) => {
-      return apiRequest("/api/maintenance/analyze-image", "POST", {
+      const res = await apiRequest("POST", "/api/maintenance/analyze-image", {
         imageUrl,
         issueDescription: description,
       });
+      return await res.json();
     },
     onSuccess: (data: any) => {
       setAiSuggestions(data.suggestedFixes);
@@ -186,7 +192,8 @@ export default function Maintenance() {
       photoUrls?: string[]; 
       aiSuggestedFixes?: string;
     }) => {
-      return apiRequest("/api/maintenance", "POST", data);
+      const res = await apiRequest("POST", "/api/maintenance", data);
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/maintenance"] });
@@ -212,7 +219,8 @@ export default function Maintenance() {
   // Update status mutation
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status, assignedTo }: { id: string; status: string; assignedTo?: string }) => {
-      return apiRequest(`/api/maintenance/${id}`, "PATCH", { status, assignedTo });
+      const res = await apiRequest("PATCH", `/api/maintenance/${id}`, { status, assignedTo });
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/maintenance"] });
@@ -271,12 +279,13 @@ export default function Maintenance() {
     }
 
     // Submit with images and AI suggestions
-    createMutation.mutate({ 
+    const payload = { 
       ...data, 
       reportedBy: user?.id || "",
       photoUrls: uploadedImages.length > 0 ? uploadedImages : undefined,
       aiSuggestedFixes: aiSuggestions || undefined,
-    });
+    };
+    createMutation.mutate(payload);
   };
 
   const getPriorityBadge = (priority: string) => {

@@ -93,6 +93,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 export interface IStorage {
   // User operations
@@ -838,9 +839,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMaintenanceByOrganization(organizationId: string): Promise<any[]> {
+    const reporterAlias = alias(users, 'reporter');
+    const assigneeAlias = alias(users, 'assignee');
+    
     return await db
       .select({
         id: maintenanceRequests.id,
+        organizationId: maintenanceRequests.organizationId,
         propertyId: maintenanceRequests.propertyId,
         reportedBy: maintenanceRequests.reportedBy,
         assignedTo: maintenanceRequests.assignedTo,
@@ -858,10 +863,20 @@ export class DatabaseStorage implements IStorage {
           name: properties.name,
           address: properties.address,
         },
+        reportedByUser: {
+          firstName: reporterAlias.firstName,
+          lastName: reporterAlias.lastName,
+        },
+        assignedToUser: {
+          firstName: assigneeAlias.firstName,
+          lastName: assigneeAlias.lastName,
+        },
       })
       .from(maintenanceRequests)
       .innerJoin(properties, eq(maintenanceRequests.propertyId, properties.id))
-      .where(eq(properties.organizationId, organizationId))
+      .leftJoin(reporterAlias, eq(maintenanceRequests.reportedBy, reporterAlias.id))
+      .leftJoin(assigneeAlias, eq(maintenanceRequests.assignedTo, assigneeAlias.id))
+      .where(eq(maintenanceRequests.organizationId, organizationId))
       .orderBy(desc(maintenanceRequests.createdAt));
   }
 

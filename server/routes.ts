@@ -1561,6 +1561,7 @@ Provide a structured comparison highlighting differences in condition ratings an
       if (!property) {
         return res.status(404).json({ message: "Property not found" });
       }
+      
       if (property.organizationId !== user.organizationId) {
         return res.status(403).json({ message: "Access denied: Property belongs to a different organization" });
       }
