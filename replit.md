@@ -55,8 +55,12 @@ The platform employs a PWA-first approach with a robust web architecture.
   - **Maintenance Tab**: Displays requests with priority badges, reported by/assigned to names, status indicators
   - All tabs enhanced with BTR-relevant metadata from enriched backend APIs
 - **Asset Inventory**: Tracks physical assets with detailed information, condition, and image uploads.
-- **Contacts Management**: Comprehensive system for internal and external contacts with categorization and full CRUD.
-- **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, and integration across entities like Blocks, Properties, Users, Compliance Documents, Asset Inventory, and Maintenance Requests. Features a global search.
+- **Contacts Management**: Comprehensive system for internal and external contacts with categorization, full CRUD, and tag integration:
+  - **Contact Tags**: Organization-scoped tag assignment via `contactTags` join table
+  - **Tag Management UI**: Multi-select tag interface in contact create/edit dialog with visual badges
+  - **Tag Display**: Colored tag badges on contact cards with tag icon
+  - **Tag Filtering**: Dropdown filter to show only contacts with specific tags
+- **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, and integration across entities like Blocks, Properties, Users, Compliance Documents, Asset Inventory, Maintenance Requests, and Contacts. Features a global search.
 - **Configurable Role-Based Dashboards**: Role-specific views with 9 panel types (stats, inspections, compliance, etc.), user customization, persistence, charts, empty states, and owner-only role switching.
 - **Tenant Portal**: Secure access for property reports and maintenance requests.
 - **Team Management**: Comprehensive team member profile management with:
