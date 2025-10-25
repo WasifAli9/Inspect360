@@ -691,10 +691,7 @@ export const insertAssetInventorySchema = createInsertSchema(assetInventory).omi
   id: true,
   createdAt: true,
   updatedAt: true,
-}).refine(
-  (data) => data.propertyId || data.blockId,
-  { message: "Either propertyId or blockId must be provided" }
-);
+});
 export type AssetInventory = typeof assetInventory.$inferSelect;
 export type InsertAssetInventory = z.infer<typeof insertAssetInventorySchema>;
 

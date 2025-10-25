@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, DollarSign, FileText, MapPin, Tag as TagIcon } from "lucide-react";
 import type { AssetInventory, Property, Block } from "@shared/schema";
@@ -17,15 +18,20 @@ import Uppy from "@uppy/core";
 import { Dashboard } from "@uppy/react";
 import AwsS3 from "@uppy/aws-s3";
 
-import "@uppy/core/dist/style.min.css";
-import "@uppy/dashboard/dist/style.min.css";
-
 const conditionLabels = {
   excellent: "Excellent",
   good: "Good",
   fair: "Fair",
   poor: "Poor",
   needs_replacement: "Needs Replacement",
+};
+
+const cleanlinessLabels = {
+  very_clean: "Very Clean",
+  clean: "Clean",
+  acceptable: "Acceptable",
+  needs_cleaning: "Needs Cleaning",
+  not_applicable: "Not Applicable",
 };
 
 const assetCategories = [
@@ -46,6 +52,7 @@ const assetCategories = [
 
 export default function AssetInventory() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<AssetInventory | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -105,8 +112,8 @@ export default function AssetInventory() {
       const res = await apiRequest("DELETE", `/api/asset-inventory/${id}`);
       return await res.json();
     },
-    onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ["/api/asset-inventory"] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["/api/asset-inventory"] });
       toast({
         title: "Success",
         description: "Asset deleted successfully",
@@ -193,9 +200,41 @@ export default function AssetInventory() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const submitData = {
-      ...formData,
+    // Helper to convert dates - handles string inputs, Date objects, and undefined
+    const convertDate = (value: any) => {
+      if (!value || value === '') return null;
+      if (value instanceof Date) return value;
+      // If it's a string, try to parse it
+      const parsed = new Date(value);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    };
+    
+    // Explicitly build submit data with proper type conversions
+    const submitData: any = {
+      organizationId: user?.organizationId || formData.organizationId,
+      name: formData.name,
+      category: formData.category || null,
+      description: formData.description || null,
+      condition: formData.condition,
+      cleanliness: formData.cleanliness || null,
+      propertyId: formData.propertyId || null,
+      blockId: formData.blockId || null,
+      location: formData.location || null,
+      datePurchased: convertDate(formData.datePurchased),
+      purchasePrice: formData.purchasePrice || null,
+      expectedLifespanYears: formData.expectedLifespanYears || null,
+      depreciationPerYear: formData.depreciationPerYear || null,
+      currentValue: formData.currentValue || null,
+      supplier: formData.supplier || null,
+      supplierContact: formData.supplierContact || null,
+      serialNumber: formData.serialNumber || null,
+      modelNumber: formData.modelNumber || null,
+      warrantyExpiryDate: convertDate(formData.warrantyExpiryDate),
+      lastMaintenanceDate: convertDate(formData.lastMaintenanceDate),
+      nextMaintenanceDate: convertDate(formData.nextMaintenanceDate),
+      maintenanceNotes: formData.maintenanceNotes || null,
       photos: uploadedPhotos.length > 0 ? uploadedPhotos : formData.photos || [],
+      documents: formData.documents || [],
     };
 
     saveMutation.mutate(submitData);
@@ -324,7 +363,7 @@ export default function AssetInventory() {
                         <SelectValue placeholder="Select cleanliness" />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.entries(conditionLabels).map(([value, label]) => (
+                        {Object.entries(cleanlinessLabels).map(([value, label]) => (
                           <SelectItem key={value} value={value}>{label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -770,7 +809,7 @@ export default function AssetInventory() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">Cleanliness:</span>
                       <Badge variant="secondary" className="text-xs">
-                        {conditionLabels[asset.cleanliness]}
+                        {cleanlinessLabels[asset.cleanliness]}
                       </Badge>
                     </div>
                   )}
