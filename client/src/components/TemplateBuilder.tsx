@@ -98,7 +98,7 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
       name: template?.name || "",
       description: template?.description || "",
       scope: template?.scope || "property",
-      categoryId: template?.categoryId || undefined,
+      categoryId: template?.categoryId !== null && template?.categoryId !== undefined ? template.categoryId : undefined,
       isActive: template?.isActive ?? true,
       version: template?.version || 1,
       structureJson: initialStructure,
@@ -335,7 +335,10 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Category</FormLabel>
-                            <Select value={field.value || "none"} onValueChange={(v) => field.onChange(v === "none" ? null : v)}>
+                            <Select 
+                              value={field.value?.toString() || "none"} 
+                              onValueChange={(v) => field.onChange(v === "none" ? undefined : parseInt(v))}
+                            >
                               <FormControl>
                                 <SelectTrigger data-testid="select-template-category">
                                   <SelectValue />
@@ -344,7 +347,7 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                               <SelectContent>
                                 <SelectItem value="none">No Category</SelectItem>
                                 {categories.map((cat) => (
-                                  <SelectItem key={cat.id} value={cat.id}>
+                                  <SelectItem key={cat.id} value={cat.id.toString()}>
                                     {cat.name}
                                   </SelectItem>
                                 ))}
@@ -451,46 +454,102 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                               {/* Fields */}
                               <div className="space-y-2">
                                 {section.fields.map((field, fieldIndex) => (
-                                  <div key={field.key} className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                                    <GripVertical className="w-4 h-4 text-muted-foreground" />
-                                    <Input
-                                      value={field.label}
-                                      onChange={(e) => updateField(section.id, field.key, { label: e.target.value })}
-                                      placeholder="Field Label"
-                                      className="flex-1"
-                                      data-testid={`input-field-label-${sectionIndex}-${fieldIndex}`}
-                                    />
-                                    <Select
-                                      value={field.type}
-                                      onValueChange={(type) => updateField(section.id, field.key, { type })}
-                                    >
-                                      <SelectTrigger className="w-40" data-testid={`select-field-type-${sectionIndex}-${fieldIndex}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {FIELD_TYPES.map((ft) => (
-                                          <SelectItem key={ft.value} value={ft.value}>
-                                            {ft.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                    <Switch
-                                      checked={field.required || false}
-                                      onCheckedChange={(checked) =>
-                                        updateField(section.id, field.key, { required: checked })
-                                      }
-                                      data-testid={`switch-field-required-${sectionIndex}-${fieldIndex}`}
-                                    />
-                                    <span className="text-xs text-muted-foreground w-16">Required</span>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => deleteField(section.id, field.key)}
-                                      data-testid={`button-delete-field-${sectionIndex}-${fieldIndex}`}
-                                    >
-                                      <Trash2 className="w-4 h-4 text-destructive" />
-                                    </Button>
+                                  <div key={field.key} className="space-y-2">
+                                    <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                                      <GripVertical className="w-4 h-4 text-muted-foreground" />
+                                      <Input
+                                        value={field.label}
+                                        onChange={(e) => updateField(section.id, field.key, { label: e.target.value })}
+                                        placeholder="Field Label"
+                                        className="flex-1"
+                                        data-testid={`input-field-label-${sectionIndex}-${fieldIndex}`}
+                                      />
+                                      <Select
+                                        value={field.type}
+                                        onValueChange={(type) => updateField(section.id, field.key, { type })}
+                                      >
+                                        <SelectTrigger className="w-40" data-testid={`select-field-type-${sectionIndex}-${fieldIndex}`}>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {FIELD_TYPES.map((ft) => (
+                                            <SelectItem key={ft.value} value={ft.value}>
+                                              {ft.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <Switch
+                                        checked={field.required || false}
+                                        onCheckedChange={(checked) =>
+                                          updateField(section.id, field.key, { required: checked })
+                                        }
+                                        data-testid={`switch-field-required-${sectionIndex}-${fieldIndex}`}
+                                      />
+                                      <span className="text-xs text-muted-foreground w-16">Required</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => deleteField(section.id, field.key)}
+                                        data-testid={`button-delete-field-${sectionIndex}-${fieldIndex}`}
+                                      >
+                                        <Trash2 className="w-4 h-4 text-destructive" />
+                                      </Button>
+                                    </div>
+                                    
+                                    {/* Options editor for select/multiselect fields */}
+                                    {(field.type === "select" || field.type === "multiselect") && (
+                                      <div className="ml-8 p-3 bg-background border rounded-lg space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-sm font-medium">Dropdown Options</label>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                              const options = field.options || [];
+                                              updateField(section.id, field.key, { options: [...options, ""] });
+                                            }}
+                                            data-testid={`button-add-option-${sectionIndex}-${fieldIndex}`}
+                                          >
+                                            <Plus className="w-3 h-3 mr-1" />
+                                            Add Option
+                                          </Button>
+                                        </div>
+                                        
+                                        {(!field.options || field.options.length === 0) ? (
+                                          <p className="text-xs text-muted-foreground">No options yet. Click "Add Option" to create dropdown choices.</p>
+                                        ) : (
+                                          <div className="space-y-2">
+                                            {field.options.map((option, optionIndex) => (
+                                              <div key={optionIndex} className="flex items-center gap-2">
+                                                <Input
+                                                  value={option}
+                                                  onChange={(e) => {
+                                                    const newOptions = [...(field.options || [])];
+                                                    newOptions[optionIndex] = e.target.value;
+                                                    updateField(section.id, field.key, { options: newOptions });
+                                                  }}
+                                                  placeholder={`Option ${optionIndex + 1}`}
+                                                  className="flex-1"
+                                                  data-testid={`input-option-${sectionIndex}-${fieldIndex}-${optionIndex}`}
+                                                />
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  onClick={() => {
+                                                    const newOptions = (field.options || []).filter((_, i) => i !== optionIndex);
+                                                    updateField(section.id, field.key, { options: newOptions });
+                                                  }}
+                                                  data-testid={`button-delete-option-${sectionIndex}-${fieldIndex}-${optionIndex}`}
+                                                >
+                                                  <X className="w-4 h-4 text-destructive" />
+                                                </Button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
