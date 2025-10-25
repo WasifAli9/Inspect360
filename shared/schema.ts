@@ -9,6 +9,7 @@ import {
   integer,
   boolean,
   pgEnum,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -662,12 +663,26 @@ export const assetInventory = pgTable("asset_inventory", {
   propertyId: varchar("property_id"),
   blockId: varchar("block_id"),
   name: varchar("name").notNull(),
+  category: varchar("category"), // e.g., "HVAC", "Appliances", "Furniture", "Plumbing", "Electrical"
   description: text("description"),
+  location: varchar("location"), // Specific room/area: "Unit 101 - Kitchen", "Common Area - Lobby"
   supplier: varchar("supplier"),
+  supplierContact: varchar("supplier_contact"), // Phone or email
+  serialNumber: varchar("serial_number"),
+  modelNumber: varchar("model_number"),
   datePurchased: timestamp("date_purchased"),
+  purchasePrice: numeric("purchase_price", { precision: 10, scale: 2 }),
+  warrantyExpiryDate: timestamp("warranty_expiry_date"),
   condition: assetConditionEnum("condition").notNull(),
+  cleanliness: assetConditionEnum("cleanliness"), // Reuse same enum: excellent, good, fair, poor, needs_replacement
   expectedLifespanYears: integer("expected_lifespan_years"),
-  photoUrl: text("photo_url"),
+  depreciationPerYear: numeric("depreciation_per_year", { precision: 10, scale: 2 }), // Auto-calculated or manual
+  currentValue: numeric("current_value", { precision: 10, scale: 2 }), // Purchase price - accumulated depreciation
+  lastMaintenanceDate: timestamp("last_maintenance_date"),
+  nextMaintenanceDate: timestamp("next_maintenance_date"),
+  maintenanceNotes: text("maintenance_notes"),
+  photos: text("photos").array(), // Array of photo URLs
+  documents: text("documents").array(), // Array of document URLs (manuals, warranties)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
