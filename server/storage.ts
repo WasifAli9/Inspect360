@@ -112,8 +112,10 @@ export interface IStorage {
   // Organization operations
   createOrganization(org: InsertOrganization): Promise<Organization>;
   getOrganization(id: string): Promise<Organization | undefined>;
+  updateOrganization(id: string, updates: Partial<InsertOrganization>): Promise<Organization>;
   updateOrganizationCredits(id: string, credits: number): Promise<Organization>;
   updateOrganizationStripe(id: string, customerId: string, status: string): Promise<Organization>;
+  deductCredit(organizationId: string, amount: number, description: string): Promise<Organization>;
   
   // Contact operations
   createContact(contact: InsertContact & { organizationId: string }): Promise<Contact>;
@@ -454,6 +456,38 @@ export class DatabaseStorage implements IStorage {
       .where(eq(organizations.id, id))
       .returning();
     return org;
+  }
+
+  async updateOrganization(id: string, updates: Partial<InsertOrganization>): Promise<Organization> {
+    const [org] = await db
+      .update(organizations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(organizations.id, id))
+      .returning();
+    return org;
+  }
+
+  async deductCredit(organizationId: string, amount: number, description: string): Promise<Organization> {
+    const org = await this.getOrganization(organizationId);
+    if (!org) {
+      throw new Error("Organization not found");
+    }
+
+    const currentCredits = org.creditsRemaining ?? 0;
+    if (currentCredits < amount) {
+      throw new Error("Insufficient credits");
+    }
+
+    const newCredits = currentCredits - amount;
+    
+    await this.createCreditTransaction({
+      organizationId,
+      amount: -amount,
+      type: "usage",
+      description,
+    });
+
+    return await this.updateOrganizationCredits(organizationId, newCredits);
   }
 
   // Contact operations
