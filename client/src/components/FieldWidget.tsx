@@ -136,7 +136,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
       .use(Webcam, {
         modes: ['picture'],
         facingMode: 'environment',
-      })
+      } as any)
       .use(AwsS3, {
         shouldUseMultipart: false,
         async getUploadParameters(file: any) {
@@ -265,7 +265,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             value={value || ""}
             onChange={(e) => handleValueChange(e.target.value)}
             placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
-            data-testid={`input-${field.key}`}
+            data-testid={`input-${field.id}`}
           />
         );
 
@@ -276,7 +276,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             onChange={(e) => handleValueChange(e.target.value)}
             placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}`}
             rows={4}
-            data-testid={`textarea-${field.key}`}
+            data-testid={`textarea-${field.id}`}
           />
         );
 
@@ -287,7 +287,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             value={value || ""}
             onChange={(e) => handleValueChange(parseFloat(e.target.value) || 0)}
             placeholder={field.placeholder || "Enter number"}
-            data-testid={`input-number-${field.key}`}
+            data-testid={`input-number-${field.id}`}
           />
         );
 
@@ -300,7 +300,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
                 type="button"
                 onClick={() => handleValueChange(rating)}
                 className="focus:outline-none"
-                data-testid={`button-rating-${rating}-${field.key}`}
+                data-testid={`button-rating-${rating}-${field.id}`}
               >
                 <Star
                   className={`w-8 h-8 ${
@@ -322,7 +322,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
       case "select":
         return (
           <Select value={value || ""} onValueChange={handleValueChange}>
-            <SelectTrigger data-testid={`select-${field.key}`}>
+            <SelectTrigger data-testid={`select-${field.id}`}>
               <SelectValue placeholder={field.placeholder || "Select an option"} />
             </SelectTrigger>
             <SelectContent>
@@ -363,7 +363,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
                 }
               }}
             >
-              <SelectTrigger data-testid={`select-multiselect-${field.key}`}>
+              <SelectTrigger data-testid={`select-multiselect-${field.id}`}>
                 <SelectValue placeholder="Add option..." />
               </SelectTrigger>
               <SelectContent>
@@ -385,7 +385,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             <Checkbox
               checked={value || false}
               onCheckedChange={handleValueChange}
-              data-testid={`checkbox-${field.key}`}
+              data-testid={`checkbox-${field.id}`}
             />
             <label className="text-sm cursor-pointer">
               {field.placeholder || "Yes"}
@@ -401,7 +401,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               type="date"
               value={value || ""}
               onChange={(e) => handleValueChange(e.target.value)}
-              data-testid={`input-date-${field.key}`}
+              data-testid={`input-date-${field.id}`}
             />
           </div>
         );
@@ -414,7 +414,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               type="time"
               value={value || ""}
               onChange={(e) => handleValueChange(e.target.value)}
-              data-testid={`input-time-${field.key}`}
+              data-testid={`input-time-${field.id}`}
             />
           </div>
         );
@@ -425,7 +425,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             type="datetime-local"
             value={value || ""}
             onChange={(e) => handleValueChange(e.target.value)}
-            data-testid={`input-datetime-${field.key}`}
+            data-testid={`input-datetime-${field.id}`}
           />
         );
 
@@ -497,7 +497,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               variant="outline"
               onClick={() => setShowPhotoUpload(true)}
               disabled={field.type === "photo" && localPhotos.length >= 1}
-              data-testid={`button-upload-photo-${field.key}`}
+              data-testid={`button-upload-photo-${field.id}`}
             >
               <Upload className="w-4 h-4 mr-2" />
               {localPhotos.length > 0 ? "Add More Photos" : "Upload Photo"}
@@ -521,14 +521,14 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
                 src={value}
                 controls
                 className="w-full max-h-64 rounded-lg"
-                data-testid={`video-preview-${field.key}`}
+                data-testid={`video-preview-${field.id}`}
               />
             )}
             <Button
               type="button"
               variant="outline"
               onClick={() => setShowPhotoUpload(true)}
-              data-testid={`button-upload-video-${field.key}`}
+              data-testid={`button-upload-video-${field.id}`}
             >
               <Upload className="w-4 h-4 mr-2" />
               {value ? "Replace Video" : "Upload Video"}
@@ -551,7 +551,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
               value={value || ""}
               onChange={(e) => handleValueChange(e.target.value)}
               placeholder="Latitude, Longitude"
-              data-testid={`input-gps-${field.key}`}
+              data-testid={`input-gps-${field.id}`}
             />
           </div>
         );
@@ -581,14 +581,14 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             value={value || ""}
             onChange={(e) => handleValueChange(e.target.value)}
             placeholder={field.placeholder || "Enter value"}
-            data-testid={`input-default-${field.key}`}
+            data-testid={`input-default-${field.id}`}
           />
         );
     }
   };
 
   return (
-    <div className="space-y-3" data-testid={`field-widget-${field.key}`}>
+    <div className="space-y-3" data-testid={`field-widget-${field.id}`}>
       <Label className="text-base font-medium flex items-center gap-2">
         {field.label}
         {field.required && <span className="text-destructive">*</span>}
@@ -604,7 +604,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
             variant="default"
             onClick={handleInspectField}
             disabled={analyzingField}
-            data-testid={`button-inspect-ai-${field.key}`}
+            data-testid={`button-inspect-ai-${field.id}`}
             className="w-full"
           >
             <Sparkles className="w-4 h-4 mr-2" />
@@ -620,17 +620,17 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
 
       {/* Optional notes */}
       <div className="pt-2">
-        <Label htmlFor={`note-${field.key}`} className="text-sm text-muted-foreground">
+        <Label htmlFor={`note-${field.id}`} className="text-sm text-muted-foreground">
           Notes (optional)
         </Label>
         <Textarea
-          id={`note-${field.key}`}
+          id={`note-${field.id}`}
           value={localNote}
           onChange={(e) => handleNoteChange(e.target.value)}
           placeholder="Add any observations or notes..."
           rows={2}
           className="mt-1"
-          data-testid={`textarea-note-${field.key}`}
+          data-testid={`textarea-note-${field.id}`}
         />
       </div>
     </div>
