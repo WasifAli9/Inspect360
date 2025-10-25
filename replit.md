@@ -49,6 +49,7 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Smartphone Camera Capture**: Native camera access for taking photos directly during inspections via PWA, powered by Uppy Webcam plugin with rear-camera default for field inspections.
 - **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection and status indicators.
 - **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with basic issue description, multi-image upload, AI-powered fix suggestions using OpenAI Vision API, and review before submission.
+- **InspectAI Field Analysis**: Field-level AI inspection analysis button that analyzes all uploaded images for an inspection point using OpenAI GPT-5 Vision and auto-generates comprehensive reports in the notes field; costs 1 credit per analysis.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
@@ -79,6 +80,15 @@ The platform employs a PWA-first approach with a robust web architecture.
   - AI-powered image analysis with credit deduction using OpenAI Vision API
   - `storage.getMaintenanceByOrganization()`: Returns complete maintenance requests with reporter/assignee user details via Drizzle table aliases
   - Frontend mutations use correct apiRequest(method, url, data) parameter order and parse JSON responses
+- **InspectAI Field Analysis**:
+  - New endpoint POST /api/ai/inspect-field for field-level inspection analysis
+  - Accepts inspectionId, fieldKey, fieldLabel, fieldDescription, and photos array
+  - Analyzes all photos for a field together using OpenAI GPT-5 Vision with multi-image support
+  - Generates comprehensive inspection reports (condition, damage, cleanliness, features, recommendations)
+  - Auto-populates notes field in FieldWidget component
+  - Costs 1 credit per field analysis with full transaction logging
+  - Button appears automatically when photos are uploaded to any inspection field
+  - Proper JSON response parsing in frontend (await response.json())
 - **Null Safety**:
   - Proper null coalescing for credit checks
   - Lazy OpenAI client initialization via getOpenAI()
