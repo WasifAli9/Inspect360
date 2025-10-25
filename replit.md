@@ -68,6 +68,7 @@ The platform employs a PWA-first approach with a robust web architecture.
   - **Visual Display**: Avatar with initials fallback, role badges, contact cards, skill badges
   - **Edit Functionality**: Update all profile fields except password (optional on edit)
   - **Owner Controls**: Full user and role administration for organization management
+  - **Account Status Management**: Owner users can disable/enable accounts with status badges (Active/Inactive) and toggle buttons; disabled accounts cannot login; users cannot disable their own account
 - **Organization Onboarding**: Streamlined setup process.
 - **Search and Filters**: Functionality for properties and blocks.
 - **Block-Property Relationship**: Properties assigned to blocks, with associated metrics.
@@ -102,6 +103,8 @@ The platform employs a PWA-first approach with a robust web architecture.
 ## Recent Critical Fixes
 - **Session Persistence Fix (Oct 24, 2025)**: Fixed critical authentication bug where all API requests returned 401 Unauthorized after successful login. Root cause was `resave: false` in session configuration preventing proper session persistence. Solution: Changed to `resave: true` to force session saves, disabled secure cookie requirement for development (`secure: false`), and set `sameSite: 'lax'` unconditionally. Session now persists correctly across all authenticated requests.
 - **Address Persistence Fix (Oct 25, 2025)**: Fixed Team Management address data not persisting to database. Root cause was submit logic checking `address.formatted` field which was never populated. Solution: Changed to check if ANY address field has data, then auto-generate formatted string from individual fields before submission. Address now saves as complete JSON object with all components.
+- **Password Hashing Security Fix (Oct 25, 2025)**: Fixed critical security vulnerability where team member passwords were stored as plaintext instead of hashed. Root cause was POST /api/team route passing raw password to storage.createUser. Solution: Import and call hashPassword() before user creation. New team members can now log in successfully and passwords are securely hashed using scrypt.
+- **Account Disabling Feature (Oct 25, 2025)**: Implemented account status management with `isActive` boolean field in users schema (default true). Authentication checks account status and rejects login attempts from disabled accounts with clear error message. Added API route `PATCH /api/team/:userId/status` with owner-only access, same-organization checks, and self-disable prevention. Enhanced Team Management UI with Active/Inactive status badges and toggle buttons. Updated clerk query endpoint to filter only active users for inspection assignment dropdowns.
 - **Query Cache Management**: Changed queryClient config from `staleTime: Infinity` to `staleTime: 0` and added `refetchOnMount: true` to enable proper list refreshing after mutations
 - **List Refresh Pattern**: Updated Blocks.tsx and Properties.tsx to use `await queryClient.refetchQueries()` instead of `invalidateQueries()` for immediate, guaranteed list updates after create/update/delete operations
 - **Inspection Route Fix**: Corrected PropertyDetail "New Inspection" button to navigate to `/inspections` instead of broken `/inspections/new` route
