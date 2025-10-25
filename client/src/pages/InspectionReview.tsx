@@ -187,6 +187,14 @@ export default function InspectionReview() {
           >
             {Math.round(progress)}% Complete
           </Badge>
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/inspections/${id}/report`)}
+            data-testid="button-view-report"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            View Report
+          </Button>
           {inspection.status !== "completed" && (
             <>
               <Button
@@ -194,7 +202,6 @@ export default function InspectionReview() {
                 onClick={() => navigate(`/inspections/${id}/capture`)}
                 data-testid="button-continue-capture"
               >
-                <FileText className="w-4 h-4 mr-2" />
                 Continue Editing
               </Button>
               <Button

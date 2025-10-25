@@ -33,7 +33,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ClipboardList, Calendar, MapPin, User, Play } from "lucide-react";
+import { Plus, ClipboardList, Calendar, MapPin, User, Play, FileText } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 
@@ -395,7 +395,7 @@ export default function Inspections() {
                   )}
                 </div>
                 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {inspection.templateSnapshotJson && inspection.status !== "completed" && (
                     <Button
                       size="sm"
@@ -405,6 +405,18 @@ export default function Inspections() {
                     >
                       <Play className="w-4 h-4 mr-2" />
                       {inspection.status === "in_progress" ? "Continue" : "Start"}
+                    </Button>
+                  )}
+                  {inspection.templateSnapshotJson && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => navigate(`/inspections/${inspection.id}/report`)}
+                      data-testid={`button-view-report-${inspection.id}`}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      View Report
                     </Button>
                   )}
                   <Button

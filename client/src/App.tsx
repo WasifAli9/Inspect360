@@ -29,6 +29,7 @@ import AssetInventory from "@/pages/AssetInventory";
 import InspectionTemplates from "@/pages/InspectionTemplates";
 import InspectionCapture from "@/pages/InspectionCapture";
 import InspectionReview from "@/pages/InspectionReview";
+import InspectionReport from "@/pages/InspectionReport";
 import Contacts from "@/pages/Contacts";
 import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
@@ -116,6 +117,7 @@ function AppContent() {
                 <Route path="/inspections" component={Inspections} />
                 <Route path="/inspections/:id/capture" component={InspectionCapture} />
                 <Route path="/inspections/:id/review" component={InspectionReview} />
+                <Route path="/inspections/:id/report" component={InspectionReport} />
                 <Route path="/inspections/:id" component={InspectionDetail} />
                 <Route path="/compliance" component={Compliance} />
                 <Route path="/maintenance" component={Maintenance} />

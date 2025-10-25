@@ -1,0 +1,558 @@
+import { useParams, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  ArrowLeft, 
+  Printer, 
+  Download, 
+  Edit2, 
+  Save, 
+  X, 
+  AlertTriangle, 
+  FileText,
+  Calendar,
+  User,
+  MapPin,
+  Building,
+  Wrench,
+  GitCompare
+} from "lucide-react";
+import { format } from "date-fns";
+import { useState } from "react";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+
+interface TemplateField {
+  id: string;
+  key?: string;
+  label: string;
+  type: string;
+  description?: string;
+  required?: boolean;
+  placeholder?: string;
+  options?: string[];
+  validation?: Record<string, any>;
+  dependsOn?: Record<string, any>;
+  includeCondition?: boolean;
+  includeCleanliness?: boolean;
+}
+
+interface TemplateSection {
+  id: string;
+  title: string;
+  description?: string;
+  repeatable?: boolean;
+  fields: TemplateField[];
+}
+
+interface Inspection {
+  id: string;
+  organizationId: string;
+  templateId?: string;
+  templateSnapshotJson?: { sections: TemplateSection[] };
+  propertyId?: string;
+  blockId?: string;
+  inspectorId: string;
+  type: string;
+  status: string;
+  scheduledDate?: string;
+  startedAt?: string;
+  completedDate?: string;
+  submittedAt?: string;
+  notes?: string;
+  property?: {
+    id: string;
+    name: string;
+    address: string;
+    propertyType?: string;
+  };
+  block?: {
+    id: string;
+    name: string;
+    address: string;
+  };
+  inspector?: {
+    id: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  };
+}
+
+export default function InspectionReport() {
+  const { id } = useParams<{ id: string }>();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [editMode, setEditMode] = useState(false);
+  const [editedNotes, setEditedNotes] = useState<Record<string, string>>({});
+
+  // Fetch inspection data
+  const { data: inspection, isLoading: inspectionLoading } = useQuery<Inspection>({
+    queryKey: ["/api/inspections", id],
+  });
+
+  // Fetch all inspection entries
+  const { data: entries = [], isLoading: entriesLoading } = useQuery<any[]>({
+    queryKey: [`/api/inspections/${id}/entries`],
+    enabled: !!id,
+  });
+
+  // Fetch user role for edit permissions
+  const { data: currentUser } = useQuery<any>({
+    queryKey: ["/api/auth/user"],
+  });
+
+  const templateStructure = inspection?.templateSnapshotJson as { sections: TemplateSection[] } | null;
+  const sections = templateStructure?.sections || [];
+
+  // Initialize edited notes from entries
+  useState(() => {
+    const initialNotes: Record<string, string> = {};
+    entries.forEach((entry: any) => {
+      const key = `${entry.sectionRef}-${entry.fieldKey}`;
+      if (entry.note) {
+        initialNotes[key] = entry.note;
+      }
+    });
+    setEditedNotes(initialNotes);
+  });
+
+  // Save edited notes mutation
+  const saveNotesMutation = useMutation({
+    mutationFn: async (updates: { entryId: string; note: string }[]) => {
+      const promises = updates.map(({ entryId, note }) =>
+        apiRequest("PATCH", `/api/inspection-entries/${entryId}`, { note })
+      );
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
+      setEditMode(false);
+      toast({
+        title: "Report updated",
+        description: "Changes saved successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to save changes",
+      });
+    },
+  });
+
+  const handleSaveEdits = () => {
+    const updates: { entryId: string; note: string }[] = [];
+    entries.forEach((entry: any) => {
+      const key = `${entry.sectionRef}-${entry.fieldKey}`;
+      if (editedNotes[key] !== entry.note) {
+        updates.push({ entryId: entry.id, note: editedNotes[key] || "" });
+      }
+    });
+    if (updates.length > 0) {
+      saveNotesMutation.mutate(updates);
+    } else {
+      setEditMode(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditMode(false);
+    const initialNotes: Record<string, string> = {};
+    entries.forEach((entry: any) => {
+      const key = `${entry.sectionRef}-${entry.fieldKey}`;
+      if (entry.note) {
+        initialNotes[key] = entry.note;
+      }
+    });
+    setEditedNotes(initialNotes);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const getEntryValue = (sectionId: string, fieldKey: string) => {
+    return entries.find(e => e.sectionRef === sectionId && e.fieldKey === fieldKey);
+  };
+
+  const renderFieldValue = (value: any, field: TemplateField) => {
+    if (value === null || value === undefined) {
+      return <span className="text-muted-foreground italic">Not recorded</span>;
+    }
+
+    // Handle composite values (with condition/cleanliness)
+    let actualValue = value;
+    let condition = null;
+    let cleanliness = null;
+
+    if (typeof value === 'object' && !Array.isArray(value) && value.value !== undefined) {
+      actualValue = value.value;
+      condition = value.condition;
+      cleanliness = value.cleanliness;
+    }
+
+    let displayValue: React.ReactNode = null;
+
+    switch (field.type) {
+      case "text":
+      case "textarea":
+      case "email":
+      case "phone":
+        displayValue = actualValue || <span className="text-muted-foreground italic">Not filled</span>;
+        break;
+      case "number":
+        displayValue = actualValue !== null ? actualValue.toString() : <span className="text-muted-foreground italic">Not filled</span>;
+        break;
+      case "boolean":
+        displayValue = actualValue ? "Yes" : "No";
+        break;
+      case "select":
+      case "radio":
+        displayValue = actualValue || <span className="text-muted-foreground italic">Not selected</span>;
+        break;
+      case "checkbox":
+        displayValue = Array.isArray(actualValue) ? actualValue.join(", ") : <span className="text-muted-foreground italic">None selected</span>;
+        break;
+      case "date":
+        displayValue = actualValue ? format(new Date(actualValue), "MMM dd, yyyy") : <span className="text-muted-foreground italic">Not set</span>;
+        break;
+      default:
+        displayValue = actualValue?.toString() || <span className="text-muted-foreground italic">Not filled</span>;
+    }
+
+    return (
+      <div className="space-y-2">
+        <div className="text-base">{displayValue}</div>
+        {(condition || cleanliness) && (
+          <div className="flex gap-2 flex-wrap">
+            {condition && (
+              <Badge variant={condition === 'Excellent' ? 'default' : condition === 'Good' ? 'secondary' : 'destructive'}>
+                Condition: {condition}
+              </Badge>
+            )}
+            {cleanliness && (
+              <Badge variant={cleanliness === 'Clean' ? 'default' : cleanliness === 'Needs a Clean' ? 'secondary' : 'destructive'}>
+                Cleanliness: {cleanliness}
+              </Badge>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const canEdit = currentUser?.role === 'owner' || currentUser?.role === 'compliance';
+
+  if (inspectionLoading || entriesLoading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto space-y-6">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-60 w-full" />
+      </div>
+    );
+  }
+
+  if (!inspection) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-center text-muted-foreground">Inspection not found</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const inspectorName = inspection.inspector
+    ? `${inspection.inspector.firstName || ''} ${inspection.inspector.lastName || ''}`.trim() || inspection.inspector.email
+    : "Unknown Inspector";
+
+  const propertyName = inspection.property?.name || inspection.block?.name || "Unknown Property";
+  const propertyAddress = inspection.property?.address || inspection.block?.address || "No address";
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+          .print-break-inside-avoid {
+            break-inside: avoid;
+          }
+          body {
+            background: white !important;
+          }
+          .bg-card {
+            background: white !important;
+          }
+        }
+      `}</style>
+
+      {/* Header Actions - Hidden in print */}
+      <div className="no-print sticky top-0 z-10 bg-background border-b">
+        <div className="max-w-6xl mx-auto p-4 flex items-center justify-between gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/inspections")}
+            data-testid="button-back"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Inspections
+          </Button>
+
+          <div className="flex gap-2">
+            {canEdit && !editMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditMode(true)}
+                data-testid="button-edit-report"
+              >
+                <Edit2 className="w-4 h-4 mr-2" />
+                Edit Report
+              </Button>
+            )}
+            {editMode && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelEdit}
+                  data-testid="button-cancel-edit"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveEdits}
+                  disabled={saveNotesMutation.isPending}
+                  data-testid="button-save-edit"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {saveNotesMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              data-testid="button-print-report"
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Print
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Report Content */}
+      <div className="max-w-6xl mx-auto p-6 space-y-8">
+        {/* Report Header */}
+        <Card className="print-break-inside-avoid">
+          <CardHeader className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <CardTitle className="text-3xl">Inspection Report</CardTitle>
+                <CardDescription className="text-lg">
+                  {propertyName}
+                </CardDescription>
+              </div>
+              <Badge variant={inspection.status === 'completed' ? 'default' : 'secondary'} className="text-sm">
+                {inspection.status.replace('_', ' ').toUpperCase()}
+              </Badge>
+            </div>
+
+            {/* Inspection Metadata Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+              <div className="flex items-start gap-3">
+                <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium">Property Address</div>
+                  <div className="text-sm text-muted-foreground">{propertyAddress}</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <FileText className="w-5 h-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium">Inspection Type</div>
+                  <div className="text-sm text-muted-foreground capitalize">{inspection.type.replace('_', ' ')}</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <User className="w-5 h-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium">Inspector</div>
+                  <div className="text-sm text-muted-foreground">{inspectorName}</div>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <Calendar className="w-5 h-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium">Inspection Date</div>
+                  <div className="text-sm text-muted-foreground">
+                    {inspection.completedDate 
+                      ? format(new Date(inspection.completedDate), "MMMM dd, yyyy")
+                      : inspection.scheduledDate 
+                        ? format(new Date(inspection.scheduledDate), "MMMM dd, yyyy")
+                        : "Not scheduled"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {inspection.notes && (
+              <div className="pt-4 border-t">
+                <div className="text-sm font-medium mb-2">General Notes</div>
+                <div className="text-sm text-muted-foreground whitespace-pre-wrap">{inspection.notes}</div>
+              </div>
+            )}
+          </CardHeader>
+        </Card>
+
+        {/* Inspection Points */}
+        {sections.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6 text-center text-muted-foreground">
+              No inspection template structure available
+            </CardContent>
+          </Card>
+        ) : (
+          sections.map((section) => {
+            const sectionEntries = entries.filter(e => e.sectionRef === section.id);
+            
+            return (
+              <Card key={section.id} className="print-break-inside-avoid" data-testid={`section-${section.id}`}>
+                <CardHeader>
+                  <CardTitle className="text-2xl">{section.title}</CardTitle>
+                  {section.description && (
+                    <CardDescription>{section.description}</CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {section.fields.map((field) => {
+                    const entry = getEntryValue(section.id, field.id || field.key || field.label);
+                    const entryKey = `${section.id}-${field.id || field.key || field.label}`;
+                    
+                    if (!entry && !editMode) return null; // Hide unfilled fields in view mode
+
+                    return (
+                      <div 
+                        key={field.id || field.key || field.label}
+                        className="border-b pb-6 last:border-b-0 last:pb-0"
+                        data-testid={`field-${field.id || field.key}`}
+                      >
+                        <div className="space-y-3">
+                          {/* Field Label and Description */}
+                          <div>
+                            <h4 className="text-base font-semibold">
+                              {field.label}
+                              {field.required && <span className="text-destructive ml-1">*</span>}
+                            </h4>
+                            {field.description && (
+                              <p className="text-sm text-muted-foreground mt-1">{field.description}</p>
+                            )}
+                          </div>
+
+                          {/* Field Value */}
+                          <div className="pl-4 border-l-2 border-primary/20">
+                            {renderFieldValue(entry?.valueJson, field)}
+                          </div>
+
+                          {/* Photos */}
+                          {entry?.photos && entry.photos.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-sm font-medium">Photos</div>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {entry.photos.map((photo: string, idx: number) => (
+                                  <img
+                                    key={idx}
+                                    src={photo}
+                                    alt={`${field.label} - Photo ${idx + 1}`}
+                                    className="w-full h-40 object-cover rounded-lg border"
+                                    data-testid={`photo-${field.id || field.key}-${idx}`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          <div className="space-y-2">
+                            <div className="text-sm font-medium">Notes</div>
+                            {editMode ? (
+                              <Textarea
+                                value={editedNotes[entryKey] || ""}
+                                onChange={(e) => setEditedNotes({ ...editedNotes, [entryKey]: e.target.value })}
+                                placeholder="Add inspection notes..."
+                                className="min-h-[80px]"
+                                data-testid={`textarea-note-${field.id || field.key}`}
+                              />
+                            ) : entry?.note ? (
+                              <div className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 rounded-lg">
+                                {entry.note}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground italic">No notes</p>
+                            )}
+                          </div>
+
+                          {/* Action Buttons - Hidden in print and edit mode */}
+                          {!editMode && entry && (
+                            <div className="flex gap-2 flex-wrap no-print">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/maintenance/new?inspectionId=${id}&fieldKey=${field.id || field.key}&sectionRef=${section.id}`)}
+                                data-testid={`button-maintenance-${field.id || field.key}`}
+                              >
+                                <Wrench className="w-4 h-4 mr-2" />
+                                Raise Maintenance Request
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/comparisons/new?inspectionId=${id}&fieldKey=${field.id || field.key}`)}
+                                data-testid={`button-comparison-${field.id || field.key}`}
+                              >
+                                <GitCompare className="w-4 h-4 mr-2" />
+                                Add to Comparison
+                              </Button>
+                            </div>
+                          )}
+
+                          {/* Maintenance Flag Indicator */}
+                          {entry?.maintenanceFlag && (
+                            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-500">
+                              <AlertTriangle className="w-4 h-4" />
+                              <span>Flagged for maintenance</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
