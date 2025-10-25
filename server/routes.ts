@@ -1319,6 +1319,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI field-level inspection analysis
+  app.post("/api/ai/inspect-field", isAuthenticated, async (req: any, res) => {
+    try {
+      const { inspectionId, fieldKey, fieldLabel, fieldDescription, photos } = req.body;
+      
+      if (!inspectionId || !fieldKey || !fieldLabel) {
+        return res.status(400).json({ message: "Inspection ID, field key, and field label are required" });
+      }
+
+      if (!photos || !Array.isArray(photos) || photos.length === 0) {
+        return res.status(400).json({ message: "At least one photo is required for AI inspection" });
+      }
+
+      // Get user and verify organization membership
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Verify the inspection belongs to the user's organization
+      const inspection = await storage.getInspection(inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      // Check ownership via property OR block
+      let ownerOrgId: string | null = null;
+      
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property) {
+          return res.status(404).json({ message: "Property not found" });
+        }
+        ownerOrgId = property.organizationId;
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block) {
+          return res.status(404).json({ message: "Block not found" });
+        }
+        ownerOrgId = block.organizationId;
+      } else {
+        return res.status(400).json({ message: "Inspection has no property or block assigned" });
+      }
+
+      // Verify organization ownership
+      if (ownerOrgId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied: Inspection does not belong to your organization" });
+      }
+
+      // Check credits (1 credit per field inspection)
+      const organization = await storage.getOrganization(user.organizationId);
+      if (!organization || (organization.creditsRemaining ?? 0) < 1) {
+        return res.status(402).json({ message: "Insufficient credits" });
+      }
+
+      // Construct full photo URLs
+      const photoUrls = photos.map(photo => 
+        photo.startsWith("http") 
+          ? photo 
+          : `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/objects/${photo}`
+      );
+
+      // Build the prompt with field context
+      let promptText = `Analyze the following inspection point: "${fieldLabel}"`;
+      if (fieldDescription) {
+        promptText += `\nDescription: ${fieldDescription}`;
+      }
+      promptText += `\n\nI have ${photoUrls.length} image(s) showing this inspection point. Provide a comprehensive inspection report including:
+1. Overall condition assessment
+2. Any visible damage, defects, or wear
+3. Cleanliness and maintenance issues
+4. Notable features or observations
+5. Recommendations (if any)
+
+Be thorough, specific, and objective. This will be used in a professional property inspection report.`;
+
+      // Build content array with text and all images
+      const content: any[] = [
+        {
+          type: "text",
+          text: promptText
+        }
+      ];
+
+      // Add all photos
+      photoUrls.forEach((url, index) => {
+        content.push({
+          type: "image_url",
+          image_url: {
+            url: url
+          }
+        });
+      });
+
+      // Call OpenAI Vision API
+      const response = await getOpenAI().chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          {
+            role: "user",
+            content: content
+          }
+        ],
+        max_completion_tokens: 500,
+      });
+
+      const analysis = response.choices[0]?.message?.content || "Unable to analyze images";
+
+      // Deduct credit
+      await storage.updateOrganizationCredits(
+        organization.id,
+        (organization.creditsRemaining ?? 0) - 1
+      );
+
+      await storage.createCreditTransaction({
+        organizationId: organization.id,
+        amount: -1,
+        type: "inspection",
+        description: `InspectAI field analysis: ${fieldLabel}`,
+      });
+
+      res.json({ analysis });
+    } catch (error) {
+      console.error("Error analyzing field:", error);
+      res.status(500).json({ message: "Failed to analyze field" });
+    }
+  });
+
   app.post("/api/ai/generate-comparison", isAuthenticated, async (req: any, res) => {
     try {
       const { propertyId, checkInInspectionId, checkOutInspectionId } = req.body;

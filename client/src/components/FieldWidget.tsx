@@ -42,6 +42,7 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [aiAnalyses, setAiAnalyses] = useState<Record<string, any>>({});
   const [analyzingPhoto, setAnalyzingPhoto] = useState<string | null>(null);
+  const [analyzingField, setAnalyzingField] = useState(false);
   const { toast } = useToast();
 
   // Rehydrate local state when props change (e.g., when existing entries load)
@@ -76,6 +77,50 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
     const newPhotos = localPhotos.filter((p) => p !== photoUrl);
     setLocalPhotos(newPhotos);
     onChange(value, localNote || undefined, newPhotos.length > 0 ? newPhotos : undefined);
+  };
+
+  const handleInspectField = async () => {
+    if (!inspectionId || localPhotos.length === 0) {
+      toast({
+        title: "Cannot Analyze",
+        description: "Please upload at least one photo to use InspectAI",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAnalyzingField(true);
+
+    try {
+      const response = await apiRequest("POST", "/api/ai/inspect-field", {
+        inspectionId,
+        fieldKey: field.id,
+        fieldLabel: field.label,
+        fieldDescription: field.placeholder,
+        photos: localPhotos,
+      });
+
+      const { analysis } = await response.json();
+
+      // Auto-populate the notes field with the AI analysis
+      const newNote = analysis;
+      setLocalNote(newNote);
+      onChange(value, newNote, localPhotos);
+
+      toast({
+        title: "InspectAI Complete",
+        description: "AI analysis has been added to the notes field",
+      });
+    } catch (error: any) {
+      console.error("Error analyzing field:", error);
+      toast({
+        title: "Analysis Failed",
+        description: error.message || "Failed to analyze inspection point",
+        variant: "destructive",
+      });
+    } finally {
+      setAnalyzingField(false);
+    }
   };
 
   const createPhotoUppy = () => {
@@ -550,6 +595,28 @@ export function FieldWidget({ field, value, note, photos, inspectionId, entryId,
       </Label>
 
       {renderField()}
+
+      {/* InspectAI Button - only show when photos exist */}
+      {inspectionId && localPhotos.length > 0 && (
+        <div className="pt-2">
+          <Button
+            type="button"
+            variant="default"
+            onClick={handleInspectField}
+            disabled={analyzingField}
+            data-testid={`button-inspect-ai-${field.key}`}
+            className="w-full"
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            {analyzingField ? "Analyzing..." : "InspectAI"}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1">
+            {analyzingField 
+              ? "Analyzing images with AI..."
+              : "Use AI to analyze all photos and generate a detailed inspection report"}
+          </p>
+        </div>
+      )}
 
       {/* Optional notes */}
       <div className="pt-2">
