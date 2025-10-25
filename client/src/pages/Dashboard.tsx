@@ -482,35 +482,37 @@ export default function Dashboard() {
               <CardTitle className="text-xl md:text-2xl font-bold">Inspection Activity (Last 7 Days)</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
-                <LineChart data={inspectionTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis 
-                    dataKey="date" 
-                    stroke="hsl(var(--muted-foreground))" 
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis 
-                    stroke="hsl(var(--muted-foreground))" 
-                    tick={{ fontSize: 12 }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--background))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '0.75rem',
-                      fontSize: '0.875rem'
-                    }} 
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="count" 
-                    stroke="hsl(199, 79%, 63%)" 
-                    strokeWidth={2}
-                    dot={{ fill: 'hsl(199, 79%, 63%)', r: 3 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="h-[250px] md:h-[300px]" data-testid="chart-wrapper-line">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={inspectionTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="hsl(var(--muted-foreground))" 
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis 
+                      stroke="hsl(var(--muted-foreground))" 
+                      tick={{ fontSize: 12 }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--background))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '0.75rem',
+                        fontSize: '0.875rem'
+                      }} 
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="count" 
+                      stroke="hsl(199, 79%, 63%)" 
+                      strokeWidth={2}
+                      dot={{ fill: 'hsl(199, 79%, 63%)', r: 3 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -522,32 +524,34 @@ export default function Dashboard() {
               <CardTitle className="text-xl md:text-2xl font-bold">Inspection Status</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
-                <PieChart>
-                  <Pie
-                    data={statusDistributionData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={window.innerWidth < 768 ? 70 : 80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {statusDistributionData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(var(--background))', 
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '0.75rem',
-                      fontSize: '0.875rem'
-                    }} 
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="h-[250px] md:h-[300px]" data-testid="chart-wrapper-pie">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={statusDistributionData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {statusDistributionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--background))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '0.75rem',
+                        fontSize: '0.875rem'
+                      }} 
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </CardContent>
           </Card>
         )}
