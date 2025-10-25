@@ -1,7 +1,7 @@
 # Inspect360 - AI-Powered Building Inspection Platform
 
 ## Overview
-Inspect360 is a PWA-first building inspection platform designed for Build-to-Rent (BTR) operations. It provides role-based access for various stakeholders, offering offline mobile inspections, AI-driven photo analysis and comparison reporting using OpenAI Vision API, compliance document tracking with expiry alerts, a dedicated tenant portal, internal maintenance tracking, and an inspection credit system powered by Stripe. The platform's core purpose is to streamline property management and enhance operational efficiency within BTR businesses.
+Inspect360 is a PWA-first building inspection platform for Build-to-Rent (BTR) operations. It offers role-based access, offline mobile inspections, AI-driven photo analysis and comparison reporting using OpenAI Vision API, compliance document tracking with expiry alerts, a dedicated tenant portal, internal maintenance tracking, and an inspection credit system powered by Stripe. The platform's core purpose is to streamline property management and enhance operational efficiency within BTR businesses.
 
 ## User Preferences
 - Prioritize PWA-first mobile experience
@@ -15,80 +15,38 @@ Inspect360 is a PWA-first building inspection platform designed for Build-to-Ren
 The platform employs a PWA-first approach with a robust web architecture.
 
 ### UI/UX Decisions
-- **Modern Clean Design System**: Utilizes Inter font, clean cards with soft shadows, 0.75rem border-radius, 150ms transitions, generous spacing (p-6/p-8, gap-6/gap-8), subtle hover effects, and skeleton loaders with cyan shimmer.
-- **Color Scheme**: Primary CTAs use Bright Cyan (#00D5CC / HSL 174 100% 42%), accents/links use Teal (#3B7A8C / HSL 193 40% 38%), with clean white backgrounds and warm gray neutrals.
-- **Branding**: Inspect360 logo (attached_assets/Inspect360 Logo_1761302629835.png) appears on all login pages (Auth.tsx h-12/h-16, AdminLogin.tsx h-16) and main app sidebar (app-sidebar.tsx h-8).
+- **Modern Clean Design System**: Uses Inter font, clean cards with soft shadows, 0.75rem border-radius, 150ms transitions, generous spacing, subtle hover effects, and skeleton loaders with cyan shimmer.
+- **Color Scheme**: Primary CTAs use Bright Cyan, accents/links use Teal, with clean white backgrounds and warm gray neutrals.
+- **Branding**: Inspect360 logo prominently displayed on login pages and main app sidebar.
 - **Components**: Clean white cards, pill-shaped buttons, minimal elevation.
 - **Layout**: Left sidebar navigation with Inspect360 logo header and role-aware menus, top bar with logout, responsive grid with ample white space.
 
 ### Technical Implementations
-- **Frontend**: React with TypeScript, Vite, Wouter (routing), TanStack Query (data fetching), Shadcn UI, Tailwind CSS, Uppy (file uploads).
-- **Backend**: Express.js, PostgreSQL (Neon) with Drizzle ORM, Passport.js (local strategy) for authentication, and Express-session.
+- **Frontend**: React with TypeScript, Vite, Wouter, TanStack Query, Shadcn UI, Tailwind CSS, Uppy.
+- **Backend**: Express.js, PostgreSQL (Neon) with Drizzle ORM, Passport.js for authentication, and Express-session.
 - **Authentication**: Custom username/password authentication using Passport.js.
-- **Object Storage**: Google Cloud Storage for inspection photos and compliance documents.
-- **Database Schema**: Includes `users` (with roles: owner, clerk, compliance, tenant, contractor), `organizations`, `properties`, `blocks`, `inspections`, `compliance_documents`, `maintenance_requests`, `asset_inventory`, `contacts`, and tables for the new tagging system.
+- **Object Storage**: Google Cloud Storage for media.
+- **Database Schema**: Includes `users` (with roles: owner, clerk, compliance, tenant, contractor), `organizations`, `properties`, `blocks`, `inspections`, `compliance_documents`, `maintenance_requests`, `asset_inventory`, `contacts`, and tagging system tables.
 - **Role-Based Access**: Granular control for Owner Operators, Inventory Clerks, Compliance Officers, Tenants, and Contractors.
-- **Credit System**: AI photo analysis (1 credit) and comparison reports (2 credits), purchasable via Stripe; organizations receive 5 initial free credits.
-- **AI Features**:
-    - **Photo Analysis**: OpenAI GPT-5 Vision for condition assessment and issue identification.
-    - **Comparison Reports**: AI-generated summaries for check-in vs. check-out inspection comparisons.
+- **Credit System**: AI photo analysis (1 credit) and comparison reports (2 credits) purchasable via Stripe; organizations receive 5 initial free credits.
+- **AI Features**: OpenAI GPT-5 Vision for photo analysis (condition assessment) and comparison reports (check-in vs. check-out summaries).
 - **PWA**: `manifest.json` and service worker for offline capabilities and caching.
-- **Performance**: Optimized database queries and Zod validation for API error handling.
-- **Inspection Templates System**: JSON-based templates with a flexible structure editor, supporting various field types, versioning, and snapshots. Includes a Template Builder UI for visual editing and a Templates List Page with comprehensive filtering and management.
-- **Inspection Capture Workflow**: Complete field inspection workflow with:
-  - InspectionCapture page for data entry with 15 field type widgets
-  - Real-time progress tracking based on completed fields
-  - Entry persistence with optimistic updates
-  - InspectionReview page for read-only verification
-  - Status management (scheduled → in_progress → completed)
-  - Template snapshot preservation for audit trail
-  - Note and photo support on all fields
+- **Performance**: Optimized database queries and Zod validation.
+- **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI.
+- **Inspection Capture Workflow**: Full field inspection workflow with data entry, real-time progress, optimistic updates, review page, status management, template snapshot preservation, and note/photo support.
 
 ### Feature Specifications
 - **Core Modules**: Properties, Blocks, Inspections, Compliance, Maintenance, Credit Management, Asset Inventory, Contacts, Tagging System.
-- **Property Detail Page**: Comprehensive BTR-focused property view with 5 tabs:
-  - **Overview Stats**: Occupancy status, compliance rate, inspection counts (due + overdue), open maintenance requests
-  - **Inspections Tab**: Shows inspector names, scheduled dates, status badges, with links to detail pages
-  - **Tenants Tab**: Displays assigned tenant users with avatars, emails, and badges
-  - **Inventory Tab**: Shows asset items with purchase dates, lifespan years, condition badges (excellent/good/fair/poor)
-  - **Compliance Tab**: Three-state expiry tracking (expired=red, expiring ≤30 days=orange, valid=green) with automatic status calculation
-  - **Maintenance Tab**: Displays requests with priority badges, reported by/assigned to names, status indicators
-  - All tabs enhanced with BTR-relevant metadata from enriched backend APIs
-- **Asset Inventory**: Tracks physical assets with detailed information, condition, and image uploads.
-- **Contacts Management**: Comprehensive system for internal and external contacts with categorization, full CRUD, and tag integration:
-  - **Contact Tags**: Organization-scoped tag assignment via `contactTags` join table
-  - **Tag Management UI**: Multi-select tag interface in contact create/edit dialog with visual badges
-  - **Inline Tag Creation**: Create new tags directly from contact form without leaving the dialog (auto-selects new tag, random color assignment)
-  - **Tag Display**: Colored tag badges on contact cards with tag icon
-  - **Tag Filtering**: Dropdown filter to show only contacts with specific tags
-- **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, and integration across entities like Blocks, Properties, Users, Compliance Documents, Asset Inventory, Maintenance Requests, and Contacts. Features a global search.
-- **Configurable Role-Based Dashboards**: Role-specific views with 9 panel types (stats, inspections, compliance, etc.), user customization, persistence, charts, empty states, and owner-only role switching.
+- **Property Detail Page**: Comprehensive BTR property view with Overview Stats, Inspections, Tenants, Inventory, Compliance, and Maintenance tabs, enriched with BTR metadata.
+- **Asset Inventory**: Comprehensive BTR asset management with categories, detailed tracking, financial management (depreciation), condition & cleanliness ratings, maintenance tracking, warranty management, supplier info, multi-photo support, flexible assignment, search & filtering, and full CRUD operations.
+- **Contacts Management**: System for internal/external contacts with categorization, full CRUD, organization-scoped tags, tag management UI (with inline creation), tag display, and filtering.
+- **Tagging System**: Organization-scoped tags with customizable colors, full CRUD API, integrated across Blocks, Properties, Users, Compliance Documents, Asset Inventory, Maintenance Requests, and Contacts, with global search.
+- **Configurable Role-Based Dashboards**: Role-specific views with 9 panel types, user customization, persistence, charts, and owner-only role switching.
 - **Tenant Portal**: Secure access for property reports and maintenance requests.
-- **Team Management**: Comprehensive team member profile management with:
-  - **Profile Creation**: Full user profiles with basic info, professional details, and documents
-  - **Fields**: Profile picture, name, email, username, phone (international format), role assignment
-  - **Address Management**: Complete address capture (street, city, state/county, postal code, country) with auto-formatted display
-  - **Professional Info**: Skills management (array with add/remove), education (degrees/certifications), certificate URLs
-  - **Role Types**: Owner/Operator, Inventory Clerk, Compliance Officer, Tenant, Contractor
-  - **Visual Display**: Avatar with initials fallback, role badges, contact cards, skill badges
-  - **Edit Functionality**: Update all profile fields except password (optional on edit)
-  - **Owner Controls**: Full user and role administration for organization management
-  - **Account Status Management**: Owner users can disable/enable accounts with status badges (Active/Inactive) and toggle buttons; disabled accounts cannot login; users cannot disable their own account
-- **Organization Onboarding**: Streamlined setup process.
-- **Search and Filters**: Functionality for properties and blocks.
-- **Block-Property Relationship**: Properties assigned to blocks, with associated metrics.
-- **Photo & Video Upload**: Uppy integration with Google Cloud Storage for photo, photo_array, and video field types with 10MB/100MB limits respectively.
-- **AI Photo Analysis**: OpenAI Vision API integration (1 credit per analysis) with inline results display in inspection capture.
-- **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection, manual sync, and status indicators.
-- **AI Comparison Reports**: Check-in vs check-out inspection comparisons using OpenAI (2 credits), with automatic report selection and inline display.
-- **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal for maintenance requests with:
-  - **Step 1**: Basic issue description form (title, property, details)
-  - **Step 2**: Multi-image upload via Uppy with Google Cloud Storage (max 5 images, 10MB each)
-  - **Step 3**: AI-powered fix suggestions using OpenAI Vision API (analyzes uploaded images)
-  - **Step 4**: Review AI suggestions before submitting request
-  - Schema includes photoUrls (array), aiSuggestedFixes (text), aiAnalysisJson (json) fields
-  - Non-tenant users see standard single-step form without AI suggestions
-  - All maintenance requests support multi-image attachments and AI analysis storage
+- **Team Management**: Comprehensive team member profiles with basic info, professional details (skills, education), address management, role assignment, account status management (active/inactive), and owner controls for full administration.
+- **Photo & Video Upload**: Uppy integration with Google Cloud Storage for photo, photo_array, and video field types (10MB/100MB limits).
+- **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection and status indicators.
+- **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with basic issue description, multi-image upload, AI-powered fix suggestions using OpenAI Vision API, and review before submission.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
@@ -104,13 +62,3 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Shadcn UI**: UI component library.
 - **Tailwind CSS**: Styling framework.
 - **Uppy**: File upload library.
-
-## Recent Critical Fixes
-- **Session Persistence Fix (Oct 24, 2025)**: Fixed critical authentication bug where all API requests returned 401 Unauthorized after successful login. Root cause was `resave: false` in session configuration preventing proper session persistence. Solution: Changed to `resave: true` to force session saves, disabled secure cookie requirement for development (`secure: false`), and set `sameSite: 'lax'` unconditionally. Session now persists correctly across all authenticated requests.
-- **Address Persistence Fix (Oct 25, 2025)**: Fixed Team Management address data not persisting to database. Root cause was submit logic checking `address.formatted` field which was never populated. Solution: Changed to check if ANY address field has data, then auto-generate formatted string from individual fields before submission. Address now saves as complete JSON object with all components.
-- **Password Hashing Security Fix (Oct 25, 2025)**: Fixed critical security vulnerability where team member passwords were stored as plaintext instead of hashed. Root cause was POST /api/team route passing raw password to storage.createUser. Solution: Import and call hashPassword() before user creation. New team members can now log in successfully and passwords are securely hashed using scrypt.
-- **Account Disabling Feature (Oct 25, 2025)**: Implemented account status management with `isActive` boolean field in users schema (default true). Authentication checks account status and rejects login attempts from disabled accounts with clear error message. Added API route `PATCH /api/team/:userId/status` with owner-only access, same-organization checks, and self-disable prevention. Enhanced Team Management UI with Active/Inactive status badges and toggle buttons. Updated clerk query endpoint to filter only active users for inspection assignment dropdowns.
-- **Query Cache Management**: Changed queryClient config from `staleTime: Infinity` to `staleTime: 0` and added `refetchOnMount: true` to enable proper list refreshing after mutations
-- **List Refresh Pattern**: Updated Blocks.tsx and Properties.tsx to use `await queryClient.refetchQueries()` instead of `invalidateQueries()` for immediate, guaranteed list updates after create/update/delete operations
-- **Inspection Route Fix**: Corrected PropertyDetail "New Inspection" button to navigate to `/inspections` instead of broken `/inspections/new` route
-- **TanStack Query v5 Best Practices**: Implemented recommended v5 pattern for synchronous cache updates with scoped queryKey filters
