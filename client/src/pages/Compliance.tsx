@@ -1,22 +1,25 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { FileText, Upload, AlertTriangle, ExternalLink, Calendar, ShieldAlert } from "lucide-react";
+import { FileText, Upload, AlertTriangle, ExternalLink, Calendar, ShieldAlert, Tag as TagIcon, X, Plus, Building2, Home } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { format, differenceInDays, isPast } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertComplianceDocumentSchema, type ComplianceDocument } from "@shared/schema";
+import { insertComplianceDocumentSchema, type ComplianceDocument, type Tag, type Block, type Property } from "@shared/schema";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { useAuth } from "@/hooks/useAuth";
+import { Separator } from "@/components/ui/separator";
 
 const DOCUMENT_TYPES = [
   "Fire Safety Certificate",
@@ -38,6 +41,8 @@ type UploadFormValues = z.infer<typeof uploadFormSchema>;
 
 export default function Compliance() {
   const [open, setOpen] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
 
   const { data: documents = [], isLoading } = useQuery<ComplianceDocument[]>({
@@ -49,6 +54,26 @@ export default function Compliance() {
     queryFn: () => fetch('/api/compliance/expiring?days=90').then(res => res.json()),
   });
 
+  const { data: properties = [] } = useQuery<Property[]>({
+    queryKey: ['/api/properties'],
+    enabled: !!user?.organizationId,
+  });
+
+  const { data: blocks = [] } = useQuery<Block[]>({
+    queryKey: ['/api/blocks'],
+    enabled: !!user?.organizationId,
+  });
+
+  const { data: allTags = [] } = useQuery<Tag[]>({
+    queryKey: ['/api/tags'],
+    enabled: !!user?.organizationId,
+  });
+
+  const { data: docTags = [] } = useQuery<Tag[]>({
+    queryKey: ['/api/compliance', selectedDoc, 'tags'],
+    enabled: !!selectedDoc,
+  });
+
   const form = useForm<UploadFormValues>({
     resolver: zodResolver(uploadFormSchema),
     defaultValues: {
@@ -56,6 +81,7 @@ export default function Compliance() {
       documentUrl: "",
       expiryDate: undefined,
       propertyId: undefined,
+      blockId: undefined,
       status: "current",
     },
   });
@@ -70,6 +96,28 @@ export default function Compliance() {
       queryClient.invalidateQueries({ queryKey: ['/api/compliance/expiring'] });
       setOpen(false);
       form.reset();
+    },
+  });
+
+  const addTagMutation = useMutation({
+    mutationFn: ({ docId, tagId }: { docId: string; tagId: string }) =>
+      apiRequest('POST', `/api/compliance/${docId}/tags/${tagId}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
+      if (selectedDoc) {
+        queryClient.invalidateQueries({ queryKey: ['/api/compliance', selectedDoc, 'tags'] });
+      }
+    },
+  });
+
+  const removeTagMutation = useMutation({
+    mutationFn: ({ docId, tagId }: { docId: string; tagId: string }) =>
+      apiRequest('DELETE', `/api/compliance/${docId}/tags/${tagId}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
+      if (selectedDoc) {
+        queryClient.invalidateQueries({ queryKey: ['/api/compliance', selectedDoc, 'tags'] });
+      }
     },
   });
 
@@ -97,7 +145,7 @@ export default function Compliance() {
           className="bg-yellow-600 dark:bg-yellow-500 text-white dark:text-black" 
           data-testid={`badge-status-${doc.id}`}
         >
-          Expiring Soon ({daysUntilExpiry}d)
+          Expiring Soon
         </Badge>
       );
     } else if (daysUntilExpiry <= 90) {
@@ -106,7 +154,7 @@ export default function Compliance() {
           className="bg-blue-600 dark:bg-blue-500 text-white dark:text-black" 
           data-testid={`badge-status-${doc.id}`}
         >
-          Expiring in {daysUntilExpiry}d
+          {daysUntilExpiry}d left
         </Badge>
       );
     }
@@ -118,10 +166,29 @@ export default function Compliance() {
     );
   };
 
-  // Check if user has permission to access compliance
+  const getPropertyName = (propertyId: string | null): string | null => {
+    if (!propertyId) return null;
+    const property = properties.find(p => p.id === propertyId);
+    return property?.name || null;
+  };
+
+  const getBlockName = (blockId: string | null): string | null => {
+    if (!blockId) return null;
+    const block = blocks.find(b => b.id === blockId);
+    return block?.name || null;
+  };
+
+  const expiredDocs = documents.filter(doc => 
+    doc.expiryDate && isPast(new Date(doc.expiryDate.toString()))
+  );
+
+  const currentDocs = documents.filter(doc => 
+    !doc.expiryDate || !isPast(new Date(doc.expiryDate.toString()))
+  );
+
   if (authLoading) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     );
@@ -129,7 +196,7 @@ export default function Compliance() {
 
   if (!user || (user.role !== "owner" && user.role !== "compliance")) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
           <ShieldAlert className="h-4 w-4 text-yellow-600" />
           <AlertDescription className="text-yellow-800 dark:text-yellow-200">
@@ -141,21 +208,25 @@ export default function Compliance() {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground" data-testid="heading-compliance">Compliance Center</h1>
-          <p className="text-muted-foreground">Manage compliance documents and certifications</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground" data-testid="heading-compliance">
+            Compliance Center
+          </h1>
+          <p className="text-sm md:text-base text-muted-foreground mt-1">
+            Manage compliance documents and certifications
+          </p>
         </div>
         
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-accent" data-testid="button-upload-document">
+            <Button className="bg-primary w-full sm:w-auto" data-testid="button-upload-document">
               <Upload className="w-4 h-4 mr-2" />
               Upload Document
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Upload Compliance Document</DialogTitle>
             </DialogHeader>
@@ -185,6 +256,66 @@ export default function Compliance() {
                     </FormItem>
                   )}
                 />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="propertyId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Property (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                          value={field.value || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-property">
+                              <SelectValue placeholder="Select property" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {properties.map((property) => (
+                              <SelectItem key={property.id} value={property.id}>
+                                {property.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="blockId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Block (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                          value={field.value || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-block">
+                              <SelectValue placeholder="Select block" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {blocks.map((block) => (
+                              <SelectItem key={block.id} value={block.id}>
+                                {block.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
                 <FormField
                   control={form.control}
@@ -223,6 +354,11 @@ export default function Compliance() {
                           Select Document
                         </ObjectUploader>
                       </FormControl>
+                      {field.value && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          ✓ Document selected
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -246,18 +382,19 @@ export default function Compliance() {
                   )}
                 />
 
-                <div className="flex justify-end gap-2 pt-4">
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setOpen(false)}
                     data-testid="button-cancel"
+                    className="w-full sm:w-auto"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="submit"
-                    className="bg-primary"
+                    className="bg-primary w-full sm:w-auto"
                     disabled={uploadMutation.isPending}
                     data-testid="button-submit-document"
                   >
@@ -274,19 +411,53 @@ export default function Compliance() {
         <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
           <AlertTriangle className="h-4 w-4 text-yellow-600" />
           <AlertDescription className="text-yellow-800 dark:text-yellow-200">
-            You have {expiringDocs.length} document(s) expiring within 90 days. Please renew them soon.
+            <span className="font-semibold">{expiringDocs.length} document(s)</span> expiring within 90 days. Please renew them soon.
           </AlertDescription>
         </Alert>
       )}
 
-      <div className="grid gap-4">
+      {expiredDocs.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-destructive" />
+            <h2 className="text-xl font-semibold text-destructive" data-testid="heading-expired">
+              Expired Documents ({expiredDocs.length})
+            </h2>
+          </div>
+          <div className="grid gap-4">
+            {expiredDocs.map((doc) => (
+              <DocumentCard
+                key={doc.id}
+                doc={doc}
+                getStatusBadge={getStatusBadge}
+                getPropertyName={getPropertyName}
+                getBlockName={getBlockName}
+                allTags={allTags}
+                docTags={selectedDoc === doc.id ? docTags : []}
+                selectedDoc={selectedDoc}
+                setSelectedDoc={setSelectedDoc}
+                setTagDialogOpen={setTagDialogOpen}
+                addTagMutation={addTagMutation}
+                removeTagMutation={removeTagMutation}
+              />
+            ))}
+          </div>
+          <Separator className="my-6" />
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold" data-testid="heading-current">
+          {expiredDocs.length > 0 ? 'Current Documents' : 'All Documents'} ({currentDocs.length})
+        </h2>
+        
         {isLoading ? (
           <Card>
             <CardContent className="p-8 text-center text-muted-foreground">
               Loading documents...
             </CardContent>
           </Card>
-        ) : documents.length === 0 ? (
+        ) : currentDocs.length === 0 && expiredDocs.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
               <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -296,50 +467,221 @@ export default function Compliance() {
               </p>
             </CardContent>
           </Card>
+        ) : currentDocs.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">All documents are expired. Please upload new documents.</p>
+            </CardContent>
+          </Card>
         ) : (
-          documents.map((doc) => (
-            <Card key={doc.id} className="hover-elevate" data-testid={`card-document-${doc.id}`}>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-primary" />
-                      <span data-testid={`text-document-type-${doc.id}`}>{doc.documentType}</span>
-                    </CardTitle>
-                    {doc.expiryDate && (
-                      <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                        <Calendar className="w-4 h-4" />
-                        <span data-testid={`text-expiry-date-${doc.id}`}>
-                          Expires: {format(new Date(doc.expiryDate.toString()), 'PPP')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusBadge(doc)}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      asChild
-                      data-testid={`button-view-document-${doc.id}`}
-                    >
-                      <a href={doc.documentUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="w-4 h-4 mr-1" />
-                        View
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-muted-foreground">
-                  {doc.createdAt && `Uploaded ${format(new Date(doc.createdAt.toString()), 'PPP')}`}
-                </div>
-              </CardContent>
-            </Card>
-          ))
+          <div className="grid gap-4">
+            {currentDocs.map((doc) => (
+              <DocumentCard
+                key={doc.id}
+                doc={doc}
+                getStatusBadge={getStatusBadge}
+                getPropertyName={getPropertyName}
+                getBlockName={getBlockName}
+                allTags={allTags}
+                docTags={selectedDoc === doc.id ? docTags : []}
+                selectedDoc={selectedDoc}
+                setSelectedDoc={setSelectedDoc}
+                setTagDialogOpen={setTagDialogOpen}
+                addTagMutation={addTagMutation}
+                removeTagMutation={removeTagMutation}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>
+  );
+}
+
+interface DocumentCardProps {
+  doc: ComplianceDocument;
+  getStatusBadge: (doc: ComplianceDocument) => JSX.Element;
+  getPropertyName: (id: string | null) => string | null;
+  getBlockName: (id: string | null) => string | null;
+  allTags: Tag[];
+  docTags: Tag[];
+  selectedDoc: string | null;
+  setSelectedDoc: (id: string | null) => void;
+  setTagDialogOpen: (open: boolean) => void;
+  addTagMutation: any;
+  removeTagMutation: any;
+}
+
+function DocumentCard({
+  doc,
+  getStatusBadge,
+  getPropertyName,
+  getBlockName,
+  allTags,
+  docTags,
+  selectedDoc,
+  setSelectedDoc,
+  setTagDialogOpen,
+  addTagMutation,
+  removeTagMutation,
+}: DocumentCardProps) {
+  const propertyName = getPropertyName(doc.propertyId);
+  const blockName = getBlockName(doc.blockId);
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+
+  const handleAddTag = (tagId: string) => {
+    addTagMutation.mutate({ docId: doc.id, tagId });
+    setTagPopoverOpen(false);
+  };
+
+  const handleRemoveTag = (tagId: string) => {
+    removeTagMutation.mutate({ docId: doc.id, tagId });
+  };
+
+  const availableTags = allTags.filter(
+    tag => !docTags.some(dt => dt.id === tag.id)
+  );
+
+  return (
+    <Card className="hover-elevate" data-testid={`card-document-${doc.id}`}>
+      <CardHeader>
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex-1 space-y-2">
+            <CardTitle className="text-base md:text-lg flex items-center gap-2 flex-wrap">
+              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+              <span data-testid={`text-document-type-${doc.id}`} className="break-words">
+                {doc.documentType}
+              </span>
+            </CardTitle>
+            
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              {doc.expiryDate && (
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4" />
+                  <span data-testid={`text-expiry-date-${doc.id}`}>
+                    {format(new Date(doc.expiryDate.toString()), 'PPP')}
+                  </span>
+                </div>
+              )}
+              
+              {propertyName && (
+                <div className="flex items-center gap-1.5">
+                  <Home className="w-4 h-4" />
+                  <span>{propertyName}</span>
+                </div>
+              )}
+              
+              {blockName && (
+                <div className="flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4" />
+                  <span>{blockName}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedDoc === doc.id && docTags.map((tag) => (
+                <Badge
+                  key={tag.id}
+                  variant="outline"
+                  style={{ 
+                    borderColor: tag.color || undefined, 
+                    backgroundColor: tag.color ? `${tag.color}15` : undefined,
+                    color: tag.color || undefined
+                  } as React.CSSProperties}
+                  className="gap-1"
+                  data-testid={`badge-tag-${tag.id}`}
+                >
+                  {tag.name}
+                  <button
+                    onClick={() => handleRemoveTag(tag.id)}
+                    className="hover:bg-background/20 rounded-full p-0.5"
+                    data-testid={`button-remove-tag-${tag.id}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </Badge>
+              ))}
+              
+              {selectedDoc === doc.id && (
+                <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-6 px-2 text-xs"
+                      data-testid={`button-add-tag-${doc.id}`}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Tag
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search tags..." />
+                      <CommandList>
+                        <CommandEmpty>No tags found.</CommandEmpty>
+                        <CommandGroup>
+                          {availableTags.map((tag) => (
+                            <CommandItem
+                              key={tag.id}
+                              onSelect={() => handleAddTag(tag.id)}
+                              data-testid={`option-tag-${tag.id}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: tag.color || undefined } as React.CSSProperties}
+                                />
+                                <span>{tag.name}</span>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
+              
+              {selectedDoc !== doc.id && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setSelectedDoc(doc.id)}
+                  data-testid={`button-manage-tags-${doc.id}`}
+                >
+                  <TagIcon className="w-3 h-3 mr-1" />
+                  Manage Tags
+                </Button>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-2">
+            {getStatusBadge(doc)}
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              data-testid={`button-view-document-${doc.id}`}
+            >
+              <a href={doc.documentUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4 mr-1" />
+                View
+              </a>
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      {doc.createdAt && (
+        <CardContent className="pt-0">
+          <p className="text-xs md:text-sm text-muted-foreground">
+            Uploaded {format(new Date(doc.createdAt.toString()), 'PPP')}
+          </p>
+        </CardContent>
+      )}
+    </Card>
   );
 }

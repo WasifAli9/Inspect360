@@ -1540,7 +1540,7 @@ Provide a structured comparison highlighting differences in condition ratings an
     try {
       const userId = req.user.id;
       const user = await storage.getUser(userId);
-      const { documentType, documentUrl, expiryDate, propertyId } = req.body;
+      const { documentType, documentUrl, expiryDate, propertyId, blockId } = req.body;
       
       if (!user?.organizationId || !documentType || !documentUrl) {
         return res.status(400).json({ message: "Missing required fields" });
@@ -1549,6 +1549,7 @@ Provide a structured comparison highlighting differences in condition ratings an
       const doc = await storage.createComplianceDocument({
         organizationId: user.organizationId,
         propertyId: propertyId || null,
+        blockId: blockId || null,
         documentType,
         documentUrl,
         expiryDate: expiryDate ? new Date(expiryDate) : null,

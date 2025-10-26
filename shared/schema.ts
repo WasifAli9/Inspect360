@@ -472,6 +472,7 @@ export const complianceDocuments = pgTable("compliance_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
   propertyId: varchar("property_id"),
+  blockId: varchar("block_id"),
   documentType: varchar("document_type").notNull(), // e.g., "Fire Safety", "Insurance", "License"
   documentUrl: text("document_url").notNull(),
   expiryDate: timestamp("expiry_date"),
