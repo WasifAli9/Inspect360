@@ -9,6 +9,7 @@ import Stripe from "stripe";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { devRouter } from "./devRoutes";
+import { sendInspectionCompleteEmail } from "./resend";
 import {
   insertBlockSchema,
   insertContactSchema,
@@ -998,18 +999,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/inspections/:id/status", isAuthenticated, async (req, res) => {
+  app.patch("/api/inspections/:id/status", isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
       
-      const inspection = await storage.updateInspectionStatus(
+      // Get inspection details before updating
+      const inspection = await storage.getInspection(id);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+      
+      // Update status
+      const updatedInspection = await storage.updateInspectionStatus(
         id,
         status,
         status === "completed" ? new Date() : undefined
       );
 
-      res.json(inspection);
+      // Send email notification to owner when inspection is completed
+      if (status === "completed") {
+        try {
+          // Get inspector details
+          const inspector = await storage.getUser(inspection.inspectorId);
+          const inspectorName = inspector ? `${inspector.firstName || ''} ${inspector.lastName || ''}`.trim() || inspector.username : 'Unknown Inspector';
+          
+          // Get property or block name
+          let propertyName: string | undefined;
+          let blockName: string | undefined;
+          let organizationId: string | undefined;
+          
+          if (inspection.propertyId) {
+            const property = await storage.getProperty(inspection.propertyId);
+            propertyName = property?.name;
+            organizationId = property?.organizationId;
+          } else if (inspection.blockId) {
+            const block = await storage.getBlock(inspection.blockId);
+            blockName = block?.name;
+            organizationId = block?.organizationId;
+          }
+
+          // Get organization owner's email
+          if (organizationId) {
+            const owners = await storage.getUsersByOrganization(organizationId);
+            const owner = owners.find(u => u.role === 'owner');
+            
+            if (owner && owner.email) {
+              await sendInspectionCompleteEmail(
+                owner.email, // Email address
+                `${owner.firstName || ''} ${owner.lastName || ''}`.trim() || owner.email,
+                {
+                  type: inspection.type,
+                  propertyName,
+                  blockName,
+                  inspectorName,
+                  completedDate: updatedInspection.completedDate || new Date(),
+                  inspectionId: inspection.id
+                }
+              );
+              console.log(`Inspection complete email sent to owner: ${owner.email}`);
+            } else {
+              console.warn('No owner found for organization or owner has no email:', organizationId);
+            }
+          }
+        } catch (emailError) {
+          // Log email error but don't fail the request
+          console.error('Failed to send inspection complete email:', emailError);
+        }
+      }
+
+      res.json(updatedInspection);
     } catch (error) {
       console.error("Error updating inspection status:", error);
       res.status(500).json({ message: "Failed to update inspection status" });

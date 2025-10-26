@@ -35,7 +35,7 @@ export default function InspectionDetail() {
 
   const completeInspection = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/inspections/${id}/status`, "PATCH", {
+      return await apiRequest("PATCH", `/api/inspections/${id}/status`, {
         status: "completed",
       });
     },
@@ -58,7 +58,7 @@ export default function InspectionDetail() {
 
   const addItemMutation = useMutation({
     mutationFn: async (itemData: any) => {
-      return await apiRequest("/api/inspection-items", "POST", {
+      return await apiRequest("POST", "/api/inspection-items", {
         inspectionId: id,
         ...itemData,
       });
@@ -83,7 +83,7 @@ export default function InspectionDetail() {
 
   const analyzePhotoMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      return await apiRequest("/api/ai/analyze-photo", "POST", { itemId });
+      return await apiRequest("POST", "/api/ai/analyze-photo", { itemId });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
