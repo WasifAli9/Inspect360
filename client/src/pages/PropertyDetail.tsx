@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ComplianceCalendar from "@/components/ComplianceCalendar";
 import {
   ArrowLeft,
   Building2,
@@ -145,6 +146,16 @@ export default function PropertyDetail() {
     queryFn: async () => {
       const res = await fetch(`/api/properties/${propertyId}/compliance`, { credentials: "include" });
       if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!propertyId,
+  });
+
+  const { data: complianceReport, isLoading: complianceReportLoading } = useQuery({
+    queryKey: ["/api/properties", propertyId, "compliance-report"],
+    queryFn: async () => {
+      const res = await fetch(`/api/properties/${propertyId}/compliance-report`, { credentials: "include" });
+      if (!res.ok) return null;
       return res.json();
     },
     enabled: !!propertyId,
@@ -452,7 +463,15 @@ export default function PropertyDetail() {
         </TabsContent>
 
         {/* Compliance Tab */}
-        <TabsContent value="compliance" className="space-y-4">
+        <TabsContent value="compliance" className="space-y-6">
+          {/* Annual Compliance Report */}
+          <ComplianceCalendar 
+            report={complianceReport} 
+            isLoading={complianceReportLoading}
+            entityType="property"
+          />
+
+          {/* Compliance Documents Section */}
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Compliance Documents</h2>
             <Link href={`/compliance/new?propertyId=${propertyId}`}>

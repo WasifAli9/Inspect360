@@ -3,7 +3,9 @@ import { useRoute, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Building2, MapPin, Users, CheckCircle2, Calendar, AlertTriangle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ComplianceCalendar from "@/components/ComplianceCalendar";
+import { ArrowLeft, Building2, MapPin, Users, CheckCircle2, Calendar, AlertTriangle, FileCheck } from "lucide-react";
 
 interface PropertyStats {
   totalUnits: number;
@@ -49,6 +51,16 @@ export default function BlockDetail() {
     queryFn: async () => {
       const res = await fetch(`/api/blocks/${blockId}/properties`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch properties");
+      return res.json();
+    },
+    enabled: !!blockId,
+  });
+
+  const { data: complianceReport, isLoading: complianceReportLoading } = useQuery({
+    queryKey: ["/api/blocks", blockId, "compliance-report"],
+    queryFn: async () => {
+      const res = await fetch(`/api/blocks/${blockId}/compliance-report`, { credentials: "include" });
+      if (!res.ok) return null;
       return res.json();
     },
     enabled: !!blockId,
@@ -108,102 +120,120 @@ export default function BlockDetail() {
         </div>
       </div>
 
-      {/* Properties Summary */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-4">
-          Properties in this Block ({properties.length})
-        </h2>
-      </div>
+      {/* Tabs */}
+      <Tabs defaultValue="properties" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="properties" data-testid="tab-properties">
+            <Building2 className="h-4 w-4 mr-2" />
+            Properties ({properties.length})
+          </TabsTrigger>
+          <TabsTrigger value="compliance" data-testid="tab-compliance">
+            <FileCheck className="h-4 w-4 mr-2" />
+            Compliance
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Properties List */}
-      {properties.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No properties yet</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Properties assigned to this block will appear here
-            </p>
-            <Link href="/properties">
-              <Button>View All Properties</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {properties.map((property) => (
-            <Link key={property.id} href={`/properties/${property.id}`}>
-              <Card className="hover-elevate cursor-pointer" data-testid={`card-property-${property.id}`}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Building2 className="h-5 w-5 text-primary" />
-                        {property.name}
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">{property.address}</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {/* Occupancy */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        Occupancy
+        {/* Properties Tab */}
+        <TabsContent value="properties" className="space-y-4">
+          {properties.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No properties yet</h3>
+                <p className="text-muted-foreground text-center mb-4">
+                  Properties assigned to this block will appear here
+                </p>
+                <Link href="/properties">
+                  <Button>View All Properties</Button>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {properties.map((property) => (
+                <Link key={property.id} href={`/properties/${property.id}`}>
+                  <Card className="hover-elevate cursor-pointer" data-testid={`card-property-${property.id}`}>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            <Building2 className="h-5 w-5 text-primary" />
+                            {property.name}
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground mt-1">{property.address}</p>
+                        </div>
                       </div>
-                      <p className="text-sm font-semibold">{property.stats?.occupancyStatus || 'No data'}</p>
-                    </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {/* Occupancy */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            Occupancy
+                          </div>
+                          <p className="text-sm font-semibold">{property.stats?.occupancyStatus || 'No data'}</p>
+                        </div>
 
-                    {/* Compliance */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                        Compliance
-                      </div>
-                      <Badge 
-                        variant={(property.stats?.complianceRate || 0) >= 80 ? "default" : "destructive"}
-                        className="text-xs"
-                      >
-                        {property.stats?.complianceStatus || 'No data'}
-                      </Badge>
-                    </div>
+                        {/* Compliance */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                            Compliance
+                          </div>
+                          <Badge 
+                            variant={(property.stats?.complianceRate || 0) >= 80 ? "default" : "destructive"}
+                            className="text-xs"
+                          >
+                            {property.stats?.complianceStatus || 'No data'}
+                          </Badge>
+                        </div>
 
-                    {/* Due Soon */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        Due Soon
-                      </div>
-                      <Badge 
-                        variant={(property.stats?.inspectionsDue || 0) > 0 ? "secondary" : "outline"}
-                        className="text-xs"
-                      >
-                        {property.stats?.inspectionsDue || 0} inspection{(property.stats?.inspectionsDue || 0) !== 1 ? 's' : ''}
-                      </Badge>
-                    </div>
+                        {/* Due Soon */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            Due Soon
+                          </div>
+                          <Badge 
+                            variant={(property.stats?.inspectionsDue || 0) > 0 ? "secondary" : "outline"}
+                            className="text-xs"
+                          >
+                            {property.stats?.inspectionsDue || 0} inspection{(property.stats?.inspectionsDue || 0) !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
 
-                    {/* Overdue */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                        Overdue
+                        {/* Overdue */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                            Overdue
+                          </div>
+                          <Badge 
+                            variant={(property.stats?.inspectionsOverdue || 0) > 0 ? "destructive" : "outline"}
+                            className="text-xs"
+                          >
+                            {property.stats?.inspectionsOverdue || 0} inspection{(property.stats?.inspectionsOverdue || 0) !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge 
-                        variant={(property.stats?.inspectionsOverdue || 0) > 0 ? "destructive" : "outline"}
-                        className="text-xs"
-                      >
-                        {property.stats?.inspectionsOverdue || 0} inspection{(property.stats?.inspectionsOverdue || 0) !== 1 ? 's' : ''}
-                      </Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Compliance Tab */}
+        <TabsContent value="compliance" className="space-y-6">
+          <ComplianceCalendar 
+            report={complianceReport} 
+            isLoading={complianceReportLoading}
+            entityType="block"
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

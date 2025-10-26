@@ -778,6 +778,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get property annual compliance report
+  app.get("/api/properties/:id/compliance-report", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+
+      const property = await storage.getProperty(id);
+      if (!property || property.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Property not found" });
+      }
+
+      // Get all inspections for this property
+      const allInspections = await storage.getInspectionsByProperty(id);
+      
+      // Get all inspection templates
+      const templates = await storage.getInspectionTemplatesByOrganization(user.organizationId);
+      const activeTemplates = templates.filter(t => t.isActive && (t.scope === 'property' || t.scope === 'both'));
+      
+      // Build compliance data by template and month
+      const currentYear = new Date().getFullYear();
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      
+      const complianceData = activeTemplates.map(template => {
+        const templateInspections = allInspections.filter(i => i.templateId === template.id);
+        
+        const monthData = months.map((monthName, monthIndex) => {
+          // Find inspections scheduled for this month
+          const monthInspections = templateInspections.filter(inspection => {
+            if (!inspection.scheduledDate) return false;
+            const schedDate = new Date(inspection.scheduledDate);
+            return schedDate.getFullYear() === currentYear && schedDate.getMonth() === monthIndex;
+          });
+          
+          if (monthInspections.length === 0) {
+            return { month: monthName, status: 'not_scheduled', count: 0 };
+          }
+          
+          const now = new Date();
+          const completedCount = monthInspections.filter(i => i.status === 'completed').length;
+          const overdueCount = monthInspections.filter(i => {
+            if (i.status === 'completed' || !i.scheduledDate) return false;
+            const schedDate = new Date(i.scheduledDate);
+            return schedDate < now;
+          }).length;
+          
+          const dueCount = monthInspections.filter(i => {
+            if (i.status === 'completed' || !i.scheduledDate) return false;
+            const schedDate = new Date(i.scheduledDate);
+            const daysUntil = Math.ceil((schedDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            return daysUntil >= 0 && daysUntil <= 30;
+          }).length;
+          
+          let status = 'not_scheduled';
+          if (overdueCount > 0) {
+            status = 'overdue';
+          } else if (completedCount === monthInspections.length) {
+            status = 'completed';
+          } else if (dueCount > 0) {
+            status = 'due';
+          } else {
+            status = 'scheduled';
+          }
+          
+          return {
+            month: monthName,
+            status,
+            count: monthInspections.length,
+            completed: completedCount,
+            overdue: overdueCount,
+          };
+        });
+        
+        // Calculate compliance percentage for this template
+        const totalScheduled = monthData.reduce((sum, m) => sum + m.count, 0);
+        const totalCompleted = monthData.reduce((sum, m) => sum + (m.completed || 0), 0);
+        const complianceRate = totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0;
+        
+        return {
+          templateId: template.id,
+          templateName: template.name,
+          monthData,
+          complianceRate,
+          totalScheduled,
+          totalCompleted,
+        };
+      });
+      
+      // Calculate overall compliance
+      const totalScheduled = complianceData.reduce((sum, t) => sum + t.totalScheduled, 0);
+      const totalCompleted = complianceData.reduce((sum, t) => sum + t.totalCompleted, 0);
+      const overallCompliance = totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 100;
+      
+      res.json({
+        year: currentYear,
+        months,
+        templates: complianceData,
+        overallCompliance,
+        totalScheduled,
+        totalCompleted,
+      });
+    } catch (error) {
+      console.error("Error fetching property compliance report:", error);
+      res.status(500).json({ message: "Failed to fetch compliance report" });
+    }
+  });
+
   // Get property maintenance requests
   app.get("/api/properties/:id/maintenance", isAuthenticated, async (req: any, res) => {
     try {
@@ -1999,6 +2113,120 @@ Provide a structured comparison highlighting differences in condition ratings an
     } catch (error) {
       console.error("Error fetching block properties:", error);
       res.status(500).json({ error: "Failed to fetch block properties" });
+    }
+  });
+
+  // Get block annual compliance report
+  app.get("/api/blocks/:id/compliance-report", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+
+      const block = await storage.getBlock(id);
+      if (!block || block.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Block not found" });
+      }
+
+      // Get all inspections for this block
+      const allInspections = await storage.getInspectionsByBlock(id);
+      
+      // Get all inspection templates
+      const templates = await storage.getInspectionTemplatesByOrganization(user.organizationId);
+      const activeTemplates = templates.filter(t => t.isActive && (t.scope === 'block' || t.scope === 'both'));
+      
+      // Build compliance data by template and month
+      const currentYear = new Date().getFullYear();
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      
+      const complianceData = activeTemplates.map(template => {
+        const templateInspections = allInspections.filter(i => i.templateId === template.id);
+        
+        const monthData = months.map((monthName, monthIndex) => {
+          // Find inspections scheduled for this month
+          const monthInspections = templateInspections.filter(inspection => {
+            if (!inspection.scheduledDate) return false;
+            const schedDate = new Date(inspection.scheduledDate);
+            return schedDate.getFullYear() === currentYear && schedDate.getMonth() === monthIndex;
+          });
+          
+          if (monthInspections.length === 0) {
+            return { month: monthName, status: 'not_scheduled', count: 0 };
+          }
+          
+          const now = new Date();
+          const completedCount = monthInspections.filter(i => i.status === 'completed').length;
+          const overdueCount = monthInspections.filter(i => {
+            if (i.status === 'completed' || !i.scheduledDate) return false;
+            const schedDate = new Date(i.scheduledDate);
+            return schedDate < now;
+          }).length;
+          
+          const dueCount = monthInspections.filter(i => {
+            if (i.status === 'completed' || !i.scheduledDate) return false;
+            const schedDate = new Date(i.scheduledDate);
+            const daysUntil = Math.ceil((schedDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            return daysUntil >= 0 && daysUntil <= 30;
+          }).length;
+          
+          let status = 'not_scheduled';
+          if (overdueCount > 0) {
+            status = 'overdue';
+          } else if (completedCount === monthInspections.length) {
+            status = 'completed';
+          } else if (dueCount > 0) {
+            status = 'due';
+          } else {
+            status = 'scheduled';
+          }
+          
+          return {
+            month: monthName,
+            status,
+            count: monthInspections.length,
+            completed: completedCount,
+            overdue: overdueCount,
+          };
+        });
+        
+        // Calculate compliance percentage for this template
+        const totalScheduled = monthData.reduce((sum, m) => sum + m.count, 0);
+        const totalCompleted = monthData.reduce((sum, m) => sum + (m.completed || 0), 0);
+        const complianceRate = totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0;
+        
+        return {
+          templateId: template.id,
+          templateName: template.name,
+          monthData,
+          complianceRate,
+          totalScheduled,
+          totalCompleted,
+        };
+      });
+      
+      // Calculate overall compliance
+      const totalScheduled = complianceData.reduce((sum, t) => sum + t.totalScheduled, 0);
+      const totalCompleted = complianceData.reduce((sum, t) => sum + t.totalCompleted, 0);
+      const overallCompliance = totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 100;
+      
+      res.json({
+        year: currentYear,
+        months,
+        templates: complianceData,
+        overallCompliance,
+        totalScheduled,
+        totalCompleted,
+      });
+    } catch (error) {
+      console.error("Error fetching block compliance report:", error);
+      res.status(500).json({ message: "Failed to fetch compliance report" });
     }
   });
 
