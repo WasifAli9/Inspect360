@@ -275,7 +275,7 @@ export default function Properties() {
                 </Link>
                 <CardContent className="pt-0 border-t">
                   <div className="flex items-center justify-around pt-4">
-                    <Link href={`/inventory?propertyId=${property.id}`}>
+                    <Link href={`/asset-inventory?propertyId=${property.id}`}>
                       <Button 
                         variant="ghost" 
                         size="sm" 

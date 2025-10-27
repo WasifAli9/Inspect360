@@ -57,6 +57,7 @@ export default function AssetInventory() {
   const searchParams = useSearch();
   const urlParams = new URLSearchParams(searchParams);
   const blockIdFromUrl = urlParams.get("blockId");
+  const propertyIdFromUrl = urlParams.get("propertyId");
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<AssetInventory | null>(null);
@@ -84,18 +85,26 @@ export default function AssetInventory() {
     queryKey: ["/api/blocks"],
   });
 
-  // Auto-filter by block if blockId is in URL
+  // Auto-filter by block or property if in URL
   useEffect(() => {
     if (blockIdFromUrl) {
       setFilterLocation(blockIdFromUrl);
+    } else if (propertyIdFromUrl) {
+      setFilterLocation(propertyIdFromUrl);
     }
-  }, [blockIdFromUrl]);
+  }, [blockIdFromUrl, propertyIdFromUrl]);
 
   // Find the current block if filtering by block
   const currentBlock = useMemo(() => {
     if (!blockIdFromUrl || !blocks) return null;
     return blocks.find(b => b.id === blockIdFromUrl);
   }, [blockIdFromUrl, blocks]);
+
+  // Find the current property if filtering by property
+  const currentProperty = useMemo(() => {
+    if (!propertyIdFromUrl || !properties) return null;
+    return properties.find(p => p.id === propertyIdFromUrl);
+  }, [propertyIdFromUrl, properties]);
 
   // Create/Update mutations
   const saveMutation = useMutation({
@@ -297,7 +306,7 @@ export default function AssetInventory() {
 
   return (
     <div className="p-8 space-y-6">
-      {/* Header with optional block breadcrumb */}
+      {/* Header with optional block or property breadcrumb */}
       {currentBlock && (
         <Link href={`/blocks/${currentBlock.id}`}>
           <Button variant="ghost" className="mb-2" data-testid="button-back-to-block">
@@ -306,15 +315,30 @@ export default function AssetInventory() {
           </Button>
         </Link>
       )}
+      {currentProperty && (
+        <Link href={`/properties/${currentProperty.id}`}>
+          <Button variant="ghost" className="mb-2" data-testid="button-back-to-property">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to {currentProperty.name}
+          </Button>
+        </Link>
+      )}
       
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">
-            {currentBlock ? `${currentBlock.name} - Asset Inventory` : 'Asset Inventory'}
+            {currentBlock 
+              ? `${currentBlock.name} - Asset Inventory` 
+              : currentProperty 
+              ? `${currentProperty.name} - Asset Inventory`
+              : 'Asset Inventory'
+            }
           </h1>
           <p className="text-muted-foreground mt-1">
             {currentBlock 
               ? `Assets and equipment in ${currentBlock.name}` 
+              : currentProperty
+              ? `Assets and equipment in ${currentProperty.name}`
               : 'Manage physical assets and equipment across your properties'
             }
           </p>
