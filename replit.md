@@ -25,7 +25,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture.
 - **Backend**: Express.js, PostgreSQL (Neon) with Drizzle ORM, and Passport.js for authentication.
 - **Authentication**: Custom username/password authentication using Passport.js with session management.
 - **Object Storage**: Google Cloud Storage for media files.
-- **Database Schema**: Includes tables for `users` (with roles: owner, clerk, compliance, tenant, contractor), `organizations`, `properties`, `blocks`, `inspections`, `compliance_documents`, `maintenance_requests`, `asset_inventory`, `contacts`, `tenant_assignments`, and a tagging system.
+- **Database Schema**: Includes tables for `users` (with roles: owner, clerk, compliance, tenant, contractor), `organizations`, `properties`, `blocks`, `inspections`, `compliance_documents`, `maintenance_requests`, `asset_inventory`, `contacts`, `tenant_assignments`, `message_templates`, and a tagging system.
 - **Role-Based Access**: Granular control for various user roles (Owner Operators, Inventory Clerks, Compliance Officers, Tenants, Contractors).
 - **Credit System**: A system for AI features (photo analysis, comparison reports) purchasable via Stripe, with initial free credits provided.
 - **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis (condition assessment) and comparison reports (check-in vs. check-out summaries).
@@ -47,6 +47,13 @@ The platform utilizes a PWA-first approach built on a robust web architecture.
 - **Property Detail Filtering**: Property detail page tabs (Inventory, Inspections, Tenants, Compliance) all properly filter data by propertyId with organization isolation. Tenant assignments queried via dedicated `getTenantAssignmentsByProperty` method that joins properties table for multi-tenant security.
 - **API Security**: Comprehensive Zod validation on 15 schemas for all API operations, with 14 critical routes protected by `.safeParse()`. Multi-tenant isolation is enforced with 63 organization ownership checks across critical routes (including property detail tabs).
 - **Object Storage ACL**: Asset inventory photos use visibility: "public" to allow organization-wide viewing without authentication. The `/objects/` serving route allows unauthenticated access for public objects while maintaining owner-only access for private objects.
+- **Tenant Broadcast Messaging**: Block-level tenant communication system with reusable email templates and variable replacement. Features include:
+  - **Message Templates System**: Database-backed reusable templates with name, subject, body, and variable tracking (owner/clerk access only)
+  - **Variable Replacement**: Supports {tenant_name}, {tenant_email}, {block_name}, {block_address}, {property_name}, {sender_name} placeholders
+  - **Broadcast Dialog UI**: Two-tab interface (template selection/custom message) with live preview, form validation, and variable hints
+  - **Resend Integration**: Batch email sending to all active tenants in a block with individual tracking and error reporting
+  - **Organization Isolation**: All templates and broadcasts scoped to organization with role-based access control (owner/clerk only)
+  - **Block Tenants Page Integration**: "Broadcast Message" button on BlockTenants page (disabled when no active tenants)
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
