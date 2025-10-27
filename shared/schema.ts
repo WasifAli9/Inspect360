@@ -700,7 +700,7 @@ export const assetInventory = pgTable("asset_inventory", {
   purchasePrice: numeric("purchase_price", { precision: 10, scale: 2 }),
   warrantyExpiryDate: timestamp("warranty_expiry_date"),
   condition: assetConditionEnum("condition").notNull(),
-  cleanliness: assetConditionEnum("cleanliness"), // Reuse same enum: excellent, good, fair, poor, needs_replacement
+  cleanliness: cleanlinessRatingEnum("cleanliness"),
   expectedLifespanYears: integer("expected_lifespan_years"),
   depreciationPerYear: numeric("depreciation_per_year", { precision: 10, scale: 2 }), // Auto-calculated or manual
   currentValue: numeric("current_value", { precision: 10, scale: 2 }), // Purchase price - accumulated depreciation
@@ -717,6 +717,11 @@ export const insertAssetInventorySchema = createInsertSchema(assetInventory).omi
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  datePurchased: z.coerce.date().nullable().optional(),
+  warrantyExpiryDate: z.coerce.date().nullable().optional(),
+  lastMaintenanceDate: z.coerce.date().nullable().optional(),
+  nextMaintenanceDate: z.coerce.date().nullable().optional(),
 });
 export type AssetInventory = typeof assetInventory.$inferSelect;
 export type InsertAssetInventory = z.infer<typeof insertAssetInventorySchema>;
