@@ -167,6 +167,7 @@ export interface IStorage {
   getMaintenanceRequestsByProperty(propertyId: string): Promise<MaintenanceRequest[]>;
   getMaintenanceByOrganization(organizationId: string): Promise<any[]>;
   updateMaintenanceStatus(id: string, status: string, assignedTo?: string): Promise<MaintenanceRequest>;
+  updateMaintenanceRequest(id: string, updates: Partial<InsertMaintenanceRequest>): Promise<MaintenanceRequest>;
   
   // Comparison Report operations
   createComparisonReport(report: InsertComparisonReport): Promise<ComparisonReport>;
@@ -890,6 +891,20 @@ export class DatabaseStorage implements IStorage {
     if (assignedTo !== undefined) {
       updateData.assignedTo = assignedTo;
     }
+    
+    const [request] = await db
+      .update(maintenanceRequests)
+      .set(updateData)
+      .where(eq(maintenanceRequests.id, id))
+      .returning();
+    return request;
+  }
+
+  async updateMaintenanceRequest(id: string, updates: Partial<InsertMaintenanceRequest>): Promise<MaintenanceRequest> {
+    const updateData = {
+      ...updates,
+      updatedAt: new Date(),
+    };
     
     const [request] = await db
       .update(maintenanceRequests)

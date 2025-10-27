@@ -1980,9 +1980,32 @@ Provide a structured comparison highlighting differences in condition ratings an
     }
   });
 
-  app.patch("/api/maintenance/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/maintenance/:id", isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+
+      // Fetch the maintenance request to verify organization ownership
+      const existingRequests = await storage.getMaintenanceByOrganization(user.organizationId);
+      const existingRequest = existingRequests.find(r => r.id === id);
+      
+      if (!existingRequest) {
+        return res.status(404).json({ message: "Maintenance request not found" });
+      }
+
+      // Verify organization ownership
+      if (existingRequest.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Unauthorized to update this request" });
+      }
+
+      // Only owners and clerks can edit maintenance requests
+      if (user.role !== "owner" && user.role !== "clerk") {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
 
       // Validate request body
       const validation = updateMaintenanceRequestSchema.safeParse(req.body);
@@ -1993,13 +2016,11 @@ Provide a structured comparison highlighting differences in condition ratings an
         });
       }
 
-      const { status, assignedTo } = validation.data;
-      
-      if (!status) {
-        return res.status(400).json({ message: "Status is required" });
-      }
-      
-      const request = await storage.updateMaintenanceStatus(id, status, assignedTo || undefined);
+      // Prevent organizationId from being changed
+      const { organizationId: _, ...safeUpdates } = validation.data as any;
+
+      // Use the new updateMaintenanceRequest method for full updates
+      const request = await storage.updateMaintenanceRequest(id, safeUpdates);
       res.json(request);
     } catch (error) {
       console.error("Error updating maintenance request:", error);
