@@ -166,16 +166,12 @@ export default function AssetInventory() {
     });
 
     uppyInstance.use(AwsS3, {
-      endpoint: '/api/upload/sign',
+      shouldUseMultipart: false,
       getUploadParameters: async (file) => {
-        const response = await fetch('/api/upload/sign', {
+        const response = await fetch('/api/objects/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({
-            filename: file.name,
-            contentType: file.type,
-          }),
         });
 
         if (!response.ok) {
@@ -185,7 +181,7 @@ export default function AssetInventory() {
         const data = await response.json();
         return {
           method: 'PUT',
-          url: data.url,
+          url: data.uploadURL,
           fields: {},
           headers: {
             'Content-Type': file.type || 'application/octet-stream',
@@ -194,15 +190,46 @@ export default function AssetInventory() {
       },
     });
 
-    uppyInstance.on('upload-success', (file, response) => {
-      if (file && response.uploadURL) {
-        const publicUrl = response.uploadURL.split('?')[0];
-        setUploadedPhotos(prev => [...prev, publicUrl]);
+    uppyInstance.on('upload-success', async (file, response) => {
+      const uploadUrl = response?.uploadURL || response?.body?.uploadURL;
+      if (uploadUrl) {
+        const photoUrl = uploadUrl.split('?')[0];
+        
+        // Set ACL for the uploaded photo
+        try {
+          const aclResponse = await fetch('/api/objects/set-acl', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ photoUrl }),
+          });
+          
+          if (aclResponse.ok) {
+            const { objectPath } = await aclResponse.json();
+            setUploadedPhotos(prev => [...prev, objectPath]);
+          } else {
+            console.error('Failed to set ACL for photo');
+            toast({
+              variant: "destructive",
+              title: "Upload Warning",
+              description: "Photo uploaded but permissions could not be set. Photo may not be accessible.",
+            });
+            // Don't add the photo if ACL fails - it won't be accessible
+          }
+        } catch (error) {
+          console.error('Error setting ACL:', error);
+          toast({
+            variant: "destructive",
+            title: "Upload Error",
+            description: "Failed to set photo permissions. Please try uploading again.",
+          });
+          // Don't add the photo if ACL fails - it won't be accessible
+        }
       }
     });
 
     return uppyInstance;
-  }, []);
+  }, [toast]);
 
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
