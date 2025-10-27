@@ -71,6 +71,21 @@ The platform employs a PWA-first approach with a robust web architecture.
 - **Uppy**: File upload library with Webcam plugin for camera access.
 
 ## Backend API Implementations
+- **Comprehensive Zod Validation**:
+  - 15 validation schemas in `shared/schema.ts` covering all API operations (organization, team, properties, compliance, maintenance, AI, contacts, tags, dashboard, templates, inspections, blocks)
+  - 14 critical routes protected with `.safeParse()` pattern: POST /api/organizations, POST /api/team, PATCH /api/team/:userId/role, PATCH /api/team/:userId/status, PATCH /api/team/:userId, POST /api/properties, POST /api/compliance, POST /api/maintenance, PATCH /api/maintenance/:id, POST /api/ai/analyze-photo, POST /api/ai/inspect-field, POST /api/ai/generate-comparison, POST /api/maintenance/analyze-image, PATCH /api/contacts/:id
+  - Consistent validation pattern: `const validation = schema.safeParse(req.body)` with structured 400 error responses
+  - All validated routes use `validation.data` instead of direct `req.body` access to prevent malformed payloads
+  - Server-managed fields (organizationId, uploadedBy, reportedBy) correctly excluded via `.omit()` in insert schemas
+- **Multi-Tenant Isolation**:
+  - 62 organization ownership checks across all critical routes enforce strict tenant separation
+  - Pattern: Fetch resource → Verify `resource.organizationId === user.organizationId` → Return 403 on mismatch
+  - Applied to: contacts, properties, blocks, inspections, compliance, maintenance, asset inventory, tags, work orders, templates, AI analysis
+  - Prevents cross-organization data access at API layer
+- **Session Management**:
+  - Session table auto-creation enabled in development (`createTableIfMissing: true`) to prevent authentication failures
+  - Passport.js session store backed by PostgreSQL with 7-day TTL
+  - Secure cookie configuration with httpOnly, sameSite:'lax'
 - **Credit Management**:
   - `storage.deductCredit()`: Deducts credits from organization balance with transaction logging, validates sufficient credits, throws errors for overdrafts
   - Automatic credit transaction creation with negative amounts for usage tracking
