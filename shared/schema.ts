@@ -228,6 +228,31 @@ export const insertPropertySchema = createInsertSchema(properties).omit({
 export type Property = typeof properties.$inferSelect;
 export type InsertProperty = z.infer<typeof insertPropertySchema>;
 
+// Tenant Assignments (tracks which tenant is assigned to which property)
+export const tenantAssignments = pgTable("tenant_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  tenantId: varchar("tenant_id").notNull(), // References users.id where role='tenant'
+  propertyId: varchar("property_id").notNull(), // References properties.id
+  leaseStartDate: timestamp("lease_start_date"),
+  leaseEndDate: timestamp("lease_end_date"),
+  monthlyRent: numeric("monthly_rent", { precision: 10, scale: 2 }),
+  depositAmount: numeric("deposit_amount", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTenantAssignmentSchema = createInsertSchema(tenantAssignments).omit({
+  id: true,
+  organizationId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type TenantAssignment = typeof tenantAssignments.$inferSelect;
+export type InsertTenantAssignment = z.infer<typeof insertTenantAssignmentSchema>;
+
 // Inspection Categories
 export const inspectionCategories = pgTable("inspection_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

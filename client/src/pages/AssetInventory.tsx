@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, DollarSign, FileText, MapPin, Tag as TagIcon } from "lucide-react";
+import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, DollarSign, FileText, MapPin, Tag as TagIcon, ArrowLeft } from "lucide-react";
 import type { AssetInventory, Property, Block } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -53,6 +54,10 @@ const assetCategories = [
 export default function AssetInventory() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const searchParams = useSearch();
+  const urlParams = new URLSearchParams(searchParams);
+  const blockIdFromUrl = urlParams.get("blockId");
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<AssetInventory | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -78,6 +83,19 @@ export default function AssetInventory() {
   const { data: blocks } = useQuery<Block[]>({
     queryKey: ["/api/blocks"],
   });
+
+  // Auto-filter by block if blockId is in URL
+  useEffect(() => {
+    if (blockIdFromUrl) {
+      setFilterLocation(blockIdFromUrl);
+    }
+  }, [blockIdFromUrl]);
+
+  // Find the current block if filtering by block
+  const currentBlock = useMemo(() => {
+    if (!blockIdFromUrl || !blocks) return null;
+    return blocks.find(b => b.id === blockIdFromUrl);
+  }, [blockIdFromUrl, blocks]);
 
   // Create/Update mutations
   const saveMutation = useMutation({
@@ -279,11 +297,26 @@ export default function AssetInventory() {
 
   return (
     <div className="p-8 space-y-6">
+      {/* Header with optional block breadcrumb */}
+      {currentBlock && (
+        <Link href={`/blocks/${currentBlock.id}`}>
+          <Button variant="ghost" className="mb-2" data-testid="button-back-to-block">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to {currentBlock.name}
+          </Button>
+        </Link>
+      )}
+      
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Asset Inventory</h1>
+          <h1 className="text-3xl font-bold">
+            {currentBlock ? `${currentBlock.name} - Asset Inventory` : 'Asset Inventory'}
+          </h1>
           <p className="text-muted-foreground mt-1">
-            Manage physical assets and equipment across your properties
+            {currentBlock 
+              ? `Assets and equipment in ${currentBlock.name}` 
+              : 'Manage physical assets and equipment across your properties'
+            }
           </p>
         </div>
 
@@ -805,11 +838,11 @@ export default function AssetInventory() {
                     </div>
                   )}
 
-                  {asset.cleanliness && (
+                  {asset.cleanliness && asset.cleanliness in cleanlinessLabels && (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">Cleanliness:</span>
                       <Badge variant="secondary" className="text-xs">
-                        {cleanlinessLabels[asset.cleanliness]}
+                        {cleanlinessLabels[asset.cleanliness as keyof typeof cleanlinessLabels]}
                       </Badge>
                     </div>
                   )}

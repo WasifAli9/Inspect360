@@ -1995,7 +1995,11 @@ Provide a structured comparison highlighting differences in condition ratings an
 
       const { status, assignedTo } = validation.data;
       
-      const request = await storage.updateMaintenanceStatus(id, status, assignedTo);
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+      
+      const request = await storage.updateMaintenanceStatus(id, status, assignedTo || undefined);
       res.json(request);
     } catch (error) {
       console.error("Error updating maintenance request:", error);
@@ -2373,6 +2377,40 @@ Provide a structured comparison highlighting differences in condition ratings an
     } catch (error) {
       console.error("Error deleting block:", error);
       res.status(500).json({ error: "Failed to delete block" });
+    }
+  });
+
+  // Get tenant information for a block
+  app.get("/api/blocks/:blockId/tenants", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const { blockId } = req.params;
+
+      // Verify block belongs to user's organization
+      const block = await storage.getBlock(blockId);
+      if (!block) {
+        return res.status(404).json({ error: "Block not found" });
+      }
+      if (block.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Get stats and tenant assignments
+      const stats = await storage.getBlockTenantStats(blockId);
+      const tenants = await storage.getTenantAssignmentsByBlock(blockId);
+
+      res.json({
+        stats,
+        tenants,
+      });
+    } catch (error) {
+      console.error("Error fetching block tenants:", error);
+      res.status(500).json({ error: "Failed to fetch block tenants" });
     }
   });
 

@@ -34,6 +34,7 @@ import {
   maintenanceRequestTags,
   contactTags,
   dashboardPreferences,
+  tenantAssignments,
   type User,
   type UpsertUser,
   type AdminUser,
@@ -90,6 +91,8 @@ import {
   type InsertTag,
   type DashboardPreferences,
   type InsertDashboardPreferences,
+  type TenantAssignment,
+  type InsertTenantAssignment,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne } from "drizzle-orm";
@@ -181,6 +184,8 @@ export interface IStorage {
   getBlock(id: string): Promise<Block | undefined>;
   updateBlock(id: string, updates: Partial<InsertBlock>): Promise<Block>;
   deleteBlock(id: string): Promise<void>;
+  getTenantAssignmentsByBlock(blockId: string): Promise<any[]>;
+  getBlockTenantStats(blockId: string): Promise<{ totalUnits: number; occupiedUnits: number; occupancyRate: number; totalMonthlyRent: number }>;
 
   // Inventory Template operations
   createInventoryTemplate(template: InsertInventoryTemplate): Promise<InventoryTemplate>;
@@ -1119,6 +1124,120 @@ export class DatabaseStorage implements IStorage {
 
   async deleteBlock(id: string): Promise<void> {
     await db.delete(blocks).where(eq(blocks.id, id));
+  }
+
+  async getTenantAssignmentsByBlock(blockId: string): Promise<any[]> {
+    // Get all properties in the block
+    const blockProperties = await db
+      .select()
+      .from(properties)
+      .where(eq(properties.blockId, blockId));
+    
+    if (blockProperties.length === 0) {
+      return [];
+    }
+
+    const propertyIds = blockProperties.map(p => p.id);
+    
+    // Get all tenant assignments for properties in this block with user and property info
+    const assignments = await db
+      .select({
+        // Assignment info
+        assignmentId: tenantAssignments.id,
+        leaseStartDate: tenantAssignments.leaseStartDate,
+        leaseEndDate: tenantAssignments.leaseEndDate,
+        monthlyRent: tenantAssignments.monthlyRent,
+        depositAmount: tenantAssignments.depositAmount,
+        isActive: tenantAssignments.isActive,
+        // User info
+        userId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        phone: users.phone,
+        profileImageUrl: users.profileImageUrl,
+        // Property info
+        propertyId: properties.id,
+        propertyName: properties.name,
+        propertyAddress: properties.address,
+      })
+      .from(tenantAssignments)
+      .innerJoin(users, eq(tenantAssignments.tenantId, users.id))
+      .innerJoin(properties, eq(tenantAssignments.propertyId, properties.id))
+      .where(sql`${tenantAssignments.propertyId} IN (${sql.join(propertyIds.map(id => sql`${id}`), sql`, `)})`);
+
+    return assignments.map(a => ({
+      user: {
+        id: a.userId,
+        firstName: a.firstName,
+        lastName: a.lastName,
+        email: a.email,
+        phone: a.phone,
+        profileImageUrl: a.profileImageUrl,
+      },
+      property: {
+        id: a.propertyId,
+        name: a.propertyName,
+        address: a.propertyAddress,
+      },
+      assignment: {
+        leaseStartDate: a.leaseStartDate,
+        leaseEndDate: a.leaseEndDate,
+        monthlyRent: a.monthlyRent,
+        depositAmount: a.depositAmount,
+        isActive: a.isActive,
+      },
+    }));
+  }
+
+  async getBlockTenantStats(blockId: string): Promise<{ totalUnits: number; occupiedUnits: number; occupancyRate: number; totalMonthlyRent: number }> {
+    // Get all properties in the block (properties = units)
+    const blockProperties = await db
+      .select()
+      .from(properties)
+      .where(eq(properties.blockId, blockId));
+    
+    const totalUnits = blockProperties.length;
+
+    if (totalUnits === 0) {
+      return {
+        totalUnits: 0,
+        occupiedUnits: 0,
+        occupancyRate: 0,
+        totalMonthlyRent: 0,
+      };
+    }
+
+    const propertyIds = blockProperties.map(p => p.id);
+
+    // Get active tenant assignments for properties in this block
+    const activeAssignments = await db
+      .select({
+        propertyId: tenantAssignments.propertyId,
+        monthlyRent: tenantAssignments.monthlyRent,
+      })
+      .from(tenantAssignments)
+      .where(
+        and(
+          sql`${tenantAssignments.propertyId} IN (${sql.join(propertyIds.map(id => sql`${id}`), sql`, `)})`,
+          eq(tenantAssignments.isActive, true)
+        )
+      );
+
+    const occupiedUnits = activeAssignments.length;
+    const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
+    
+    // Calculate total monthly rent
+    const totalMonthlyRent = activeAssignments.reduce((sum, assignment) => {
+      return sum + (assignment.monthlyRent ? parseFloat(assignment.monthlyRent as string) : 0);
+    }, 0);
+
+    return {
+      totalUnits,
+      occupiedUnits,
+      occupancyRate,
+      totalMonthlyRent,
+    };
   }
 
   // Inventory Template operations

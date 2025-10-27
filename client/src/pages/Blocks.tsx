@@ -442,7 +442,7 @@ export default function Blocks() {
                       <span className="text-xs">Inspect</span>
                     </Button>
                   </Link>
-                  <Link href={`/team?role=tenant&blockId=${block.id}`}>
+                  <Link href={`/blocks/${block.id}/tenants`}>
                     <Button 
                       variant="ghost" 
                       size="sm" 
