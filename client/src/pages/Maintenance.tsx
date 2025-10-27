@@ -265,12 +265,8 @@ export default function Maintenance() {
       const res = await apiRequest("PATCH", `/api/maintenance/${id}`, data);
       return await res.json();
     },
-    onSuccess: async () => {
-      console.log("[Maintenance] Request updated successfully, refetching queries...");
-      
-      // Use refetchQueries to ensure data is updated
-      await queryClient.refetchQueries({ queryKey: ["/api/maintenance"] });
-      
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/maintenance"] });
       toast({
         title: "Success",
         description: "Maintenance request updated successfully",
@@ -282,8 +278,6 @@ export default function Maintenance() {
       setUploadedImages([]);
       setAiSuggestions("");
       setCurrentStep("form");
-      
-      console.log("[Maintenance] Update cleanup complete");
     },
     onError: (error) => {
       console.error("[Maintenance] Failed to update maintenance request:", error);
