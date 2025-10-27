@@ -24,7 +24,29 @@ import {
   insertInspectionTemplateSchema,
   insertTemplateInventoryLinkSchema,
   insertInspectionEntrySchema,
-  insertAiImageAnalysisSchema
+  insertAiImageAnalysisSchema,
+  insertPropertySchema,
+  insertComplianceDocumentSchema,
+  insertMaintenanceRequestSchema,
+  insertInspectionSchema,
+  createOrganizationSchema,
+  createTeamMemberSchema,
+  updateTeamMemberSchema,
+  updateUserRoleSchema,
+  updateUserStatusSchema,
+  updatePropertySchema,
+  updateComplianceDocumentSchema,
+  updateMaintenanceRequestSchema,
+  analyzePhotoSchema,
+  inspectFieldSchema,
+  generateComparisonSchema,
+  analyzeMaintenanceImageSchema,
+  updateContactSchema,
+  updateTagSchema,
+  updateDashboardPreferencesSchema,
+  updateTemplateCategorySchema,
+  updateInspectionSchema,
+  updateBlockSchema
 } from "@shared/schema";
 
 // Initialize Stripe
@@ -87,10 +109,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/organizations", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      const { name } = req.body;
       
-      if (!name) {
-        return res.status(400).json({ message: "Organization name is required" });
+      // Validate request body
+      const validation = createOrganizationSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
 
       // Get current user data
@@ -101,7 +127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create organization
       const organization = await storage.createOrganization({
-        name,
+        name: validation.data.name,
         ownerId: userId,
         creditsRemaining: 5, // Give 5 free credits to start
       });
@@ -181,11 +207,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const { userId } = req.params;
-      const { role } = req.body;
       const organizationId = requester.organizationId;
 
-      if (!role || !["owner", "clerk", "compliance", "tenant"].includes(role)) {
-        return res.status(400).json({ message: "Invalid role" });
+      // Validate request body
+      const validation = updateUserRoleSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
 
       // Verify the user belongs to the same organization
@@ -199,7 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Cannot change your own role" });
       }
 
-      const updatedUser = await storage.updateUserRole(userId, role);
+      const updatedUser = await storage.updateUserRole(userId, validation.data.role);
       res.json(updatedUser);
     } catch (error) {
       console.error("Error updating user role:", error);
@@ -218,10 +248,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const { userId } = req.params;
-      const { isActive } = req.body;
 
-      if (typeof isActive !== 'boolean') {
-        return res.status(400).json({ message: "isActive must be a boolean" });
+      // Validate request body
+      const validation = updateUserStatusSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
 
       // Verify the user belongs to the same organization
@@ -235,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Cannot change your own account status" });
       }
 
-      const updatedUser = await storage.updateUser(userId, { isActive });
+      const updatedUser = await storage.updateUser(userId, { isActive: validation.data.isActive });
       const { password: _, ...userWithoutPassword } = updatedUser;
       res.json(userWithoutPassword);
     } catch (error) {
@@ -253,15 +287,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "User must belong to an organization" });
       }
 
-      const { email, firstName, lastName, username, password, role, phone, address, skills, education, profileImageUrl, certificateUrls } = req.body;
-
-      if (!email || !username || !password || !role) {
-        return res.status(400).json({ message: "Email, username, password, and role are required" });
+      // Validate request body
+      const validation = createTeamMemberSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
 
-      if (!["owner", "clerk", "compliance", "tenant"].includes(role)) {
-        return res.status(400).json({ message: "Invalid role" });
-      }
+      const { email, firstName, lastName, username, password, role, phone, address, skills, education, profileImageUrl, certificateUrls } = validation.data;
 
       // Hash password before creating user
       const hashedPassword = await hashPassword(password);
@@ -306,7 +341,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const { userId } = req.params;
-      const updateData = req.body;
+
+      // Validate request body
+      const validation = updateTeamMemberSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
+      }
 
       // Verify the user belongs to the same organization
       const targetUser = await storage.getUser(userId);
@@ -314,21 +357,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "User not found in your organization" });
       }
 
-      // Update allowed fields
-      const allowedFields = ['firstName', 'lastName', 'phone', 'address', 'skills', 'education', 'profileImageUrl', 'certificateUrls', 'role'];
-      const filteredData: any = {};
-      
-      for (const field of allowedFields) {
-        if (updateData[field] !== undefined) {
-          filteredData[field] = updateData[field];
-        }
-      }
-
-      if (Object.keys(filteredData).length === 0) {
+      if (Object.keys(validation.data).length === 0) {
         return res.status(400).json({ message: "No valid fields to update" });
       }
 
-      const updatedUser = await storage.updateUser(userId, filteredData);
+      const updatedUser = await storage.updateUser(userId, validation.data);
       
       // Don't return password
       const { password, ...userWithoutPassword } = updatedUser;
@@ -438,9 +471,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
       
-      const { organizationId: _, ...updateData } = req.body;
+      // Validate request body
+      const validation = updateContactSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
+      }
       
-      const updatedContact = await storage.updateContact(req.params.id, updateData);
+      const updatedContact = await storage.updateContact(req.params.id, validation.data);
       res.json(updatedContact);
     } catch (error) {
       console.error("Error updating contact:", error);
@@ -486,11 +526,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "User must belong to an organization" });
       }
       
-      const { name, address, blockId } = req.body;
-      
-      if (!name || !address) {
-        return res.status(400).json({ message: "Name and address are required" });
+      // Validate request body
+      const validation = insertPropertySchema.omit({ organizationId: true }).safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
+
+      const { name, address, blockId } = validation.data;
 
       const property = await storage.createProperty({
         organizationId: user.organizationId,
@@ -1384,11 +1429,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/ai/analyze-photo", isAuthenticated, async (req: any, res) => {
     try {
-      const { itemId } = req.body;
-      
-      if (!itemId) {
-        return res.status(400).json({ message: "Item ID is required" });
+      // Validate request body
+      const validation = analyzePhotoSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
+
+      const { itemId } = validation.data;
 
       // Get the inspection item
       const item = await storage.getInspectionItem(itemId);
@@ -1495,15 +1545,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI field-level inspection analysis
   app.post("/api/ai/inspect-field", isAuthenticated, async (req: any, res) => {
     try {
-      const { inspectionId, fieldKey, fieldLabel, fieldDescription, photos } = req.body;
-      
-      if (!inspectionId || !fieldKey || !fieldLabel) {
-        return res.status(400).json({ message: "Inspection ID, field key, and field label are required" });
+      // Validate request body
+      const validation = inspectFieldSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
 
-      if (!photos || !Array.isArray(photos) || photos.length === 0) {
-        return res.status(400).json({ message: "At least one photo is required for AI inspection" });
-      }
+      const { inspectionId, fieldKey, fieldLabel, fieldDescription, photos } = validation.data;
 
       // Get user and verify organization membership
       const user = await storage.getUser(req.user.id);
@@ -1622,11 +1673,16 @@ Be thorough, specific, and objective. This will be used in a professional proper
 
   app.post("/api/ai/generate-comparison", isAuthenticated, async (req: any, res) => {
     try {
-      const { propertyId, checkInInspectionId, checkOutInspectionId } = req.body;
-      
-      if (!propertyId || !checkInInspectionId || !checkOutInspectionId) {
-        return res.status(400).json({ message: "Property ID and both inspection IDs are required" });
+      // Validate request body
+      const validation = generateComparisonSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
+
+      const { propertyId, checkInInspectionId, checkOutInspectionId } = validation.data;
 
       // Check credits
       const user = await storage.getUser(req.user.id);
@@ -1713,11 +1769,21 @@ Provide a structured comparison highlighting differences in condition ratings an
     try {
       const userId = req.user.id;
       const user = await storage.getUser(userId);
-      const { documentType, documentUrl, expiryDate, propertyId, blockId } = req.body;
       
-      if (!user?.organizationId || !documentType || !documentUrl) {
-        return res.status(400).json({ message: "Missing required fields" });
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
       }
+
+      // Validate request body
+      const validation = insertComplianceDocumentSchema.omit({ organizationId: true, uploadedBy: true }).safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
+      }
+
+      const { documentType, documentUrl, expiryDate, propertyId, blockId } = validation.data;
 
       const doc = await storage.createComplianceDocument({
         organizationId: user.organizationId,
@@ -1772,11 +1838,16 @@ Provide a structured comparison highlighting differences in condition ratings an
   // AI analyze maintenance image for fix suggestions
   app.post("/api/maintenance/analyze-image", isAuthenticated, async (req: any, res) => {
     try {
-      const { imageUrl, issueDescription } = req.body;
-      
-      if (!imageUrl) {
-        return res.status(400).json({ message: "Image URL is required" });
+      // Validate request body
+      const validation = analyzeMaintenanceImageSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
       }
+
+      const { imageUrl, issueDescription } = validation.data;
 
       const userId = req.user.id;
       const user = await storage.getUser(userId);
@@ -1846,17 +1917,23 @@ Provide a structured comparison highlighting differences in condition ratings an
   app.post("/api/maintenance", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      const { propertyId, title, description, priority, photoUrls, aiSuggestedFixes, aiAnalysisJson } = req.body;
-      
-      if (!propertyId || !title) {
-        return res.status(400).json({ message: "Property ID and title are required" });
-      }
 
       // Get user to check organization
       const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
+
+      // Validate request body
+      const validation = insertMaintenanceRequestSchema.omit({ organizationId: true, reportedBy: true }).safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
+      }
+
+      const { propertyId, title, description, priority, photoUrls, aiSuggestedFixes, aiAnalysisJson } = validation.data;
 
       // Verify property exists and belongs to the same organization
       const property = await storage.getProperty(propertyId);
@@ -1906,7 +1983,17 @@ Provide a structured comparison highlighting differences in condition ratings an
   app.patch("/api/maintenance/:id", isAuthenticated, async (req, res) => {
     try {
       const { id } = req.params;
-      const { status, assignedTo } = req.body;
+
+      // Validate request body
+      const validation = updateMaintenanceRequestSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
+      }
+
+      const { status, assignedTo } = validation.data;
       
       const request = await storage.updateMaintenanceStatus(id, status, assignedTo);
       res.json(request);

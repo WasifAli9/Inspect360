@@ -1034,3 +1034,187 @@ export const insertDashboardPreferencesSchema = createInsertSchema(dashboardPref
 
 export type DashboardPreferences = typeof dashboardPreferences.$inferSelect;
 export type InsertDashboardPreferences = z.infer<typeof insertDashboardPreferencesSchema>;
+
+// ==================== ADDITIONAL VALIDATION SCHEMAS ====================
+
+// Organization validation schemas
+export const createOrganizationSchema = z.object({
+  name: z.string().min(1, "Organization name is required").max(255),
+});
+
+// Team management validation schemas
+export const createTeamMemberSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  firstName: z.string().min(1).max(255).optional(),
+  lastName: z.string().min(1).max(255).optional(),
+  username: z.string().min(3, "Username must be at least 3 characters").max(100),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  role: z.enum(["owner", "clerk", "compliance", "tenant", "contractor"]),
+  phone: z.string().max(50).optional(),
+  address: z.object({
+    street: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    postalCode: z.string().optional(),
+    country: z.string().optional(),
+    formatted: z.string().optional(),
+  }).optional(),
+  skills: z.array(z.string()).optional(),
+  education: z.string().optional(),
+  profileImageUrl: z.string().url().optional(),
+  certificateUrls: z.array(z.string().url()).optional(),
+});
+
+export const updateTeamMemberSchema = z.object({
+  firstName: z.string().min(1).max(255).optional(),
+  lastName: z.string().min(1).max(255).optional(),
+  phone: z.string().max(50).optional(),
+  address: z.object({
+    street: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    postalCode: z.string().optional(),
+    country: z.string().optional(),
+    formatted: z.string().optional(),
+  }).optional(),
+  skills: z.array(z.string()).optional(),
+  education: z.string().optional(),
+  profileImageUrl: z.string().url().optional(),
+  certificateUrls: z.array(z.string().url()).optional(),
+  role: z.enum(["owner", "clerk", "compliance", "tenant", "contractor"]).optional(),
+});
+
+export const updateUserRoleSchema = z.object({
+  role: z.enum(["owner", "clerk", "compliance", "tenant", "contractor"]),
+});
+
+export const updateUserStatusSchema = z.object({
+  isActive: z.boolean(),
+});
+
+// Property update schema
+export const updatePropertySchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  address: z.string().min(1).optional(),
+  blockId: z.string().nullable().optional(),
+});
+
+// Compliance update schema
+export const updateComplianceDocumentSchema = z.object({
+  documentType: z.string().min(1).optional(),
+  documentUrl: z.string().url().optional(),
+  expiryDate: z.string().datetime().optional().nullable(),
+  propertyId: z.string().nullable().optional(),
+  blockId: z.string().nullable().optional(),
+});
+
+// Maintenance update schema
+export const updateMaintenanceRequestSchema = z.object({
+  title: z.string().min(1).max(255).optional(),
+  description: z.string().optional().nullable(),
+  status: z.enum(["open", "in_progress", "completed", "closed"]).optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  assignedTo: z.string().nullable().optional(),
+  photoUrls: z.array(z.string()).optional(),
+});
+
+// AI operation validation schemas
+export const analyzePhotoSchema = z.object({
+  itemId: z.string().uuid("Invalid inspection item ID"),
+});
+
+export const inspectFieldSchema = z.object({
+  inspectionId: z.string().uuid("Invalid inspection ID"),
+  fieldKey: z.string().min(1, "Field key is required"),
+  fieldLabel: z.string().min(1, "Field label is required"),
+  fieldDescription: z.string().optional(),
+  photos: z.array(z.string().url("Invalid photo URL")).min(1, "At least one photo is required"),
+});
+
+export const generateComparisonSchema = z.object({
+  propertyId: z.string().uuid("Invalid property ID"),
+  checkInInspectionId: z.string().uuid("Invalid check-in inspection ID"),
+  checkOutInspectionId: z.string().uuid("Invalid check-out inspection ID"),
+});
+
+export const analyzeMaintenanceImageSchema = z.object({
+  imageUrl: z.string().url("Invalid image URL"),
+  issueDescription: z.string().optional(),
+});
+
+// Contact update schema (for PATCH route)
+export const updateContactSchema = z.object({
+  type: z.enum(["internal", "contractor", "lead", "company", "partner", "vendor", "other"]).optional(),
+  firstName: z.string().min(1).max(255).optional(),
+  lastName: z.string().min(1).max(255).optional(),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  countryCode: z.string().optional(),
+  companyName: z.string().optional(),
+  jobTitle: z.string().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
+  website: z.string().url().optional(),
+  notes: z.string().optional(),
+  profileImageUrl: z.string().url().optional(),
+  tags: z.array(z.string()).optional(),
+  linkedUserId: z.string().optional(),
+});
+
+// Tag update schema
+export const updateTagSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i, "Invalid color hex code").optional(),
+});
+
+// Dashboard preferences update schema
+export const updateDashboardPreferencesSchema = z.object({
+  enabledPanels: z.array(z.string()).min(1, "At least one panel must be enabled"),
+});
+
+// Template category update schema
+export const updateTemplateCategorySchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  description: z.string().optional(),
+  color: z.string().regex(/^#[0-9A-F]{6}$/i, "Invalid color hex code").optional(),
+});
+
+// Inspection update schema
+export const updateInspectionSchema = z.object({
+  status: z.enum(["scheduled", "in_progress", "completed", "reviewed"]).optional(),
+  scheduledDate: z.string().datetime().optional(),
+  startedAt: z.string().datetime().optional(),
+  completedDate: z.string().datetime().optional(),
+  submittedAt: z.string().datetime().optional(),
+  notes: z.string().optional(),
+});
+
+// Block update schema
+export const updateBlockSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  address: z.string().min(1).optional(),
+  notes: z.string().optional(),
+});
+
+// Export types for the new schemas
+export type CreateOrganization = z.infer<typeof createOrganizationSchema>;
+export type CreateTeamMember = z.infer<typeof createTeamMemberSchema>;
+export type UpdateTeamMember = z.infer<typeof updateTeamMemberSchema>;
+export type UpdateUserRole = z.infer<typeof updateUserRoleSchema>;
+export type UpdateUserStatus = z.infer<typeof updateUserStatusSchema>;
+export type UpdateProperty = z.infer<typeof updatePropertySchema>;
+export type UpdateComplianceDocument = z.infer<typeof updateComplianceDocumentSchema>;
+export type UpdateMaintenanceRequest = z.infer<typeof updateMaintenanceRequestSchema>;
+export type AnalyzePhoto = z.infer<typeof analyzePhotoSchema>;
+export type InspectField = z.infer<typeof inspectFieldSchema>;
+export type GenerateComparison = z.infer<typeof generateComparisonSchema>;
+export type AnalyzeMaintenanceImage = z.infer<typeof analyzeMaintenanceImageSchema>;
+export type UpdateContact = z.infer<typeof updateContactSchema>;
+export type UpdateTag = z.infer<typeof updateTagSchema>;
+export type UpdateDashboardPreferences = z.infer<typeof updateDashboardPreferencesSchema>;
+export type UpdateTemplateCategory = z.infer<typeof updateTemplateCategorySchema>;
+export type UpdateInspection = z.infer<typeof updateInspectionSchema>;
+export type UpdateBlock = z.infer<typeof updateBlockSchema>;
