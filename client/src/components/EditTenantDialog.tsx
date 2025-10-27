@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
+import { updateTenantAssignmentSchema } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -100,13 +101,15 @@ export default function EditTenantDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      return apiRequest(`/api/tenant-assignments/${tenant.assignment.id}`, "PUT", {
-        leaseStartDate: data.leaseStartDate || null,
-        leaseEndDate: data.leaseEndDate || null,
-        monthlyRent: data.monthlyRent || null,
-        depositAmount: data.depositAmount || null,
+      // Transform form data to match API expectations
+      const payload = updateTenantAssignmentSchema.parse({
+        leaseStartDate: data.leaseStartDate ? new Date(data.leaseStartDate) : null,
+        leaseEndDate: data.leaseEndDate ? new Date(data.leaseEndDate) : null,
+        monthlyRent: data.monthlyRent && data.monthlyRent.trim() !== "" ? data.monthlyRent : null,
+        depositAmount: data.depositAmount && data.depositAmount.trim() !== "" ? data.depositAmount : null,
         isActive: data.isActive,
       });
+      return apiRequest(`/api/tenant-assignments/${tenant.assignment.id}`, "PUT", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties", propertyId, "tenants"] });
