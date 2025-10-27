@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Wrench, Upload, Sparkles, Loader2, X } from "lucide-react";
+import { Plus, Wrench, Upload, Sparkles, Loader2, X, Check, ChevronsUpDown } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -31,6 +31,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useForm } from "react-hook-form";
@@ -41,6 +54,8 @@ import { z } from "zod";
 import Uppy from "@uppy/core";
 import AwsS3 from "@uppy/aws-s3";
 import { Dashboard } from "@uppy/react";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import { cn } from "@/lib/utils";
 
 type MaintenanceRequestWithDetails = MaintenanceRequest & {
   property?: { name: string; address: string };
@@ -195,19 +210,40 @@ export default function Maintenance() {
       const res = await apiRequest("POST", "/api/maintenance", data);
       return await res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/maintenance"] });
-      setIsCreateOpen(false);
-      form.reset();
-      setUploadedImages([]);
-      setAiSuggestions("");
-      setCurrentStep("form");
-      toast({
-        title: "Success",
-        description: "Maintenance request created successfully",
-      });
+    onSuccess: async () => {
+      try {
+        console.log("[Maintenance] Request created successfully, refetching queries...");
+        
+        // Explicitly refetch to ensure we get the latest data
+        await queryClient.refetchQueries({ queryKey: ["/api/maintenance"] });
+        
+        console.log("[Maintenance] Refetch complete, showing toast...");
+        
+        toast({
+          title: "Success",
+          description: "Maintenance request created successfully",
+        });
+        
+        console.log("[Maintenance] Cleaning up form state...");
+        
+        setIsCreateOpen(false);
+        form.reset();
+        setUploadedImages([]);
+        setAiSuggestions("");
+        setCurrentStep("form");
+        
+        console.log("[Maintenance] Form cleanup complete");
+      } catch (error) {
+        console.error("[Maintenance] Error in onSuccess:", error);
+        toast({
+          title: "Warning",
+          description: "Request created but there was an issue refreshing the list",
+          variant: "destructive",
+        });
+      }
     },
-    onError: () => {
+    onError: (error) => {
+      console.error("[Maintenance] Failed to create maintenance request:", error);
       toast({
         title: "Error",
         description: "Failed to create maintenance request",
@@ -460,7 +496,7 @@ export default function Maintenance() {
                 )}
               </div>
             ) : (
-              /* Standard Form for Non-Tenants */
+              /* Standard Form for Non-Tenants with Image Upload and AI */
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField
@@ -479,24 +515,73 @@ export default function Maintenance() {
                   <FormField
                     control={form.control}
                     name="propertyId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Property</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-property">
-                              <SelectValue placeholder="Select a property" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {properties.map((property) => (
-                              <SelectItem key={property.id} value={property.id}>{property.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      const [propertyComboboxOpen, setPropertyComboboxOpen] = useState(false);
+                      return (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>Property</FormLabel>
+                          <Popover open={propertyComboboxOpen} onOpenChange={setPropertyComboboxOpen}>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  className={cn(
+                                    "justify-between",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                  data-testid="select-property"
+                                >
+                                  {field.value
+                                    ? properties.find((property) => property.id === field.value)?.name +
+                                      (properties.find((property) => property.id === field.value)?.address 
+                                        ? ` - ${properties.find((property) => property.id === field.value)?.address}`
+                                        : "")
+                                    : "Select a property"}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[400px] p-0">
+                              <Command>
+                                <CommandInput placeholder="Search properties..." />
+                                <CommandList>
+                                  <CommandEmpty>No property found.</CommandEmpty>
+                                  <CommandGroup>
+                                    {properties.map((property) => (
+                                      <CommandItem
+                                        key={property.id}
+                                        value={`${property.name} ${property.address || ""}`}
+                                        onSelect={() => {
+                                          field.onChange(property.id);
+                                          setPropertyComboboxOpen(false);
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            property.id === field.value
+                                              ? "opacity-100"
+                                              : "opacity-0"
+                                          )}
+                                        />
+                                        <div className="flex flex-col">
+                                          <span>{property.name}</span>
+                                          {property.address && (
+                                            <span className="text-sm text-muted-foreground">{property.address}</span>
+                                          )}
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                   <FormField
                     control={form.control}
@@ -533,6 +618,127 @@ export default function Maintenance() {
                       </FormItem>
                     )}
                   />
+
+                  {/* Image Upload Section */}
+                  <div className="space-y-2">
+                    <FormLabel>Photos (Optional)</FormLabel>
+                    <ObjectUploader
+                      maxNumberOfFiles={5}
+                      onGetUploadParameters={async () => {
+                        const response = await fetch('/api/objects/upload', {
+                          method: 'POST',
+                          credentials: 'include',
+                        });
+                        const { uploadURL } = await response.json();
+                        return {
+                          method: 'PUT',
+                          url: uploadURL,
+                        };
+                      }}
+                      onComplete={async (result) => {
+                        try {
+                          if (result.successful && result.successful.length > 0) {
+                            const newPaths: string[] = [];
+                            for (const file of result.successful) {
+                              const uploadURL = file.uploadURL;
+                              const response = await fetch('/api/objects/set-acl', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ photoUrl: uploadURL }),
+                              });
+                              
+                              if (!response.ok) {
+                                throw new Error('Failed to set photo permissions');
+                              }
+                              
+                              const { objectPath } = await response.json();
+                              newPaths.push(objectPath);
+                            }
+                            setUploadedImages(prev => [...prev, ...newPaths]);
+                          }
+                        } catch (error) {
+                          console.error('[Maintenance] Photo upload error:', error);
+                          toast({
+                            title: "Upload Error",
+                            description: "Failed to upload one or more photos. Please try again.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                      buttonClassName="w-full"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Photos
+                    </ObjectUploader>
+                    {uploadedImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {uploadedImages.map((img, idx) => (
+                          <div key={idx} className="relative" data-testid={`photo-preview-${idx}`}>
+                            <img 
+                              src={img} 
+                              alt={`Upload ${idx + 1}`} 
+                              className="h-20 w-20 object-cover rounded border"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute -top-2 -right-2 h-6 w-6"
+                              onClick={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
+                              data-testid={`button-remove-photo-${idx}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* AI Analysis Button */}
+                  {uploadedImages.length > 0 && !aiSuggestions && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={async () => {
+                        setIsAnalyzing(true);
+                        try {
+                          await analyzeMutation.mutateAsync({
+                            imageUrl: uploadedImages[0],
+                            description: form.getValues("description") || form.getValues("title"),
+                          });
+                        } finally {
+                          setIsAnalyzing(false);
+                        }
+                      }}
+                      disabled={isAnalyzing}
+                      className="w-full"
+                      data-testid="button-analyze-images"
+                    >
+                      {isAnalyzing ? (
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...</>
+                      ) : (
+                        <><Sparkles className="w-4 h-4 mr-2" /> Get AI Suggestions</>
+                      )}
+                    </Button>
+                  )}
+
+                  {/* AI Suggestions Display */}
+                  {aiSuggestions && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-sm">
+                          <Sparkles className="w-4 h-4 text-primary" />
+                          AI-Suggested Fixes
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm whitespace-pre-wrap">{aiSuggestions}</p>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-request">
                     {createMutation.isPending ? "Creating..." : "Create Request"}
                   </Button>
