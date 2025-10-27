@@ -297,7 +297,7 @@ export default function Properties() {
                         <span className="text-xs">Inspect</span>
                       </Button>
                     </Link>
-                    <Link href={`/properties/${property.id}`}>
+                    <Link href={`/properties/${property.id}/tenants`}>
                       <Button 
                         variant="ghost" 
                         size="sm" 

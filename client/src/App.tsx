@@ -32,6 +32,7 @@ import InspectionCapture from "@/pages/InspectionCapture";
 import InspectionReview from "@/pages/InspectionReview";
 import InspectionReport from "@/pages/InspectionReport";
 import Contacts from "@/pages/Contacts";
+import PropertyTenants from "@/pages/PropertyTenants";
 import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminTeam from "@/pages/AdminTeam";
@@ -113,8 +114,9 @@ function AppContent() {
                 <Route path="/blocks/:id/tenants" component={BlockTenants} />
                 <Route path="/blocks/:id" component={BlockDetail} />
               <Route path="/blocks" component={Blocks} />
-                <Route path="/properties" component={Properties} />
+                <Route path="/properties/:id/tenants" component={PropertyTenants} />
                 <Route path="/properties/:id" component={PropertyDetail} />
+                <Route path="/properties" component={Properties} />
                 <Route path="/credits" component={Credits} />
                 <Route path="/inspections" component={Inspections} />
                 <Route path="/inspections/:id/capture" component={InspectionCapture} />
