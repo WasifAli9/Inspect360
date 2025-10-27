@@ -480,7 +480,7 @@ export default function PropertyDetail() {
         <TabsContent value="inventory" className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Asset Inventory</h2>
-            <Link href={`/asset-inventory/new?propertyId=${propertyId}`}>
+            <Link href={`/asset-inventory?propertyId=${propertyId}`}>
               <Button data-testid="button-new-inventory">
                 <Package className="mr-2 h-4 w-4" />
                 Add Item

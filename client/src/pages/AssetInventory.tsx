@@ -245,7 +245,14 @@ export default function AssetInventory() {
       setFormData(asset);
       setUploadedPhotos(asset.photos || []);
     } else {
-      setFormData({});
+      // Pre-populate property or block based on URL context
+      const initialFormData: Partial<AssetInventory> = {};
+      if (propertyIdFromUrl) {
+        initialFormData.propertyId = propertyIdFromUrl;
+      } else if (blockIdFromUrl) {
+        initialFormData.blockId = blockIdFromUrl;
+      }
+      setFormData(initialFormData);
       setUploadedPhotos([]);
     }
     setIsDialogOpen(true);
