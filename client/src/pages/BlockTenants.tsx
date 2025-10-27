@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Users, Home, DollarSign, Percent, Mail, Phone, Building2, Calendar } from "lucide-react";
+import { ArrowLeft, Users, Home, DollarSign, Percent, Mail, Phone, Building2, Calendar, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
+import { BroadcastDialog } from "@/components/BroadcastDialog";
 
 interface TenantAssignment {
   user: {
@@ -49,6 +51,7 @@ interface Block {
 export default function BlockTenants() {
   const [, params] = useRoute("/blocks/:id/tenants");
   const blockId = params?.id;
+  const [broadcastDialogOpen, setBroadcastDialogOpen] = useState(false);
 
   const { data: block, isLoading: blockLoading } = useQuery<Block>({
     queryKey: ["/api/blocks", blockId],
@@ -118,6 +121,15 @@ export default function BlockTenants() {
               Tenant occupancy and property assignments for {block.name}
             </p>
           </div>
+          
+          <Button
+            onClick={() => setBroadcastDialogOpen(true)}
+            disabled={stats.occupiedUnits === 0}
+            data-testid="button-broadcast-message"
+          >
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Broadcast Message
+          </Button>
         </div>
       </div>
 
@@ -275,6 +287,15 @@ export default function BlockTenants() {
           </div>
         )}
       </div>
+
+      <BroadcastDialog
+        blockId={blockId!}
+        blockName={block.name}
+        blockAddress={block.address}
+        tenantCount={stats.occupiedUnits}
+        open={broadcastDialogOpen}
+        onOpenChange={setBroadcastDialogOpen}
+      />
     </div>
   );
 }
