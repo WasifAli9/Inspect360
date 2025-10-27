@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle, Search, Package, ClipboardCheck, FileText } from "lucide-react";
+import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle, Search, Package, ClipboardCheck, FileText, Home } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { TagInput } from "@/components/TagInput";
@@ -420,15 +420,15 @@ export default function Blocks() {
                 {/* Quick Actions */}
                 <div className="h-px bg-border/30" />
                 <div className="flex items-center justify-around -mx-2">
-                  <Link href={`/asset-inventory?blockId=${block.id}`}>
+                  <Link href={`/properties?blockId=${block.id}`}>
                     <Button 
                       variant="ghost" 
                       size="sm" 
                       className="flex flex-col h-auto py-2 px-3"
-                      data-testid={`button-inventory-${block.id}`}
+                      data-testid={`button-properties-${block.id}`}
                     >
-                      <Package className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Inventory</span>
+                      <Home className="h-4 w-4 mb-1" />
+                      <span className="text-xs">Properties</span>
                     </Button>
                   </Link>
                   <Link href={`/inspections?blockId=${block.id}&create=true`}>

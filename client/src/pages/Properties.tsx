@@ -21,13 +21,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText } from "lucide-react";
+import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 
 export default function Properties() {
   const { toast } = useToast();
+  const searchParams = useSearch();
+  const urlBlockId = new URLSearchParams(searchParams).get("blockId");
+  
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -42,15 +45,32 @@ export default function Properties() {
     queryKey: ["/api/blocks"],
   });
 
-  // Filter properties by search query
+  // Fetch block details if filtering by block
+  const { data: selectedBlock } = useQuery<any>({
+    queryKey: ["/api/blocks", urlBlockId],
+    enabled: !!urlBlockId,
+  });
+
+  // Filter properties by block (from URL) and search query
   const filteredProperties = useMemo(() => {
-    if (!searchQuery.trim()) return properties;
-    const query = searchQuery.toLowerCase();
-    return properties.filter(property => 
-      property.name.toLowerCase().includes(query) ||
-      property.address.toLowerCase().includes(query)
-    );
-  }, [properties, searchQuery]);
+    let filtered = properties;
+    
+    // First filter by blockId from URL if present
+    if (urlBlockId) {
+      filtered = filtered.filter(property => property.blockId === urlBlockId);
+    }
+    
+    // Then apply search query filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(property => 
+        property.name.toLowerCase().includes(query) ||
+        property.address.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
+  }, [properties, urlBlockId, searchQuery]);
 
   const createProperty = useMutation({
     mutationFn: async (data: { name: string; address: string; blockId?: string }) => {
@@ -101,10 +121,26 @@ export default function Properties() {
 
   return (
     <div className="p-8 space-y-6">
+      {urlBlockId && selectedBlock && (
+        <Link href={`/blocks/${urlBlockId}`}>
+          <Button variant="ghost" className="mb-4" data-testid="button-back-to-block">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to {selectedBlock.name}
+          </Button>
+        </Link>
+      )}
+      
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Properties</h1>
-          <p className="text-muted-foreground">Manage your building portfolio</p>
+          <h1 className="text-3xl font-bold text-foreground">
+            {urlBlockId && selectedBlock ? `${selectedBlock.name} - Properties` : "Properties"}
+          </h1>
+          <p className="text-muted-foreground">
+            {urlBlockId && selectedBlock 
+              ? `Properties in ${selectedBlock.name}` 
+              : "Manage your building portfolio"
+            }
+          </p>
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
