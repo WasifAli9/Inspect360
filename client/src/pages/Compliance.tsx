@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,12 @@ export default function Compliance() {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
+  
+  // Get URL parameters for property or block context
+  const searchParams = useSearch();
+  const urlParams = new URLSearchParams(searchParams);
+  const propertyIdFromUrl = urlParams.get("propertyId");
+  const blockIdFromUrl = urlParams.get("blockId");
 
   const { data: documents = [], isLoading } = useQuery<ComplianceDocument[]>({
     queryKey: ['/api/compliance'],
@@ -85,6 +92,31 @@ export default function Compliance() {
       status: "current",
     },
   });
+  
+  // Pre-populate property or block when dialog opens based on URL context
+  useEffect(() => {
+    if (open) {
+      const resetValues: Partial<UploadFormValues> = {
+        documentType: "",
+        documentUrl: "",
+        expiryDate: undefined,
+        status: "current",
+      };
+      
+      if (propertyIdFromUrl) {
+        resetValues.propertyId = propertyIdFromUrl;
+        resetValues.blockId = undefined;
+      } else if (blockIdFromUrl) {
+        resetValues.blockId = blockIdFromUrl;
+        resetValues.propertyId = undefined;
+      } else {
+        resetValues.propertyId = undefined;
+        resetValues.blockId = undefined;
+      }
+      
+      form.reset(resetValues as UploadFormValues);
+    }
+  }, [open, propertyIdFromUrl, blockIdFromUrl, form]);
 
   const uploadMutation = useMutation({
     mutationFn: (data: UploadFormValues) => apiRequest('POST', '/api/compliance', {
