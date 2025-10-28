@@ -18,6 +18,8 @@ import {
   complianceDocuments,
   maintenanceRequests,
   comparisonReports,
+  comparisonReportItems,
+  comparisonComments,
   creditTransactions,
   inventoryTemplates,
   inventories,
@@ -176,6 +178,11 @@ export interface IStorage {
   createComparisonReport(report: InsertComparisonReport): Promise<ComparisonReport>;
   getComparisonReportsByProperty(propertyId: string): Promise<ComparisonReport[]>;
   getComparisonReport(id: string): Promise<ComparisonReport | undefined>;
+  updateComparisonReport(id: string, updates: Partial<InsertComparisonReport>): Promise<ComparisonReport>;
+  createComparisonReportItem(item: any): Promise<any>;
+  getComparisonReportItems(reportId: string): Promise<any[]>;
+  createComparisonComment(comment: any): Promise<any>;
+  getComparisonComments(reportId: string): Promise<any[]>;
   
   // Credit Transaction operations
   createCreditTransaction(transaction: InsertCreditTransaction): Promise<CreditTransaction>;
@@ -949,6 +956,46 @@ export class DatabaseStorage implements IStorage {
   async getComparisonReport(id: string): Promise<ComparisonReport | undefined> {
     const [report] = await db.select().from(comparisonReports).where(eq(comparisonReports.id, id));
     return report;
+  }
+
+  async updateComparisonReport(id: string, updates: Partial<InsertComparisonReport>): Promise<ComparisonReport> {
+    const updateData = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
+    const [report] = await db
+      .update(comparisonReports)
+      .set(updateData)
+      .where(eq(comparisonReports.id, id))
+      .returning();
+    return report;
+  }
+
+  async createComparisonReportItem(itemData: any): Promise<any> {
+    const [item] = await db.insert(comparisonReportItems).values(itemData).returning();
+    return item;
+  }
+
+  async getComparisonReportItems(reportId: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(comparisonReportItems)
+      .where(eq(comparisonReportItems.comparisonReportId, reportId))
+      .orderBy(comparisonReportItems.createdAt);
+  }
+
+  async createComparisonComment(commentData: any): Promise<any> {
+    const [comment] = await db.insert(comparisonComments).values(commentData).returning();
+    return comment;
+  }
+
+  async getComparisonComments(reportId: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(comparisonComments)
+      .where(eq(comparisonComments.comparisonReportId, reportId))
+      .orderBy(comparisonComments.createdAt);
   }
   
   // Inspection Category operations

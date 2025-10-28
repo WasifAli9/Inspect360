@@ -1797,14 +1797,99 @@ Be thorough, specific, and objective. This will be used in a professional proper
                    e.fieldKey === checkOutEntry.fieldKey
             );
 
-            // TODO: Call OpenAI Vision API to compare images
-            // TODO: Calculate depreciation using asset data
-            // TODO: Estimate cost based on damage and property sqft
+            let aiComparison: any = { summary: "No images to compare" };
+            let estimatedCost = 0;
+            let depreciation = 0;
 
-            // Placeholder for now - will implement AI comparison in next task
-            const estimatedCost = 0;
-            const depreciation = 0;
-            const finalCost = estimatedCost - depreciation;
+            // AI image comparison using OpenAI Vision API
+            if (checkOutEntry.photos && checkOutEntry.photos.length > 0) {
+              try {
+                const checkInPhotos = checkInEntry?.photos || [];
+                const checkOutPhotos = checkOutEntry.photos || [];
+
+                // Prepare image content for Vision API
+                const imageContent: any[] = [];
+                
+                // Add check-in photos (if available)
+                if (checkInPhotos.length > 0) {
+                  imageContent.push({
+                    type: "text",
+                    text: "CHECK-IN PHOTOS (baseline condition):"
+                  });
+                  checkInPhotos.slice(0, 2).forEach((url) => {
+                    imageContent.push({
+                      type: "image_url",
+                      image_url: { url }
+                    });
+                  });
+                }
+
+                // Add check-out photos
+                imageContent.push({
+                  type: "text",
+                  text: "CHECK-OUT PHOTOS (current condition):"
+                });
+                checkOutPhotos.slice(0, 2).forEach((url) => {
+                  imageContent.push({
+                    type: "image_url",
+                    image_url: { url }
+                  });
+                });
+
+                // Call OpenAI Vision API
+                const prompt = `You are an expert building inspector analyzing property conditions for a Build-to-Rent operation.
+
+Compare the check-in photos (baseline) with the check-out photos (current condition) for:
+Section: ${checkOutEntry.sectionRef}
+Field: ${checkOutEntry.fieldKey}
+
+Provide a detailed analysis in JSON format:
+{
+  "differences": "Describe visible differences between check-in and check-out",
+  "damage": "List any damage, wear, or deterioration observed",
+  "severity": "low|medium|high",
+  "repair_description": "What repairs are needed",
+  "estimated_cost_range": {"min": number, "max": number}
+}
+
+Be objective and specific. Focus on actionable repairs.`;
+
+                const response = await getOpenAI().chat.completions.create({
+                  model: "gpt-5",
+                  messages: [
+                    {
+                      role: "user",
+                      content: [
+                        { type: "text", text: prompt },
+                        ...imageContent
+                      ]
+                    }
+                  ],
+                  max_tokens: 600,
+                });
+
+                const aiResponse = response.choices[0]?.message?.content || "{}";
+                
+                try {
+                  aiComparison = JSON.parse(aiResponse);
+                  // Use mid-point of cost range as estimate
+                  estimatedCost = ((aiComparison.estimated_cost_range?.min || 0) + 
+                                   (aiComparison.estimated_cost_range?.max || 0)) / 2;
+                } catch {
+                  aiComparison = { summary: aiResponse };
+                }
+
+              } catch (error) {
+                console.error("Error in AI comparison:", error);
+                aiComparison = { error: "Failed to analyze images" };
+              }
+            }
+
+            // Calculate depreciation if there's an associated asset
+            // For now, use a simple 10% depreciation factor (this will be enhanced with actual asset data)
+            depreciation = estimatedCost * 0.10;
+
+            const finalCost = Math.max(0, estimatedCost - depreciation);
             totalCost += finalCost;
 
             itemAnalyses.push({
@@ -1812,21 +1897,36 @@ Be thorough, specific, and objective. This will be used in a professional proper
               fieldKey: checkOutEntry.fieldKey,
               checkInPhotos: checkInEntry?.photos || [],
               checkOutPhotos: checkOutEntry.photos || [],
+              aiComparison,
               estimatedCost,
               depreciation,
               finalCost,
             });
 
             // Create comparison report item
-            // Note: This will be implemented with storage method in next step
+            await storage.createComparisonReportItem({
+              comparisonReportId: report.id,
+              checkInEntryId: checkInEntry?.id || null,
+              checkOutEntryId: checkOutEntry.id,
+              sectionRef: checkOutEntry.sectionRef,
+              itemRef: checkOutEntry.itemRef,
+              fieldKey: checkOutEntry.fieldKey,
+              aiComparisonJson: aiComparison,
+              estimatedCost: estimatedCost.toFixed(2),
+              depreciation: depreciation.toFixed(2),
+              finalCost: finalCost.toFixed(2),
+            });
           }
 
-          // Update report with total cost
-          // await storage.updateComparisonReport(report.id, {
-          //   totalEstimatedCost: totalCost.toString(),
-          //   aiAnalysisJson: { summary: "Analysis complete", items: itemAnalyses },
-          //   status: "under_review",
-          // });
+          // Update report with total cost and analysis
+          await storage.updateComparisonReport(report.id, {
+            totalEstimatedCost: totalCost.toFixed(2),
+            aiAnalysisJson: { 
+              summary: `Analyzed ${markedEntries.length} items. Total estimated cost: $${totalCost.toFixed(2)}`, 
+              items: itemAnalyses 
+            },
+            status: "under_review",
+          });
 
         } catch (error) {
           console.error("Error processing comparison items:", error);
