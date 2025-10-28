@@ -31,7 +31,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture.
 - **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis (condition assessment) and comparison reports (check-in vs. check-out summaries).
 - **PWA**: Utilizes `manifest.json` and a service worker for offline capabilities and caching.
 - **Performance**: Optimized database queries and Zod validation across the API.
-- **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI, supporting optional Condition and Cleanliness rating toggles.
+- **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI, supporting optional Condition and Cleanliness rating toggles. **New organizations automatically receive default Check In and Check Out templates** upon registration, each with 7 sections covering general information, room inspections, and sign-off requirements. Template creation failures are logged but don't abort organization setup (defensive error handling).
 - **Inspection Capture Workflow**: A comprehensive field inspection workflow supporting data entry, real-time progress, optimistic updates, review pages, status management, and native smartphone camera capture (rear-camera default).
 - **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection, status indicators, and Background Sync API integration for automatic retry.
 - **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with basic issue description, multi-image upload, and AI-powered fix suggestions using OpenAI Vision API.
