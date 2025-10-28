@@ -53,7 +53,8 @@ import {
   insertTenantAssignmentSchema,
   updateTenantAssignmentSchema,
   quickAddAssetSchema,
-  quickAddMaintenanceSchema
+  quickAddMaintenanceSchema,
+  quickUpdateAssetSchema
 } from "@shared/schema";
 
 // Initialize Stripe
@@ -2913,6 +2914,88 @@ Provide a structured comparison highlighting differences in condition ratings an
         return res.status(400).json({ error: "Invalid request data", details: error.errors });
       }
       res.status(500).json({ error: "Failed to create asset" });
+    }
+  });
+
+  // Quick-update asset from inspection (with offline support)
+  app.patch("/api/asset-inventory/:id/quick", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const { id } = req.params;
+
+      // Verify asset exists and belongs to user's organization
+      const existingAsset = await storage.getAssetInventory(id);
+      if (!existingAsset) {
+        return res.status(404).json({ error: "Asset not found" });
+      }
+      if (existingAsset.organizationId !== user.organizationId) {
+        return res.status(403).json({ error: "Access denied: Asset belongs to a different organization" });
+      }
+
+      // Validate request body with quick-update schema
+      const validation = quickUpdateAssetSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: "Invalid request data", 
+          details: validation.error.errors 
+        });
+      }
+
+      const { condition, cleanliness, location, notes, photos, inspectionId, inspectionEntryId, offlineId } = validation.data;
+
+      // Check for duplicate offline requests (deduplication)
+      if (offlineId) {
+        // In a production system, you'd store processed offlineIds in a cache/db
+        // For now, we'll just log and continue (idempotent operation)
+        console.log(`Processing offline update with ID: ${offlineId}`);
+      }
+
+      // If inspectionId provided, verify it exists and belongs to the same organization
+      if (inspectionId) {
+        const inspection = await storage.getInspection(inspectionId);
+        if (!inspection) {
+          return res.status(404).json({ error: "Inspection not found" });
+        }
+
+        // Verify organization via property or block
+        let ownerOrgId: string | null = null;
+        if (inspection.propertyId) {
+          const inspectionProperty = await storage.getProperty(inspection.propertyId);
+          ownerOrgId = inspectionProperty?.organizationId || null;
+        } else if (inspection.blockId) {
+          const inspectionBlock = await storage.getBlock(inspection.blockId);
+          ownerOrgId = inspectionBlock?.organizationId || null;
+        }
+
+        if (ownerOrgId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied: Inspection does not belong to your organization" });
+        }
+      }
+
+      // Build update object with only provided fields
+      const updateData: any = {};
+      if (condition !== undefined) updateData.condition = condition;
+      if (cleanliness !== undefined) updateData.cleanliness = cleanliness;
+      if (location !== undefined) updateData.location = location;
+      if (notes !== undefined) updateData.notes = notes;
+      if (photos !== undefined) updateData.photos = photos;
+      if (inspectionId !== undefined) updateData.inspectionId = inspectionId;
+      if (inspectionEntryId !== undefined) updateData.inspectionEntryId = inspectionEntryId;
+
+      const updatedAsset = await storage.updateAssetInventory(id, updateData);
+
+      res.json(updatedAsset);
+    } catch (error: any) {
+      console.error("Error updating quick-update asset:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid request data", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to update asset" });
     }
   });
 

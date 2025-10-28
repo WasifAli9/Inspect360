@@ -758,6 +758,19 @@ export const quickAddAssetSchema = z.object({
 });
 export type QuickAddAsset = z.infer<typeof quickAddAssetSchema>;
 
+// Quick-update asset schema for in-inspection workflow (update existing assets)
+export const quickUpdateAssetSchema = z.object({
+  condition: z.enum(["excellent", "good", "fair", "poor", "needs_replacement"]).optional(),
+  cleanliness: z.enum(["very_clean", "clean", "acceptable", "needs_cleaning", "not_applicable"]).optional(),
+  location: z.string().optional(),
+  notes: z.string().optional(),
+  photos: z.array(z.string()).optional(),
+  inspectionId: z.string().optional(), // Link update to current inspection
+  inspectionEntryId: z.string().optional(), // Optional specific entry link
+  offlineId: z.string().optional(), // For offline deduplication
+});
+export type QuickUpdateAsset = z.infer<typeof quickUpdateAssetSchema>;
+
 // Relations
 export const usersRelations = relations(users, ({ one }) => ({
   organization: one(organizations, {
