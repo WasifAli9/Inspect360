@@ -2978,11 +2978,12 @@ Provide a structured comparison highlighting differences in condition ratings an
       }
 
       // Build update object with only provided fields
+      // Map notes to description for consistency with asset table schema
       const updateData: any = {};
       if (condition !== undefined) updateData.condition = condition;
       if (cleanliness !== undefined) updateData.cleanliness = cleanliness;
       if (location !== undefined) updateData.location = location;
-      if (notes !== undefined) updateData.notes = notes;
+      if (notes !== undefined) updateData.description = notes; // Map notes -> description
       if (photos !== undefined) updateData.photos = photos;
       if (inspectionId !== undefined) updateData.inspectionId = inspectionId;
       if (inspectionEntryId !== undefined) updateData.inspectionEntryId = inspectionEntryId;
