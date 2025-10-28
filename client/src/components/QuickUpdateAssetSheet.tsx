@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { offlineQueue, useOnlineStatus } from "@/lib/offlineQueue";
-import type { QuickUpdateAsset, SelectAsset } from "@shared/schema";
+import type { QuickUpdateAsset, AssetInventory } from "@shared/schema";
 import { quickUpdateAssetSchema } from "@shared/schema";
 import {
   Sheet,
@@ -57,7 +57,7 @@ export function QuickUpdateAssetSheet({
   const queryClient = useQueryClient();
   const isOnline = useOnlineStatus();
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
-  const [selectedAsset, setSelectedAsset] = useState<SelectAsset | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<AssetInventory | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Build query params for filtering assets
@@ -66,7 +66,7 @@ export function QuickUpdateAssetSheet({
   if (blockId) queryParams.append("blockId", blockId);
 
   // Fetch assets for the current property/block
-  const { data: assets = [], isLoading: isLoadingAssets } = useQuery<SelectAsset[]>({
+  const { data: assets = [], isLoading: isLoadingAssets } = useQuery<AssetInventory[]>({
     queryKey: ["/api/asset-inventory", propertyId, blockId],
     enabled: open && (!!propertyId || !!blockId),
   });
@@ -83,7 +83,7 @@ export function QuickUpdateAssetSheet({
           condition: asset.condition,
           cleanliness: asset.cleanliness || undefined,
           location: asset.location || "",
-          description: asset.description || "",
+          notes: asset.description || "",
           inspectionId: inspectionId || undefined,
           inspectionEntryId: inspectionEntryId || undefined,
         });
@@ -97,7 +97,7 @@ export function QuickUpdateAssetSheet({
       condition: undefined,
       cleanliness: undefined,
       location: "",
-      description: "",
+      notes: "",
       inspectionId: inspectionId || undefined,
       inspectionEntryId: inspectionEntryId || undefined,
     },
@@ -356,16 +356,16 @@ export function QuickUpdateAssetSheet({
 
                 <FormField
                   control={form.control}
-                  name="description"
+                  name="notes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Update Description (Optional)</FormLabel>
+                      <FormLabel>Update Notes (Optional)</FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
                           placeholder="Additional notes about changes..."
                           rows={3}
-                          data-testid="textarea-description"
+                          data-testid="textarea-notes"
                         />
                       </FormControl>
                       <FormMessage />

@@ -5,15 +5,17 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Plus, Package, Wrench, X } from "lucide-react";
+import { Plus, Package, Wrench, X, RefreshCw } from "lucide-react";
 
 interface InspectionQuickActionsProps {
   onAddAsset: () => void;
+  onUpdateAsset: () => void;
   onLogMaintenance: () => void;
 }
 
 export function InspectionQuickActions({
   onAddAsset,
+  onUpdateAsset,
   onLogMaintenance,
 }: InspectionQuickActionsProps) {
   const [open, setOpen] = useState(false);
@@ -53,6 +55,20 @@ export function InspectionQuickActions({
                 <span className="font-medium">Add Asset</span>
                 <span className="text-xs text-muted-foreground">
                   Add to inventory
+                </span>
+              </div>
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 h-12"
+              onClick={() => handleAction(onUpdateAsset)}
+              data-testid="button-quick-update-asset"
+            >
+              <RefreshCw className="h-5 w-5 text-primary" />
+              <div className="flex flex-col items-start">
+                <span className="font-medium">Update Asset</span>
+                <span className="text-xs text-muted-foreground">
+                  Modify existing inventory
                 </span>
               </div>
             </Button>
