@@ -365,7 +365,7 @@ export default function Auth() {
         {/* Content */}
         <div className="relative z-10 max-w-lg space-y-8 text-white">
           <div className="mb-6">
-            <img src={logoUrl} alt="Inspect360" className="h-16 mb-6 brightness-0 invert" />
+            <img src={logoUrl} alt="Inspect360" className="h-16 mb-6" />
           </div>
           <div>
             <h1 className="text-4xl font-bold mb-4">AI-Powered Building Inspections</h1>
