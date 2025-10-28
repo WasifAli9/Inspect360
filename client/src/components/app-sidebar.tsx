@@ -13,6 +13,7 @@ import {
   Package,
   List,
   Contact,
+  GitCompare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -85,8 +86,8 @@ export function AppSidebar() {
     {
       title: "Comparisons",
       url: "/comparisons",
-      icon: FileText,
-      roles: ["owner", "tenant"],
+      icon: GitCompare,
+      roles: ["owner", "clerk", "tenant"],
     },
     {
       title: "Asset Inventory",
