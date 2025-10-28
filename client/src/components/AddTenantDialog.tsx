@@ -132,7 +132,17 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
       
       if (!res.ok) {
         const error = await res.json().catch(() => ({ message: "Failed to create tenant user" }));
-        throw new Error(error.message || "Failed to create tenant user");
+        
+        // Handle specific error cases
+        if (res.status === 401) {
+          throw new Error("Your session has expired. Please refresh the page and log in again.");
+        } else if (res.status === 403) {
+          throw new Error("Only organization owners can create tenant users. Please contact your administrator.");
+        } else if (error.message === "Email or username already exists") {
+          throw new Error("A user with this email or username already exists in your organization.");
+        } else {
+          throw new Error(error.message || "Failed to create tenant user");
+        }
       }
       
       return await res.json() as User;
