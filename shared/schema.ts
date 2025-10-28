@@ -43,6 +43,7 @@ export const contactTypeEnum = pgEnum("contact_type", ["internal", "contractor",
 export const templateScopeEnum = pgEnum("template_scope", ["block", "property", "both"]);
 export const fieldTypeEnum = pgEnum("field_type", ["short_text", "long_text", "number", "select", "multiselect", "boolean", "rating", "date", "time", "datetime", "photo", "photo_array", "video", "gps", "signature"]);
 export const maintenanceSourceEnum = pgEnum("maintenance_source", ["manual", "inspection", "tenant_portal", "routine"]);
+export const comparisonReportStatusEnum = pgEnum("comparison_report_status", ["draft", "under_review", "awaiting_signatures", "signed", "filed"]);
 
 // User storage table
 export const users = pgTable("users", {
@@ -216,6 +217,7 @@ export const properties = pgTable("properties", {
   blockId: varchar("block_id"), // Optional: properties can be grouped into blocks
   name: varchar("name").notNull(),
   address: text("address").notNull(),
+  sqft: integer("sqft"), // Property area in square feet (for cost estimation)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -451,6 +453,7 @@ export const inspectionEntries = pgTable("inspection_entries", {
   photos: text("photos").array(), // Array of photo URLs
   videos: text("videos").array(), // Array of video URLs
   maintenanceFlag: boolean("maintenance_flag").default(false),
+  markedForReview: boolean("marked_for_review").default(false), // For comparison report generation
   defectsJson: jsonb("defects_json"), // Array of defect tags/types
   offlineId: varchar("offline_id").unique(), // For offline sync reconciliation (unique for idempotency)
   createdAt: timestamp("created_at").defaultNow(),
@@ -558,24 +561,95 @@ export const quickAddMaintenanceSchema = z.object({
 });
 export type QuickAddMaintenance = z.infer<typeof quickAddMaintenanceSchema>;
 
-// Comparison Reports (AI-generated comparison between check-in and check-out)
+// Comparison Reports (Check-in vs Check-out collaborative liability assessment)
 export const comparisonReports = pgTable("comparison_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
   propertyId: varchar("property_id").notNull(),
   checkInInspectionId: varchar("check_in_inspection_id").notNull(),
   checkOutInspectionId: varchar("check_out_inspection_id").notNull(),
-  aiSummary: text("ai_summary"), // Overall AI-generated comparison
-  itemComparisons: jsonb("item_comparisons"), // Array of item-by-item comparisons
-  generatedBy: varchar("generated_by").notNull(),
+  tenantId: varchar("tenant_id").notNull(), // Tenant assigned to property
+  status: comparisonReportStatusEnum("status").notNull().default("draft"),
+  totalEstimatedCost: numeric("total_estimated_cost", { precision: 10, scale: 2 }).default("0"),
+  aiAnalysisJson: jsonb("ai_analysis_json"), // AI comparison results
+  itemComparisons: jsonb("item_comparisons"), // Array of item-by-item comparisons (backward compatibility)
+  generatedBy: varchar("generated_by").notNull(), // User who triggered report generation
+  generatedAt: timestamp("generated_at").defaultNow(),
+  operatorSignature: varchar("operator_signature"), // Typed name
+  operatorSignedAt: timestamp("operator_signed_at"),
+  operatorIpAddress: varchar("operator_ip_address"),
+  tenantSignature: varchar("tenant_signature"), // Typed name
+  tenantSignedAt: timestamp("tenant_signed_at"),
+  tenantIpAddress: varchar("tenant_ip_address"),
+  filedAt: timestamp("filed_at"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("comparison_reports_organization_id_idx").on(table.organizationId),
+  index("comparison_reports_property_id_idx").on(table.propertyId),
+  index("comparison_reports_check_out_inspection_id_idx").on(table.checkOutInspectionId),
+]);
 
 export const insertComparisonReportSchema = createInsertSchema(comparisonReports).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
 });
 export type ComparisonReport = typeof comparisonReports.$inferSelect;
 export type InsertComparisonReport = z.infer<typeof insertComparisonReportSchema>;
+
+// Comparison Report Items (Individual inspection entries marked for review)
+export const comparisonReportItems = pgTable("comparison_report_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  comparisonReportId: varchar("comparison_report_id").notNull(),
+  checkInEntryId: varchar("check_in_entry_id"), // May not exist if new item in check-out
+  checkOutEntryId: varchar("check_out_entry_id").notNull(),
+  sectionRef: text("section_ref").notNull(),
+  itemRef: text("item_ref"),
+  fieldKey: varchar("field_key").notNull(),
+  aiComparisonJson: jsonb("ai_comparison_json"), // AI analysis for this specific item
+  estimatedCost: numeric("estimated_cost", { precision: 10, scale: 2 }),
+  depreciation: numeric("depreciation", { precision: 10, scale: 2 }),
+  finalCost: numeric("final_cost", { precision: 10, scale: 2 }), // After depreciation
+  liabilityDecision: varchar("liability_decision"), // "tenant", "landlord", "shared", "waived"
+  liabilityNotes: text("liability_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("comparison_report_items_report_id_idx").on(table.comparisonReportId),
+]);
+
+export const insertComparisonReportItemSchema = createInsertSchema(comparisonReportItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type ComparisonReportItem = typeof comparisonReportItems.$inferSelect;
+export type InsertComparisonReportItem = z.infer<typeof insertComparisonReportItemSchema>;
+
+// Comparison Comments (Async discussion thread for liability negotiation)
+export const comparisonComments = pgTable("comparison_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  comparisonReportId: varchar("comparison_report_id").notNull(),
+  comparisonReportItemId: varchar("comparison_report_item_id"), // Optional: comment on specific item
+  userId: varchar("user_id").notNull(),
+  content: text("content").notNull(),
+  attachments: text("attachments").array(), // Optional file attachments
+  isInternal: boolean("is_internal").default(false), // Internal notes not visible to tenant
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("comparison_comments_report_id_idx").on(table.comparisonReportId),
+  index("comparison_comments_item_id_idx").on(table.comparisonReportItemId),
+]);
+
+export const insertComparisonCommentSchema = createInsertSchema(comparisonComments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type ComparisonComment = typeof comparisonComments.$inferSelect;
+export type InsertComparisonComment = z.infer<typeof insertComparisonCommentSchema>;
 
 // Credit Transactions (Track credit usage)
 export const creditTransactions = pgTable("credit_transactions", {
