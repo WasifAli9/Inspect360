@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { nanoid } from "nanoid";
-import type { QuickAddAsset, QuickAddMaintenance } from "@shared/schema";
+import type { QuickAddAsset, QuickAddMaintenance, QuickUpdateAsset } from "@shared/schema";
 
 // Discriminated union for different queue entry types
 export type QueuedEntry =
@@ -24,6 +24,15 @@ export type QueuedEntry =
       id: string; // Local queue ID
       offlineId: string; // For server-side dedup
       payload: QuickAddAsset;
+      timestamp: number;
+      synced: boolean;
+      attempts: number;
+    }
+  | {
+      type: "asset_update";
+      id: string; // Local queue ID
+      assetId: string; // ID of asset being updated
+      payload: QuickUpdateAsset;
       timestamp: number;
       synced: boolean;
       attempts: number;
@@ -105,6 +114,26 @@ export class OfflineQueue {
     return queuedEntry;
   }
 
+  // Enqueue asset update
+  enqueueAssetUpdate(assetId: string, payload: QuickUpdateAsset) {
+    const queuedEntry: QueuedEntry = {
+      type: "asset_update",
+      id: nanoid(),
+      assetId,
+      payload: {
+        ...payload,
+        offlineId: nanoid(16), // Add offlineId for deduplication
+      },
+      timestamp: Date.now(),
+      synced: false,
+      attempts: 0,
+    };
+
+    this.queue.push(queuedEntry);
+    this.saveQueue();
+    return queuedEntry;
+  }
+
   // Enqueue maintenance request
   enqueueMaintenance(payload: QuickAddMaintenance) {
     const queuedEntry: QueuedEntry = {
@@ -135,7 +164,7 @@ export class OfflineQueue {
     return this.queue.filter((e) => !e.synced).length;
   }
 
-  getPendingCountByType(type: "inspection_entry" | "asset" | "maintenance"): number {
+  getPendingCountByType(type: "inspection_entry" | "asset" | "asset_update" | "maintenance"): number {
     return this.queue.filter((e) => e.type === type && !e.synced).length;
   }
 
@@ -166,10 +195,10 @@ export class OfflineQueue {
   async syncAll(apiRequest: (method: string, url: string, body?: any) => Promise<any>): Promise<{
     success: number;
     failed: number;
-    details: { inspectionEntries: number; assets: number; maintenance: number };
+    details: { inspectionEntries: number; assets: number; assetUpdates: number; maintenance: number };
   }> {
     if (this.isSyncing) {
-      return { success: 0, failed: 0, details: { inspectionEntries: 0, assets: 0, maintenance: 0 } };
+      return { success: 0, failed: 0, details: { inspectionEntries: 0, assets: 0, assetUpdates: 0, maintenance: 0 } };
     }
 
     this.isSyncing = true;
@@ -177,7 +206,7 @@ export class OfflineQueue {
 
     let successCount = 0;
     let failedCount = 0;
-    const details = { inspectionEntries: 0, assets: 0, maintenance: 0 };
+    const details = { inspectionEntries: 0, assets: 0, assetUpdates: 0, maintenance: 0 };
 
     for (const entry of pending) {
       try {
@@ -199,6 +228,9 @@ export class OfflineQueue {
             offlineId: entry.offlineId,
           });
           details.assets++;
+        } else if (entry.type === "asset_update") {
+          await apiRequest("PATCH", `/api/asset-inventory/${entry.assetId}/quick`, entry.payload);
+          details.assetUpdates++;
         } else if (entry.type === "maintenance") {
           await apiRequest("POST", "/api/maintenance/quick", {
             ...entry.payload,
