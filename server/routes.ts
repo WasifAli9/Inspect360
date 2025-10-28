@@ -10,6 +10,7 @@ import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail } from "./resend";
+import { DEFAULT_TEMPLATES } from "./defaultTemplates";
 import {
   insertBlockSchema,
   insertContactSchema,
@@ -150,6 +151,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: "purchase",
         description: "Welcome credits",
       });
+
+      // Create default inspection templates (Check In and Check Out)
+      // Use defensive error handling so org creation succeeds even if template seeding fails
+      try {
+        for (const template of DEFAULT_TEMPLATES) {
+          await storage.createInspectionTemplate({
+            organizationId: organization.id,
+            name: template.name,
+            description: template.description,
+            scope: template.scope,
+            version: 1,
+            isActive: true,
+            structureJson: template.structureJson,
+            categoryId: template.categoryId,
+            createdBy: userId,
+          });
+        }
+        console.log(`✓ Created ${DEFAULT_TEMPLATES.length} default templates for organization ${organization.id}`);
+      } catch (templateError) {
+        // Log the error but don't fail the entire organization creation
+        console.error("Warning: Failed to create default templates, but organization was created successfully:", templateError);
+      }
 
       res.json(organization);
     } catch (error) {
