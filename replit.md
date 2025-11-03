@@ -32,6 +32,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **PWA**: Utilizes `manifest.json` and a service worker for offline capabilities and caching.
 - **Performance**: Optimized database queries and Zod validation.
 - **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI, supporting optional Condition and Cleanliness rating toggles. New organizations automatically receive default Check In and Check Out templates.
+- **PWA Install Prompt System**: Comprehensive install prompt handling for Android (beforeinstallprompt event capture with custom branded install button) and iOS (Safari-specific instructions with visual guidance). Features smart detection (only shows when not installed), dismissible UI with 7-day respawn, localStorage persistence, and integration across all app states (authenticated, unauthenticated, onboarding).
 - **Inspection Capture Workflow**: Comprehensive field inspection workflow supporting data entry, real-time progress, optimistic updates, review pages, status management, and native smartphone camera capture.
 - **In-Inspection Quick Actions**: Contextual quick-add workflow (Add Asset, Update Asset, Log Maintenance) via a Floating Action Button (FAB) for mobile, with offline queueing and audit trail linking.
 - **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection, status indicators, and Background Sync API integration, extended for inspection entries, assets, and maintenance requests.
