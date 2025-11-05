@@ -1756,33 +1756,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(402).json({ message: "Insufficient credits" });
       }
 
-      // Construct full photo URLs - convert /objects/ paths to signed URLs
+      // Construct image data URLs - download images and convert to base64
       const objectStorageService = new ObjectStorageService();
       const photoUrls = await Promise.all(photos.map(async (photo) => {
-        // If already a full URL, use it directly
+        // If already a full HTTP URL, use it directly
         if (photo.startsWith("http")) {
           return photo;
         }
         
-        // If it's an /objects/ path, generate a signed URL for temporary access
+        // If it's an /objects/ path, download the image and convert to base64 data URL
         try {
           const objectFile = await objectStorageService.getObjectEntityFile(photo);
-          // Generate a signed URL valid for 1 hour (enough for OpenAI to download)
-          const [signedUrl] = await objectFile.getSignedUrl({
-            action: 'read',
-            expires: Date.now() + 60 * 60 * 1000, // 1 hour
-          });
-          console.log(`[InspectAI] Generated signed URL for: ${photo}`);
-          return signedUrl;
+          
+          // Download the file contents
+          const [fileBuffer] = await objectFile.download();
+          
+          // Get the content type from metadata
+          const [metadata] = await objectFile.getMetadata();
+          const contentType = metadata.contentType || 'image/jpeg';
+          
+          // Convert to base64 data URL
+          const base64Data = fileBuffer.toString('base64');
+          const dataUrl = `data:${contentType};base64,${base64Data}`;
+          
+          console.log(`[InspectAI] Converted photo to base64 data URL: ${photo} (${contentType})`);
+          return dataUrl;
         } catch (error) {
-          console.error("[InspectAI] Error generating signed URL for photo:", photo, error);
-          // Fallback: construct URL to our proxy (may not work for OpenAI)
-          const path = photo.startsWith("/objects/") ? photo : `/objects/${photo}`;
-          const domain = process.env.REPLIT_DOMAINS?.split(",")[0];
-          const baseUrl = domain 
-            ? (domain.startsWith("http") ? domain : `https://${domain}`)
-            : "http://localhost:5000";
-          return `${baseUrl}${path}`;
+          console.error("[InspectAI] Error converting photo to base64:", photo, error);
+          throw new Error(`Failed to load photo for analysis: ${photo}`);
         }
       }));
 
