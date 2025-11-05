@@ -324,7 +324,7 @@ export default function Team() {
               <CardContent className="p-6">
                 <div className="flex items-start gap-6">
                   {/* Avatar */}
-                  <Avatar className="h-16 w-16">
+                  <Avatar className="h-16 w-16" key={`avatar-${member.id}-${member.profileImageUrl || 'no-image'}`}>
                     <AvatarImage src={member.profileImageUrl || undefined} />
                     <AvatarFallback className="bg-primary/10 text-primary text-lg">
                       {member.firstName?.[0]}{member.lastName?.[0]}
