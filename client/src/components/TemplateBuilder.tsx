@@ -70,7 +70,7 @@ const FIELD_TYPES = [
   { value: "time", label: "Time" },
   { value: "datetime", label: "Date & Time" },
   { value: "photo", label: "Single Photo" },
-  { value: "photo[]", label: "Multiple Photos" },
+  { value: "photo_array", label: "Multiple Photos" },
   { value: "video", label: "Video" },
   { value: "gps", label: "GPS Location" },
   { value: "signature", label: "Signature" },
