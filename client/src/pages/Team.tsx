@@ -210,25 +210,37 @@ export default function Team() {
         .join(", ")
     } : undefined;
 
-    const data = {
-      firstName,
-      lastName,
-      email,
-      username,
-      ...(password && { password }), // Only include password if provided
-      phone,
-      role,
-      skills,
-      education,
-      profileImageUrl: profileImageUrl || "",
-      certificateUrls: certificateUrls.filter(url => url.trim() !== ""),
-      address: formattedAddress,
-    };
-
     if (editingUser) {
-      updateMutation.mutate({ userId: editingUser.id, data });
+      // For updates: exclude email, username, password (not allowed in updateTeamMemberSchema)
+      const updateData = {
+        firstName,
+        lastName,
+        phone,
+        role,
+        skills,
+        education,
+        profileImageUrl: profileImageUrl || "",
+        certificateUrls: certificateUrls.filter(url => url.trim() !== ""),
+        address: formattedAddress,
+      };
+      updateMutation.mutate({ userId: editingUser.id, data: updateData });
     } else {
-      createMutation.mutate(data);
+      // For creates: include all fields
+      const createData = {
+        firstName,
+        lastName,
+        email,
+        username,
+        ...(password && { password }),
+        phone,
+        role,
+        skills,
+        education,
+        profileImageUrl: profileImageUrl || "",
+        certificateUrls: certificateUrls.filter(url => url.trim() !== ""),
+        address: formattedAddress,
+      };
+      createMutation.mutate(createData);
     }
   };
 
