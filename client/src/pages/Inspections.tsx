@@ -34,7 +34,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, ClipboardList, Calendar, MapPin, User, Play, FileText } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
 
 const createInspectionSchema = z.object({
@@ -51,6 +51,9 @@ type CreateInspectionData = z.infer<typeof createInspectionSchema>;
 export default function Inspections() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const searchParams = useSearch();
+  const urlPropertyId = new URLSearchParams(searchParams).get("propertyId");
+  const shouldCreate = new URLSearchParams(searchParams).get("create");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
 
@@ -83,6 +86,22 @@ export default function Inspections() {
       notes: "",
     },
   });
+
+  // Pre-populate form and auto-open dialog if coming from property detail
+  useEffect(() => {
+    if (urlPropertyId && properties.length > 0) {
+      // Pre-populate property selection
+      form.setValue("propertyId", urlPropertyId);
+      setSelectedPropertyId(urlPropertyId);
+      
+      // Auto-open dialog if create=true
+      if (shouldCreate === "true") {
+        setDialogOpen(true);
+        // Clear URL parameters after opening to keep URL clean
+        navigate("/inspections", { replace: true });
+      }
+    }
+  }, [urlPropertyId, shouldCreate, properties, navigate]);
 
   // Auto-select matching template when inspection type changes
   const watchedType = form.watch("type");
