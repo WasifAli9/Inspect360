@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Mail, Phone, MapPin, Plus, Upload, X, GraduationCap, Briefcase, Tag, FileText } from "lucide-react";
+import { Users, Mail, Phone, MapPin, Plus, Upload, X, GraduationCap, Briefcase, Tag, FileText, Search, Filter } from "lucide-react";
 import type { User } from "@shared/schema";
 import { ObjectUploader } from "@/components/ObjectUploader";
 
@@ -20,6 +20,12 @@ export default function Team() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [skillsFilter, setSkillsFilter] = useState("");
+  const [educationFilter, setEducationFilter] = useState("");
   
   // Form states
   const [firstName, setFirstName] = useState("");
@@ -288,6 +294,56 @@ export default function Team() {
     return addr.formatted || [addr.street, addr.city, addr.state, addr.postalCode, addr.country].filter(Boolean).join(", ");
   };
 
+  // Filter team members based on search and filter criteria
+  const filteredTeamMembers = teamMembers?.filter((member) => {
+    // Search query filter (name, email, username)
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesName = `${member.firstName} ${member.lastName}`.toLowerCase().includes(query);
+      const matchesEmail = member.email?.toLowerCase().includes(query);
+      const matchesUsername = member.username?.toLowerCase().includes(query);
+      
+      if (!matchesName && !matchesEmail && !matchesUsername) {
+        return false;
+      }
+    }
+
+    // Role filter
+    if (roleFilter !== "all" && member.role !== roleFilter) {
+      return false;
+    }
+
+    // Skills filter
+    if (skillsFilter) {
+      const skillQuery = skillsFilter.toLowerCase();
+      const hasMatchingSkill = member.skills?.some(skill => 
+        skill.toLowerCase().includes(skillQuery)
+      );
+      if (!hasMatchingSkill) {
+        return false;
+      }
+    }
+
+    // Education filter
+    if (educationFilter) {
+      const eduQuery = educationFilter.toLowerCase();
+      if (!member.education?.toLowerCase().includes(eduQuery)) {
+        return false;
+      }
+    }
+
+    return true;
+  }) || [];
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setRoleFilter("all");
+    setSkillsFilter("");
+    setEducationFilter("");
+  };
+
+  const hasActiveFilters = searchQuery || roleFilter !== "all" || skillsFilter || educationFilter;
+
   if (isLoading) {
     return (
       <div className="container mx-auto p-6 md:p-8 lg:p-12">
@@ -316,10 +372,103 @@ export default function Team() {
         </Button>
       </div>
 
+      {/* Filters */}
+      <Card className="p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Filter className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold">Filter Team Members</h2>
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="ml-auto"
+              data-testid="button-clear-filters"
+            >
+              Clear Filters
+            </Button>
+          )}
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Search */}
+          <div className="space-y-2">
+            <Label htmlFor="search">Search</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                id="search"
+                placeholder="Name, email, username..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-team"
+              />
+            </div>
+          </div>
+
+          {/* Role Filter */}
+          <div className="space-y-2">
+            <Label htmlFor="role-filter">Role</Label>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger id="role-filter" data-testid="select-role-filter">
+                <SelectValue placeholder="All Roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="owner">Owner/Operator</SelectItem>
+                <SelectItem value="clerk">Inventory Clerk</SelectItem>
+                <SelectItem value="compliance">Compliance Officer</SelectItem>
+                <SelectItem value="tenant">Tenant</SelectItem>
+                <SelectItem value="contractor">Contractor</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Skills Filter */}
+          <div className="space-y-2">
+            <Label htmlFor="skills-filter">Skills</Label>
+            <div className="relative">
+              <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                id="skills-filter"
+                placeholder="e.g., Property Inspector"
+                value={skillsFilter}
+                onChange={(e) => setSkillsFilter(e.target.value)}
+                className="pl-9"
+                data-testid="input-skills-filter"
+              />
+            </div>
+          </div>
+
+          {/* Education Filter */}
+          <div className="space-y-2">
+            <Label htmlFor="education-filter">Education</Label>
+            <div className="relative">
+              <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                id="education-filter"
+                placeholder="e.g., MBA, Bachelor"
+                value={educationFilter}
+                onChange={(e) => setEducationFilter(e.target.value)}
+                className="pl-9"
+                data-testid="input-education-filter"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Results count */}
+        <div className="mt-4 text-sm text-muted-foreground">
+          Showing {filteredTeamMembers.length} of {teamMembers?.length || 0} team members
+          {hasActiveFilters && " (filtered)"}
+        </div>
+      </Card>
+
       {/* Team Members List */}
       <div className="grid gap-6">
-        {teamMembers && teamMembers.length > 0 ? (
-          teamMembers.map((member) => (
+        {filteredTeamMembers.length > 0 ? (
+          filteredTeamMembers.map((member) => (
             <Card key={member.id} className="hover-elevate" data-testid={`card-team-member-${member.id}`}>
               <CardContent className="p-6">
                 <div className="flex items-start gap-6">
@@ -425,15 +574,31 @@ export default function Team() {
         ) : (
           <Card>
             <CardContent className="p-12 text-center">
-              <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Team Members</h3>
-              <p className="text-muted-foreground mb-4">
-                Add your first team member to get started
-              </p>
-              <Button onClick={handleOpenCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Team Member
-              </Button>
+              {hasActiveFilters ? (
+                <>
+                  <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Matching Team Members</h3>
+                  <p className="text-muted-foreground mb-4">
+                    No team members match your current filters. Try adjusting your search criteria.
+                  </p>
+                  <Button onClick={clearFilters} variant="outline">
+                    <X className="mr-2 h-4 w-4" />
+                    Clear Filters
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Team Members</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Add your first team member to get started
+                  </p>
+                  <Button onClick={handleOpenCreate}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Team Member
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         )}
