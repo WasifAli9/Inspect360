@@ -75,13 +75,7 @@ export function AppSidebar() {
       title: "Maintenance",
       url: "/maintenance",
       icon: Wrench,
-      roles: ["owner", "clerk", "tenant"],
-    },
-    {
-      title: "Work Orders",
-      url: "/work-orders",
-      icon: Clipboard,
-      roles: ["owner", "contractor"],
+      roles: ["owner", "clerk", "tenant", "contractor"],
     },
     {
       title: "Comparisons",

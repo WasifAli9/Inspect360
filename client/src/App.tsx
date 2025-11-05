@@ -25,7 +25,6 @@ import Team from "@/pages/Team";
 import Blocks from "@/pages/Blocks";
 import BlockDetail from "@/pages/BlockDetail";
 import BlockTenants from "@/pages/BlockTenants";
-import WorkOrders from "@/pages/WorkOrders";
 import Settings from "@/pages/Settings";
 import AssetInventory from "@/pages/AssetInventory";
 import InspectionTemplates from "@/pages/InspectionTemplates";
@@ -129,7 +128,6 @@ function AppContent() {
                 <Route path="/inspections/:id" component={InspectionDetail} />
                 <Route path="/compliance" component={Compliance} />
                 <Route path="/maintenance" component={Maintenance} />
-                <Route path="/work-orders" component={WorkOrders} />
                 <Route path="/comparisons/:id" component={ComparisonReportDetail} />
                 <Route path="/comparisons" component={ComparisonReports} />
                 <Route path="/team" component={Team} />

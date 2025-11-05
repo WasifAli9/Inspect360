@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Wrench, Upload, Sparkles, Loader2, X, Check, ChevronsUpDown, Pencil } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Wrench, Upload, Sparkles, Loader2, X, Check, ChevronsUpDown, Pencil, Clipboard, Calendar, DollarSign, User as UserIcon, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { FixfloSyncButton } from "@/components/FixfloSyncButton";
 import {
   Dialog,
@@ -64,6 +65,41 @@ type MaintenanceRequestWithDetails = MaintenanceRequest & {
   assignedToUser?: { firstName: string; lastName: string };
 };
 
+interface WorkOrder {
+  id: string;
+  status: string;
+  slaDue?: string | null;
+  costEstimate?: number | null;
+  costActual?: number | null;
+  createdAt: string;
+  maintenanceRequest: {
+    id: string;
+    title: string;
+    description?: string;
+    priority: string;
+  };
+  contractor?: {
+    firstName?: string;
+    lastName?: string;
+    email: string;
+  };
+}
+
+const workOrderStatusColors: Record<string, string> = {
+  assigned: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
+  in_progress: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
+  waiting_parts: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
+  completed: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
+  rejected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+};
+
+const priorityColors: Record<string, string> = {
+  low: "bg-gray-100 text-gray-800",
+  medium: "bg-blue-100 text-blue-800",
+  high: "bg-orange-100 text-orange-800",
+  urgent: "bg-red-100 text-red-800",
+};
+
 const createMaintenanceSchema = insertMaintenanceRequestSchema
   .omit({ organizationId: true }) // Backend adds this from session
   .extend({
@@ -118,6 +154,26 @@ export default function Maintenance() {
   const { data: clerks = [] } = useQuery<User[]>({
     queryKey: ["/api/users/clerks"],
     enabled: user?.role === "owner",
+  });
+
+  // Fetch work orders (only for owners and contractors)
+  const { data: workOrders = [], isLoading: workOrdersLoading } = useQuery<WorkOrder[]>({
+    queryKey: ["/api/work-orders"],
+    enabled: user?.role === "owner" || user?.role === "contractor",
+  });
+
+  // Work order status update mutation
+  const updateWorkOrderStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      return apiRequest("PATCH", `/api/work-orders/${id}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      toast({ title: "Work order status updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update work order status", variant: "destructive" });
+    },
   });
 
   // Initialize Uppy for image uploads
@@ -414,16 +470,39 @@ export default function Maintenance() {
     filteredRequests = filteredRequests.filter(r => r.reportedBy === user.id);
   }
 
+  // Work order helper functions
+  const formatCurrency = (amount?: number | null) => {
+    if (!amount) return "N/A";
+    return `$${(amount / 100).toFixed(2)}`;
+  };
+
+  const getWorkOrderStatusIcon = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4" />;
+      case "in_progress":
+      case "waiting_parts":
+        return <Clock className="h-4 w-4" />;
+      case "rejected":
+        return <AlertCircle className="h-4 w-4" />;
+      default:
+        return <UserIcon className="h-4 w-4" />;
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="heading-maintenance">Maintenance Requests</h1>
+          <h1 className="text-3xl font-bold flex items-center gap-3" data-testid="heading-maintenance">
+            <Wrench className="w-8 h-8 text-primary" />
+            Maintenance
+          </h1>
           <p className="text-muted-foreground">
             {user?.role === "tenant" 
               ? "Submit and track your maintenance requests" 
-              : "Manage internal maintenance work orders"}
+              : "Manage maintenance requests and contractor work orders"}
           </p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={handleDialogChange}>
@@ -812,8 +891,25 @@ export default function Maintenance() {
         </Dialog>
       </div>
 
-      {/* Status Filter (hidden for tenants) */}
-      {user?.role !== "tenant" && (
+      {/* Tabs for Requests and Work Orders */}
+      <Tabs defaultValue="requests" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="requests" data-testid="tab-requests">
+            <Wrench className="w-4 h-4 mr-2" />
+            Requests
+          </TabsTrigger>
+          {(user?.role === "owner" || user?.role === "contractor") && (
+            <TabsTrigger value="work-orders" data-testid="tab-work-orders">
+              <Clipboard className="w-4 h-4 mr-2" />
+              Work Orders
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        {/* REQUESTS TAB */}
+        <TabsContent value="requests" className="space-y-6">
+          {/* Status Filter (hidden for tenants) */}
+          {user?.role !== "tenant" && (
         <div className="flex gap-2">
           {["all", "open", "assigned", "in-progress", "completed"].map((status) => (
             <Button
@@ -972,6 +1068,126 @@ export default function Maintenance() {
           ))
         )}
       </div>
+        </TabsContent>
+
+        {/* WORK ORDERS TAB */}
+        <TabsContent value="work-orders" className="space-y-6">
+          {workOrdersLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading work orders...</div>
+          ) : workOrders.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <UserIcon className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No work orders</h3>
+                <p className="text-muted-foreground text-center">
+                  {user?.role === "contractor"
+                    ? "You don't have any assigned work orders yet"
+                    : "Create work orders from maintenance requests"}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {workOrders.map((workOrder) => (
+                <Card key={workOrder.id} data-testid={`card-work-order-${workOrder.id}`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          {getWorkOrderStatusIcon(workOrder.status)}
+                          <CardTitle className="text-lg">
+                            {workOrder.maintenanceRequest.title}
+                          </CardTitle>
+                          <Badge className={priorityColors[workOrder.maintenanceRequest.priority]}>
+                            {workOrder.maintenanceRequest.priority}
+                          </Badge>
+                        </div>
+                        <CardDescription>
+                          {workOrder.maintenanceRequest.description || "No description provided"}
+                        </CardDescription>
+                      </div>
+                      <Badge className={workOrderStatusColors[workOrder.status]}>
+                        {workOrder.status.replace("_", " ")}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                      {workOrder.contractor && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <UserIcon className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">Contractor</p>
+                            <p className="text-muted-foreground">
+                              {workOrder.contractor.firstName} {workOrder.contractor.lastName}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {workOrder.slaDue && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">SLA Due</p>
+                            <p className="text-muted-foreground">
+                              {formatDistanceToNow(new Date(workOrder.slaDue), { addSuffix: true })}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {(workOrder.costEstimate || workOrder.costActual) && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <DollarSign className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">Cost</p>
+                            <p className="text-muted-foreground">
+                              {workOrder.costActual 
+                                ? `Actual: ${formatCurrency(workOrder.costActual)}`
+                                : `Est: ${formatCurrency(workOrder.costEstimate)}`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 text-sm">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium">Created</p>
+                          <p className="text-muted-foreground">
+                            {formatDistanceToNow(new Date(workOrder.createdAt), { addSuffix: true })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {user?.role === "contractor" && workOrder.status !== "completed" && workOrder.status !== "rejected" && (
+                      <div className="mt-4 flex items-center gap-2">
+                        <label className="text-sm font-medium">Update Status:</label>
+                        <Select
+                          value={workOrder.status}
+                          onValueChange={(status) => updateWorkOrderStatusMutation.mutate({ id: workOrder.id, status })}
+                        >
+                          <SelectTrigger className="w-48" data-testid={`select-work-order-status-${workOrder.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="assigned">Assigned</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="waiting_parts">Waiting Parts</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
