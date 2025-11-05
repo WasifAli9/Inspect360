@@ -53,7 +53,7 @@ export default function Team() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ["/api/team"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team"] });
       toast({ title: "Team member created successfully" });
       handleCloseDialog();
     },
@@ -72,7 +72,7 @@ export default function Team() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ["/api/team"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team"] });
       toast({ title: "Team member updated successfully" });
       handleCloseDialog();
     },
@@ -90,7 +90,7 @@ export default function Team() {
       return await apiRequest("PATCH", `/api/team/${userId}/role`, { role });
     },
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ["/api/team"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team"] });
       toast({ title: "Role updated successfully" });
     },
     onError: (error: Error) => {
@@ -107,7 +107,7 @@ export default function Team() {
       return await apiRequest("PATCH", `/api/team/${userId}/status`, { isActive });
     },
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ["/api/team"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/team"] });
       toast({ 
         title: "Status updated successfully",
       });
