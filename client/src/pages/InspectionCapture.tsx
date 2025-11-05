@@ -170,11 +170,14 @@ export default function InspectionCapture() {
     }
   }, [inspection, id]);
 
-  // Calculate progress - only count entries with actual values
+  // Calculate progress - count entries with values OR photos
   const totalFields = sections.reduce((acc, section) => acc + section.fields.length, 0);
-  const completedFields = Object.values(entries).filter(entry => 
-    entry.valueJson !== null && entry.valueJson !== undefined
-  ).length;
+  const completedFields = Object.values(entries).filter(entry => {
+    // Count as complete if has valueJson OR photos
+    const hasValue = entry.valueJson !== null && entry.valueJson !== undefined;
+    const hasPhotos = entry.photos && entry.photos.length > 0;
+    return hasValue || hasPhotos;
+  }).length;
   const progress = totalFields > 0 ? (completedFields / totalFields) * 100 : 0;
 
   // Update entry mutation

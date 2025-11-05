@@ -1197,13 +1197,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Inspection not found" });
       }
 
-      // Get inspection items
-      const items = await storage.getInspectionItems(id);
-      
-      res.json({ ...inspection, items });
+      res.json(inspection);
     } catch (error) {
       console.error("Error fetching inspection:", error);
       res.status(500).json({ message: "Failed to fetch inspection" });
+    }
+  });
+
+  // General PATCH endpoint for updating inspection fields
+  app.patch("/api/inspections/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "No organization found" });
+      }
+
+      // Get inspection and verify ownership
+      const inspection = await storage.getInspection(id);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      // Verify organization ownership via property or block
+      let ownerOrgId: string | null = null;
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property) {
+          return res.status(404).json({ message: "Property not found" });
+        }
+        ownerOrgId = property.organizationId;
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block) {
+          return res.status(404).json({ message: "Block not found" });
+        }
+        ownerOrgId = block.organizationId;
+      }
+
+      if (ownerOrgId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Validate and update inspection
+      const validation = updateInspectionSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validation.error.errors 
+        });
+      }
+
+      // Convert date strings to Date objects for storage
+      const updates: any = { ...validation.data };
+      if (updates.scheduledDate && typeof updates.scheduledDate === 'string') {
+        updates.scheduledDate = new Date(updates.scheduledDate);
+      }
+      if (updates.startedAt && typeof updates.startedAt === 'string') {
+        updates.startedAt = new Date(updates.startedAt);
+      }
+      if (updates.completedDate && typeof updates.completedDate === 'string') {
+        updates.completedDate = new Date(updates.completedDate);
+      }
+      if (updates.submittedAt && typeof updates.submittedAt === 'string') {
+        updates.submittedAt = new Date(updates.submittedAt);
+      }
+
+      const updatedInspection = await storage.updateInspection(id, updates);
+      
+      // Send email if status changed to completed
+      if (validation.data.status === "completed" && inspection.status !== "completed") {
+        try {
+          const inspector = await storage.getUser(inspection.inspectorId);
+          const inspectorName = inspector ? `${inspector.firstName || ''} ${inspector.lastName || ''}`.trim() || inspector.username : 'Unknown Inspector';
+          
+          let propertyName: string | undefined;
+          let blockName: string | undefined;
+          
+          if (inspection.propertyId) {
+            const property = await storage.getProperty(inspection.propertyId);
+            propertyName = property?.name;
+          } else if (inspection.blockId) {
+            const block = await storage.getBlock(inspection.blockId);
+            blockName = block?.name;
+          }
+
+          if (ownerOrgId) {
+            const owners = await storage.getUsersByOrganization(ownerOrgId);
+            const owner = owners.find(u => u.role === 'owner');
+            
+            if (owner && owner.email) {
+              await sendInspectionCompleteEmail(
+                owner.email,
+                `${owner.firstName || ''} ${owner.lastName || ''}`.trim() || owner.email,
+                {
+                  type: inspection.type,
+                  propertyName,
+                  blockName,
+                  inspectorName,
+                  completedDate: updatedInspection.completedDate || new Date(),
+                  inspectionId: inspection.id
+                }
+              );
+            }
+          }
+        } catch (emailError) {
+          console.error('Failed to send inspection complete email:', emailError);
+        }
+      }
+
+      res.json(updatedInspection);
+    } catch (error) {
+      console.error("Error updating inspection:", error);
+      res.status(500).json({ message: "Failed to update inspection" });
     }
   });
 

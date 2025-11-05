@@ -157,6 +157,7 @@ export interface IStorage {
   getInspectionsByOrganization(organizationId: string): Promise<any[]>; // Returns inspections with property/block
   getInspection(id: string): Promise<Inspection | undefined>;
   updateInspectionStatus(id: string, status: string, completedDate?: Date): Promise<Inspection>;
+  updateInspection(id: string, updates: Partial<InsertInspection>): Promise<Inspection>;
   
   // Inspection Category operations
   createInspectionCategory(category: InsertInspectionCategory): Promise<InspectionCategory>;
@@ -805,6 +806,20 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(inspections.id, id))
       .returning();
+    return inspection;
+  }
+
+  async updateInspection(id: string, updates: Partial<InsertInspection>): Promise<Inspection> {
+    const [inspection] = await db
+      .update(inspections)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(inspections.id, id))
+      .returning();
+    
+    if (!inspection) {
+      throw new Error("Inspection not found");
+    }
+    
     return inspection;
   }
 
