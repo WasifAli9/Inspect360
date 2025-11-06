@@ -82,11 +82,8 @@ export default function Billing() {
   // Create checkout session
   const checkoutMutation = useMutation({
     mutationFn: async (planCode: string) => {
-      const response = await apiRequest("/api/billing/checkout", {
-        method: "POST",
-        body: { planCode },
-      });
-      return response as { url: string };
+      const response = await apiRequest("POST", "/api/billing/checkout", { planCode });
+      return response.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
       if (data.url) {
@@ -105,10 +102,8 @@ export default function Billing() {
   // Create portal session
   const portalMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("/api/billing/portal", {
-        method: "POST",
-      });
-      return response as { url: string };
+      const response = await apiRequest("POST", "/api/billing/portal");
+      return response.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
       if (data.url) {
@@ -127,11 +122,8 @@ export default function Billing() {
   // Top-up checkout mutation
   const topupMutation = useMutation({
     mutationFn: async (packSize: number) => {
-      const response = await apiRequest("/api/credits/topup/checkout", {
-        method: "POST",
-        body: { packSize },
-      });
-      return response as { url: string };
+      const response = await apiRequest("POST", "/api/credits/topup/checkout", { packSize });
+      return response.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
       if (data.url) {

@@ -5955,6 +5955,10 @@ Be objective and specific. Focus on actionable repairs.`;
       }
 
       // Create checkout session
+      const baseUrl = process.env.REPLIT_DOMAINS?.split(",")[0] 
+        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
+        : "http://localhost:5000";
+      
       const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
         mode: "subscription",
@@ -5974,8 +5978,8 @@ Be objective and specific. Focus on actionable repairs.`;
             quantity: 1,
           },
         ],
-        success_url: `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/billing?success=true`,
-        cancel_url: `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/billing?canceled=true`,
+        success_url: `${baseUrl}/billing?success=true`,
+        cancel_url: `${baseUrl}/billing?canceled=true`,
         metadata: {
           organizationId: org.id,
           planId: plan.id,
@@ -6004,9 +6008,13 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(400).json({ message: "No active Stripe customer" });
       }
 
+      const baseUrl = process.env.REPLIT_DOMAINS?.split(",")[0]
+        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
+        : "http://localhost:5000";
+      
       const session = await stripe.billingPortal.sessions.create({
         customer: org.stripeCustomerId,
-        return_url: `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/billing`,
+        return_url: `${baseUrl}/billing`,
       });
 
       res.json({ url: session.url });
@@ -6220,6 +6228,10 @@ Be objective and specific. Focus on actionable repairs.`;
       });
 
       // Create Stripe checkout session
+      const baseUrl = process.env.REPLIT_DOMAINS?.split(",")[0]
+        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
+        : "http://localhost:5000";
+      
       const session = await stripe.checkout.sessions.create({
         customer: org.stripeCustomerId || undefined,
         mode: "payment",
@@ -6236,8 +6248,8 @@ Be objective and specific. Focus on actionable repairs.`;
             quantity: 1,
           },
         ],
-        success_url: `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/billing?topup_success=true`,
-        cancel_url: `${process.env.REPLIT_DOMAINS?.split(",")[0] || "http://localhost:5000"}/billing?topup_canceled=true`,
+        success_url: `${baseUrl}/billing?topup_success=true`,
+        cancel_url: `${baseUrl}/billing?topup_canceled=true`,
         metadata: {
           organizationId: org.id,
           topupOrderId: order.id,
