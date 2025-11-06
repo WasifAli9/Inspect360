@@ -1330,6 +1330,13 @@ export const updateUserStatusSchema = z.object({
   isActive: z.boolean(),
 });
 
+export const updateSelfProfileSchema = z.object({
+  firstName: z.string().min(1).max(255).optional(),
+  lastName: z.string().min(1).max(255).optional(),
+  phone: z.string().max(50).optional(),
+  profileImageUrl: z.union([z.string().url(), z.string().startsWith("/objects/"), z.literal("")]).optional(),
+});
+
 // Property update schema
 export const updatePropertySchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -1637,6 +1644,7 @@ export type CreateTeamMember = z.infer<typeof createTeamMemberSchema>;
 export type UpdateTeamMember = z.infer<typeof updateTeamMemberSchema>;
 export type UpdateUserRole = z.infer<typeof updateUserRoleSchema>;
 export type UpdateUserStatus = z.infer<typeof updateUserStatusSchema>;
+export type UpdateSelfProfile = z.infer<typeof updateSelfProfileSchema>;
 export type UpdateProperty = z.infer<typeof updatePropertySchema>;
 export type UpdateComplianceDocument = z.infer<typeof updateComplianceDocumentSchema>;
 export type UpdateMaintenanceRequest = z.infer<typeof updateMaintenanceRequestSchema>;
