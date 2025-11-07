@@ -207,7 +207,7 @@ export default function InspectionReport() {
         displayValue = actualValue || <span className="text-muted-foreground italic">Not filled</span>;
         break;
       case "number":
-        displayValue = actualValue !== null ? actualValue.toString() : <span className="text-muted-foreground italic">Not filled</span>;
+        displayValue = actualValue !== null && actualValue !== undefined ? actualValue.toString() : <span className="text-muted-foreground italic">Not filled</span>;
         break;
       case "boolean":
         displayValue = actualValue ? "Yes" : "No";
@@ -223,7 +223,40 @@ export default function InspectionReport() {
         displayValue = actualValue ? format(new Date(actualValue), "MMM dd, yyyy") : <span className="text-muted-foreground italic">Not set</span>;
         break;
       default:
-        displayValue = actualValue?.toString() || <span className="text-muted-foreground italic">Not filled</span>;
+        // Handle objects that don't match composite structure
+        if (typeof actualValue === 'object' && actualValue !== null) {
+          // If it's still an object, try to stringify it nicely or show a message
+          if (Array.isArray(actualValue)) {
+            displayValue = actualValue.length > 0 
+              ? actualValue.join(", ") 
+              : <span className="text-muted-foreground italic">Empty list</span>;
+          } else {
+            // Try to extract meaningful data from the object with error handling
+            try {
+              // Check if object has a meaningful toString or specific properties to display
+              const jsonStr = JSON.stringify(actualValue, null, 2);
+              if (jsonStr && jsonStr !== '{}' && jsonStr !== 'null') {
+                displayValue = (
+                  <pre className="text-sm bg-muted p-2 rounded whitespace-pre-wrap break-words">
+                    {jsonStr}
+                  </pre>
+                );
+              } else {
+                displayValue = <span className="text-muted-foreground italic">No data</span>;
+              }
+            } catch (error) {
+              // Handle circular references or other JSON.stringify errors
+              console.warn('Failed to stringify field value:', error);
+              displayValue = <span className="text-muted-foreground italic">Complex data structure</span>;
+            }
+          }
+        } else if (typeof actualValue === 'string' && actualValue.length > 0) {
+          displayValue = actualValue;
+        } else if (typeof actualValue === 'number') {
+          displayValue = actualValue.toString();
+        } else {
+          displayValue = <span className="text-muted-foreground italic">Not filled</span>;
+        }
     }
 
     return (

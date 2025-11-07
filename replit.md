@@ -39,13 +39,13 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with basic issue description, multi-image upload, and AI-powered fix suggestions.
 - **InspectAI Field Analysis**: Field-level AI inspection analysis button using OpenAI GPT-5 Vision for comprehensive reports on uploaded images, integrated into notes.
 - **Condition & Cleanliness Ratings**: Optional per-field ratings configurable in the Template Builder.
-- **Inspection Reports**: Generates formatted HTML reports with print-friendly CSS, interactive action buttons, and professional PDF cover pages.
+- **Inspection Reports**: Generates formatted HTML reports with print-friendly CSS, interactive action buttons, and professional PDF cover pages. Enhanced renderFieldValue function properly handles complex object structures (displays as formatted JSON in styled code blocks), arrays (comma-separated values), and improves null/undefined handling to prevent "[object Object]" display errors.
 - **Annual Compliance Calendar**: Visual compliance tracking grid with color-coded status badges and compliance rates.
 - **Block-Level Filtering**: Supports filtering of properties, asset inventory, and compliance documents by `blockId` and `propertyId` with contextual form pre-population.
 - **Block Tenant Management**: Comprehensive tenant occupancy tracking, KPIs, and roster management.
 - **Property Detail Filtering**: Property detail page tabs properly filter data by `propertyId` with organization isolation.
 - **API Security**: Comprehensive Zod validation and multi-tenant isolation enforced across critical routes.
-- **Object Storage ACL**: Asset inventory photos use public visibility for organization-wide viewing.
+- **Object Storage ACL**: Asset inventory and inspection photos use public visibility for organization-wide viewing. Enhanced `/api/objects/fix-acls` endpoint now repairs ACLs for both asset inventory photos AND inspection entry photos, ensuring all uploaded images are publicly accessible within the organization.
 - **Tenant Broadcast Messaging**: Block-level tenant communication system with reusable email templates and variable replacement.
 - **Inline Tenant Creation**: Property-level tenant assignment workflow with integrated user creation, lease details, and automatic role assignment.
 - **Collaborative Comparison Reports**: Complete end-to-end check-out inspection comparison system with AI-powered analysis, asset-based depreciation, async discussion, and electronic signatures. Features include database schema (`comparison_reports`, `comparison_report_items`, `comparison_comments`), full REST API (8 endpoints with organization isolation), AI image comparison using OpenAI GPT-4 Vision for damage assessment and cost estimation, asset-based depreciation calculation with intelligent fallbacks, threaded comment discussions, electronic signature workflow with duplicate prevention, and comprehensive UI with list view, detailed comparison viewer, side-by-side image display, status badges, and role-based access for owners, clerks, and tenants.

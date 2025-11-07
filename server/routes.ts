@@ -5389,6 +5389,17 @@ Be objective and specific. Focus on actionable repairs.`;
         }
       }
       
+      // Get all inspection entries with photos
+      const inspections = await storage.getInspectionsByOrganization(user.organizationId);
+      for (const inspection of inspections) {
+        const entries = await storage.getInspectionEntries(inspection.id);
+        for (const entry of entries) {
+          if (entry.photos && entry.photos.length > 0) {
+            photosToFix.push(...entry.photos);
+          }
+        }
+      }
+      
       // Update ACL for each photo
       const fixed: string[] = [];
       const errors: string[] = [];
@@ -5410,7 +5421,7 @@ Be objective and specific. Focus on actionable repairs.`;
       }
       
       res.json({ 
-        message: `Fixed ${fixed.length} photos, ${errors.length} errors`,
+        message: `Fixed ${fixed.length} photos (assets + inspections), ${errors.length} errors`,
         fixed: fixed.length,
         errors: errors.length 
       });
