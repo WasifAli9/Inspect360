@@ -59,6 +59,9 @@ export default function Billing() {
 
   // Handle success/canceled query parameters with polling for webhook completion
   useEffect(() => {
+    // Only run if user is loaded
+    if (!user) return;
+    
     const params = new URLSearchParams(window.location.search);
     
     // Helper function to poll for updated data
@@ -90,7 +93,7 @@ export default function Billing() {
     if (params.get('topup_success') === 'true') {
       // Poll for credit updates (webhook may take a moment)
       // Also invalidate organization query used by Dashboard
-      const orgQueryKey = `/api/organizations/${user?.organizationId}`;
+      const orgQueryKey = `/api/organizations/${user.organizationId}`;
       pollForUpdates(['/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
       
       toast({
@@ -114,7 +117,7 @@ export default function Billing() {
     } else if (params.get('success') === 'true') {
       // Subscription success - poll for updates
       // Also invalidate organization query used by Dashboard
-      const orgQueryKey = `/api/organizations/${user?.organizationId}`;
+      const orgQueryKey = `/api/organizations/${user.organizationId}`;
       pollForUpdates(['/api/billing/subscription', '/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
       
       toast({
@@ -136,7 +139,7 @@ export default function Billing() {
       // Clean up URL
       setLocation('/billing', { replace: true });
     }
-  }, [toast, setLocation]);
+  }, [user, toast, setLocation]);
 
   // Fetch subscription plans
   const { data: plans = [] } = useQuery<Plan[]>({

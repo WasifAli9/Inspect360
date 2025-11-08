@@ -6256,6 +6256,16 @@ Be objective and specific. Focus on actionable repairs.`;
         ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
         : "http://localhost:5000";
       
+      const successUrl = `${baseUrl}/billing?success=true`;
+      const cancelUrl = `${baseUrl}/billing?canceled=true`;
+      
+      console.log(`[Subscription Checkout] Creating session with:`, {
+        successUrl,
+        cancelUrl,
+        planCode,
+        organizationId: org.id
+      });
+      
       const session = await stripe.checkout.sessions.create({
         customer: stripeCustomerId,
         mode: "subscription",
@@ -6275,14 +6285,19 @@ Be objective and specific. Focus on actionable repairs.`;
             quantity: 1,
           },
         ],
-        success_url: `${baseUrl}/billing?success=true`,
-        cancel_url: `${baseUrl}/billing?canceled=true`,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
         metadata: {
           organizationId: org.id,
           planId: plan.id,
           planCode: plan.code,
           includedCredits: pricing.includedCredits.toString(),
         },
+      });
+
+      console.log(`[Subscription Checkout] Session created:`, {
+        sessionId: session.id,
+        checkoutUrl: session.url
       });
 
       res.json({ url: session.url });
@@ -6338,7 +6353,14 @@ Be objective and specific. Focus on actionable repairs.`;
           const session = event.data.object;
           const { organizationId, planId, includedCredits, topupOrderId, packSize } = session.metadata;
 
-          console.log(`[Stripe Webhook] Checkout completed for org: ${organizationId}`);
+          console.log(`[Stripe Webhook] Checkout completed:`, {
+            organizationId,
+            planId,
+            topupOrderId,
+            packSize,
+            sessionId: session.id,
+            mode: session.mode
+          });
 
           // Check if this is a top-up payment (one-time) vs subscription
           if (topupOrderId && packSize) {
