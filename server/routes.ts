@@ -5,12 +5,14 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireRole, hashPassword } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import Stripe from "stripe";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { devRouter } from "./devRoutes";
-import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification } from "./resend";
+import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification, sendContractorWorkOrderNotification } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
 import { generateInspectionPDF } from "./pdfService";
 import {
@@ -57,7 +59,8 @@ import {
   updateTenantAssignmentSchema,
   quickAddAssetSchema,
   quickAddMaintenanceSchema,
-  quickUpdateAssetSchema
+  quickUpdateAssetSchema,
+  maintenanceRequests
 } from "@shared/schema";
 
 // Initialize Stripe
@@ -4401,7 +4404,12 @@ Be objective and specific. Focus on actionable repairs.`;
       if (validatedData.teamId) {
         try {
           const team = await storage.getTeam(validatedData.teamId);
-          const maintenanceRequest = await storage.getMaintenanceRequest(validatedData.maintenanceRequestId);
+          const maintenanceRequest = await db
+            .select()
+            .from(maintenanceRequests)
+            .where(eq(maintenanceRequests.id, validatedData.maintenanceRequestId))
+            .limit(1)
+            .then(rows => rows[0]);
           
           if (team?.email && maintenanceRequest) {
             // Fetch property details if available
@@ -4432,6 +4440,55 @@ Be objective and specific. Focus on actionable repairs.`;
           console.error(`Email error details:`, {
             workOrderId: workOrder.id,
             teamId: validatedData.teamId,
+            error: emailError instanceof Error ? emailError.message : 'Unknown error',
+          });
+        }
+      }
+
+      // Send email notification to contractor if contractorId is provided (best-effort, non-blocking)
+      if (validatedData.contractorId) {
+        try {
+          const contractor = await storage.getUser(validatedData.contractorId);
+          const maintenanceRequest = await db
+            .select()
+            .from(maintenanceRequests)
+            .where(eq(maintenanceRequests.id, validatedData.maintenanceRequestId))
+            .limit(1)
+            .then(rows => rows[0]);
+          
+          if (contractor?.email && maintenanceRequest) {
+            // Fetch property details if available
+            let propertyName: string | undefined;
+            if (maintenanceRequest.propertyId) {
+              const property = await storage.getProperty(maintenanceRequest.propertyId);
+              propertyName = property?.name;
+            }
+
+            const contractorName = contractor.firstName 
+              ? `${contractor.firstName}${contractor.lastName ? ' ' + contractor.lastName : ''}`
+              : contractor.username;
+
+            await sendContractorWorkOrderNotification(
+              contractor.email,
+              contractorName,
+              {
+                id: workOrder.id,
+                maintenanceTitle: maintenanceRequest.title,
+                maintenanceDescription: maintenanceRequest.description || undefined,
+                priority: maintenanceRequest.priority,
+                propertyName,
+                slaDue: validatedData.slaDue ? new Date(validatedData.slaDue) : null,
+                costEstimate: validatedData.costEstimate || null,
+              }
+            );
+            console.log(`Contractor notification email sent successfully for work order ${workOrder.id} to ${contractorName} (${contractor.email})`);
+          }
+        } catch (emailError) {
+          // Log email failures but don't block work order creation
+          console.error(`Failed to send contractor notification email for work order ${workOrder.id}:`, emailError);
+          console.error(`Email error details:`, {
+            workOrderId: workOrder.id,
+            contractorId: validatedData.contractorId,
             error: emailError instanceof Error ? emailError.message : 'Unknown error',
           });
         }

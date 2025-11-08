@@ -403,6 +403,151 @@ export async function sendTeamWorkOrderNotification(
   }
 }
 
+export async function sendContractorWorkOrderNotification(
+  contractorEmail: string,
+  contractorName: string,
+  workOrderDetails: {
+    id: string;
+    maintenanceTitle: string;
+    maintenanceDescription?: string;
+    priority: string;
+    propertyName?: string;
+    slaDue?: Date | null;
+    costEstimate?: number | null;
+  }
+) {
+  try {
+    const { client, fromEmail } = await getUncachableResendClient();
+    
+    const subject = `New Work Order Assigned: ${workOrderDetails.maintenanceTitle}`;
+    
+    const priorityColors: Record<string, string> = {
+      low: '#6b7280',
+      medium: '#3b82f6',
+      high: '#f97316',
+      urgent: '#ef4444',
+    };
+    
+    const priorityColor = priorityColors[workOrderDetails.priority] || '#3b82f6';
+    
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+  <div style="background-color: #ffffff; border-radius: 8px; padding: 32px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <!-- Header with Inspect360 branding -->
+    <div style="text-align: center; margin-bottom: 32px;">
+      <div style="width: 64px; height: 64px; background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); border-radius: 50%; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <path d="M9 11l3 3L22 4"></path>
+          <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+        </svg>
+      </div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #1a1a1a;">New Work Order Assigned</h1>
+    </div>
+
+    <!-- Main content -->
+    <div style="margin-bottom: 24px;">
+      <p style="margin: 0 0 16px 0; font-size: 16px;">Hi ${contractorName},</p>
+      <p style="margin: 0 0 24px 0; font-size: 16px;">
+        A new work order has been assigned to you and requires your attention.
+      </p>
+
+      <!-- Work Order details card -->
+      <div style="background-color: #f8f9fa; border-left: 4px solid #00D5CC; padding: 20px; border-radius: 4px; margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: #1a1a1a;">Work Order Details</h2>
+        
+        <div style="margin-bottom: 12px;">
+          <span style="font-weight: 600; color: #555;">Title:</span>
+          <span style="color: #333; margin-left: 8px;">${workOrderDetails.maintenanceTitle}</span>
+        </div>
+        
+        ${workOrderDetails.maintenanceDescription ? `
+        <div style="margin-bottom: 12px;">
+          <span style="font-weight: 600; color: #555;">Description:</span>
+          <span style="color: #333; margin-left: 8px;">${workOrderDetails.maintenanceDescription}</span>
+        </div>
+        ` : ''}
+        
+        ${workOrderDetails.propertyName ? `
+        <div style="margin-bottom: 12px;">
+          <span style="font-weight: 600; color: #555;">Property:</span>
+          <span style="color: #333; margin-left: 8px;">${workOrderDetails.propertyName}</span>
+        </div>
+        ` : ''}
+        
+        <div style="margin-bottom: 12px;">
+          <span style="font-weight: 600; color: #555;">Priority:</span>
+          <span style="display: inline-block; background-color: ${priorityColor}; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-left: 8px; text-transform: uppercase;">
+            ${workOrderDetails.priority}
+          </span>
+        </div>
+        
+        ${workOrderDetails.slaDue ? `
+        <div style="margin-bottom: 12px;">
+          <span style="font-weight: 600; color: #555;">SLA Due:</span>
+          <span style="color: #333; margin-left: 8px;">${new Date(workOrderDetails.slaDue).toLocaleString('en-US', { 
+            dateStyle: 'medium', 
+            timeStyle: 'short' 
+          })}</span>
+        </div>
+        ` : ''}
+        
+        ${workOrderDetails.costEstimate ? `
+        <div>
+          <span style="font-weight: 600; color: #555;">Estimated Cost:</span>
+          <span style="color: #333; margin-left: 8px;">$${(workOrderDetails.costEstimate / 100).toFixed(2)}</span>
+        </div>
+        ` : ''}
+      </div>
+
+      <!-- CTA Button -->
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}/maintenance?tab=work-orders` : '#'}" 
+           style="display: inline-block; background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">
+          View Work Order
+        </a>
+      </div>
+
+      <p style="margin: 24px 0 0 0; font-size: 14px; color: #666;">
+        Please log in to the platform to view full details and update the work order status.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="border-top: 1px solid #e5e5e5; padding-top: 20px; margin-top: 32px;">
+      <p style="margin: 0; font-size: 13px; color: #888; text-align: center;">
+        This email was sent from <strong style="color: #00D5CC;">Inspect360</strong> — Your AI-Powered Building Inspection Platform
+      </p>
+      <p style="margin: 8px 0 0 0; font-size: 12px; color: #aaa; text-align: center;">
+        © ${new Date().getFullYear()} Inspect360. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+
+    const response = await client.emails.send({
+      from: fromEmail,
+      to: contractorEmail,
+      subject,
+      html,
+    });
+
+    console.log('Contractor work order notification sent:', response);
+    return response;
+  } catch (error) {
+    console.error('Failed to send contractor work order notification:', error);
+    throw error;
+  }
+}
+
 export async function broadcastMessageToTenants(
   recipients: { email: string; firstName?: string; lastName?: string }[],
   templateData: {
