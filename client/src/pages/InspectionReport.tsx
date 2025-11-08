@@ -198,6 +198,46 @@ export default function InspectionReport() {
     },
   });
 
+  // Auto-create comparison report mutation
+  const autoCreateComparisonMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/comparison-reports/auto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ propertyId: inspection?.propertyId }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create comparison report");
+      }
+      return await response.json();
+    },
+    onSuccess: (data: any) => {
+      const { report, created } = data;
+      if (created) {
+        toast({
+          title: "Success",
+          description: "Comparison report created successfully using the latest check-in and check-out inspections",
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: "Navigating to existing comparison report",
+        });
+      }
+      // Navigate to the comparison report detail page
+      navigate(`/comparisons/${report.id}`);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create comparison report",
+        variant: "destructive",
+      });
+    },
+  });
+
   const templateStructure = inspection?.templateSnapshotJson as { sections: TemplateSection[] } | null;
   const sections = templateStructure?.sections || [];
 
@@ -880,15 +920,16 @@ export default function InspectionReport() {
                                 </Button>
                               )}
                               {/* Add to Comparison - only on check-out inspections with photos */}
-                              {inspection.type === 'check_out' && entry.photos && entry.photos.length > 0 && (
+                              {inspection.type === 'check_out' && entry.photos && entry.photos.length > 0 && inspection.propertyId && (
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => navigate(`/comparisons/new?inspectionId=${id}&fieldKey=${field.id || field.key}`)}
+                                  onClick={() => autoCreateComparisonMutation.mutate()}
+                                  disabled={autoCreateComparisonMutation.isPending}
                                   data-testid={`button-comparison-${field.id || field.key}`}
                                 >
                                   <GitCompare className="w-4 h-4 mr-2" />
-                                  Add to Comparison
+                                  {autoCreateComparisonMutation.isPending ? "Creating..." : "Add to Comparison"}
                                 </Button>
                               )}
                             </div>
