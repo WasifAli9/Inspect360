@@ -749,7 +749,8 @@ export const workOrders = pgTable("work_orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull(),
   maintenanceRequestId: varchar("maintenance_request_id").notNull(),
-  contractorId: varchar("contractor_id").notNull(), // User with contractor role
+  teamId: varchar("team_id"), // Assigned team for work order
+  contractorId: varchar("contractor_id"), // Specific contractor assigned (if any)
   status: workOrderStatusEnum("status").notNull().default("assigned"),
   slaDue: timestamp("sla_due"), // Service Level Agreement deadline
   costEstimate: integer("cost_estimate"), // In cents
@@ -933,6 +934,67 @@ export const insertFixfloSyncStateSchema = createInsertSchema(fixfloSyncState).o
 });
 export type FixfloSyncState = typeof fixfloSyncState.$inferSelect;
 export type InsertFixfloSyncState = z.infer<typeof insertFixfloSyncStateSchema>;
+
+// Teams (Work order distribution lists for BTR operators)
+export const teams = pgTable("teams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: varchar("name").notNull(), // e.g., "Electrical Team", "Plumbing Team", "General Maintenance"
+  description: text("description"),
+  email: varchar("email"), // Distribution list email (e.g., team@company.com)
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("teams_organization_id_idx").on(table.organizationId),
+]);
+
+export const insertTeamSchema = createInsertSchema(teams).omit({
+  id: true,
+  organizationId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type Team = typeof teams.$inferSelect;
+export type InsertTeam = z.infer<typeof insertTeamSchema>;
+
+// Team Members (Links admins and contractors to teams)
+export const teamMembers = pgTable("team_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamId: varchar("team_id").notNull(),
+  userId: varchar("user_id"), // For admins/internal users
+  contactId: varchar("contact_id"), // For contractors in contacts list
+  role: varchar("role").default("member"), // "lead", "member"
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("team_members_team_id_idx").on(table.teamId),
+  index("team_members_user_id_idx").on(table.userId),
+  index("team_members_contact_id_idx").on(table.contactId),
+]);
+
+export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
+  id: true,
+  createdAt: true,
+});
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type InsertTeamMember = z.infer<typeof insertTeamMemberSchema>;
+
+// Team Categories (Assigns maintenance categories to teams)
+export const teamCategories = pgTable("team_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  teamId: varchar("team_id").notNull(),
+  category: varchar("category").notNull(), // Maintenance category (e.g., "plumbing", "electrical", "hvac")
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("team_categories_team_id_idx").on(table.teamId),
+]);
+
+export const insertTeamCategorySchema = createInsertSchema(teamCategories).omit({
+  id: true,
+  createdAt: true,
+});
+export type TeamCategory = typeof teamCategories.$inferSelect;
+export type InsertTeamCategory = z.infer<typeof insertTeamCategorySchema>;
 
 // Relations
 export const usersRelations = relations(users, ({ one }) => ({

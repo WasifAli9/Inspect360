@@ -41,6 +41,9 @@ import {
   fixfloConfig,
   fixfloWebhookLogs,
   fixfloSyncState,
+  teams,
+  teamMembers,
+  teamCategories,
   type User,
   type UpsertUser,
   type AdminUser,
@@ -99,6 +102,12 @@ import {
   type InsertWorkOrder,
   type WorkLog,
   type InsertWorkLog,
+  type Team,
+  type InsertTeam,
+  type TeamMember,
+  type InsertTeamMember,
+  type TeamCategory,
+  type InsertTeamCategory,
   type AssetInventory,
   type InsertAssetInventory,
   type Tag,
@@ -306,6 +315,24 @@ export interface IStorage {
   // Work Log operations
   createWorkLog(log: InsertWorkLog): Promise<WorkLog>;
   getWorkLogs(workOrderId: string): Promise<WorkLog[]>;
+
+  // Team operations
+  createTeam(team: InsertTeam & { organizationId: string }): Promise<Team>;
+  getTeamsByOrganization(organizationId: string): Promise<any[]>; // Returns with member count
+  getTeam(id: string): Promise<Team | undefined>;
+  updateTeam(id: string, updates: Partial<InsertTeam>): Promise<Team>;
+  deleteTeam(id: string): Promise<void>;
+  
+  // Team Member operations
+  addTeamMember(member: InsertTeamMember): Promise<TeamMember>;
+  getTeamMembers(teamId: string): Promise<any[]>; // Returns with user/contact details
+  removeTeamMember(id: string): Promise<void>;
+  
+  // Team Category operations
+  addTeamCategory(category: InsertTeamCategory): Promise<TeamCategory>;
+  getTeamCategories(teamId: string): Promise<TeamCategory[]>;
+  removeTeamCategory(id: string): Promise<void>;
+  getTeamByCategory(organizationId: string, category: string): Promise<Team | undefined>;
 
   // Asset Inventory operations
   createAssetInventory(asset: InsertAssetInventory): Promise<AssetInventory>;
@@ -1696,6 +1723,138 @@ export class DatabaseStorage implements IStorage {
       .from(workLogs)
       .where(eq(workLogs.workOrderId, workOrderId))
       .orderBy(desc(workLogs.createdAt));
+  }
+
+  // Team operations
+  async createTeam(teamData: InsertTeam & { organizationId: string }): Promise<Team> {
+    const [team] = await db.insert(teams).values(teamData).returning();
+    return team;
+  }
+
+  async getTeamsByOrganization(organizationId: string): Promise<any[]> {
+    // Get teams with member count
+    return await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+        name: teams.name,
+        description: teams.description,
+        email: teams.email,
+        isActive: teams.isActive,
+        createdAt: teams.createdAt,
+        updatedAt: teams.updatedAt,
+        memberCount: sql<number>`count(distinct ${teamMembers.id})::int`,
+      })
+      .from(teams)
+      .leftJoin(teamMembers, eq(teams.id, teamMembers.teamId))
+      .where(eq(teams.organizationId, organizationId))
+      .groupBy(teams.id)
+      .orderBy(desc(teams.createdAt));
+  }
+
+  async getTeam(id: string): Promise<Team | undefined> {
+    const [team] = await db.select().from(teams).where(eq(teams.id, id));
+    return team;
+  }
+
+  async updateTeam(id: string, updates: Partial<InsertTeam>): Promise<Team> {
+    const [team] = await db
+      .update(teams)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(teams.id, id))
+      .returning();
+    return team;
+  }
+
+  async deleteTeam(id: string): Promise<void> {
+    // Delete team members and categories first
+    await db.delete(teamMembers).where(eq(teamMembers.teamId, id));
+    await db.delete(teamCategories).where(eq(teamCategories.teamId, id));
+    await db.delete(teams).where(eq(teams.id, id));
+  }
+
+  // Team Member operations
+  async addTeamMember(memberData: InsertTeamMember): Promise<TeamMember> {
+    const [member] = await db.insert(teamMembers).values(memberData).returning();
+    return member;
+  }
+
+  async getTeamMembers(teamId: string): Promise<any[]> {
+    // Get team members with user/contact details
+    return await db
+      .select({
+        id: teamMembers.id,
+        teamId: teamMembers.teamId,
+        userId: teamMembers.userId,
+        contactId: teamMembers.contactId,
+        role: teamMembers.role,
+        createdAt: teamMembers.createdAt,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          role: users.role,
+        },
+        contact: {
+          id: contacts.id,
+          firstName: contacts.firstName,
+          lastName: contacts.lastName,
+          email: contacts.email,
+          type: contacts.type,
+        },
+      })
+      .from(teamMembers)
+      .leftJoin(users, eq(teamMembers.userId, users.id))
+      .leftJoin(contacts, eq(teamMembers.contactId, contacts.id))
+      .where(eq(teamMembers.teamId, teamId))
+      .orderBy(teamMembers.createdAt);
+  }
+
+  async removeTeamMember(id: string): Promise<void> {
+    await db.delete(teamMembers).where(eq(teamMembers.id, id));
+  }
+
+  // Team Category operations
+  async addTeamCategory(categoryData: InsertTeamCategory): Promise<TeamCategory> {
+    const [category] = await db.insert(teamCategories).values(categoryData).returning();
+    return category;
+  }
+
+  async getTeamCategories(teamId: string): Promise<TeamCategory[]> {
+    return await db
+      .select()
+      .from(teamCategories)
+      .where(eq(teamCategories.teamId, teamId))
+      .orderBy(teamCategories.category);
+  }
+
+  async removeTeamCategory(id: string): Promise<void> {
+    await db.delete(teamCategories).where(eq(teamCategories.id, id));
+  }
+
+  async getTeamByCategory(organizationId: string, category: string): Promise<Team | undefined> {
+    // Find team assigned to a specific category
+    const [result] = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+        name: teams.name,
+        description: teams.description,
+        email: teams.email,
+        isActive: teams.isActive,
+        createdAt: teams.createdAt,
+        updatedAt: teams.updatedAt,
+      })
+      .from(teams)
+      .innerJoin(teamCategories, eq(teams.id, teamCategories.teamId))
+      .where(and(
+        eq(teams.organizationId, organizationId),
+        eq(teamCategories.category, category),
+        eq(teams.isActive, true)
+      ))
+      .limit(1);
+    return result;
   }
 
   // Asset Inventory operations
