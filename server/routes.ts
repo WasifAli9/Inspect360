@@ -6336,11 +6336,34 @@ Be objective and specific. Focus on actionable repairs.`;
       switch (event.type) {
         case "checkout.session.completed": {
           const session = event.data.object;
-          const { organizationId, planId, includedCredits } = session.metadata;
+          const { organizationId, planId, includedCredits, topupOrderId, packSize } = session.metadata;
 
           console.log(`[Stripe Webhook] Checkout completed for org: ${organizationId}`);
 
-          // Update organization subscription status
+          // Check if this is a top-up payment (one-time) vs subscription
+          if (topupOrderId && packSize) {
+            // Handle top-up payment
+            console.log(`[Stripe Webhook] Processing top-up of ${packSize} credits for org: ${organizationId}`);
+            
+            // Update top-up order status
+            await storage.updateTopupOrder(topupOrderId, {
+              status: "completed" as any,
+            });
+
+            // Grant credits using subscription service
+            await subscriptionService.grantCredits(
+              organizationId,
+              parseInt(packSize),
+              "topup",
+              undefined,
+              { orderId: topupOrderId, stripeSessionId: session.id }
+            );
+
+            console.log(`[Stripe Webhook] Granted ${packSize} credits to org ${organizationId} via top-up`);
+            break;
+          }
+
+          // Handle subscription payment
           await storage.updateOrganizationStripe(organizationId, session.customer, "active");
 
           // Get subscription details

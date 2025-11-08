@@ -57,22 +57,51 @@ export default function Billing() {
   const [selectedTopup, setSelectedTopup] = useState<number | null>(null);
   const [location, setLocation] = useLocation();
 
-  // Handle success/canceled query parameters
+  // Handle success/canceled query parameters with polling for webhook completion
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     
+    // Helper function to poll for updated data
+    const pollForUpdates = async (queryKeys: string[], maxAttempts = 5) => {
+      let attempts = 0;
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        
+        // Invalidate and refetch
+        for (const key of queryKeys) {
+          await queryClient.invalidateQueries({ queryKey: [key] });
+          await queryClient.refetchQueries({ queryKey: [key] });
+        }
+        
+        // Stop after max attempts
+        if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+        }
+      }, 2000); // Poll every 2 seconds
+      
+      // Initial fetch
+      for (const key of queryKeys) {
+        await queryClient.invalidateQueries({ queryKey: [key] });
+      }
+      
+      return () => clearInterval(pollInterval);
+    };
+    
     if (params.get('topup_success') === 'true') {
-      // Invalidate queries to fetch fresh data
-      queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/credits/ledger'] });
+      // Poll for credit updates (webhook may take a moment)
+      // Also invalidate organization query used by Dashboard
+      const orgQueryKey = `/api/organizations/${user?.organizationId}`;
+      pollForUpdates(['/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
       
       toast({
         title: "Payment Successful!",
-        description: "Your credits have been added to your account.",
+        description: "Your credits are being added to your account...",
       });
       
-      // Clean up URL
-      setLocation('/billing', { replace: true });
+      // Clean up URL after showing toast
+      setTimeout(() => {
+        setLocation('/billing', { replace: true });
+      }, 500);
     } else if (params.get('topup_canceled') === 'true') {
       toast({
         title: "Payment Canceled",
@@ -83,17 +112,20 @@ export default function Billing() {
       // Clean up URL
       setLocation('/billing', { replace: true });
     } else if (params.get('success') === 'true') {
-      // Subscription success
-      queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
+      // Subscription success - poll for updates
+      // Also invalidate organization query used by Dashboard
+      const orgQueryKey = `/api/organizations/${user?.organizationId}`;
+      pollForUpdates(['/api/billing/subscription', '/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
       
       toast({
         title: "Subscription Active!",
-        description: "Your subscription has been activated.",
+        description: "Your subscription is being activated...",
       });
       
-      // Clean up URL
-      setLocation('/billing', { replace: true });
+      // Clean up URL after showing toast
+      setTimeout(() => {
+        setLocation('/billing', { replace: true });
+      }, 500);
     } else if (params.get('canceled') === 'true') {
       toast({
         title: "Subscription Canceled",
