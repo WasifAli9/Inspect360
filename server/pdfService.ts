@@ -2,6 +2,51 @@ import puppeteer from "puppeteer";
 import chromium from "@sparticuz/chromium";
 import { format } from "date-fns";
 
+// HTML escape utility to prevent XSS
+function escapeHtml(unsafe: string): string {
+  if (typeof unsafe !== 'string') return String(unsafe || '');
+  
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Sanitize URL for use in HTML attributes (whitelist-based approach)
+function sanitizeUrl(url: string): string {
+  if (typeof url !== 'string' || !url.trim()) return '';
+  
+  const trimmed = url.trim().toLowerCase();
+  
+  // Allow only safe protocols via whitelist
+  const safeProtocols = ['https://', 'http://'];
+  const isSafeProtocol = safeProtocols.some(protocol => trimmed.startsWith(protocol));
+  
+  if (!isSafeProtocol) {
+    // For data URLs, only allow safe image types (NO SVG - can contain XSS)
+    const safeDataImages = [
+      'data:image/png',
+      'data:image/jpeg',
+      'data:image/jpg',
+      'data:image/gif',
+      'data:image/webp',
+    ];
+    
+    const isSafeDataUrl = safeDataImages.some(prefix => trimmed.startsWith(prefix));
+    
+    if (!isSafeDataUrl) {
+      // Reject all other protocols/schemes (javascript:, data:image/svg+xml, vbscript:, etc.)
+      console.warn(`Blocked potentially unsafe URL: ${url.substring(0, 50)}...`);
+      return '';
+    }
+  }
+  
+  // Return escaped URL (escape special chars for HTML attribute safety)
+  return escapeHtml(url);
+}
+
 interface TemplateField {
   id: string;
   key?: string;
@@ -119,9 +164,12 @@ function renderFieldValue(value: any, field: TemplateField): string {
   try {
     if (typeof value === "object" && value !== null) {
       if (Array.isArray(value)) {
-        return value.length > 0 ? value.join(", ") : '<span style="color: #999;">Empty</span>';
+        // Escape each array item
+        const escaped = value.map(v => escapeHtml(String(v)));
+        return escaped.length > 0 ? escaped.join(", ") : '<span style="color: #999;">Empty</span>';
       }
-      return `<pre style="background: #f5f5f5; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">${JSON.stringify(value, null, 2)}</pre>`;
+      // Escape JSON output
+      return `<pre style="background: #f5f5f5; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto;">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
     }
 
     if (field.type === "checkbox" || field.type === "toggle") {
@@ -130,16 +178,18 @@ function renderFieldValue(value: any, field: TemplateField): string {
 
     if (field.type === "date" && typeof value === "string") {
       try {
-        return format(new Date(value), "PPP");
+        const formatted = format(new Date(value), "PPP");
+        return escapeHtml(formatted);
       } catch {
-        return String(value);
+        return escapeHtml(String(value));
       }
     }
 
-    return String(value);
+    // Escape all string values
+    return escapeHtml(String(value));
   } catch (error) {
     console.error("Error rendering field value:", error);
-    return String(value || "");
+    return escapeHtml(String(value || ""));
   }
 }
 
@@ -183,10 +233,10 @@ function generateInspectionHTML(
       fieldsHTML += `
         <div style="margin-bottom: 24px; page-break-inside: avoid;">
           <div style="font-weight: 600; color: #1a1a1a; margin-bottom: 8px;">
-            ${field.label}
+            ${escapeHtml(field.label)}
             ${field.required ? '<span style="color: #ef4444;">*</span>' : ''}
           </div>
-          ${field.description ? `<div style="color: #666; font-size: 14px; margin-bottom: 8px;">${field.description}</div>` : ""}
+          ${field.description ? `<div style="color: #666; font-size: 14px; margin-bottom: 8px;">${escapeHtml(field.description)}</div>` : ""}
           
           ${value !== undefined && value !== null && value !== "" ? `
             <div style="color: #333; margin-bottom: 8px;">
@@ -198,7 +248,7 @@ function generateInspectionHTML(
             <div style="margin-top: 8px;">
               <span style="font-size: 13px; color: #666;">Condition:</span>
               <span style="display: inline-block; background: #f0fdf4; color: #16a34a; padding: 2px 8px; border-radius: 4px; font-size: 13px; margin-left: 8px;">
-                ${condition}
+                ${escapeHtml(condition)}
               </span>
             </div>
           ` : ""}
@@ -207,7 +257,7 @@ function generateInspectionHTML(
             <div style="margin-top: 8px;">
               <span style="font-size: 13px; color: #666;">Cleanliness:</span>
               <span style="display: inline-block; background: #eff6ff; color: #2563eb; padding: 2px 8px; border-radius: 4px; font-size: 13px; margin-left: 8px;">
-                ${cleanliness}
+                ${escapeHtml(cleanliness)}
               </span>
             </div>
           ` : ""}
@@ -218,7 +268,7 @@ function generateInspectionHTML(
               <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
                 ${photos.map((photo) => `
                   <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-                    <img src="${photo}" alt="Inspection photo" style="width: 100%; height: 150px; object-fit: cover;" />
+                    <img src="${sanitizeUrl(photo)}" alt="Inspection photo" style="width: 100%; height: 150px; object-fit: cover;" />
                   </div>
                 `).join("")}
               </div>
@@ -228,7 +278,7 @@ function generateInspectionHTML(
           ${note ? `
             <div style="margin-top: 12px; background: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; border-radius: 4px;">
               <div style="font-weight: 500; color: #92400e; margin-bottom: 4px; font-size: 13px;">Note:</div>
-              <div style="color: #78350f; font-size: 14px;">${note}</div>
+              <div style="color: #78350f; font-size: 14px;">${escapeHtml(note)}</div>
             </div>
           ` : ""}
         </div>
@@ -238,9 +288,9 @@ function generateInspectionHTML(
     sectionsHTML += `
       <div style="margin-bottom: 32px; page-break-inside: avoid;">
         <h2 style="font-size: 20px; font-weight: 700; color: #00D5CC; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #00D5CC;">
-          ${section.title}
+          ${escapeHtml(section.title)}
         </h2>
-        ${section.description ? `<p style="color: #666; margin-bottom: 16px;">${section.description}</p>` : ""}
+        ${section.description ? `<p style="color: #666; margin-bottom: 16px;">${escapeHtml(section.description)}</p>` : ""}
         ${fieldsHTML}
       </div>
     `;
@@ -381,10 +431,10 @@ function generateInspectionHTML(
     <div class="cover-page">
       <div class="cover-logo">INSPECT360</div>
       <div class="cover-title">Inspection Report</div>
-      <div class="cover-property">${propertyName}</div>
+      <div class="cover-property">${escapeHtml(propertyName)}</div>
       <div class="cover-details">
-        <div>${formattedDate}</div>
-        <div style="margin-top: 8px;">${inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " ")}</div>
+        <div>${escapeHtml(formattedDate)}</div>
+        <div style="margin-top: 8px;">${escapeHtml(inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " "))}</div>
       </div>
     </div>
 
@@ -392,37 +442,37 @@ function generateInspectionHTML(
     <div style="padding: 0;">
       <div class="header">
         <div class="header-title">Inspection Report</div>
-        <div class="header-subtitle">${propertyName}</div>
+        <div class="header-subtitle">${escapeHtml(propertyName)}</div>
       </div>
 
       <!-- Property Information -->
       <div class="info-grid">
         <div class="info-item">
           <div class="info-label">Property Address</div>
-          <div class="info-value">${propertyAddress}</div>
+          <div class="info-value">${escapeHtml(propertyAddress)}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Inspection Type</div>
-          <div class="info-value">${inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " ")}</div>
+          <div class="info-value">${escapeHtml(inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " "))}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Inspector</div>
-          <div class="info-value">${inspectorName}</div>
+          <div class="info-value">${escapeHtml(inspectorName)}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Inspection Date</div>
-          <div class="info-value">${formattedDate}</div>
+          <div class="info-value">${escapeHtml(formattedDate)}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Status</div>
           <div class="info-value">
-            <span class="status-badge">${inspection.status.toUpperCase()}</span>
+            <span class="status-badge">${escapeHtml(inspection.status.toUpperCase())}</span>
           </div>
         </div>
         ${inspection.notes ? `
           <div class="info-item" style="grid-column: 1 / -1;">
             <div class="info-label">General Notes</div>
-            <div class="info-value">${inspection.notes}</div>
+            <div class="info-value">${escapeHtml(inspection.notes)}</div>
           </div>
         ` : ""}
       </div>
