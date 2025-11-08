@@ -60,7 +60,10 @@ import {
   quickAddAssetSchema,
   quickAddMaintenanceSchema,
   quickUpdateAssetSchema,
-  maintenanceRequests
+  maintenanceRequests,
+  teams,
+  teamMembers,
+  teamCategories
 } from "@shared/schema";
 
 // Initialize Stripe
@@ -4685,6 +4688,107 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
+  // Get work order analytics
+  app.get("/api/analytics/work-orders", isAuthenticated, requireRole("owner"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Get all work orders for the organization
+      const workOrders = await storage.getWorkOrdersByOrganization(user.organizationId);
+
+      // Batch fetch all teams to avoid N+1 queries
+      const allTeams = await storage.getTeamsByOrganization(user.organizationId);
+      const teamsById = new Map(allTeams.map(t => [t.id, t]));
+
+      // Batch fetch all maintenance requests to avoid N+1 queries
+      const maintenanceRequestIds = workOrders.map(wo => wo.maintenanceRequestId);
+      const maintenanceRequestsData = await db
+        .select()
+        .from(maintenanceRequests)
+        .where(eq(maintenanceRequests.organizationId, user.organizationId));
+      const maintenanceRequestsById = new Map(maintenanceRequestsData.map(mr => [mr.id, mr]));
+
+      // Map work order statuses to UI groupings
+      // assigned/waiting_parts → "open", in_progress → "in_progress", completed → "completed", rejected → "rejected"
+      const statusDistribution: { [key: string]: number } = {
+        open: 0,
+        in_progress: 0,
+        completed: 0,
+        rejected: 0,
+      };
+      
+      for (const wo of workOrders) {
+        if (wo.status === "assigned" || wo.status === "waiting_parts") {
+          statusDistribution.open++;
+        } else if (wo.status === "in_progress") {
+          statusDistribution.in_progress++;
+        } else if (wo.status === "completed") {
+          statusDistribution.completed++;
+        } else if (wo.status === "rejected") {
+          statusDistribution.rejected++;
+        }
+      }
+
+      // Calculate priority distribution from linked maintenance requests
+      const priorityDistribution: { [key: string]: number } = {};
+      for (const wo of workOrders) {
+        const mr = maintenanceRequestsById.get(wo.maintenanceRequestId);
+        if (mr?.priority) {
+          priorityDistribution[mr.priority] = (priorityDistribution[mr.priority] || 0) + 1;
+        }
+      }
+
+      // Calculate average resolution time for completed work orders
+      const completedWorkOrders = workOrders.filter(wo => wo.status === "completed" && wo.completedAt && wo.createdAt);
+      const averageResolutionTimeMinutes = completedWorkOrders.length > 0
+        ? completedWorkOrders.reduce((sum, wo) => {
+            const resolutionTime = wo.completedAt!.getTime() - wo.createdAt!.getTime();
+            return sum + (resolutionTime / (1000 * 60)); // Convert to minutes
+          }, 0) / completedWorkOrders.length
+        : 0;
+
+      // Calculate team distribution
+      const teamDistribution: { [key: string]: { name: string; count: number } } = {};
+      for (const wo of workOrders) {
+        if (wo.teamId) {
+          if (!teamDistribution[wo.teamId]) {
+            const team = teamsById.get(wo.teamId);
+            teamDistribution[wo.teamId] = {
+              name: team?.name || 'Unknown Team',
+              count: 0
+            };
+          }
+          teamDistribution[wo.teamId].count++;
+        }
+      }
+
+      // Calculate category distribution from linked maintenance requests
+      const categoryDistribution: { [key: string]: number } = {};
+      for (const wo of workOrders) {
+        const mr = maintenanceRequestsById.get(wo.maintenanceRequestId);
+        if (mr?.category) {
+          categoryDistribution[mr.category] = (categoryDistribution[mr.category] || 0) + 1;
+        }
+      }
+
+      res.json({
+        total: workOrders.length,
+        statusDistribution,
+        priorityDistribution,
+        teamDistribution,
+        categoryDistribution,
+        averageResolutionTimeMinutes: Math.round(averageResolutionTimeMinutes),
+      });
+    } catch (error) {
+      console.error("Error fetching work order analytics:", error);
+      res.status(500).json({ error: "Failed to fetch analytics" });
+    }
+  });
+
   // ==================== TAG ROUTES ====================
   
   // Create a new tag
@@ -7235,74 +7339,82 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Begin transaction by collecting all operations
-      const errors: Error[] = [];
-
+      // Begin database transaction for atomic updates
       try {
-        // 1. Update team details
-        const teamUpdates: any = {};
-        if (name !== undefined) teamUpdates.name = name;
-        if (description !== undefined) teamUpdates.description = description;
-        if (email !== undefined) teamUpdates.email = email;
-        if (isActive !== undefined) teamUpdates.isActive = isActive;
-        
-        const updatedTeam = await storage.updateTeam(id, teamUpdates);
+        const result = await db.transaction(async (tx) => {
+          // 1. Update team details
+          const teamUpdates: any = {};
+          if (name !== undefined) teamUpdates.name = name;
+          if (description !== undefined) teamUpdates.description = description;
+          if (email !== undefined) teamUpdates.email = email;
+          if (isActive !== undefined) teamUpdates.isActive = isActive;
+          
+          const [updatedTeam] = await tx
+            .update(teams)
+            .set(teamUpdates)
+            .where(eq(teams.id, id))
+            .returning();
 
-        // 2. Update members - delete all and recreate
-        const currentMembers = await storage.getTeamMembers(id);
-        for (const member of currentMembers) {
-          await storage.removeTeamMember(member.id);
-        }
+          // 2. Update members - delete all and recreate
+          await tx.delete(teamMembers).where(eq(teamMembers.teamId, id));
 
-        // Add new members
-        if (userIds && Array.isArray(userIds)) {
-          for (const userId of userIds) {
-            await storage.addTeamMember({
-              teamId: id,
-              userId,
-              contactId: null,
-              role: 'member',
-            });
+          // Add new user members
+          if (userIds && Array.isArray(userIds) && userIds.length > 0) {
+            await tx.insert(teamMembers).values(
+              userIds.map(userId => ({
+                teamId: id,
+                userId,
+                contactId: null,
+                role: 'member' as const,
+              }))
+            );
           }
-        }
 
-        if (contactIds && Array.isArray(contactIds)) {
-          for (const contactId of contactIds) {
-            await storage.addTeamMember({
-              teamId: id,
-              userId: null,
-              contactId,
-              role: 'contractor',
-            });
+          // Add new contractor members
+          if (contactIds && Array.isArray(contactIds) && contactIds.length > 0) {
+            await tx.insert(teamMembers).values(
+              contactIds.map(contactId => ({
+                teamId: id,
+                userId: null,
+                contactId,
+                role: 'contractor' as const,
+              }))
+            );
           }
-        }
 
-        // 3. Update categories - delete all and recreate
-        const currentCategories = await storage.getTeamCategories(id);
-        for (const cat of currentCategories) {
-          await storage.removeTeamCategory(cat.id);
-        }
+          // 3. Update categories - delete all and recreate
+          await tx.delete(teamCategories).where(eq(teamCategories.teamId, id));
 
-        if (categories && Array.isArray(categories)) {
-          for (const category of categories) {
-            await storage.addTeamCategory({
-              teamId: id,
-              category,
-            });
+          if (categories && Array.isArray(categories) && categories.length > 0) {
+            await tx.insert(teamCategories).values(
+              categories.map(category => ({
+                teamId: id,
+                category,
+              }))
+            );
           }
-        }
 
-        // Return updated team with counts
-        const finalMembers = await storage.getTeamMembers(id);
-        const finalCategories = await storage.getTeamCategories(id);
+          // Return updated team with counts
+          const finalMembers = await tx
+            .select()
+            .from(teamMembers)
+            .where(eq(teamMembers.teamId, id));
 
-        res.json({
-          ...updatedTeam,
-          memberCount: finalMembers.length,
-          categories: finalCategories.map(c => c.category),
+          const finalCategories = await tx
+            .select()
+            .from(teamCategories)
+            .where(eq(teamCategories.teamId, id));
+
+          return {
+            ...updatedTeam,
+            memberCount: finalMembers.length,
+            categories: finalCategories.map(c => c.category),
+          };
         });
+
+        res.json(result);
       } catch (error: any) {
-        // If anything fails, return error - Note: actual rollback would require DB transactions
+        // Transaction automatically rolled back on error
         throw error;
       }
     } catch (error: any) {

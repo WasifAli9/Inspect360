@@ -14,6 +14,7 @@ import {
   List,
   Contact,
   GitCompare,
+  BarChart3,
 } from "lucide-react";
 import {
   Sidebar,
@@ -76,6 +77,12 @@ export function AppSidebar() {
       url: "/maintenance",
       icon: Wrench,
       roles: ["owner", "clerk", "tenant", "contractor"],
+    },
+    {
+      title: "Analytics",
+      url: "/analytics",
+      icon: BarChart3,
+      roles: ["owner"],
     },
     {
       title: "Comparisons",
