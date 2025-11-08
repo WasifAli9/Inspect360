@@ -1272,14 +1272,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Fetch property and inspector data
+      let property = null;
+      let inspector = null;
+
+      if (inspection.propertyId) {
+        property = await storage.getProperty(inspection.propertyId);
+      }
+
+      if (inspection.inspectorId) {
+        inspector = await storage.getUser(inspection.inspectorId);
+      }
+
+      // Build full inspection object with relations
+      const fullInspection = {
+        ...inspection,
+        property: property || undefined,
+        inspector: inspector || undefined,
+      };
+
       // Get inspection entries
-      const entries = await storage.getInspectionEntriesByInspection(id);
+      const entries = await storage.getInspectionEntries(id);
 
       // Generate PDF
-      const pdfBuffer = await generateInspectionPDF(inspection, entries);
+      const pdfBuffer = await generateInspectionPDF(fullInspection as any, entries);
 
       // Set headers for PDF download
-      const propertyName = inspection.property?.name || "inspection";
+      const propertyName = property?.name || "inspection";
       const filename = `${propertyName.replace(/[^a-zA-Z0-9]/g, "_")}_inspection_report.pdf`;
       
       res.setHeader("Content-Type", "application/pdf");

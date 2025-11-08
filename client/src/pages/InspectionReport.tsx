@@ -173,8 +173,46 @@ export default function InspectionReport() {
     setEditedNotes(initialNotes);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!inspection) return;
+    
+    try {
+      toast({
+        title: "Generating PDF",
+        description: "Please wait while we create your inspection report...",
+      });
+
+      const response = await fetch(`/api/inspections/${inspection.id}/pdf`, {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate PDF");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${inspection.property?.name?.replace(/[^a-zA-Z0-9]/g, "_") || "inspection"}_report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "PDF Generated",
+        description: "Your inspection report has been downloaded.",
+      });
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF report. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getEntryValue = (sectionId: string, fieldKey: string) => {
