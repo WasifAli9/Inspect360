@@ -1619,6 +1619,7 @@ export class DatabaseStorage implements IStorage {
         id: workOrders.id,
         organizationId: workOrders.organizationId,
         maintenanceRequestId: workOrders.maintenanceRequestId,
+        teamId: workOrders.teamId,
         contractorId: workOrders.contractorId,
         status: workOrders.status,
         slaDue: workOrders.slaDue,
@@ -1641,10 +1642,16 @@ export class DatabaseStorage implements IStorage {
           lastName: users.lastName,
           email: users.email,
         },
+        team: {
+          id: teams.id,
+          name: teams.name,
+          email: teams.email,
+        },
       })
       .from(workOrders)
       .innerJoin(maintenanceRequests, eq(workOrders.maintenanceRequestId, maintenanceRequests.id))
-      .innerJoin(users, eq(workOrders.contractorId, users.id))
+      .leftJoin(users, eq(workOrders.contractorId, users.id))
+      .leftJoin(teams, eq(workOrders.teamId, teams.id))
       .where(eq(workOrders.organizationId, organizationId))
       .orderBy(desc(workOrders.createdAt));
   }

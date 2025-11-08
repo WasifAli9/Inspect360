@@ -80,10 +80,16 @@ interface WorkOrder {
     priority: string;
   };
   contractor?: {
+    id?: string;
     firstName?: string;
     lastName?: string;
     email: string;
-  };
+  } | null;
+  team?: {
+    id?: string;
+    name?: string;
+    email?: string;
+  } | null;
 }
 
 const workOrderStatusColors: Record<string, string> = {
@@ -125,6 +131,10 @@ export default function Maintenance() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState<"form" | "images" | "suggestions" | "review">("form");
   const uppyRef = useRef<Uppy | null>(null);
+  
+  // Work order creation state
+  const [isWorkOrderDialogOpen, setIsWorkOrderDialogOpen] = useState(false);
+  const [selectedRequestForWorkOrder, setSelectedRequestForWorkOrder] = useState<MaintenanceRequestWithDetails | null>(null);
 
   // Handle dialog state change
   const handleDialogChange = (open: boolean) => {
@@ -167,6 +177,35 @@ export default function Maintenance() {
   const { data: workOrders = [], isLoading: workOrdersLoading } = useQuery<WorkOrder[]>({
     queryKey: ["/api/work-orders"],
     enabled: user?.role === "owner" || user?.role === "contractor",
+  });
+
+  // Fetch teams for work order assignment
+  const { data: teams = [] } = useQuery<any[]>({
+    queryKey: ["/api/teams"],
+    enabled: user?.role === "owner",
+  });
+
+  // Fetch contractors for work order assignment
+  const { data: contractors = [] } = useQuery<any[]>({
+    queryKey: ["/api/contacts"],
+    enabled: user?.role === "owner",
+  });
+
+  // Work order creation mutation
+  const createWorkOrderMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest("POST", "/api/work-orders", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/maintenance"] });
+      setIsWorkOrderDialogOpen(false);
+      setSelectedRequestForWorkOrder(null);
+      toast({ title: "Work order created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create work order", variant: "destructive" });
+    },
   });
 
   // Work order status update mutation
@@ -1081,6 +1120,19 @@ export default function Maintenance() {
                           </SelectContent>
                         </Select>
                       )}
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedRequestForWorkOrder(request);
+                          setIsWorkOrderDialogOpen(true);
+                        }}
+                        data-testid={`button-create-work-order-${request.id}`}
+                      >
+                        <Clipboard className="w-4 h-4 mr-2" />
+                        Create Work Order
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1134,6 +1186,18 @@ export default function Maintenance() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                      {workOrder.team && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <UserIcon className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-medium">Assigned Team</p>
+                            <p className="text-muted-foreground" data-testid={`text-team-${workOrder.id}`}>
+                              {workOrder.team.name}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {workOrder.contractor && (
                         <div className="flex items-center gap-2 text-sm">
                           <UserIcon className="h-4 w-4 text-muted-foreground" />
@@ -1209,6 +1273,174 @@ export default function Maintenance() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Work Order Creation Dialog */}
+      {selectedRequestForWorkOrder && (
+        <Dialog open={isWorkOrderDialogOpen} onOpenChange={setIsWorkOrderDialogOpen}>
+          <DialogContent className="max-w-2xl" data-testid="dialog-create-work-order">
+            <DialogHeader>
+              <DialogTitle>Create Work Order</DialogTitle>
+              <DialogDescription>
+                Create a work order from maintenance request: {selectedRequestForWorkOrder.title}
+              </DialogDescription>
+            </DialogHeader>
+            <WorkOrderForm
+              maintenanceRequest={selectedRequestForWorkOrder}
+              teams={teams}
+              contractors={contractors}
+              onSubmit={(data) => createWorkOrderMutation.mutate(data)}
+              isSubmitting={createWorkOrderMutation.isPending}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+// Work Order Creation Form Component
+function WorkOrderForm({
+  maintenanceRequest,
+  teams,
+  contractors,
+  onSubmit,
+  isSubmitting,
+}: {
+  maintenanceRequest: MaintenanceRequestWithDetails;
+  teams: any[];
+  contractors: any[];
+  onSubmit: (data: any) => void;
+  isSubmitting: boolean;
+}) {
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [selectedContractorId, setSelectedContractorId] = useState<string>("");
+  const [slaDue, setSlaDue] = useState<string>("");
+  const [costEstimate, setCostEstimate] = useState<string>("");
+
+  // Auto-suggest team based on maintenance request category
+  useEffect(() => {
+    if (maintenanceRequest.category && teams.length > 0) {
+      // Find team that has this category assigned
+      const suggestedTeam = teams.find((team: any) => 
+        team.categories?.includes(maintenanceRequest.category)
+      );
+      if (suggestedTeam) {
+        setSelectedTeamId(suggestedTeam.id);
+      }
+    }
+  }, [maintenanceRequest.category, teams]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    onSubmit({
+      maintenanceRequestId: maintenanceRequest.id,
+      teamId: selectedTeamId || undefined,
+      contractorId: selectedContractorId || undefined,
+      slaDue: slaDue ? new Date(slaDue).toISOString() : undefined,
+      costEstimate: costEstimate ? Math.round(parseFloat(costEstimate) * 100) : undefined,
+      status: "assigned",
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-sm font-medium" htmlFor="team">
+          Assign to Team
+          {maintenanceRequest.category && selectedTeamId && (
+            <span className="ml-2 text-xs text-muted-foreground">(Auto-suggested based on category)</span>
+          )}
+        </label>
+        <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+          <SelectTrigger id="team" data-testid="select-team">
+            <SelectValue placeholder="Select a team (optional)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None</SelectItem>
+            {teams.map((team: any) => (
+              <SelectItem key={team.id} value={team.id} data-testid={`option-team-${team.id}`}>
+                {team.name}
+                {team.email && ` (${team.email})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium" htmlFor="contractor">
+          Assign to Contractor
+        </label>
+        <Select value={selectedContractorId} onValueChange={setSelectedContractorId}>
+          <SelectTrigger id="contractor" data-testid="select-contractor">
+            <SelectValue placeholder="Select a contractor (optional)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None</SelectItem>
+            {contractors.filter((c: any) => c.role === "contractor").map((contractor: any) => (
+              <SelectItem key={contractor.id} value={contractor.id} data-testid={`option-contractor-${contractor.id}`}>
+                {contractor.firstName} {contractor.lastName}
+                {contractor.email && ` (${contractor.email})`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium" htmlFor="sla-due">
+          SLA Due Date
+        </label>
+        <Input
+          id="sla-due"
+          type="datetime-local"
+          value={slaDue}
+          onChange={(e) => setSlaDue(e.target.value)}
+          data-testid="input-sla-due"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium" htmlFor="cost-estimate">
+          Cost Estimate ($)
+        </label>
+        <Input
+          id="cost-estimate"
+          type="number"
+          step="0.01"
+          placeholder="0.00"
+          value={costEstimate}
+          onChange={(e) => setCostEstimate(e.target.value)}
+          data-testid="input-cost-estimate"
+        />
+      </div>
+
+      <div className="flex justify-end gap-2 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {}}
+          disabled={isSubmitting}
+          data-testid="button-cancel-work-order"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          data-testid="button-submit-work-order"
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            "Create Work Order"
+          )}
+        </Button>
+      </div>
+    </form>
   );
 }

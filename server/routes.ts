@@ -10,7 +10,7 @@ import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { devRouter } from "./devRoutes";
-import { sendInspectionCompleteEmail } from "./resend";
+import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
 import { generateInspectionPDF } from "./pdfService";
 import {
@@ -4376,10 +4376,67 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const validatedData = insertWorkOrderSchema.parse(req.body);
 
+      // Security: Validate teamId belongs to organization if provided
+      if (validatedData.teamId) {
+        const team = await storage.getTeam(validatedData.teamId);
+        if (!team || team.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Team not found or access denied" });
+        }
+      }
+
+      // Security: Validate contractorId belongs to organization if provided
+      if (validatedData.contractorId) {
+        const contractor = await storage.getUser(validatedData.contractorId);
+        if (!contractor || contractor.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Contractor not found or access denied" });
+        }
+      }
+
       const workOrder = await storage.createWorkOrder({
         ...validatedData,
         organizationId: user.organizationId,
       });
+
+      // Send email notification to team if teamId is provided (best-effort, non-blocking)
+      if (validatedData.teamId) {
+        try {
+          const team = await storage.getTeam(validatedData.teamId);
+          const maintenanceRequest = await storage.getMaintenanceRequest(validatedData.maintenanceRequestId);
+          
+          if (team?.email && maintenanceRequest) {
+            // Fetch property details if available
+            let propertyName: string | undefined;
+            if (maintenanceRequest.propertyId) {
+              const property = await storage.getProperty(maintenanceRequest.propertyId);
+              propertyName = property?.name;
+            }
+
+            await sendTeamWorkOrderNotification(
+              team.email,
+              team.name,
+              {
+                id: workOrder.id,
+                maintenanceTitle: maintenanceRequest.title,
+                maintenanceDescription: maintenanceRequest.description || undefined,
+                priority: maintenanceRequest.priority,
+                propertyName,
+                slaDue: validatedData.slaDue ? new Date(validatedData.slaDue) : null,
+                costEstimate: validatedData.costEstimate || null,
+              }
+            );
+            console.log(`Team notification email sent successfully for work order ${workOrder.id} to team ${team.name} (${team.email})`);
+          }
+        } catch (emailError) {
+          // Log email failures but don't block work order creation
+          console.error(`Failed to send team notification email for work order ${workOrder.id}:`, emailError);
+          console.error(`Email error details:`, {
+            workOrderId: workOrder.id,
+            teamId: validatedData.teamId,
+            error: emailError instanceof Error ? emailError.message : 'Unknown error',
+          });
+        }
+      }
+
       res.status(201).json(workOrder);
     } catch (error: any) {
       console.error("Error creating work order:", error);
