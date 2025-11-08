@@ -6378,7 +6378,7 @@ Be objective and specific. Focus on actionable repairs.`;
       if (topupOrderId && packSize) {
         // Check if already processed
         const existingOrder = await storage.getTopupOrder(topupOrderId);
-        if (existingOrder && existingOrder.status === "completed") {
+        if (existingOrder && existingOrder.status === "paid") {
           console.log(`[Process Session] Top-up already processed: ${topupOrderId}`);
           return res.json({ message: "Already processed", processed: true });
         }
@@ -6387,7 +6387,7 @@ Be objective and specific. Focus on actionable repairs.`;
         console.log(`[Process Session] Processing top-up of ${packSize} credits`);
         
         await storage.updateTopupOrder(topupOrderId, {
-          status: "completed" as any,
+          status: "paid" as any,
         });
 
         await subscriptionService.grantCredits(
@@ -6395,7 +6395,7 @@ Be objective and specific. Focus on actionable repairs.`;
           parseInt(packSize),
           "topup",
           undefined,
-          { orderId: topupOrderId, stripeSessionId: sessionId }
+          { topupOrderId, adminNotes: `Stripe session: ${sessionId}` }
         );
 
         console.log(`[Process Session] Granted ${packSize} credits to org ${organizationId}`);
@@ -6404,11 +6404,18 @@ Be objective and specific. Focus on actionable repairs.`;
       
       // Handle subscription payment
       if (session.subscription && planId) {
-        // Check if subscription already exists
+        // Check if subscription already exists by Stripe subscription ID
         const existingSubscription = await storage.getSubscriptionByStripeId(session.subscription as string);
         if (existingSubscription) {
           console.log(`[Process Session] Subscription already exists: ${session.subscription}`);
-          return res.json({ message: "Already processed", processed: true });
+          return res.json({ message: "Subscription already activated", processed: true, alreadyProcessed: true });
+        }
+
+        // Double-check by organization to prevent duplicate subscriptions
+        const orgSubscriptions = await storage.getSubscriptionsByOrganization(organizationId);
+        if (orgSubscriptions.length > 0) {
+          console.log(`[Process Session] Organization already has subscription(s), skipping duplicate`);
+          return res.json({ message: "Organization already has active subscription", processed: true, alreadyProcessed: true });
         }
 
         console.log(`[Process Session] Creating subscription from session`);
@@ -6429,6 +6436,7 @@ Be objective and specific. Focus on actionable repairs.`;
         await storage.createSubscription({
           organizationId,
           planSnapshotJson: {
+            planId: plan.id,
             planCode: plan.code,
             planName: plan.name,
             monthlyPrice: subscription.items.data[0].price.unit_amount || 0,
@@ -6436,11 +6444,11 @@ Be objective and specific. Focus on actionable repairs.`;
             currency: (subscription.currency || "gbp").toUpperCase(),
           },
           stripeSubscriptionId: subscription.id,
-          billingCycleAnchor: new Date(subscription.billing_cycle_anchor * 1000),
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-          status: subscription.status as any,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+          billingCycleAnchor: new Date((subscription as any).billing_cycle_anchor * 1000),
+          currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+          currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+          status: (subscription as any).status as any,
+          cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
         });
 
         // Grant initial credits
@@ -6448,7 +6456,7 @@ Be objective and specific. Focus on actionable repairs.`;
           organizationId,
           parseInt(includedCredits),
           "plan_inclusion",
-          new Date(subscription.current_period_end * 1000),
+          new Date((subscription as any).current_period_end * 1000),
           { subscriptionId: subscription.id }
         );
 
@@ -6496,7 +6504,7 @@ Be objective and specific. Focus on actionable repairs.`;
             
             // Update top-up order status
             await storage.updateTopupOrder(topupOrderId, {
-              status: "completed" as any,
+              status: "paid" as any,
             });
 
             // Grant credits using subscription service
@@ -6505,7 +6513,7 @@ Be objective and specific. Focus on actionable repairs.`;
               parseInt(packSize),
               "topup",
               undefined,
-              { orderId: topupOrderId, stripeSessionId: session.id }
+              { topupOrderId, adminNotes: `Stripe session: ${session.id}` }
             );
 
             console.log(`[Stripe Webhook] Granted ${packSize} credits to org ${organizationId} via top-up`);

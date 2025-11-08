@@ -91,43 +91,64 @@ export default function Billing() {
       return () => clearInterval(pollInterval);
     };
 
-    // Helper function to process the session directly
-    const processSession = async (sessionId: string) => {
-      try {
-        const response = await apiRequest("POST", "/api/billing/process-session", { sessionId });
-        const result = await response.json();
-        console.log('[Billing] Session processed:', result);
-        
-        // Invalidate queries after processing
-        const orgQueryKey = `/api/organizations/${user.organizationId}`;
-        await queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
-        await queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
-        await queryClient.invalidateQueries({ queryKey: ['/api/credits/ledger'] });
-        await queryClient.invalidateQueries({ queryKey: [orgQueryKey] });
-      } catch (error) {
-        console.error('[Billing] Error processing session:', error);
-      }
-    };
     
     if (params.get('topup_success') === 'true') {
       // Process the session immediately if we have a session_id
-      if (sessionId) {
-        processSession(sessionId);
-      }
+      const processAndCleanup = async () => {
+        let success = false;
+        
+        if (sessionId) {
+          try {
+            const response = await apiRequest("POST", "/api/billing/process-session", { sessionId });
+            const result = await response.json();
+            console.log('[Billing] Session processed:', result);
+            
+            if (result.processed) {
+              // Invalidate AND refetch queries after processing
+              const orgQueryKey = `/api/organizations/${user.organizationId}`;
+              await queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+              await queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
+              await queryClient.invalidateQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.invalidateQueries({ queryKey: [orgQueryKey] });
+              
+              // Force immediate refetch to update UI
+              await queryClient.refetchQueries({ queryKey: ['/api/credits/balance'] });
+              await queryClient.refetchQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.refetchQueries({ queryKey: [orgQueryKey] });
+              
+              success = true;
+              
+              toast({
+                title: "Payment Successful!",
+                description: "Your credits have been added to your account!",
+              });
+            } else {
+              toast({
+                title: "Processing Payment",
+                description: "Your payment is being processed...",
+              });
+            }
+          } catch (error) {
+            console.error('[Billing] Error processing session:', error);
+            toast({
+              title: "Payment Received",
+              description: "Your payment is being processed. Credits will appear shortly.",
+              variant: "default",
+            });
+          }
+        }
+        
+        // Clean up URL after processing completes
+        setTimeout(() => {
+          setLocation('/billing', { replace: true });
+        }, 1000);
+      };
+      
+      processAndCleanup();
       
       // Also poll for updates (in case webhook fires)
       const orgQueryKey = `/api/organizations/${user.organizationId}`;
       pollForUpdates(['/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
-      
-      toast({
-        title: "Payment Successful!",
-        description: "Your credits are being added to your account...",
-      });
-      
-      // Clean up URL after showing toast
-      setTimeout(() => {
-        setLocation('/billing', { replace: true });
-      }, 500);
     } else if (params.get('topup_canceled') === 'true') {
       toast({
         title: "Payment Canceled",
@@ -139,23 +160,64 @@ export default function Billing() {
       setLocation('/billing', { replace: true });
     } else if (params.get('success') === 'true') {
       // Process the session immediately if we have a session_id
-      if (sessionId) {
-        processSession(sessionId);
-      }
+      const processAndCleanup = async () => {
+        let success = false;
+        
+        if (sessionId) {
+          try {
+            const response = await apiRequest("POST", "/api/billing/process-session", { sessionId });
+            const result = await response.json();
+            console.log('[Billing] Session processed:', result);
+            
+            if (result.processed) {
+              // Invalidate AND refetch queries after processing
+              const orgQueryKey = `/api/organizations/${user.organizationId}`;
+              await queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
+              await queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
+              await queryClient.invalidateQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.invalidateQueries({ queryKey: [orgQueryKey] });
+              
+              // Force immediate refetch to update UI
+              await queryClient.refetchQueries({ queryKey: ['/api/billing/subscription'] });
+              await queryClient.refetchQueries({ queryKey: ['/api/credits/balance'] });
+              await queryClient.refetchQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.refetchQueries({ queryKey: [orgQueryKey] });
+              
+              success = true;
+              
+              toast({
+                title: "Subscription Active!",
+                description: result.alreadyProcessed 
+                  ? "Your subscription is already active!" 
+                  : "Your subscription has been activated!",
+              });
+            } else {
+              toast({
+                title: "Processing Subscription",
+                description: "Your subscription is being activated...",
+              });
+            }
+          } catch (error) {
+            console.error('[Billing] Error processing session:', error);
+            toast({
+              title: "Payment Received",
+              description: "Your subscription is being processed. Please refresh in a moment.",
+              variant: "default",
+            });
+          }
+        }
+        
+        // Clean up URL after processing completes
+        setTimeout(() => {
+          setLocation('/billing', { replace: true });
+        }, 1000);
+      };
+      
+      processAndCleanup();
       
       // Also poll for updates (in case webhook fires)
       const orgQueryKey = `/api/organizations/${user.organizationId}`;
       pollForUpdates(['/api/billing/subscription', '/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
-      
-      toast({
-        title: "Subscription Active!",
-        description: "Your subscription is being activated...",
-      });
-      
-      // Clean up URL after showing toast
-      setTimeout(() => {
-        setLocation('/billing', { replace: true });
-      }, 500);
     } else if (params.get('canceled') === 'true') {
       toast({
         title: "Subscription Canceled",
