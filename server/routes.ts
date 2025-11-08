@@ -8,6 +8,7 @@ import { ObjectPermission } from "./objectAcl";
 import Stripe from "stripe";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
+import { z } from "zod";
 import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
@@ -6881,6 +6882,70 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
+  // User/Contact endpoints for team management (restricted)
+  
+  // Get users for team management (admin/owner only)
+  app.get("/api/users", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only admins and owners can view users
+      if (!['admin', 'owner'].includes(user.role)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const users = await storage.getUsersByOrganization(user.organizationId);
+      
+      // Return minimal user data for team selection
+      const sanitizedUsers = users.map(u => ({
+        id: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        role: u.role,
+      }));
+      
+      res.json(sanitizedUsers);
+    } catch (error: any) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Get contacts for team management (admin/owner only)
+  app.get("/api/contacts", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only admins and owners can view contacts
+      if (!['admin', 'owner'].includes(user.role)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const contacts = await storage.getContactsByOrganization(user.organizationId);
+      
+      // Return minimal contact data for team selection
+      const sanitizedContacts = contacts.map(c => ({
+        id: c.id,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        email: c.email,
+        type: c.type,
+      }));
+      
+      res.json(sanitizedContacts);
+    } catch (error: any) {
+      console.error("Error fetching contacts:", error);
+      res.status(500).json({ message: "Failed to fetch contacts" });
+    }
+  });
+
   // Team Management Routes
   
   // Get all teams for organization
@@ -7007,6 +7072,128 @@ Be objective and specific. Focus on actionable repairs.`;
     } catch (error: any) {
       console.error("Error updating team:", error);
       res.status(500).json({ message: "Failed to update team" });
+    }
+  });
+
+  // Update team with members and categories (server-side batched)
+  app.patch("/api/teams/:id/full", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only admins and owners can update teams
+      if (!['admin', 'owner'].includes(user.role)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { id } = req.params;
+      
+      // Validate request body
+      const bodySchema = z.object({
+        name: z.string().min(1).optional(),
+        description: z.string().optional(),
+        email: z.string().email().optional(),
+        isActive: z.boolean().optional(),
+        userIds: z.array(z.string()).optional(),
+        contactIds: z.array(z.string()).optional(),
+        categories: z.array(z.string()).optional(),
+      });
+      
+      const validationResult = bodySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const { name, description, email, isActive, userIds, contactIds, categories } = validationResult.data;
+
+      const team = await storage.getTeam(id);
+      if (!team) {
+        return res.status(404).json({ message: "Team not found" });
+      }
+
+      // Verify team belongs to user's organization
+      if (team.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Begin transaction by collecting all operations
+      const errors: Error[] = [];
+
+      try {
+        // 1. Update team details
+        const teamUpdates: any = {};
+        if (name !== undefined) teamUpdates.name = name;
+        if (description !== undefined) teamUpdates.description = description;
+        if (email !== undefined) teamUpdates.email = email;
+        if (isActive !== undefined) teamUpdates.isActive = isActive;
+        
+        const updatedTeam = await storage.updateTeam(id, teamUpdates);
+
+        // 2. Update members - delete all and recreate
+        const currentMembers = await storage.getTeamMembers(id);
+        for (const member of currentMembers) {
+          await storage.removeTeamMember(member.id);
+        }
+
+        // Add new members
+        if (userIds && Array.isArray(userIds)) {
+          for (const userId of userIds) {
+            await storage.addTeamMember({
+              teamId: id,
+              userId,
+              contactId: null,
+              role: 'member',
+            });
+          }
+        }
+
+        if (contactIds && Array.isArray(contactIds)) {
+          for (const contactId of contactIds) {
+            await storage.addTeamMember({
+              teamId: id,
+              userId: null,
+              contactId,
+              role: 'contractor',
+            });
+          }
+        }
+
+        // 3. Update categories - delete all and recreate
+        const currentCategories = await storage.getTeamCategories(id);
+        for (const cat of currentCategories) {
+          await storage.removeTeamCategory(cat.id);
+        }
+
+        if (categories && Array.isArray(categories)) {
+          for (const category of categories) {
+            await storage.addTeamCategory({
+              teamId: id,
+              category,
+            });
+          }
+        }
+
+        // Return updated team with counts
+        const finalMembers = await storage.getTeamMembers(id);
+        const finalCategories = await storage.getTeamCategories(id);
+
+        res.json({
+          ...updatedTeam,
+          memberCount: finalMembers.length,
+          categories: finalCategories.map(c => c.category),
+        });
+      } catch (error: any) {
+        // If anything fails, return error - Note: actual rollback would require DB transactions
+        throw error;
+      }
+    } catch (error: any) {
+      console.error("Error updating team:", error);
+      res.status(500).json({ message: "Failed to update team", error: error.message });
     }
   });
 

@@ -11,11 +11,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug } from "lucide-react";
+import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon } from "lucide-react";
 import { insertInspectionCategorySchema, type InspectionCategory } from "@shared/schema";
 import { z } from "zod";
 import Team from "./Team";
 import FixfloIntegrationSettings from "@/components/FixfloIntegrationSettings";
+import SettingsTeamsPanel from "@/components/SettingsTeamsPanel";
 
 const categoryFormSchema = insertInspectionCategorySchema.extend({
   name: z.string().min(1, "Category name is required"),
@@ -152,10 +153,14 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="categories" className="w-full">
-          <TabsList className="grid w-full max-w-2xl grid-cols-3 mb-8">
+          <TabsList className="grid w-full max-w-3xl grid-cols-4 mb-8">
             <TabsTrigger value="categories" className="gap-2" data-testid="tab-inspection-categories">
               <Tags className="w-4 h-4" />
               Inspection Categories
+            </TabsTrigger>
+            <TabsTrigger value="teams" className="gap-2" data-testid="tab-teams">
+              <UsersIcon className="w-4 h-4" />
+              Teams
             </TabsTrigger>
             <TabsTrigger value="team" className="gap-2" data-testid="tab-team-members">
               <Users className="w-4 h-4" />
@@ -355,6 +360,10 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="teams">
+            <SettingsTeamsPanel />
           </TabsContent>
 
           <TabsContent value="team">
