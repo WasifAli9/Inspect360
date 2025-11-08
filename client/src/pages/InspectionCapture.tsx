@@ -340,7 +340,7 @@ export default function InspectionCapture() {
   const completeInspection = useMutation({
     mutationFn: async () => {
       const response = await fetch(`/api/inspections/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: "completed",
@@ -462,7 +462,7 @@ export default function InspectionCapture() {
           </Badge>
           <Button
             onClick={() => completeInspection.mutate()}
-            disabled={completeInspection.isPending || progress < 100}
+            disabled={completeInspection.isPending}
             data-testid="button-complete-inspection"
           >
             <CheckCircle2 className="w-4 h-4 mr-2" />

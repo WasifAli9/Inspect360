@@ -1377,38 +1377,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updates.submittedAt = new Date(updates.submittedAt);
       }
 
-      // Consume credits if inspection is being marked as completed
-      if (validation.data.status === "completed" && inspection.status !== "completed") {
-        try {
-          // Calculate credit cost (default complexity is 1)
-          const creditCost = subscriptionService.calculateInspectionCreditCost(
-            inspection.type,
-            1 // Can be extended to support complexity levels
-          );
-
-          // Attempt to consume credits
-          await subscriptionService.consumeCredits(
-            ownerOrgId!,
-            creditCost,
-            "inspection",
-            inspection.id,
-            `Completed ${inspection.type} inspection`
-          );
-
-          console.log(`[Credit Consumption] Consumed ${creditCost} credit(s) for inspection ${inspection.id}`);
-        } catch (creditError: any) {
-          // Insufficient credits - return 402 Payment Required
-          if (creditError.message.includes("Insufficient credits")) {
-            return res.status(402).json({ 
-              message: "Insufficient credits to complete inspection",
-              neededCredits: subscriptionService.calculateInspectionCreditCost(inspection.type, 1),
-              error: creditError.message
-            });
-          }
-          // Other errors - log but continue (graceful degradation)
-          console.error("[Credit Consumption] Error consuming credits:", creditError);
-        }
-      }
+      // NOTE: Credit consumption removed from manual status changes
+      // Credits are only consumed during actual inspection submission workflow
+      // This allows flexible status management without credit restrictions
 
       const updatedInspection = await storage.updateInspection(id, updates);
       

@@ -56,8 +56,8 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **Auto-Create Comparison Reports**: "Add to Comparison" button on check-out inspection fields automatically creates a comparison report using the most recent completed check-in and check-out inspections for the property if no report exists, or navigates to the existing report.
 - **Consolidated Maintenance Interface**: Unified Maintenance page with tabbed interface for "Requests" and "Work Orders".
 - **Inline Maintenance Request Creation**: Inspection report page features inline dialog for creating maintenance requests directly from inspection fields without navigation, with automatic linking to inspectionId and inspectionEntryId, pre-populated contextual titles, and display of linked maintenance requests below each field with status/priority badges.
-- **Flexible Inspection Status Management**: Inspection report page includes an editable status dropdown allowing users to change inspection status (scheduled/in_progress/completed) at any time, without requiring 100% completion or other progress-based restrictions.
-- **Comprehensive Subscription System**: Credit-based subscription service with multi-currency support, including plans, credit consumption logic, Stripe integration for payments and webhooks, and an Eco-Admin interface for country-level pricing.
+- **Flexible Inspection Status Management**: Inspection report page includes an editable status dropdown allowing users to change inspection status (scheduled/in_progress/completed) at any time, without requiring 100% completion or other progress-based restrictions. Status changes are free and do not consume credits. The "Complete Inspection" button on the capture page is enabled regardless of progress percentage.
+- **Comprehensive Subscription System**: Credit-based subscription service with multi-currency support, including plans, credit consumption logic (only for AI features, not for status changes), Stripe integration for payments and webhooks, and an Eco-Admin interface for country-level pricing.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
