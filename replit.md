@@ -54,6 +54,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **Mark for Review**: Check-out inspection fields include a "Mark for Comparison Report" checkbox, appearing when photos are present, for flagging items for AI comparison reports.
 - **Manual Comparison Report Generation**: Users can manually generate AI-powered comparison reports by selecting check-in and check-out inspections.
 - **Consolidated Maintenance Interface**: Unified Maintenance page with tabbed interface for "Requests" and "Work Orders".
+- **Inline Maintenance Request Creation**: Inspection report page features inline dialog for creating maintenance requests directly from inspection fields without navigation, with automatic linking to inspectionId and inspectionEntryId, pre-populated contextual titles, and display of linked maintenance requests below each field with status/priority badges.
 - **Comprehensive Subscription System**: Credit-based subscription service with multi-currency support, including plans, credit consumption logic, Stripe integration for payments and webhooks, and an Eco-Admin interface for country-level pricing.
 
 ## External Dependencies
