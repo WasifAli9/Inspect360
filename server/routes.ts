@@ -1471,49 +1471,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Inspection not found" });
       }
       
-      // Consume credits if marking as completed
-      if (status === "completed" && inspection.status !== "completed") {
-        try {
-          // Get organizationId
-          let organizationId: string | undefined;
-          if (inspection.propertyId) {
-            const property = await storage.getProperty(inspection.propertyId);
-            organizationId = property?.organizationId;
-          } else if (inspection.blockId) {
-            const block = await storage.getBlock(inspection.blockId);
-            organizationId = block?.organizationId;
-          }
-
-          if (organizationId) {
-            // Calculate credit cost
-            const creditCost = subscriptionService.calculateInspectionCreditCost(
-              inspection.type,
-              1 // Default complexity
-            );
-
-            // Consume credits
-            await subscriptionService.consumeCredits(
-              organizationId,
-              creditCost,
-              "inspection",
-              inspection.id,
-              `Completed ${inspection.type} inspection`
-            );
-
-            console.log(`[Credit Consumption] Consumed ${creditCost} credit(s) for inspection ${inspection.id}`);
-          }
-        } catch (creditError: any) {
-          // Insufficient credits - return 402
-          if (creditError.message.includes("Insufficient credits")) {
-            return res.status(402).json({ 
-              message: "Insufficient credits to complete inspection",
-              neededCredits: subscriptionService.calculateInspectionCreditCost(inspection.type, 1),
-              error: creditError.message
-            });
-          }
-          console.error("[Credit Consumption] Error consuming credits:", creditError);
-        }
-      }
+      // NOTE: Credit consumption removed from manual status changes
+      // Credits are only consumed during actual inspection submission workflow
+      // This allows flexible status management without credit restrictions
 
       // Update status
       const updatedInspection = await storage.updateInspectionStatus(
