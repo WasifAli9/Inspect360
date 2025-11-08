@@ -2073,6 +2073,239 @@ Be thorough, specific, and objective. This will be used in a professional proper
     }
   });
 
+  // Auto-create comparison report for a property (finds last check-in and check-out)
+  app.post("/api/comparison-reports/auto", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
+    try {
+      const { propertyId } = req.body;
+      
+      if (!propertyId) {
+        return res.status(400).json({ message: "Property ID is required" });
+      }
+
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Verify property ownership
+      const property = await storage.getProperty(propertyId);
+      if (!property || property.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Not authorized to access this property" });
+      }
+
+      // Check if a comparison report already exists for this property
+      const existingReports = await storage.getComparisonReportsByProperty(propertyId);
+      if (existingReports && existingReports.length > 0) {
+        // Return the most recent report
+        const latestReport = existingReports.sort((a: any, b: any) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )[0];
+        return res.json({ report: latestReport, created: false });
+      }
+
+      // Get all inspections for this property
+      const allInspections = await storage.getInspectionsByOrganization(user.organizationId);
+      const propertyInspections = allInspections.filter((i: any) => i.propertyId === propertyId);
+
+      // Find the most recent completed check-in and check-out inspections
+      const checkInInspections = propertyInspections
+        .filter((i: any) => i.type === "check_in" && i.status === "completed")
+        .sort((a: any, b: any) => new Date(b.completedDate || b.scheduledDate).getTime() - new Date(a.completedDate || a.scheduledDate).getTime());
+
+      const checkOutInspections = propertyInspections
+        .filter((i: any) => i.type === "check_out" && i.status === "completed")
+        .sort((a: any, b: any) => new Date(b.completedDate || b.scheduledDate).getTime() - new Date(a.completedDate || a.scheduledDate).getTime());
+
+      if (checkInInspections.length === 0) {
+        return res.status(400).json({ message: "No completed check-in inspection found for this property" });
+      }
+
+      if (checkOutInspections.length === 0) {
+        return res.status(400).json({ message: "No completed check-out inspection found for this property" });
+      }
+
+      const lastCheckIn = checkInInspections[0];
+      const lastCheckOut = checkOutInspections[0];
+
+      // Get tenant assigned to property
+      const tenantAssignments = await storage.getTenantAssignmentsByProperty(propertyId, user.organizationId);
+      const activeTenant = tenantAssignments.find(ta => ta.isActive);
+      if (!activeTenant) {
+        return res.status(400).json({ message: "No active tenant found for this property" });
+      }
+
+      // Check credits (2 credits for comparison report generation)
+      const organization = await storage.getOrganization(user.organizationId);
+      if (!organization || (organization.creditsRemaining ?? 0) < 2) {
+        return res.status(402).json({ message: "Insufficient credits (2 required for comparison report)" });
+      }
+
+      // Get inspection entries marked for review from check-out inspection
+      const checkOutEntries = await storage.getInspectionEntries(lastCheckOut.id);
+      const markedEntries = checkOutEntries.filter(entry => entry.markedForReview);
+
+      if (markedEntries.length === 0) {
+        return res.status(400).json({ message: "No inspection entries marked for review. Please mark items for review during check-out inspection." });
+      }
+
+      // Get all check-in entries for matching
+      const checkInEntries = await storage.getInspectionEntries(lastCheckIn.id);
+
+      // Create comparison report
+      const report = await storage.createComparisonReport({
+        organizationId: user.organizationId,
+        propertyId,
+        checkInInspectionId: lastCheckIn.id,
+        checkOutInspectionId: lastCheckOut.id,
+        tenantId: activeTenant.tenantId,
+        status: "draft",
+        totalEstimatedCost: "0",
+        aiAnalysisJson: { summary: "Processing...", items: [] },
+        generatedBy: user.id,
+      });
+
+      // Process marked entries asynchronously (same logic as the regular endpoint)
+      (async () => {
+        try {
+          let totalCost = 0;
+          const itemAnalyses: any[] = [];
+
+          for (const checkOutEntry of markedEntries) {
+            const checkInEntry = checkInEntries.find(
+              e => e.sectionRef === checkOutEntry.sectionRef && 
+                   e.fieldKey === checkOutEntry.fieldKey
+            );
+
+            let aiComparison: any = { summary: "No images to compare" };
+            let estimatedCost = 0;
+            let depreciation = 0;
+
+            if (checkOutEntry.photos && checkOutEntry.photos.length > 0) {
+              try {
+                const checkInPhotos = checkInEntry?.photos || [];
+                const checkOutPhotos = checkOutEntry.photos || [];
+
+                const imageContent: any[] = [];
+                
+                if (checkInPhotos.length > 0) {
+                  imageContent.push({
+                    type: "text",
+                    text: "CHECK-IN PHOTOS (baseline condition):"
+                  });
+                  checkInPhotos.slice(0, 2).forEach((url) => {
+                    imageContent.push({
+                      type: "image_url",
+                      image_url: { url, detail: "high" }
+                    });
+                  });
+                }
+
+                imageContent.push({
+                  type: "text",
+                  text: "CHECK-OUT PHOTOS (current condition):"
+                });
+                checkOutPhotos.slice(0, 2).forEach((url) => {
+                  imageContent.push({
+                    type: "image_url",
+                    image_url: { url, detail: "high" }
+                  });
+                });
+
+                const prompt = `Compare check-in vs check-out condition. Analyze damage, wear, cleanliness. Provide:
+1. Brief damage assessment (2-3 sentences)
+2. Estimated repair/cleaning cost in GBP (number only, or 0 if minimal)
+3. Recommended action (repair/clean/replace/acceptable)
+
+Format: 
+DAMAGE: [assessment]
+COST: [number]
+ACTION: [recommendation]`;
+
+                imageContent.unshift({
+                  type: "text",
+                  text: prompt
+                });
+
+                const visionResponse = await openai.chat.completions.create({
+                  model: "gpt-4o",
+                  messages: [{ role: "user", content: imageContent }],
+                  max_tokens: 500,
+                });
+
+                const analysis = visionResponse.choices[0]?.message?.content || "";
+                const costMatch = analysis.match(/COST:\s*£?(\d+)/i) || analysis.match(/COST:\s*(\d+)/i);
+                estimatedCost = costMatch ? parseInt(costMatch[1]) : 0;
+
+                aiComparison = {
+                  summary: analysis.replace(/\*\*/g, ''),
+                  checkInPhotos,
+                  checkOutPhotos,
+                  estimatedCost
+                };
+
+              } catch (visionError) {
+                console.error("Vision API error:", visionError);
+                aiComparison = { summary: "Error analyzing images", error: true };
+              }
+            }
+
+            const finalCost = Math.max(0, estimatedCost - depreciation);
+            totalCost += finalCost;
+
+            await storage.createComparisonReportItem({
+              comparisonReportId: report.id,
+              checkInEntryId: checkInEntry?.id || null,
+              checkOutEntryId: checkOutEntry.id,
+              sectionRef: checkOutEntry.sectionRef,
+              itemRef: checkOutEntry.itemRef || null,
+              fieldKey: checkOutEntry.fieldKey,
+              aiComparisonJson: aiComparison,
+              estimatedCost: estimatedCost.toString(),
+              depreciation: depreciation.toString(),
+              finalCost: finalCost.toString(),
+            });
+
+            itemAnalyses.push({
+              sectionRef: checkOutEntry.sectionRef,
+              fieldKey: checkOutEntry.fieldKey,
+              analysis: aiComparison.summary,
+              cost: finalCost
+            });
+          }
+
+          await storage.updateComparisonReport(report.id, {
+            totalEstimatedCost: totalCost.toString(),
+            aiAnalysisJson: {
+              summary: `Comparison complete. ${markedEntries.length} items analyzed. Total estimated cost: £${totalCost}`,
+              items: itemAnalyses
+            }
+          });
+
+          await storage.updateOrganizationCredits(
+            organization.id,
+            (organization.creditsRemaining ?? 0) - 2
+          );
+
+          await storage.createCreditTransaction({
+            organizationId: organization.id,
+            amount: -2,
+            type: "comparison",
+            description: `Comparison report generation for property`,
+            relatedId: report.id,
+          });
+
+        } catch (asyncError) {
+          console.error("Error in async comparison processing:", asyncError);
+        }
+      })();
+
+      res.json({ report, created: true });
+    } catch (error) {
+      console.error("Error auto-creating comparison report:", error);
+      res.status(500).json({ message: "Failed to auto-create comparison report" });
+    }
+  });
+
   // Generate comparison report from check-out inspection (comprehensive version with liability assessment)
   app.post("/api/comparison-reports", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
     try {
