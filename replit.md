@@ -53,6 +53,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **Auto-Template Selection**: Automatic template selection based on inspection type, ensuring correct template snapshots.
 - **Mark for Review**: Check-out inspection fields include a "Mark for Comparison Report" checkbox, appearing when photos are present, for flagging items for AI comparison reports.
 - **Manual Comparison Report Generation**: Users can manually generate AI-powered comparison reports by selecting check-in and check-out inspections.
+- **Auto-Create Comparison Reports**: "Add to Comparison" button on check-out inspection fields automatically creates a comparison report using the most recent completed check-in and check-out inspections for the property if no report exists, or navigates to the existing report.
 - **Consolidated Maintenance Interface**: Unified Maintenance page with tabbed interface for "Requests" and "Work Orders".
 - **Inline Maintenance Request Creation**: Inspection report page features inline dialog for creating maintenance requests directly from inspection fields without navigation, with automatic linking to inspectionId and inspectionEntryId, pre-populated contextual titles, and display of linked maintenance requests below each field with status/priority badges.
 - **Flexible Inspection Status Management**: Inspection report page includes an editable status dropdown allowing users to change inspection status (scheduled/in_progress/completed) at any time, without requiring 100% completion or other progress-based restrictions.
