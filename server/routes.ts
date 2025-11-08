@@ -11,6 +11,7 @@ import bcrypt from "bcryptjs";
 import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
+import { generateInspectionPDF } from "./pdfService";
 import {
   insertBlockSchema,
   insertContactSchema,
@@ -1247,6 +1248,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching inspection:", error);
       res.status(500).json({ message: "Failed to fetch inspection" });
+    }
+  });
+
+  // Generate PDF report for inspection
+  app.get("/api/inspections/:id/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "No organization found" });
+      }
+
+      // Get inspection
+      const inspection = await storage.getInspection(id);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      // Verify organization ownership
+      if (inspection.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Get inspection entries
+      const entries = await storage.getInspectionEntriesByInspection(id);
+
+      // Generate PDF
+      const pdfBuffer = await generateInspectionPDF(inspection, entries);
+
+      // Set headers for PDF download
+      const propertyName = inspection.property?.name || "inspection";
+      const filename = `${propertyName.replace(/[^a-zA-Z0-9]/g, "_")}_inspection_report.pdf`;
+      
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", pdfBuffer.length);
+      
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      res.status(500).json({ message: "Failed to generate PDF report" });
     }
   });
 
