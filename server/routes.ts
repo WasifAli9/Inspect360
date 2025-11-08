@@ -1294,8 +1294,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get inspection entries
       const entries = await storage.getInspectionEntries(id);
 
+      // Build base URL for converting relative image paths to absolute
+      const protocol = req.protocol;
+      const host = req.get('host');
+      const baseUrl = `${protocol}://${host}`;
+
       // Generate PDF
-      const pdfBuffer = await generateInspectionPDF(fullInspection as any, entries);
+      const pdfBuffer = await generateInspectionPDF(fullInspection as any, entries, baseUrl);
 
       // Set headers for PDF download
       const propertyName = property?.name || "inspection";

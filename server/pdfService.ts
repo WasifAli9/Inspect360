@@ -15,14 +15,21 @@ function escapeHtml(unsafe: string): string {
 }
 
 // Sanitize URL for use in HTML attributes (whitelist-based approach)
-function sanitizeUrl(url: string): string {
+function sanitizeUrl(url: string, baseUrl?: string): string {
   if (typeof url !== 'string' || !url.trim()) return '';
   
-  const trimmed = url.trim().toLowerCase();
+  const trimmed = url.trim();
+  const lower = trimmed.toLowerCase();
+  
+  // Handle relative URLs (convert to absolute using baseUrl)
+  if (trimmed.startsWith('/') && baseUrl) {
+    const absoluteUrl = `${baseUrl}${trimmed}`;
+    return escapeHtml(absoluteUrl);
+  }
   
   // Allow only safe protocols via whitelist
   const safeProtocols = ['https://', 'http://'];
-  const isSafeProtocol = safeProtocols.some(protocol => trimmed.startsWith(protocol));
+  const isSafeProtocol = safeProtocols.some(protocol => lower.startsWith(protocol));
   
   if (!isSafeProtocol) {
     // For data URLs, only allow safe image types (NO SVG - can contain XSS)
@@ -34,7 +41,7 @@ function sanitizeUrl(url: string): string {
       'data:image/webp',
     ];
     
-    const isSafeDataUrl = safeDataImages.some(prefix => trimmed.startsWith(prefix));
+    const isSafeDataUrl = safeDataImages.some(prefix => lower.startsWith(prefix));
     
     if (!isSafeDataUrl) {
       // Reject all other protocols/schemes (javascript:, data:image/svg+xml, vbscript:, etc.)
@@ -44,7 +51,20 @@ function sanitizeUrl(url: string): string {
   }
   
   // Return escaped URL (escape special chars for HTML attribute safety)
-  return escapeHtml(url);
+  return escapeHtml(trimmed);
+}
+
+// Format text while preserving line breaks but escaping dangerous HTML
+function formatText(text: string): string {
+  if (!text) return '';
+  
+  // First escape HTML to prevent XSS
+  const escaped = escapeHtml(text);
+  
+  // Convert line breaks to <br> tags for proper display
+  const withBreaks = escaped.replace(/\n/g, '<br>');
+  
+  return withBreaks;
 }
 
 interface TemplateField {
@@ -119,9 +139,10 @@ interface InspectionEntry {
 
 export async function generateInspectionPDF(
   inspection: Inspection,
-  entries: InspectionEntry[]
+  entries: InspectionEntry[],
+  baseUrl: string
 ): Promise<Buffer> {
-  const html = generateInspectionHTML(inspection, entries);
+  const html = generateInspectionHTML(inspection, entries, baseUrl);
 
   let browser;
   try {
@@ -195,7 +216,8 @@ function renderFieldValue(value: any, field: TemplateField): string {
 
 function generateInspectionHTML(
   inspection: Inspection,
-  entries: InspectionEntry[]
+  entries: InspectionEntry[],
+  baseUrl: string
 ): string {
   const templateStructure = inspection.templateSnapshotJson as { sections: TemplateSection[] } | null;
   const sections = templateStructure?.sections || [];
@@ -268,7 +290,7 @@ function generateInspectionHTML(
               <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
                 ${photos.map((photo) => `
                   <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-                    <img src="${sanitizeUrl(photo)}" alt="Inspection photo" style="width: 100%; height: 150px; object-fit: cover;" />
+                    <img src="${sanitizeUrl(photo, baseUrl)}" alt="Inspection photo" style="width: 100%; height: 150px; object-fit: cover;" />
                   </div>
                 `).join("")}
               </div>
@@ -278,7 +300,7 @@ function generateInspectionHTML(
           ${note ? `
             <div style="margin-top: 12px; background: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px; border-radius: 4px;">
               <div style="font-weight: 500; color: #92400e; margin-bottom: 4px; font-size: 13px;">Note:</div>
-              <div style="color: #78350f; font-size: 14px;">${escapeHtml(note)}</div>
+              <div style="color: #78350f; font-size: 14px; white-space: pre-wrap;">${formatText(note)}</div>
             </div>
           ` : ""}
         </div>
