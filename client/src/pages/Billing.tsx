@@ -254,6 +254,8 @@ export default function Billing() {
     duplicateOrganizations: Array<{ organizationId: string; organizationName: string; userRole: string; credits: number }>;
     allOrganizations: Array<{ organizationId: string; organizationName: string; userRole: string; credits: number }>;
     totalCredits: number;
+    totalConsumed: number;
+    totalExpired: number;
     hasDuplicates: boolean;
   }>({
     queryKey: ["/api/billing/aggregate-credits"],
@@ -479,14 +481,22 @@ export default function Billing() {
               <Zap className="h-5 w-5" />
               Credit Balance
             </CardTitle>
-            <CardDescription>Available inspection credits</CardDescription>
+            <CardDescription>
+              {aggregateCredits?.hasDuplicates 
+                ? "Total credits across all your accounts" 
+                : "Available inspection credits"}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
               <p className="text-4xl font-bold text-primary" data-testid="text-available-credits">
-                {balance?.available || 0}
+                {aggregateCredits?.hasDuplicates 
+                  ? aggregateCredits.totalCredits 
+                  : (balance?.available || 0)}
               </p>
-              <p className="text-sm text-muted-foreground">Credits available</p>
+              <p className="text-sm text-muted-foreground">
+                {aggregateCredits?.hasDuplicates ? "Total credits available" : "Credits available"}
+              </p>
             </div>
 
             <Separator />
@@ -494,11 +504,19 @@ export default function Billing() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Consumed</p>
-                <p className="text-lg font-semibold" data-testid="text-consumed-credits">{balance?.consumed || 0}</p>
+                <p className="text-lg font-semibold" data-testid="text-consumed-credits">
+                  {aggregateCredits?.hasDuplicates 
+                    ? aggregateCredits.totalConsumed 
+                    : (balance?.consumed || 0)}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Expired</p>
-                <p className="text-lg font-semibold" data-testid="text-expired-credits">{balance?.expired || 0}</p>
+                <p className="text-lg font-semibold" data-testid="text-expired-credits">
+                  {aggregateCredits?.hasDuplicates 
+                    ? aggregateCredits.totalExpired 
+                    : (balance?.expired || 0)}
+                </p>
               </div>
             </div>
 

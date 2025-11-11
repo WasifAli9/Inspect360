@@ -7179,12 +7179,16 @@ Be objective and specific. Focus on actionable repairs.`;
             organizationName: org.organizationName,
             userRole: org.userRole,
             credits: balance.total,
+            consumed: balance.consumed,
+            expired: balance.expired,
           };
         })
       );
 
-      // Calculate total
+      // Calculate aggregate totals
       const totalCredits = orgBalances.reduce((sum, org) => sum + org.credits, 0);
+      const totalConsumed = orgBalances.reduce((sum, org) => sum + org.consumed, 0);
+      const totalExpired = orgBalances.reduce((sum, org) => sum + org.expired, 0);
       
       // Find current org balance
       const currentOrgBalance = orgBalances.find(org => org.organizationId === user.organizationId);
@@ -7194,6 +7198,8 @@ Be objective and specific. Focus on actionable repairs.`;
         duplicateOrganizations: orgBalances.filter(org => org.organizationId !== user.organizationId),
         allOrganizations: orgBalances,
         totalCredits,
+        totalConsumed,
+        totalExpired,
         hasDuplicates: orgBalances.length > 1,
       });
     } catch (error: any) {
