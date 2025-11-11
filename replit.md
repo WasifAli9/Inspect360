@@ -23,7 +23,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 ### Technical Implementations
 - **Frontend**: React with TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, Shadcn UI for components, Tailwind CSS for styling, and Uppy for file uploads.
 - **Backend**: Express.js, PostgreSQL (Neon) with Drizzle ORM, and Passport.js for authentication.
-- **Authentication**: Custom username/password authentication with session management.
+- **Authentication**: Custom username/password authentication with session management. **Case-Insensitive Email**: All authentication endpoints (login, register, forgot-password, reset-password) normalize emails to lowercase with trimming. Storage layer uses case-insensitive SQL comparison (`LOWER(email)`) with deterministic ordering by creation date. Duplicate account detection via `/api/billing/aggregate-credits` endpoint shows total credits across all organizations for users with multiple accounts due to historical case-sensitive emails. Billing UI displays warning card with breakdown when duplicates detected.
 - **Object Storage**: Google Cloud Storage for media files.
 - **Database Schema**: Includes tables for users, organizations, properties, blocks, inspections, compliance documents, maintenance requests, asset inventory, contacts, tenant assignments, message templates, and a tagging system.
 - **Role-Based Access**: Granular control for various user roles.
