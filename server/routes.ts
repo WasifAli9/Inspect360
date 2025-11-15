@@ -73,6 +73,39 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
 // Using gpt-5 for vision analysis - the newest OpenAI model (released August 7, 2025), supports images and provides excellent results
+
+/**
+ * Normalizes content for OpenAI Responses API format.
+ * Converts legacy chat.completions format to responses.create format.
+ * @param content - Array of content items with type "text" or "image_url"
+ * @returns Array of normalized content items with type "input_text" or "input_image"
+ * @throws Error if content type is not supported
+ */
+function normalizeApiContent(content: any[]): any[] {
+  return content.map((item: any, index: number) => {
+    if (item.type === "text") {
+      return { type: "input_text", text: item.text };
+    } else if (item.type === "image_url") {
+      // Extract URL from object or use directly if already a string
+      const url = typeof item.image_url === 'string' ? item.image_url : item.image_url?.url;
+      if (!url) {
+        throw new Error(`[normalizeApiContent] Missing image URL at index ${index}`);
+      }
+      return { type: "input_image", image_url: url };
+    } else if (item.type === "input_text") {
+      // Already normalized - pass through
+      return item;
+    } else if (item.type === "input_image") {
+      // Already normalized - ensure URL is a string
+      if (typeof item.image_url !== 'string') {
+        throw new Error(`[normalizeApiContent] image_url must be a string at index ${index}, got ${typeof item.image_url}`);
+      }
+      return item;
+    } else {
+      throw new Error(`[normalizeApiContent] Unsupported content type at index ${index}: ${item.type}`);
+    }
+  });
+}
 let openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
   if (!openai) {
@@ -1820,30 +1853,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("[Inspection Item Analysis] Converted to base64 data URL:", photoPath, `(${mimeType})`);
       }
 
-      // Call OpenAI Vision API
-      const response = await getOpenAI().chat.completions.create({
+      // Call OpenAI Vision API using Responses API
+      const response = await getOpenAI().responses.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        messages: [
+        input: [
           {
             role: "user",
-            content: [
+            content: normalizeApiContent([
               {
                 type: "text",
                 text: `Analyze this ${item.category} - ${item.itemName} photo from a property inspection. Provide a detailed condition assessment including any damage, wear, cleanliness issues, or notable features. Be specific and objective.`
               },
               {
                 type: "image_url",
-                image_url: {
-                  url: photoUrl
-                }
+                image_url: photoUrl
               }
-            ]
+            ])
           }
         ],
-        max_completion_tokens: 300,
+        max_output_tokens: 300,
       });
 
-      let analysis = response.choices[0]?.message?.content || "Unable to analyze image";
+      let analysis = response.output_text || response.output?.[0]?.content?.[0]?.text || "Unable to analyze image";
       
       // Strip markdown asterisks from the response
       analysis = analysis.replace(/\*\*/g, '');
@@ -1994,19 +2025,19 @@ Be thorough, specific, and objective. This will be used in a professional proper
 
       console.log("[InspectAI] Sending to OpenAI - Photo URLs:", photoUrls);
 
-      // Call OpenAI Vision API
-      const response = await getOpenAI().chat.completions.create({
+      // Call OpenAI Vision API using Responses API
+      const response = await getOpenAI().responses.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        messages: [
+        input: [
           {
             role: "user",
-            content: content
+            content: normalizeApiContent(content)
           }
         ],
-        max_completion_tokens: 500,
+        max_output_tokens: 500,
       });
 
-      let analysis = response.choices[0]?.message?.content || "Unable to analyze images";
+      let analysis = response.output_text || response.output?.[0]?.content?.[0]?.text || "Unable to analyze images";
       
       // Strip markdown asterisks from the response
       analysis = analysis.replace(/\*\*/g, '');
@@ -2195,13 +2226,13 @@ ACTION: [recommendation]`;
                   throw new Error("OpenAI client not initialized");
                 }
 
-                const visionResponse = await openai.chat.completions.create({
+                const visionResponse = await openai.responses.create({
                   model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-                  messages: [{ role: "user", content: imageContent }],
-                  max_completion_tokens: 500,
+                  input: [{ role: "user", content: normalizeApiContent(imageContent) }],
+                  max_output_tokens: 500,
                 });
 
-                const analysis = visionResponse.choices[0]?.message?.content || "";
+                const analysis = visionResponse.output_text || visionResponse.output?.[0]?.content?.[0]?.text || "";
                 const costMatch = analysis.match(/COST:\s*£?(\d+)/i) || analysis.match(/COST:\s*(\d+)/i);
                 estimatedCost = costMatch ? parseInt(costMatch[1]) : 0;
 
@@ -2413,21 +2444,21 @@ Provide a detailed analysis in JSON format:
 
 Be objective and specific. Focus on actionable repairs.`;
 
-                const response = await getOpenAI().chat.completions.create({
+                const response = await getOpenAI().responses.create({
                   model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-                  messages: [
+                  input: [
                     {
                       role: "user",
-                      content: [
+                      content: normalizeApiContent([
                         { type: "text", text: prompt },
                         ...imageContent
-                      ]
+                      ])
                     }
                   ],
-                  max_completion_tokens: 600,
+                  max_output_tokens: 600,
                 });
 
-                let aiResponse = response.choices[0]?.message?.content || "{}";
+                let aiResponse = response.output_text || response.output?.[0]?.content?.[0]?.text || "{}";
                 
                 // Strip markdown asterisks from the response
                 aiResponse = aiResponse.replace(/\*\*/g, '');
@@ -2908,21 +2939,21 @@ Be objective and specific. Focus on actionable repairs.`;
            3. Whether this requires professional help
            Format your response in clear sections.`;
 
-      const response = await openaiInstance.chat.completions.create({
+      const response = await openaiInstance.responses.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        messages: [
+        input: [
           {
             role: "user",
-            content: [
+            content: normalizeApiContent([
               { type: "text", text: prompt },
-              { type: "image_url", image_url: { url: imageUrl } }
-            ]
+              { type: "image_url", image_url: imageUrl }
+            ])
           }
         ],
-        max_completion_tokens: 800,
+        max_output_tokens: 800,
       });
 
-      const suggestedFixes = response.choices[0]?.message?.content || "Unable to analyze the image at this time.";
+      const suggestedFixes = response.output_text || response.output?.[0]?.content?.[0]?.text || "Unable to analyze the image at this time.";
 
       // Deduct credit
       await storage.deductCredit(user.organizationId, 1, "AI maintenance image analysis");
@@ -5743,29 +5774,29 @@ Be objective and specific. Focus on actionable repairs.`;
         console.log("[Individual Photo Analysis] Converted to base64 data URL:", photoPath, `(${mimeType})`);
       }
 
-      // Call OpenAI Vision API
+      // Call OpenAI Vision API using Responses API
       const openaiClient = getOpenAI();
-      const response = await openaiClient.chat.completions.create({
+      const response = await openaiClient.responses.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        messages: [
+        input: [
           {
             role: "user",
-            content: [
+            content: normalizeApiContent([
               {
                 type: "text",
                 text: context || "Analyze this inspection photo. Identify the room/item, assess its condition, note any defects, damage, or issues that require attention. Provide a detailed assessment."
               },
               {
                 type: "image_url",
-                image_url: { url: dataUrl }
+                image_url: dataUrl
               }
-            ]
+            ])
           }
         ],
-        max_completion_tokens: 500
+        max_output_tokens: 500
       });
 
-      let analysisText = response.choices[0]?.message?.content || "";
+      let analysisText = response.output_text || response.output?.[0]?.content?.[0]?.text || "";
       
       // Strip markdown asterisks from the response
       analysisText = analysisText.replace(/\*\*/g, '');
