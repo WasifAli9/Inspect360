@@ -72,7 +72,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 });
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
-// Using gpt-4o for vision analysis - supports images and provides excellent results
+// Using gpt-5 for vision analysis - the newest OpenAI model (released August 7, 2025), supports images and provides excellent results
 let openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
   if (!openai) {
@@ -1802,7 +1802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Call OpenAI Vision API
       const response = await getOpenAI().chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
         messages: [
           {
             role: "user",
@@ -1820,7 +1820,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ]
           }
         ],
-        max_tokens: 300,
+        max_completion_tokens: 300,
       });
 
       let analysis = response.choices[0]?.message?.content || "Unable to analyze image";
@@ -1976,14 +1976,14 @@ Be thorough, specific, and objective. This will be used in a professional proper
 
       // Call OpenAI Vision API
       const response = await getOpenAI().chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
         messages: [
           {
             role: "user",
             content: content
           }
         ],
-        max_tokens: 500,
+        max_completion_tokens: 500,
       });
 
       let analysis = response.choices[0]?.message?.content || "Unable to analyze images";
@@ -2172,9 +2172,9 @@ ACTION: [recommendation]`;
                 }
 
                 const visionResponse = await openai.chat.completions.create({
-                  model: "gpt-4o",
+                  model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
                   messages: [{ role: "user", content: imageContent }],
-                  max_tokens: 500,
+                  max_completion_tokens: 500,
                 });
 
                 const analysis = visionResponse.choices[0]?.message?.content || "";
@@ -2386,7 +2386,7 @@ Provide a detailed analysis in JSON format:
 Be objective and specific. Focus on actionable repairs.`;
 
                 const response = await getOpenAI().chat.completions.create({
-                  model: "gpt-4o",
+                  model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
                   messages: [
                     {
                       role: "user",
@@ -2396,7 +2396,7 @@ Be objective and specific. Focus on actionable repairs.`;
                       ]
                     }
                   ],
-                  max_tokens: 600,
+                  max_completion_tokens: 600,
                 });
 
                 let aiResponse = response.choices[0]?.message?.content || "{}";
@@ -2881,7 +2881,7 @@ Be objective and specific. Focus on actionable repairs.`;
            Format your response in clear sections.`;
 
       const response = await openaiInstance.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
         messages: [
           {
             role: "user",
@@ -2891,7 +2891,7 @@ Be objective and specific. Focus on actionable repairs.`;
             ]
           }
         ],
-        max_tokens: 800,
+        max_completion_tokens: 800,
       });
 
       const suggestedFixes = response.choices[0]?.message?.content || "Unable to analyze the image at this time.";
@@ -2902,7 +2902,7 @@ Be objective and specific. Focus on actionable repairs.`;
       res.json({ 
         suggestedFixes,
         analysis: {
-          model: "gpt-4o",
+          model: "gpt-5",
           timestamp: new Date().toISOString()
         },
         creditsRemaining: currentCredits - 1
@@ -5718,7 +5718,7 @@ Be objective and specific. Focus on actionable repairs.`;
       // Call OpenAI Vision API
       const openaiClient = getOpenAI();
       const response = await openaiClient.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
         messages: [
           {
             role: "user",
@@ -5734,7 +5734,7 @@ Be objective and specific. Focus on actionable repairs.`;
             ]
           }
         ],
-        max_tokens: 500
+        max_completion_tokens: 500
       });
 
       let analysisText = response.choices[0]?.message?.content || "";
@@ -5750,7 +5750,7 @@ Be objective and specific. Focus on actionable repairs.`;
         inspectionId,
         inspectionEntryId,
         imageUrl,
-        analysisJson: { text: analysisText, model: "gpt-4o" },
+        analysisJson: { text: analysisText, model: "gpt-5" },
         createdBy: req.user.id
       });
       const analysis = await storage.createAiImageAnalysis(validatedData);
