@@ -583,7 +583,7 @@ export const comparisonReports = pgTable("comparison_reports", {
   propertyId: varchar("property_id").notNull(),
   checkInInspectionId: varchar("check_in_inspection_id").notNull(),
   checkOutInspectionId: varchar("check_out_inspection_id").notNull(),
-  tenantId: varchar("tenant_id").notNull(), // Tenant assigned to property
+  tenantId: varchar("tenant_id"), // Optional: Tenant assigned to property (null for vacant units during turnover)
   status: comparisonReportStatusEnum("status").notNull().default("draft"),
   totalEstimatedCost: numeric("total_estimated_cost", { precision: 10, scale: 2 }).default("0"),
   aiAnalysisJson: jsonb("ai_analysis_json"), // AI comparison results

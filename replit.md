@@ -28,7 +28,7 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **Database Schema**: Includes tables for users, organizations, properties, blocks, inspections, compliance documents, maintenance requests, asset inventory, contacts, tenant assignments, message templates, and a tagging system.
 - **Role-Based Access**: Granular control for various user roles.
 - **Credit System**: A system for AI features purchasable via Stripe, with initial free credits.
-- **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis (condition assessment) and comparison reports (check-in vs. check-out summaries).
+- **AI Features**: Integration with OpenAI GPT-5 Vision (latest model, upgraded from GPT-4o on Nov 15, 2025) for photo analysis (condition assessment) and comparison reports (check-in vs. check-out summaries). Uses Replit AI Integrations with environment variables AI_INTEGRATIONS_OPENAI_BASE_URL and AI_INTEGRATIONS_OPENAI_API_KEY.
 - **PWA**: Utilizes `manifest.json` and a service worker for offline capabilities and caching.
 - **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI. New organizations automatically receive default Check In and Check Out templates.
 - **PWA Install Prompt System**: Comprehensive install prompt handling for Android and iOS, with smart detection and persistence.
@@ -48,10 +48,10 @@ The platform utilizes a PWA-first approach built on a robust web architecture, e
 - **Object Storage ACL**: Asset inventory and inspection photos use public visibility for organization-wide viewing.
 - **Tenant Broadcast Messaging**: Block-level tenant communication system with reusable email templates.
 - **Inline Tenant Creation**: Property-level tenant assignment workflow with integrated user creation, lease details, and automatic role assignment.
-- **Collaborative Comparison Reports**: End-to-end check-out inspection comparison system with AI-powered analysis, asset-based depreciation, async discussion, and electronic signatures.
+- **Collaborative Comparison Reports**: End-to-end check-out inspection comparison system with AI-powered analysis, asset-based depreciation, async discussion, and electronic signatures. **Vacant Unit Support**: comparison_reports.tenantId is nullable to support BTR vacant unit workflows between tenancies. Modal includes cache invalidation on open to ensure fresh inspection data.
 - **Fixflo Integration**: Complete two-way integration with Fixflo maintenance management system including backend API client, webhooks, and frontend configuration.
 - **UI Z-Index Layering Fix**: Implemented proper z-index hierarchy for modals and dropdowns.
-- **Auto-Template Selection**: Automatic template selection based on inspection type, ensuring correct template snapshots.
+- **Auto-Template Selection**: Automatic template selection based on inspection type (check_in → "Check In" template, check_out → "Check Out" template) when templateId not provided during inspection creation, ensuring correct template snapshots without manual selection.
 - **Mark for Review**: Check-out inspection fields include a "Mark for Comparison Report" checkbox, appearing when photos are present, for flagging items for AI comparison reports.
 - **Manual Comparison Report Generation**: Users can manually generate AI-powered comparison reports by selecting check-in and check-out inspections.
 - **Auto-Create Comparison Reports**: "Add to Comparison" button on check-out inspection fields automatically creates a comparison report using the most recent completed check-in and check-out inspections for the property if no report exists, or navigates to the existing report.

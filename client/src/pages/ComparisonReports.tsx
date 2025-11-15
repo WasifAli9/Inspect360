@@ -52,6 +52,13 @@ export default function ComparisonReports() {
   const [selectedCheckInId, setSelectedCheckInId] = useState("");
   const [selectedCheckOutId, setSelectedCheckOutId] = useState("");
 
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (open) {
+      queryClient.invalidateQueries({ queryKey: ["/api/inspections/my"] });
+    }
+  };
+
   const { data: reports = [], isLoading } = useQuery<ComparisonReport[]>({
     queryKey: ["/api/comparison-reports"],
   });
@@ -120,7 +127,7 @@ export default function ComparisonReports() {
             AI-powered check-in vs check-out analysis with cost estimation and signatures
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
             <Button data-testid="button-generate-report">
               <Plus className="w-4 h-4 mr-2" />

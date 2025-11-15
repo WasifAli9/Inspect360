@@ -1164,19 +1164,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Handle template snapshot creation
       let templateSnapshotJson = null;
       let templateVersion = null;
+      let finalTemplateId = templateId;
       
-      if (templateId) {
-        const template = await storage.getInspectionTemplate(templateId);
+      if (!finalTemplateId) {
+        const orgTemplates = await storage.getInspectionTemplatesByOrganization(currentUser.organizationId);
+        
+        if (type === 'check_in') {
+          const checkInTemplate = orgTemplates.find(t => 
+            t.name.toLowerCase().includes('check in') && t.isActive
+          );
+          if (checkInTemplate) {
+            finalTemplateId = checkInTemplate.id;
+            console.log(`Auto-selected Check In template: ${checkInTemplate.id}`);
+          }
+        } else if (type === 'check_out') {
+          const checkOutTemplate = orgTemplates.find(t => 
+            t.name.toLowerCase().includes('check out') && t.isActive
+          );
+          if (checkOutTemplate) {
+            finalTemplateId = checkOutTemplate.id;
+            console.log(`Auto-selected Check Out template: ${checkOutTemplate.id}`);
+          }
+        }
+      }
+      
+      if (finalTemplateId) {
+        const template = await storage.getInspectionTemplate(finalTemplateId);
         if (!template) {
           return res.status(404).json({ message: "Template not found" });
         }
         
-        // Verify template belongs to same organization
         if (template.organizationId !== currentUser.organizationId) {
           return res.status(403).json({ message: "Template does not belong to your organization" });
         }
         
-        // Verify template scope matches the inspection target
         const isPropertyInspection = !!propertyId;
         const isBlockInspection = !!blockId;
         
@@ -1187,7 +1208,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "Cannot use property-scoped template for block inspection" });
         }
         
-        // Create template snapshot
         templateSnapshotJson = template.structureJson;
         templateVersion = template.version;
       }
@@ -1200,7 +1220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type,
         scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(),
         notes,
-        templateId: templateId || null,
+        templateId: finalTemplateId || null,
         templateVersion,
         templateSnapshotJson: templateSnapshotJson as any,
       });
@@ -2068,12 +2088,9 @@ Be thorough, specific, and objective. This will be used in a professional proper
       const lastCheckIn = checkInInspections[0];
       const lastCheckOut = checkOutInspections[0];
 
-      // Get tenant assigned to property
+      // Get tenant assigned to property (optional - may be null for vacant units)
       const tenantAssignments = await storage.getTenantAssignmentsByProperty(propertyId, user.organizationId);
       const activeTenant = tenantAssignments.find(ta => ta.isActive);
-      if (!activeTenant) {
-        return res.status(400).json({ message: "No active tenant found for this property" });
-      }
 
       // Check credits (2 credits for comparison report generation)
       const organization = await storage.getOrganization(user.organizationId);
@@ -2092,13 +2109,20 @@ Be thorough, specific, and objective. This will be used in a professional proper
       // Get all check-in entries for matching
       const checkInEntries = await storage.getInspectionEntries(lastCheckIn.id);
 
-      // Create comparison report
+      console.log(`[Auto-Create Comparison] Creating report for property ${propertyId}`, {
+        checkInId: lastCheckIn.id,
+        checkOutId: lastCheckOut.id,
+        hasTenant: !!activeTenant,
+        tenantId: activeTenant?.tenantId || null
+      });
+
+      // Create comparison report (tenant may be null for vacant units)
       const report = await storage.createComparisonReport({
         organizationId: user.organizationId,
         propertyId,
         checkInInspectionId: lastCheckIn.id,
         checkOutInspectionId: lastCheckOut.id,
-        tenantId: activeTenant.tenantId,
+        tenantId: activeTenant?.tenantId || null,
         status: "draft",
         totalEstimatedCost: "0",
         aiAnalysisJson: { summary: "Processing...", items: [] },
@@ -2277,12 +2301,9 @@ ACTION: [recommendation]`;
         return res.status(403).json({ message: "Not authorized to access this property" });
       }
 
-      // Get tenant assigned to property
+      // Get tenant assigned to property (optional - may be null for vacant units)
       const tenantAssignments = await storage.getTenantAssignmentsByProperty(propertyId, user.organizationId);
       const activeTenant = tenantAssignments.find(ta => ta.isActive);
-      if (!activeTenant) {
-        return res.status(400).json({ message: "No active tenant found for this property" });
-      }
 
       // Check credits (2 credits for comparison report generation)
       const organization = await storage.getOrganization(user.organizationId);
@@ -2301,13 +2322,20 @@ ACTION: [recommendation]`;
       // Get all check-in entries for matching
       const checkInEntries = await storage.getInspectionEntries(checkInInspectionId);
 
-      // Create comparison report
+      console.log(`[Manual Create Comparison] Creating report for property ${propertyId}`, {
+        checkInInspectionId,
+        checkOutInspectionId,
+        hasTenant: !!activeTenant,
+        tenantId: activeTenant?.tenantId || null
+      });
+
+      // Create comparison report (tenant may be null for vacant units)
       const report = await storage.createComparisonReport({
         organizationId: user.organizationId,
         propertyId,
         checkInInspectionId,
         checkOutInspectionId,
-        tenantId: activeTenant.tenantId,
+        tenantId: activeTenant?.tenantId || null,
         status: "draft",
         totalEstimatedCost: "0",
         aiAnalysisJson: { summary: "Processing...", items: [] },
