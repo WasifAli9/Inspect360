@@ -8340,6 +8340,302 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
+  // ==================== TENANT PORTAL ROUTES ====================
+
+  // Tenant login (separate from main auth)
+  app.post("/api/tenant/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      
+      if (!user || user.role !== "tenant") {
+        return res.status(401).json({ message: "Invalid credentials or not a tenant account" });
+      }
+
+      const isValid = await verifyPassword(password, user.password);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      if (user.isDeactivated) {
+        return res.status(403).json({ message: "Account is deactivated. Please contact property management." });
+      }
+
+      req.login(user, (err) => {
+        if (err) {
+          console.error("Login error:", err);
+          return res.status(500).json({ message: "Login failed" });
+        }
+        const { password: _, ...userWithoutPassword } = user;
+        res.json({ user: userWithoutPassword });
+      });
+    } catch (error) {
+      console.error("Tenant login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  // Get tenant's tenancy information
+  app.get("/api/tenant/tenancy", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const tenancy = await storage.getTenancyByTenantId(userId);
+      if (!tenancy) {
+        return res.json(null);
+      }
+
+      const property = await storage.getProperty(tenancy.propertyId);
+      let block = null;
+      if (property?.blockId) {
+        block = await storage.getBlock(property.blockId);
+      }
+
+      res.json({ tenancy, property, block });
+    } catch (error) {
+      console.error("Error fetching tenant tenancy:", error);
+      res.status(500).json({ message: "Failed to fetch tenancy" });
+    }
+  });
+
+  // Get tenant's maintenance chat conversations
+  app.get("/api/tenant/maintenance-chats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const chats = await storage.getTenantMaintenanceChats(userId);
+      res.json(chats);
+    } catch (error) {
+      console.error("Error fetching maintenance chats:", error);
+      res.status(500).json({ message: "Failed to fetch chats" });
+    }
+  });
+
+  // Get specific maintenance chat with messages
+  app.get("/api/tenant/maintenance-chats/:chatId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { chatId } = req.params;
+      const chat = await storage.getMaintenanceChatById(chatId);
+
+      if (!chat || chat.tenantId !== userId) {
+        return res.status(404).json({ message: "Chat not found" });
+      }
+
+      const messages = await storage.getTenantMaintenanceChatMessages(chatId);
+      res.json({ ...chat, messages });
+    } catch (error) {
+      console.error("Error fetching chat:", error);
+      res.status(500).json({ message: "Failed to fetch chat" });
+    }
+  });
+
+  // Send message in maintenance chat with AI response
+  app.post("/api/tenant/maintenance-chat/message", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { chatId, message, imageUrl } = req.body;
+
+      if (!message && !imageUrl) {
+        return res.status(400).json({ message: "Message or image required" });
+      }
+
+      let chat;
+      if (chatId) {
+        chat = await storage.getMaintenanceChatById(chatId);
+        if (!chat || chat.tenantId !== userId) {
+          return res.status(404).json({ message: "Chat not found" });
+        }
+      } else {
+        const title = message.substring(0, 50) + (message.length > 50 ? "..." : "");
+        chat = await storage.createTenantMaintenanceChat({
+          tenantId: userId,
+          title,
+          status: "active",
+        });
+      }
+
+      const userMessage = await storage.createTenantMaintenanceChatMessage({
+        chatId: chat.id,
+        role: "user",
+        content: message || "See image",
+        imageUrl,
+      });
+
+      let aiResponse = "";
+      let aiSuggestedFixes = "";
+
+      try {
+        const openaiClient = getOpenAI();
+        
+        if (imageUrl) {
+          const analysisCompletion = await openaiClient.chat.completions.create({
+            model: "gpt-5",
+            messages: [
+              {
+                role: "system",
+                content: "You are a helpful AI maintenance assistant. Analyze the issue described and/or shown in the image, then provide practical troubleshooting steps and potential fixes that a tenant could try themselves. Be specific and helpful."
+              },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: message || "Please analyze this maintenance issue" },
+                  { type: "image_url", image_url: { url: imageUrl } },
+                ],
+              },
+            ],
+            max_completion_tokens: 500,
+          });
+
+          aiResponse = analysisCompletion.choices[0]?.message?.content || "I analyzed the image but couldn't generate suggestions.";
+          aiSuggestedFixes = aiResponse;
+        } else {
+          const completion = await openaiClient.chat.completions.create({
+            model: "gpt-5",
+            messages: [
+              {
+                role: "system",
+                content: "You are a helpful AI maintenance assistant. Provide practical troubleshooting steps and potential fixes based on the issue described. Be specific and helpful."
+              },
+              { role: "user", content: message },
+            ],
+            max_completion_tokens: 500,
+          });
+
+          aiResponse = completion.choices[0]?.message?.content || "I couldn't generate suggestions for this issue.";
+          aiSuggestedFixes = aiResponse;
+        }
+      } catch (error) {
+        console.error("AI analysis error:", error);
+        aiResponse = "I'm having trouble analyzing this right now. You may want to create a maintenance request directly.";
+      }
+
+      const assistantMessage = await storage.createTenantMaintenanceChatMessage({
+        chatId: chat.id,
+        role: "assistant",
+        content: aiResponse,
+        aiSuggestedFixes,
+      });
+
+      res.json({ chatId: chat.id, userMessage, assistantMessage });
+    } catch (error) {
+      console.error("Error sending maintenance chat message:", error);
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  // Create maintenance request from chat
+  app.post("/api/tenant/maintenance-chat/create-request", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant" || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { chatId } = req.body;
+      const chat = await storage.getMaintenanceChatById(chatId);
+
+      if (!chat || chat.tenantId !== userId) {
+        return res.status(404).json({ message: "Chat not found" });
+      }
+
+      if (chat.maintenanceRequestId) {
+        return res.status(400).json({ message: "Maintenance request already created for this chat" });
+      }
+
+      const messages = await storage.getTenantMaintenanceChatMessages(chatId);
+      const tenancy = await storage.getTenancyByTenantId(userId);
+
+      if (!tenancy) {
+        return res.status(400).json({ message: "No tenancy found" });
+      }
+
+      let description = "";
+      let photoUrls: string[] = [];
+      let aiSuggestedFixes = "";
+
+      for (const msg of messages) {
+        if (msg.role === "user") {
+          description += msg.content + "\n\n";
+          if (msg.imageUrl) {
+            photoUrls.push(msg.imageUrl);
+          }
+        } else if (msg.role === "assistant" && msg.aiSuggestedFixes) {
+          aiSuggestedFixes = msg.aiSuggestedFixes;
+        }
+      }
+
+      const maintenanceRequest = await storage.createMaintenanceRequest({
+        title: chat.title,
+        description: description.trim(),
+        priority: "medium",
+        status: "open",
+        propertyId: tenancy.propertyId,
+        reporterId: userId,
+        organizationId: user.organizationId,
+        photoUrls,
+        aiSuggestedFixes,
+      });
+
+      await storage.updateTenantMaintenanceChat(chatId, {
+        maintenanceRequestId: maintenanceRequest.id,
+        status: "resolved",
+      });
+
+      res.json(maintenanceRequest);
+    } catch (error) {
+      console.error("Error creating maintenance request from chat:", error);
+      res.status(500).json({ message: "Failed to create maintenance request" });
+    }
+  });
+
+  // Get tenant's maintenance requests
+  app.get("/api/tenant/maintenance-requests", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const requests = await storage.getMaintenanceRequestsByReporter(userId);
+      res.json(requests);
+    } catch (error) {
+      console.error("Error fetching tenant maintenance requests:", error);
+      res.status(500).json({ message: "Failed to fetch requests" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

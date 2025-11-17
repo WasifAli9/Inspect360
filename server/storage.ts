@@ -143,6 +143,12 @@ import {
   chatMessages,
   type ChatMessage,
   type InsertChatMessage,
+  tenantMaintenanceChats,
+  type TenantMaintenanceChat,
+  type InsertTenantMaintenanceChat,
+  tenantMaintenanceChatMessages,
+  type TenantMaintenanceChatMessage,
+  type InsertTenantMaintenanceChatMessage,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne, isNull, or } from "drizzle-orm";
@@ -493,6 +499,16 @@ export interface IStorage {
   updateChatConversation(id: string, updates: Partial<InsertChatConversation>): Promise<ChatConversation>;
   createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
   getChatMessages(conversationId: string): Promise<ChatMessage[]>;
+
+  // Tenant operations
+  getTenancyByTenantId(tenantId: string): Promise<any>;
+  getTenantMaintenanceChats(tenantId: string): Promise<any[]>;
+  getMaintenanceChatById(chatId: string): Promise<any>;
+  getTenantMaintenanceChatMessages(chatId: string): Promise<any[]>;
+  createTenantMaintenanceChat(chat: any): Promise<any>;
+  createTenantMaintenanceChatMessage(message: any): Promise<any>;
+  updateTenantMaintenanceChat(chatId: string, updates: any): Promise<any>;
+  getMaintenanceRequestsByReporter(reporterId: string): Promise<MaintenanceRequest[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3218,6 +3234,73 @@ export class DatabaseStorage implements IStorage {
       .from(chatMessages)
       .where(eq(chatMessages.conversationId, conversationId))
       .orderBy(chatMessages.createdAt);
+  }
+
+  // Tenant operations
+  async getTenancyByTenantId(tenantId: string): Promise<any> {
+    const [tenancy] = await db
+      .select()
+      .from(tenantAssignments)
+      .where(eq(tenantAssignments.tenantId, tenantId))
+      .orderBy(desc(tenantAssignments.createdAt));
+    return tenancy;
+  }
+
+  async getTenantMaintenanceChats(tenantId: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(tenantMaintenanceChats)
+      .where(eq(tenantMaintenanceChats.tenantId, tenantId))
+      .orderBy(desc(tenantMaintenanceChats.createdAt));
+  }
+
+  async getMaintenanceChatById(chatId: string): Promise<any> {
+    const [chat] = await db
+      .select()
+      .from(tenantMaintenanceChats)
+      .where(eq(tenantMaintenanceChats.id, chatId));
+    return chat;
+  }
+
+  async getTenantMaintenanceChatMessages(chatId: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(tenantMaintenanceChatMessages)
+      .where(eq(tenantMaintenanceChatMessages.chatId, chatId))
+      .orderBy(tenantMaintenanceChatMessages.createdAt);
+  }
+
+  async createTenantMaintenanceChat(chatData: any): Promise<any> {
+    const [chat] = await db
+      .insert(tenantMaintenanceChats)
+      .values(chatData)
+      .returning();
+    return chat;
+  }
+
+  async createTenantMaintenanceChatMessage(messageData: any): Promise<any> {
+    const [message] = await db
+      .insert(tenantMaintenanceChatMessages)
+      .values(messageData)
+      .returning();
+    return message;
+  }
+
+  async updateTenantMaintenanceChat(chatId: string, updates: any): Promise<any> {
+    const [chat] = await db
+      .update(tenantMaintenanceChats)
+      .set(updates)
+      .where(eq(tenantMaintenanceChats.id, chatId))
+      .returning();
+    return chat;
+  }
+
+  async getMaintenanceRequestsByReporter(reporterId: string): Promise<MaintenanceRequest[]> {
+    return await db
+      .select()
+      .from(maintenanceRequests)
+      .where(eq(maintenanceRequests.reportedBy, reporterId))
+      .orderBy(desc(maintenanceRequests.createdAt));
   }
 }
 
