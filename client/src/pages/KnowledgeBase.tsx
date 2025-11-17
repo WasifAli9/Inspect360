@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,8 +30,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import Uppy from '@uppy/core';
 import { Dashboard as UppyDashboard } from '@uppy/react';
 import AwsS3 from '@uppy/aws-s3';
-import '@uppy/core/dist/style.min.css';
-import '@uppy/dashboard/dist/style.min.css';
 
 export default function KnowledgeBase() {
   const [, navigate] = useLocation();
@@ -60,18 +58,26 @@ export default function KnowledgeBase() {
     })
   );
 
-  uppy.on('upload-success', (file, response) => {
-    const fileUrl = response.body?.url;
-    if (fileUrl && file) {
-      setUploadData(prev => ({
-        ...prev,
-        fileUrl,
-        fileName: file.name,
-        fileType: file.type || '',
-        fileSizeBytes: file.size,
-      }));
-    }
-  });
+  useEffect(() => {
+    const handleUploadSuccess = (file: any, response: any) => {
+      const fileUrl = response.body?.url;
+      if (fileUrl && file) {
+        setUploadData(prev => ({
+          ...prev,
+          fileUrl,
+          fileName: file.name,
+          fileType: file.type || '',
+          fileSizeBytes: file.size,
+        }));
+      }
+    };
+
+    uppy.on('upload-success', handleUploadSuccess);
+
+    return () => {
+      uppy.off('upload-success', handleUploadSuccess);
+    };
+  }, [uppy]);
 
   const { data: adminUser } = useQuery({
     queryKey: ["/api/admin/me"],

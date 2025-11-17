@@ -27,7 +27,10 @@ export function AIChatbot() {
 
   const { data: conversations = [], isLoading: isLoadingConversations, error: conversationsError } = useQuery<any[]>({
     queryKey: ["/api/chat/conversations"],
-    queryFn: async () => apiRequest("GET", "/api/chat/conversations"),
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/chat/conversations");
+      return response.json();
+    },
     enabled: isOpen,
   });
 
@@ -35,7 +38,8 @@ export function AIChatbot() {
     queryKey: conversationId ? ["/api/chat/conversations", conversationId, "messages"] : ["no-conversation"],
     queryFn: async () => {
       if (!conversationId) return [];
-      return apiRequest("GET", `/api/chat/conversations/${conversationId}/messages`);
+      const response = await apiRequest("GET", `/api/chat/conversations/${conversationId}/messages`);
+      return response.json();
     },
     enabled: !!conversationId && isOpen,
     retry: false,
@@ -46,16 +50,18 @@ export function AIChatbot() {
       let convId = conversationId;
 
       if (!convId) {
-        const convResponse: any = await apiRequest("POST", "/api/chat/conversations", {
+        const convResponse = await apiRequest("POST", "/api/chat/conversations", {
           title: message.substring(0, 50),
         });
-        convId = convResponse.id;
+        const convData: any = await convResponse.json();
+        convId = convData.id;
         setConversationId(convId);
       }
 
-      await apiRequest("POST", `/api/chat/conversations/${convId}/messages`, {
+      const messageResponse = await apiRequest("POST", `/api/chat/conversations/${convId}/messages`, {
         content: message,
       });
+      await messageResponse.json();
 
       return convId;
     },
