@@ -134,6 +134,15 @@ import {
   countryPricingOverrides,
   type CountryPricingOverride,
   type InsertCountryPricingOverride,
+  knowledgeBaseDocuments,
+  type KnowledgeBaseDocument,
+  type InsertKnowledgeBaseDocument,
+  chatConversations,
+  type ChatConversation,
+  type InsertChatConversation,
+  chatMessages,
+  type ChatMessage,
+  type InsertChatMessage,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne, isNull, or } from "drizzle-orm";
@@ -468,6 +477,22 @@ export interface IStorage {
   getFixfloWebhookLogs(organizationId: string, limit?: number): Promise<FixfloWebhookLog[]>;
   createFixfloWebhookLog(log: InsertFixfloWebhookLog): Promise<FixfloWebhookLog>;
   updateFixfloWebhookLog(id: string, updates: Partial<FixfloWebhookLog>): Promise<void>;
+
+  // Knowledge Base operations (for AI chatbot)
+  createKnowledgeBaseDocument(doc: InsertKnowledgeBaseDocument): Promise<KnowledgeBaseDocument>;
+  getKnowledgeBaseDocuments(activeOnly?: boolean): Promise<KnowledgeBaseDocument[]>;
+  getKnowledgeBaseDocument(id: string): Promise<KnowledgeBaseDocument | undefined>;
+  updateKnowledgeBaseDocument(id: string, updates: Partial<InsertKnowledgeBaseDocument>): Promise<KnowledgeBaseDocument>;
+  deleteKnowledgeBaseDocument(id: string): Promise<void>;
+  searchKnowledgeBase(query: string): Promise<KnowledgeBaseDocument[]>;
+
+  // Chat operations (for AI chatbot)
+  createChatConversation(conversation: InsertChatConversation): Promise<ChatConversation>;
+  getChatConversationsByUser(userId: string): Promise<ChatConversation[]>;
+  getChatConversation(id: string): Promise<ChatConversation | undefined>;
+  updateChatConversation(id: string, updates: Partial<InsertChatConversation>): Promise<ChatConversation>;
+  createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
+  getChatMessages(conversationId: string): Promise<ChatMessage[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3068,6 +3093,131 @@ export class DatabaseStorage implements IStorage {
       .update(fixfloWebhookLogs)
       .set(updates)
       .where(eq(fixfloWebhookLogs.id, id));
+  }
+
+  // Knowledge Base operations
+  async createKnowledgeBaseDocument(docData: InsertKnowledgeBaseDocument): Promise<KnowledgeBaseDocument> {
+    const [doc] = await db
+      .insert(knowledgeBaseDocuments)
+      .values(docData)
+      .returning();
+    return doc;
+  }
+
+  async getKnowledgeBaseDocuments(activeOnly: boolean = true): Promise<KnowledgeBaseDocument[]> {
+    if (activeOnly) {
+      return await db
+        .select()
+        .from(knowledgeBaseDocuments)
+        .where(eq(knowledgeBaseDocuments.isActive, true))
+        .orderBy(desc(knowledgeBaseDocuments.createdAt));
+    }
+    return await db
+      .select()
+      .from(knowledgeBaseDocuments)
+      .orderBy(desc(knowledgeBaseDocuments.createdAt));
+  }
+
+  async getKnowledgeBaseDocument(id: string): Promise<KnowledgeBaseDocument | undefined> {
+    const [doc] = await db
+      .select()
+      .from(knowledgeBaseDocuments)
+      .where(eq(knowledgeBaseDocuments.id, id));
+    return doc;
+  }
+
+  async updateKnowledgeBaseDocument(id: string, updates: Partial<InsertKnowledgeBaseDocument>): Promise<KnowledgeBaseDocument> {
+    const [doc] = await db
+      .update(knowledgeBaseDocuments)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(knowledgeBaseDocuments.id, id))
+      .returning();
+    return doc;
+  }
+
+  async deleteKnowledgeBaseDocument(id: string): Promise<void> {
+    await db
+      .delete(knowledgeBaseDocuments)
+      .where(eq(knowledgeBaseDocuments.id, id));
+  }
+
+  async searchKnowledgeBase(query: string): Promise<KnowledgeBaseDocument[]> {
+    const searchTerm = `%${query.toLowerCase()}%`;
+    return await db
+      .select()
+      .from(knowledgeBaseDocuments)
+      .where(
+        and(
+          eq(knowledgeBaseDocuments.isActive, true),
+          or(
+            sql`LOWER(${knowledgeBaseDocuments.title}) LIKE ${searchTerm}`,
+            sql`LOWER(${knowledgeBaseDocuments.extractedText}) LIKE ${searchTerm}`,
+            sql`LOWER(${knowledgeBaseDocuments.category}) LIKE ${searchTerm}`
+          )
+        )
+      )
+      .orderBy(desc(knowledgeBaseDocuments.createdAt));
+  }
+
+  // Chat operations
+  async createChatConversation(conversationData: InsertChatConversation): Promise<ChatConversation> {
+    const [conversation] = await db
+      .insert(chatConversations)
+      .values(conversationData)
+      .returning();
+    return conversation;
+  }
+
+  async getChatConversationsByUser(userId: string): Promise<ChatConversation[]> {
+    return await db
+      .select()
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.userId, userId),
+          eq(chatConversations.isActive, true)
+        )
+      )
+      .orderBy(desc(chatConversations.updatedAt));
+  }
+
+  async getChatConversation(id: string): Promise<ChatConversation | undefined> {
+    const [conversation] = await db
+      .select()
+      .from(chatConversations)
+      .where(eq(chatConversations.id, id));
+    return conversation;
+  }
+
+  async updateChatConversation(id: string, updates: Partial<InsertChatConversation>): Promise<ChatConversation> {
+    const [conversation] = await db
+      .update(chatConversations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(chatConversations.id, id))
+      .returning();
+    return conversation;
+  }
+
+  async createChatMessage(messageData: InsertChatMessage): Promise<ChatMessage> {
+    const [message] = await db
+      .insert(chatMessages)
+      .values(messageData)
+      .returning();
+    
+    await db
+      .update(chatConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(chatConversations.id, messageData.conversationId));
+    
+    return message;
+  }
+
+  async getChatMessages(conversationId: string): Promise<ChatMessage[]> {
+    return await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.conversationId, conversationId))
+      .orderBy(chatMessages.createdAt);
   }
 }
 

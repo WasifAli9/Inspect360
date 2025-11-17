@@ -15,6 +15,7 @@ import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification, sendContractorWorkOrderNotification } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
 import { generateInspectionPDF } from "./pdfService";
+import { extractTextFromFile, findRelevantChunks } from "./documentProcessor";
 import {
   insertBlockSchema,
   insertContactSchema,
@@ -8009,6 +8010,231 @@ Be objective and specific. Focus on actionable repairs.`;
     } catch (error: any) {
       console.error("Error removing team category:", error);
       res.status(500).json({ message: "Failed to remove team category" });
+    }
+  });
+
+  // ==================== KNOWLEDGE BASE ROUTES (AI CHATBOT) ====================
+
+  // Upload knowledge base document (admin only)
+  app.post("/api/knowledge-base/documents", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const admin = (req.session as any).adminUser;
+      const { title, fileName, fileUrl, fileType, fileSizeBytes, category, description } = req.body;
+
+      if (!title || !fileName || !fileUrl || !fileType || !fileSizeBytes) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+
+      console.log(`[Knowledge Base] Extracting text from ${fileName} (${fileType})`);
+
+      const processed = await extractTextFromFile(fileUrl, fileType);
+
+      if (processed.error) {
+        console.error(`[Knowledge Base] Extraction error: ${processed.error}`);
+        return res.status(400).json({ message: processed.error });
+      }
+
+      const document = await storage.createKnowledgeBaseDocument({
+        title,
+        fileName,
+        fileUrl,
+        fileType,
+        fileSizeBytes,
+        extractedText: processed.extractedText,
+        category: category || null,
+        description: description || null,
+        uploadedBy: admin.id,
+      });
+
+      console.log(`[Knowledge Base] Document created: ${document.id} (${processed.extractedText.length} characters)`);
+      res.status(201).json(document);
+    } catch (error: any) {
+      console.error("[Knowledge Base] Error uploading document:", error);
+      res.status(500).json({ message: "Failed to upload document" });
+    }
+  });
+
+  // Get all knowledge base documents (admin only)
+  app.get("/api/knowledge-base/documents", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const activeOnly = req.query.activeOnly !== 'false';
+      const documents = await storage.getKnowledgeBaseDocuments(activeOnly);
+      res.json(documents);
+    } catch (error: any) {
+      console.error("[Knowledge Base] Error fetching documents:", error);
+      res.status(500).json({ message: "Failed to fetch documents" });
+    }
+  });
+
+  // Update knowledge base document (admin only)
+  app.patch("/api/knowledge-base/documents/:id", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+
+      const document = await storage.updateKnowledgeBaseDocument(id, updates);
+      res.json(document);
+    } catch (error: any) {
+      console.error("[Knowledge Base] Error updating document:", error);
+      res.status(500).json({ message: "Failed to update document" });
+    }
+  });
+
+  // Delete knowledge base document (admin only)
+  app.delete("/api/knowledge-base/documents/:id", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteKnowledgeBaseDocument(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Knowledge Base] Error deleting document:", error);
+      res.status(500).json({ message: "Failed to delete document" });
+    }
+  });
+
+  // ==================== CHATBOT ROUTES ====================
+
+  // Get user's chat conversations
+  app.get("/api/chat/conversations", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const conversations = await storage.getChatConversationsByUser(userId);
+      res.json(conversations);
+    } catch (error: any) {
+      console.error("[Chatbot] Error fetching conversations:", error);
+      res.status(500).json({ message: "Failed to fetch conversations" });
+    }
+  });
+
+  // Create new chat conversation
+  app.post("/api/chat/conversations", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { title } = req.body;
+
+      const conversation = await storage.createChatConversation({
+        organizationId: user.organizationId,
+        userId: user.id,
+        title: title || "New Chat",
+      });
+
+      res.status(201).json(conversation);
+    } catch (error: any) {
+      console.error("[Chatbot] Error creating conversation:", error);
+      res.status(500).json({ message: "Failed to create conversation" });
+    }
+  });
+
+  // Get conversation messages
+  app.get("/api/chat/conversations/:id/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(req.user.id);
+
+      const conversation = await storage.getChatConversation(id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+
+      if (conversation.userId !== user?.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const messages = await storage.getChatMessages(id);
+      res.json(messages);
+    } catch (error: any) {
+      console.error("[Chatbot] Error fetching messages:", error);
+      res.status(500).json({ message: "Failed to fetch messages" });
+    }
+  });
+
+  // Send chat message and get AI response
+  app.post("/api/chat/conversations/:id/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { content } = req.body;
+      const user = await storage.getUser(req.user.id);
+
+      if (!content || content.trim().length === 0) {
+        return res.status(400).json({ message: "Message content is required" });
+      }
+
+      const conversation = await storage.getChatConversation(id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversation not found" });
+      }
+
+      if (conversation.userId !== user?.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const userMessage = await storage.createChatMessage({
+        conversationId: id,
+        role: "user",
+        content,
+        sourceDocs: [],
+      });
+
+      const documents = await storage.searchKnowledgeBase(content);
+      
+      let contextChunks: string[] = [];
+      const usedDocIds: string[] = [];
+
+      for (const doc of documents.slice(0, 3)) {
+        if (doc.extractedText) {
+          const relevantChunks = findRelevantChunks(doc.extractedText, content, 2);
+          contextChunks.push(...relevantChunks);
+          if (relevantChunks.length > 0) {
+            usedDocIds.push(doc.id);
+          }
+        }
+      }
+
+      const contextText = contextChunks.length > 0
+        ? `Based on the Inspect360 knowledge base:\n\n${contextChunks.join('\n\n---\n\n')}\n\n`
+        : '';
+
+      const systemPrompt = `You are an AI assistant for Inspect360, a building inspection platform. ${contextText ? 'Use the knowledge base information provided to answer questions accurately.' : 'Answer questions about Inspect360 to the best of your ability.'}`;
+
+      const openaiClient = getOpenAI();
+      const completion = await openaiClient.chat.completions.create({
+        model: "gpt-5",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contextText + content },
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      });
+
+      const assistantContent = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+
+      const assistantMessage = await storage.createChatMessage({
+        conversationId: id,
+        role: "assistant",
+        content: assistantContent,
+        sourceDocs: usedDocIds,
+      });
+
+      if (!conversation.title || conversation.title === "New Chat") {
+        const titlePrompt = `Generate a short 3-5 word title for a conversation that starts with: "${content.substring(0, 100)}"`;
+        const titleCompletion = await openaiClient.chat.completions.create({
+          model: "gpt-5-mini",
+          messages: [{ role: "user", content: titlePrompt }],
+          max_tokens: 20,
+        });
+        const title = titleCompletion.choices[0]?.message?.content?.replace(/['"]/g, '') || "Chat";
+        await storage.updateChatConversation(id, { title });
+      }
+
+      res.json({ userMessage, assistantMessage });
+    } catch (error: any) {
+      console.error("[Chatbot] Error sending message:", error);
+      res.status(500).json({ message: "Failed to send message" });
     }
   });
 

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Shield, Search, Building2, LogOut, Users, CreditCard, AlertCircle, CheckCircle, XCircle } from "lucide-react";
+import { Shield, Search, Building2, LogOut, Users, CreditCard, AlertCircle, CheckCircle, XCircle, BookOpen } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -177,6 +177,14 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/admin/knowledge-base")}
+              data-testid="button-knowledge-base"
+            >
+              <BookOpen className="h-4 w-4 mr-2" />
+              Knowledge Base
+            </Button>
             <span className="text-sm text-muted-foreground">
               {adminUser.firstName} {adminUser.lastName}
             </span>

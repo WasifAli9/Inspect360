@@ -1,7 +1,7 @@
 # Inspect360 - AI-Powered Building Inspection Platform
 
 ## Overview
-Inspect360 is a PWA-first building inspection platform designed for Build-to-Rent (BTR) operations. Its core purpose is to streamline property management and enhance operational efficiency. Key capabilities include role-based access, offline mobile inspections, AI-driven photo analysis and comparison reporting, compliance document tracking with expiry alerts, a dedicated tenant portal, internal maintenance tracking, tenant assignment management, block-level asset inventory filtering, a comprehensive subscription system with multi-currency support and credit-based inspections, and mark-for-review functionality for check-out inspections.
+Inspect360 is a PWA-first AI-powered building inspection platform for Build-to-Rent (BTR) operations. It aims to streamline property management and enhance operational efficiency through features like role-based access, offline mobile inspections, AI-driven photo analysis and comparison reporting, compliance document tracking with expiry alerts, a dedicated tenant portal, internal maintenance tracking, block-level asset inventory filtering, and a comprehensive subscription system with multi-currency support and credit-based inspections. The platform also includes an AI chatbot with a knowledge base for enhanced user support.
 
 ## User Preferences
 - Prioritize PWA-first mobile experience
@@ -12,58 +12,45 @@ Inspect360 is a PWA-first building inspection platform designed for Build-to-Ren
 - Offline support for field inspections
 
 ## System Architecture
-The platform utilizes a PWA-first approach built on a robust web architecture, emphasizing a modern, clean design system with a branded color palette.
+The platform is built on a robust web architecture with a PWA-first approach, emphasizing a modern, clean design system and branded color palette.
 
 ### UI/UX Decisions
-- **Modern Clean Design System**: Employs Inter font, clean cards with soft shadows, subtle hover effects, and skeleton loaders with cyan shimmer.
-- **Color Scheme**: Bright Cyan for primary CTAs, Teal for accents/links, with clean white backgrounds and warm gray neutrals.
+- **Modern Clean Design System**: Employs Inter font, clean cards, soft shadows, subtle hover effects, and skeleton loaders with cyan shimmer.
+- **Color Scheme**: Bright Cyan for primary CTAs, Teal for accents/links, with white backgrounds and warm gray neutrals.
 - **Branding**: Inspect360 logo is prominently displayed.
 - **Layout**: Features a responsive left sidebar navigation and a top bar.
 
 ### Technical Implementations
-- **Frontend**: React with TypeScript, Vite, Wouter for routing, TanStack Query for data fetching, Shadcn UI for components, Tailwind CSS for styling, and Uppy for file uploads.
-- **Backend**: Express.js, PostgreSQL (Neon) with Drizzle ORM, and Passport.js for authentication.
-- **Authentication**: Custom username/password authentication with session management. **Case-Insensitive Email**: All authentication endpoints (login, register, forgot-password, reset-password) normalize emails to lowercase with trimming. Storage layer uses case-insensitive SQL comparison (`LOWER(email)`) with deterministic ordering by creation date. Duplicate account detection via `/api/billing/aggregate-credits` endpoint shows total credits across all organizations for users with multiple accounts due to historical case-sensitive emails. Billing UI displays warning card with breakdown when duplicates detected.
-- **Object Storage**: Google Cloud Storage for media files.
-- **Database Schema**: Includes tables for users, organizations, properties, blocks, inspections, compliance documents, maintenance requests, asset inventory, contacts, tenant assignments, message templates, and a tagging system.
+- **Frontend**: React with TypeScript, Vite, Wouter, TanStack Query, Shadcn UI, Tailwind CSS, Uppy.
+- **Backend**: Express.js, PostgreSQL with Drizzle ORM, Passport.js for authentication.
+- **Authentication**: Custom username/password authentication with session management, case-insensitive email handling, and duplicate account detection.
+- **Object Storage**: Google Cloud Storage for media files with public ACLs for organization-wide viewing.
+- **Database Schema**: Comprehensive schema including users, organizations, properties, blocks, inspections, compliance documents, maintenance requests, asset inventory, contacts, tenant assignments, message templates, and a tagging system.
 - **Role-Based Access**: Granular control for various user roles.
-- **Credit System**: A system for AI features purchasable via Stripe, with initial free credits.
-- **AI Features**: Integration with OpenAI GPT-5 Vision (latest model, upgraded from GPT-4o on Nov 15, 2025) for photo analysis (condition assessment) and comparison reports (check-in vs. check-out summaries). Uses Replit AI Integrations with environment variables AI_INTEGRATIONS_OPENAI_BASE_URL and AI_INTEGRATIONS_OPENAI_API_KEY. **OpenAI API**: All AI features use OpenAI Responses API (`responses.create`) with correct contract: `image_url` as plain string, response accessed via `output_text` or `output[0].content[0].text`, no `modalities` parameter. Implemented across 6 call sites: inspection item analysis, InspectAI field analysis, auto-generation comparison, manual comparison, maintenance triage, and individual photo analysis.
-- **PWA**: Utilizes `manifest.json` and a service worker for offline capabilities and caching.
-- **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI. **Default BTR Templates**: New organizations automatically receive 8 comprehensive BTR inspection templates: Check In, Check Out, Periodic Inspection (quarterly/annual property checks), Fire Safety Inspection (block-level compliance), Health & Safety Inspection (building safety and regulations), Common Area Inspection (communal spaces), Void Property Inspection (between-tenancy turnover), and Block Inspection (external structure and building systems). All templates include detailed inspection points with photo capture, condition/cleanliness ratings, and safety compliance checks.
-- **Sample Data on Registration**: New organizations automatically receive sample data for immediate platform exploration: Block A (sample block with address), Property A (linked to Block A, 850 sqft), and Joe Bloggs (sample tenant user with unique timestamp-based email/username, assigned to Property A with 1-year lease at £1,200/month). Sample tenant credentials use format `joe_bloggs_{timestamp}` for idempotent creation across multiple organization setups.
-- **PWA Install Prompt System**: Comprehensive install prompt handling for Android and iOS, with smart detection and persistence.
-- **Inspection Capture Workflow**: Comprehensive field inspection workflow supporting data entry, real-time progress, optimistic updates, review pages, status management, and native smartphone camera capture.
-- **In-Inspection Quick Actions**: Contextual quick-add workflow via a Floating Action Button (FAB) for mobile, with offline queueing and audit trail linking.
-- **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection, status indicators, and Background Sync API integration for inspection entries, assets, and maintenance requests.
-- **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with basic issue description, multi-image upload, and AI-powered fix suggestions.
-- **InspectAI Field Analysis**: Field-level AI inspection analysis button using OpenAI GPT-5 Vision for comprehensive reports on uploaded images, integrated into notes.
-- **Condition & Cleanliness Ratings**: Optional per-field ratings configurable in the Template Builder.
-- **Signature Capture**: Interactive signature pad for inspection sign-offs supporting Tenant and Inspector signatures using react-signature-canvas, with base64 data URL storage and both drawing mode and read-only display.
-- **Inspection Reports**: Generates formatted HTML reports with print-friendly CSS and professional PDF cover pages.
-- **PDF Generation**: Server-side PDF generation using Puppeteer and Chromium with security measures like XSS protection, URL whitelisting, image handling, text formatting, and smart content filtering.
-- **Annual Compliance Calendar**: Visual compliance tracking grid with color-coded status badges and compliance rates.
-- **Block-Level Filtering**: Supports filtering of properties, asset inventory, and compliance documents by `blockId` and `propertyId`.
-- **Block Tenant Management**: Comprehensive tenant occupancy tracking, KPIs, and roster management.
-- **API Security**: Comprehensive Zod validation and multi-tenant isolation enforced across critical routes.
-- **Object Storage ACL**: Asset inventory and inspection photos use public visibility for organization-wide viewing.
-- **Tenant Broadcast Messaging**: Block-level tenant communication system with reusable email templates.
-- **Inline Tenant Creation**: Property-level tenant assignment workflow with integrated user creation, lease details, and automatic role assignment.
-- **Collaborative Comparison Reports**: End-to-end check-out inspection comparison system with AI-powered analysis, asset-based depreciation, async discussion, and electronic signatures. **Vacant Unit Support**: comparison_reports.tenantId is nullable to support BTR vacant unit workflows between tenancies. Modal includes cache invalidation on open to ensure fresh inspection data.
-- **Fixflo Integration**: Complete two-way integration with Fixflo maintenance management system including backend API client, webhooks, and frontend configuration.
-- **UI Z-Index Layering Fix**: Implemented proper z-index hierarchy for modals and dropdowns.
-- **Auto-Template Selection**: Automatic template selection based on inspection type (check_in → "Check In" template, check_out → "Check Out" template) when templateId not provided during inspection creation, ensuring correct template snapshots without manual selection.
-- **Mark for Review**: Check-out inspection fields include a "Mark for Comparison Report" checkbox, appearing when photos are present, for flagging items for AI comparison reports.
-- **Manual Comparison Report Generation**: Users can manually generate AI-powered comparison reports by selecting check-in and check-out inspections.
-- **Auto-Create Comparison Reports**: "Add to Comparison" button on check-out inspection fields automatically creates a comparison report using the most recent completed check-in and check-out inspections for the property if no report exists, or navigates to the existing report.
-- **Consolidated Maintenance Interface**: Unified Maintenance page with tabbed interface for "Requests" and "Work Orders".
-- **Inline Maintenance Request Creation**: Inspection report page features inline dialog for creating maintenance requests directly from inspection fields without navigation, with automatic linking to inspectionId and inspectionEntryId, pre-populated contextual titles, and display of linked maintenance requests below each field with status/priority badges.
-- **Flexible Inspection Status Management**: Inspection report page includes an editable status dropdown allowing users to change inspection status (scheduled/in_progress/completed) at any time, without requiring 100% completion or other progress-based restrictions. Status changes are free and do not consume credits. The "Complete Inspection" button on the capture page is enabled regardless of progress percentage.
-- **Comprehensive Subscription System**: Credit-based subscription service with multi-currency support, including plans, credit consumption logic (only for AI features, not for status changes), Stripe integration for payments and webhooks, an Eco-Admin interface for country-level pricing, and proper redirect handling with success notifications and automatic data refresh.
-- **Session Processing System**: Direct Stripe session processing via `/api/billing/process-session` endpoint enables immediate credit grants and subscription activation without waiting for webhooks (essential for dev environments). Implements comprehensive idempotency checks to prevent duplicate credit grants from page refreshes or retry attempts. Frontend performs explicit query refetching after payment processing to ensure UI updates immediately with new balance. Includes fallback polling for webhook-based updates and contextual error messaging.
-- **Team-Based Work Order Management**: Complete team management system for work order assignment and notifications. Features include atomic team creation/updates using database transactions, distribution email lists, flexible member management (both staff users and contractor contacts), maintenance category assignment for automatic work order routing, comprehensive Settings UI, role-based access control (admin/owner only), organization scoping. Both creation (POST /api/teams/full) and updates (PATCH /api/teams/:id/full) use Drizzle db.transaction() to ensure atomicity - if any operation fails (team creation/update, member changes, or category changes), all changes are rolled back.
-- **Contractor Email Notifications**: Work order assignments to contractors trigger automatic email notifications using sendContractorWorkOrderNotification template. Emails are sent best-effort (non-blocking) and failures are logged but don't prevent work order creation.
-- **Work Order Analytics Dashboard**: Owner-only analytics page (path: /analytics) showing work order metrics including total/status distribution (open/in_progress/completed/rejected), priority distribution (from linked maintenance requests), team distribution, category distribution, and average resolution time in "Xh Ym" format. Analytics endpoint (GET /api/analytics/work-orders) uses batch queries to eliminate N+1 issues and enforces owner-role access control.
+- **Credit System**: Stripe-integrated credit-based subscription for AI features with multi-currency support and Eco-Admin pricing management.
+- **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis, comparison reports, maintenance triage, and an AI chatbot with knowledge base integration. Utilizes Replit AI Integrations.
+- **PWA**: `manifest.json` and service worker for offline capabilities, caching, and install prompts.
+- **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI. Includes default BTR templates for new organizations.
+- **Sample Data on Registration**: Automatic provision of sample data for new organizations.
+- **Inspection Capture Workflow**: Comprehensive field inspection workflow with optimistic updates, review pages, status management, native camera capture, and quick actions via a Floating Action Button (FAB).
+- **Offline Queue System**: LocalStorage-based offline sync with auto-reconnection and status indicators for inspection entries, assets, and maintenance requests.
+- **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with AI-powered fix suggestions and image upload.
+- **Condition & Cleanliness Ratings**: Configurable per-field ratings in Template Builder.
+- **Signature Capture**: Interactive signature pad for inspection sign-offs.
+- **Inspection Reports**: Generates formatted HTML reports and server-side PDFs with professional cover pages using Puppeteer.
+- **Annual Compliance Calendar**: Visual compliance tracking grid.
+- **Block-Level Filtering**: Filtering of properties, asset inventory, and compliance documents.
+- **Block Tenant Management**: Comprehensive tenant occupancy tracking and roster management.
+- **API Security**: Zod validation and multi-tenant isolation.
+- **Tenant Broadcast Messaging**: Block-level communication system with email templates.
+- **Inline Tenant Creation**: Property-level tenant assignment with integrated user creation.
+- **Collaborative Comparison Reports**: End-to-end check-out inspection comparison with AI analysis, asset-based depreciation, async discussion, electronic signatures, and support for vacant units. Includes "Mark for Review" functionality.
+- **Fixflo Integration**: Two-way integration with Fixflo maintenance management system.
+- **Auto-Template Selection**: Automatic template selection based on inspection type.
+- **Consolidated Maintenance Interface**: Unified page for "Requests" and "Work Orders" with inline creation from inspection reports.
+- **Flexible Inspection Status Management**: Editable inspection status dropdown without progress restrictions.
+- **Team-Based Work Order Management**: System for work order assignment, notifications, and analytics, featuring atomic team creation/updates, distribution email lists, and category-based routing. Contractor email notifications are supported.
+- **AI Chatbot with Knowledge Base**: Intelligent help system with Eco-Admin managed knowledge base (PDF, DOCX, TXT upload with text extraction) and context-aware chatbot using OpenAI GPT-5 for grounded responses.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.

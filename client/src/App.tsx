@@ -39,9 +39,11 @@ import PropertyTenants from "@/pages/PropertyTenants";
 import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminTeam from "@/pages/AdminTeam";
+import KnowledgeBase from "@/pages/KnowledgeBase";
 import { Loader2 } from "lucide-react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { UserProfileMenu } from "@/components/UserProfileMenu";
+import { AIChatbot } from "@/components/AIChatbot";
 
 function AppContent() {
   // Always call hooks at the top level
@@ -63,6 +65,7 @@ function AppContent() {
           <Route path="/admin/login" component={AdminLogin} />
           <Route path="/admin/dashboard" component={AdminDashboard} />
           <Route path="/admin/team" component={AdminTeam} />
+          <Route path="/admin/knowledge-base" component={KnowledgeBase} />
           <Route component={NotFound} />
         </Switch>
         <PWAInstallPrompt />
@@ -138,6 +141,7 @@ function AppContent() {
           </div>
         </div>
       </SidebarProvider>
+      <AIChatbot />
       <PWAInstallPrompt />
       <Toaster />
     </TooltipProvider>
