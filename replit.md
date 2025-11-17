@@ -28,7 +28,11 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 - **Database Schema**: Comprehensive schema including users, organizations, properties, blocks, inspections, compliance documents, maintenance requests, asset inventory, contacts, tenant assignments, message templates, and a tagging system.
 - **Role-Based Access**: Granular control for various user roles.
 - **Credit System**: Stripe-integrated credit-based subscription for AI features with multi-currency support and Eco-Admin pricing management.
-- **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis, comparison reports, maintenance triage, and an AI chatbot with knowledge base integration. Utilizes Replit AI Integrations.
+- **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis, comparison reports, maintenance triage, and an AI chatbot with knowledge base integration. Features include:
+  - **Context-Aware Photo Analysis**: AI focuses specifically on the inspection point title (e.g., when analyzing "Doors and Handles", the AI ignores other room elements and concentrates only on doors/handles in the photo)
+  - **Check-In Photo Reference**: During Check-Out inspections, the system displays corresponding Check-In photos for each field to help inventory clerks match camera angles for accurate comparisons
+  - **Intelligent Chatbot**: GPT-5 powered assistant with knowledge base integration for enhanced user support
+  - Utilizes Replit AI Integrations
 - **PWA**: `manifest.json` and service worker for offline capabilities, caching, and install prompts.
 - **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, snapshots, and a visual Template Builder UI. Includes default BTR templates for new organizations.
 - **Sample Data on Registration**: Automatic provision of sample data for new organizations.
