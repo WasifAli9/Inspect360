@@ -563,6 +563,46 @@ export const insertMaintenanceRequestSchema = createInsertSchema(maintenanceRequ
 export type MaintenanceRequest = typeof maintenanceRequests.$inferSelect;
 export type InsertMaintenanceRequest = z.infer<typeof insertMaintenanceRequestSchema>;
 
+// Tenant Maintenance Chat Conversations (AI Chatbot for preventative maintenance)
+export const tenantMaintenanceChats = pgTable("tenant_maintenance_chats", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  tenantId: varchar("tenant_id").notNull(), // References users.id where role='tenant'
+  propertyId: varchar("property_id").notNull(),
+  maintenanceRequestId: varchar("maintenance_request_id"), // Linked if tenant creates request after chat
+  title: varchar("title").notNull(), // Auto-generated from first message
+  status: varchar("status").notNull().default("active"), // active, resolved, escalated
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTenantMaintenanceChatSchema = createInsertSchema(tenantMaintenanceChats).omit({
+  id: true,
+  organizationId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type TenantMaintenanceChat = typeof tenantMaintenanceChats.$inferSelect;
+export type InsertTenantMaintenanceChat = z.infer<typeof insertTenantMaintenanceChatSchema>;
+
+// Chat Messages
+export const tenantMaintenanceChatMessages = pgTable("tenant_maintenance_chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: varchar("chat_id").notNull(),
+  role: varchar("role").notNull(), // 'user' or 'assistant'
+  content: text("content").notNull(),
+  imageUrl: varchar("image_url"), // If user uploaded image
+  aiSuggestedFixes: text("ai_suggested_fixes"), // If AI provided fixes
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTenantMaintenanceChatMessageSchema = createInsertSchema(tenantMaintenanceChatMessages).omit({
+  id: true,
+  createdAt: true,
+});
+export type TenantMaintenanceChatMessage = typeof tenantMaintenanceChatMessages.$inferSelect;
+export type InsertTenantMaintenanceChatMessage = z.infer<typeof insertTenantMaintenanceChatMessageSchema>;
+
 // Quick-add maintenance schema for in-inspection workflow (minimal fields)
 export const quickAddMaintenanceSchema = z.object({
   title: z.string().min(1, "Title is required"),

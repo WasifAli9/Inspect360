@@ -40,6 +40,10 @@ import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminTeam from "@/pages/AdminTeam";
 import KnowledgeBase from "@/pages/KnowledgeBase";
+import TenantLogin from "@/pages/TenantLogin";
+import TenantHome from "@/pages/TenantHome";
+import TenantMaintenance from "@/pages/TenantMaintenance";
+import TenantRequests from "@/pages/TenantRequests";
 import { Loader2 } from "lucide-react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { UserProfileMenu } from "@/components/UserProfileMenu";
@@ -54,7 +58,7 @@ function AppContent() {
     "--sidebar-width-icon": "3rem",
   };
 
-  // Not authenticated - show public routes (including admin routes)
+  // Not authenticated - show public routes (including admin and tenant routes)
   if (!isAuthenticated && !isLoading) {
     return (
       <TooltipProvider>
@@ -66,6 +70,7 @@ function AppContent() {
           <Route path="/admin/dashboard" component={AdminDashboard} />
           <Route path="/admin/team" component={AdminTeam} />
           <Route path="/admin/knowledge-base" component={KnowledgeBase} />
+          <Route path="/tenant/login" component={TenantLogin} />
           <Route component={NotFound} />
         </Switch>
         <PWAInstallPrompt />
@@ -90,6 +95,27 @@ function AppContent() {
         <Switch>
           <Route path="*" component={OrganizationSetup} />
         </Switch>
+        <PWAInstallPrompt />
+        <Toaster />
+      </TooltipProvider>
+    );
+  }
+
+  // Tenant role - show tenant portal (no sidebar)
+  if (user && user.role === "tenant") {
+    return (
+      <TooltipProvider>
+        <div className="h-screen w-full flex flex-col">
+          <main className="flex-1 overflow-auto bg-background">
+            <Switch>
+              <Route path="/" component={TenantHome} />
+              <Route path="/tenant/home" component={TenantHome} />
+              <Route path="/tenant/maintenance" component={TenantMaintenance} />
+              <Route path="/tenant/requests" component={TenantRequests} />
+              <Route component={NotFound} />
+            </Switch>
+          </main>
+        </div>
         <PWAInstallPrompt />
         <Toaster />
       </TooltipProvider>
