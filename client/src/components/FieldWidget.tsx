@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -6,8 +7,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save } from "lucide-react";
+import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import Uppy from "@uppy/core";
 import { Dashboard } from "@uppy/react";
 import AwsS3 from "@uppy/aws-s3";
@@ -79,6 +81,25 @@ export function FieldWidget({
   const [analyzingPhoto, setAnalyzingPhoto] = useState<string | null>(null);
   const [analyzingField, setAnalyzingField] = useState(false);
   const { toast } = useToast();
+
+  // Fetch Check-In reference for photo fields during Check-Out inspections
+  const { data: checkInReference } = useQuery({
+    queryKey: inspectionId ? ["/api/inspections", inspectionId, "check-in-reference"] : ["no-check-in"],
+    queryFn: async () => {
+      if (!inspectionId || !isCheckOut || (field.type !== "photo" && field.type !== "photo_array")) {
+        return null;
+      }
+      const response = await apiRequest("GET", `/api/inspections/${inspectionId}/check-in-reference`);
+      return response.json();
+    },
+    enabled: !!inspectionId && isCheckOut && (field.type === "photo" || field.type === "photo_array"),
+  });
+
+  // Find matching check-in entry for this field
+  const checkInEntry = checkInReference?.checkInEntries?.find(
+    (entry: any) => entry.fieldRef === field.id
+  );
+  const checkInPhotos = checkInEntry?.photos || [];
 
   // Rehydrate local state when props change (e.g., when existing entries load)
   useEffect(() => {
@@ -548,6 +569,40 @@ export function FieldWidget({
       case "photo_array":
         return (
           <div className="space-y-3">
+            {/* Check-In Reference Photos */}
+            {isCheckOut && checkInPhotos.length > 0 && (
+              <Alert className="border-primary/50 bg-primary/5">
+                <Eye className="h-4 w-4 text-primary" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p className="font-medium text-sm">
+                      Check-In Reference Photos
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Match these angles when taking your Check-Out photos for accurate comparison
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+                      {checkInPhotos.map((photoUrl: string, index: number) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={photoUrl}
+                            alt={`Check-In Reference ${index + 1}`}
+                            className="w-full h-32 object-cover rounded-md border-2 border-primary/30"
+                            data-testid={`img-check-in-reference-${index}`}
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-md flex items-center justify-center">
+                            <Badge variant="secondary" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              Reference {index + 1}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {localPhotos.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {localPhotos.map((photoUrl, index) => (

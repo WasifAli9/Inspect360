@@ -2052,19 +2052,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }));
 
-      // Build the prompt with field context
-      let promptText = `Analyze the following inspection point: "${fieldLabel}"`;
+      // Build the prompt with field context - emphasizing focus on the specific inspection point
+      let promptText = `You are analyzing a property inspection photo. Focus SPECIFICALLY on: "${fieldLabel}"`;
       if (fieldDescription) {
-        promptText += `\nDescription: ${fieldDescription}`;
+        promptText += `\nContext: ${fieldDescription}`;
       }
-      promptText += `\n\nI have ${photoUrls.length} image(s) showing this inspection point. Provide a comprehensive inspection report including:
-1. Overall condition assessment
-2. Any visible damage, defects, or wear
-3. Cleanliness and maintenance issues
-4. Notable features or observations
-5. Recommendations (if any)
+      promptText += `\n\nIMPORTANT: The photo may show an entire room or area, but you must focus your analysis ONLY on "${fieldLabel}". Ignore other elements in the photo that are not directly related to this inspection point.
 
-Be thorough, specific, and objective. This will be used in a professional property inspection report.`;
+I have ${photoUrls.length} image(s). Provide a comprehensive inspection report for "${fieldLabel}" including:
+1. Overall condition assessment of the ${fieldLabel}
+2. Any visible damage, defects, or wear on the ${fieldLabel}
+3. Cleanliness and maintenance issues related to the ${fieldLabel}
+4. Notable features or observations about the ${fieldLabel}
+5. Recommendations for the ${fieldLabel} (if any)
+
+Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on items outside the scope of "${fieldLabel}". This will be used in a professional property inspection report.`;
 
       // Build content array with text and all images
       const content: any[] = [
@@ -2120,6 +2122,81 @@ Be thorough, specific, and objective. This will be used in a professional proper
     } catch (error) {
       console.error("Error analyzing field:", error);
       res.status(500).json({ message: "Failed to analyze field" });
+    }
+  });
+
+  // Get matching Check-In inspection for reference during Check-Out
+  app.get("/api/inspections/:id/check-in-reference", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id: checkOutInspectionId } = req.params;
+      
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Get the current inspection (should be check-out)
+      const currentInspection = await storage.getInspection(checkOutInspectionId);
+      if (!currentInspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      // Verify ownership
+      let ownerOrgId: string | null = null;
+      if (currentInspection.propertyId) {
+        const property = await storage.getProperty(currentInspection.propertyId);
+        if (!property) {
+          return res.status(404).json({ message: "Property not found" });
+        }
+        ownerOrgId = property.organizationId;
+      } else if (currentInspection.blockId) {
+        const block = await storage.getBlock(currentInspection.blockId);
+        if (!block) {
+          return res.status(404).json({ message: "Block not found" });
+        }
+        ownerOrgId = block.organizationId;
+      }
+
+      if (ownerOrgId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Only return check-in reference if current inspection is check-out
+      if (currentInspection.type !== "check_out") {
+        return res.json({ checkInInspection: null, checkInEntries: [] });
+      }
+
+      // Find the most recent completed check-in for the same property
+      if (!currentInspection.propertyId) {
+        return res.json({ checkInInspection: null, checkInEntries: [] });
+      }
+
+      const allInspections = await storage.getInspectionsByOrganization(user.organizationId);
+      const checkInInspections = allInspections
+        .filter((i: any) => 
+          i.propertyId === currentInspection.propertyId && 
+          i.type === "check_in" && 
+          i.status === "completed"
+        )
+        .sort((a: any, b: any) => 
+          new Date(b.completedDate || b.scheduledDate).getTime() - 
+          new Date(a.completedDate || a.scheduledDate).getTime()
+        );
+
+      if (checkInInspections.length === 0) {
+        return res.json({ checkInInspection: null, checkInEntries: [] });
+      }
+
+      const checkInInspection = checkInInspections[0];
+      const checkInEntries = await storage.getInspectionEntries(checkInInspection.id);
+
+      res.json({ 
+        checkInInspection, 
+        checkInEntries 
+      });
+    } catch (error) {
+      console.error("Error fetching check-in reference:", error);
+      res.status(500).json({ message: "Failed to fetch check-in reference" });
     }
   });
 
