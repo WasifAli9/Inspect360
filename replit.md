@@ -64,6 +64,19 @@ The platform is built on a robust web architecture with a PWA-first approach, em
   - **OpenAI Integration**: Uses GPT-5 with proper parameters (max_completion_tokens, no temperature) for main responses and GPT-5-mini for conversation title generation.
   - **Frontend Components**: AIChatbot component with conversation history drawer, message threading, loading states, and error handling. Knowledge Base management UI with Uppy-based document upload.
   - **Session-based Security**: All chat and KB routes use session authentication with multi-tenant isolation.
+- **Tenant Portal**: Dedicated portal for tenants with PWA-first mobile experience:
+  - **Separate Authentication**: Independent login system at `/tenant/login` for tenant users (role='tenant')
+  - **Tenant Home Dashboard**: Displays property details, block information, tenancy information (lease dates, rent, deposit), and quick action cards
+  - **AI Preventative Maintenance Chatbot**: Multi-step AI assistance system for maintenance issues:
+    - Image upload support with GPT-5 Vision analysis
+    - AI provides practical troubleshooting steps and suggested fixes
+    - Conversation history with auto-generated titles
+    - Option to escalate to formal maintenance request if AI suggestions don't resolve the issue
+    - Chat history visible to property managers when maintenance request is created
+  - **Maintenance Requests View**: Tenants can view all their submitted maintenance requests with status tracking, AI suggested fixes, and photos
+  - **Database Schema**: tenant_maintenance_chats table for chat conversations; tenant_maintenance_chat_messages table for messages with AI suggestions
+  - **No Sidebar Layout**: Clean, simplified interface tailored for tenant experience without administrative navigation
+  - **Backend Routes**: Comprehensive API at `/api/tenant/*` for login, tenancy data, chat management, and maintenance request creation
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
