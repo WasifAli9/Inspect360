@@ -8207,8 +8207,7 @@ Be objective and specific. Focus on actionable repairs.`;
           { role: "system", content: systemPrompt },
           { role: "user", content: contextText + content },
         ],
-        temperature: 0.7,
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
       });
 
       const assistantContent = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
@@ -8225,7 +8224,7 @@ Be objective and specific. Focus on actionable repairs.`;
         const titleCompletion = await openaiClient.chat.completions.create({
           model: "gpt-5-mini",
           messages: [{ role: "user", content: titlePrompt }],
-          max_tokens: 20,
+          max_completion_tokens: 20,
         });
         const title = titleCompletion.choices[0]?.message?.content?.replace(/['"]/g, '') || "Chat";
         await storage.updateChatConversation(id, { title });

@@ -50,7 +50,13 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 - **Consolidated Maintenance Interface**: Unified page for "Requests" and "Work Orders" with inline creation from inspection reports.
 - **Flexible Inspection Status Management**: Editable inspection status dropdown without progress restrictions.
 - **Team-Based Work Order Management**: System for work order assignment, notifications, and analytics, featuring atomic team creation/updates, distribution email lists, and category-based routing. Contractor email notifications are supported.
-- **AI Chatbot with Knowledge Base**: Intelligent help system with Eco-Admin managed knowledge base (PDF, DOCX, TXT upload with text extraction) and context-aware chatbot using OpenAI GPT-5 for grounded responses.
+- **AI Chatbot with Knowledge Base**: Comprehensive intelligent help system featuring:
+  - **Knowledge Base Management** (Eco-Admin only): Upload and manage PDF, DOCX, and TXT documents with automatic text extraction via pdf-parse and mammoth libraries. Document search and chunking for AI context injection.
+  - **AI Chatbot** (all users): Floating button provides universal access to GPT-5 powered assistant. Features conversation history, auto-titled conversations, message persistence, and knowledge base-enhanced responses.
+  - **Database Schema**: knowledge_base_documents table for document storage with extracted text; chat_conversations and chat_messages tables for conversation management with role-based messages and source document tracking.
+  - **OpenAI Integration**: Uses GPT-5 with proper parameters (max_completion_tokens, no temperature) for main responses and GPT-5-mini for conversation title generation.
+  - **Frontend Components**: AIChatbot component with conversation history drawer, message threading, loading states, and error handling. Knowledge Base management UI with Uppy-based document upload.
+  - **Session-based Security**: All chat and KB routes use session authentication with multi-tenant isolation.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
