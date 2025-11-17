@@ -264,6 +264,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Warning: Failed to create default templates, but organization was created successfully:", templateError);
       }
 
+      // Create sample data for new organization (Block A, Property A, Joe Bloggs tenant)
+      // Use timestamp-based unique suffix for idempotency
+      try {
+        const uniqueSuffix = Date.now().toString(36); // Convert timestamp to base36 for shorter suffix
+        
+        // Create Block A
+        const blockA = await storage.createBlock({
+          organizationId: organization.id,
+          name: "Block A",
+          address: "123 Sample Street, Sample City, SC 12345",
+          notes: "Sample block created automatically for demonstration purposes",
+        });
+        console.log(`✓ Created sample Block A for organization ${organization.id}`);
+
+        // Create Property A linked to Block A
+        const propertyA = await storage.createProperty({
+          organizationId: organization.id,
+          blockId: blockA.id,
+          name: "Property A",
+          address: "Unit 101, Block A, 123 Sample Street, Sample City, SC 12345",
+          sqft: 850,
+        });
+        console.log(`✓ Created sample Property A for organization ${organization.id}`);
+
+        // Create sample tenant user "Joe Bloggs" with unique timestamp suffix
+        const tenantPassword = await hashPassword("password123");
+        const joeBloggs = await storage.createUser({
+          email: `joe.bloggs+${uniqueSuffix}@inspect360.demo`,
+          username: `joe_bloggs_${uniqueSuffix}`,
+          password: tenantPassword,
+          firstName: "Joe",
+          lastName: "Bloggs",
+          role: "tenant",
+          organizationId: organization.id,
+          isActive: true,
+        });
+        console.log(`✓ Created sample tenant Joe Bloggs (${joeBloggs.email}) for organization ${organization.id}`);
+
+        // Create tenant assignment linking Joe Bloggs to Property A
+        const tenantAssignment = await storage.createTenantAssignment({
+          organizationId: organization.id,
+          propertyId: propertyA.id,
+          tenantId: joeBloggs.id,
+          leaseStartDate: new Date(),
+          leaseEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+          monthlyRent: "1200.00",
+          depositAmount: "1200.00",
+          isActive: true,
+          notes: "Sample tenant assignment created for demonstration purposes",
+        });
+        console.log(`✓ Created tenant assignment for Joe Bloggs in Property A`);
+        console.log(`✓ Sample data setup complete - Block A, Property A, and tenant Joe Bloggs created successfully`);
+      } catch (sampleDataError) {
+        // Log detailed error for debugging but don't fail the organization creation
+        console.error("Warning: Failed to create sample data (organization was still created successfully):", {
+          error: sampleDataError instanceof Error ? sampleDataError.message : String(sampleDataError),
+          organizationId: organization.id,
+        });
+      }
+
       res.json(organization);
     } catch (error) {
       console.error("Error creating organization:", error);
