@@ -31,6 +31,14 @@ The platform is built on a robust web architecture with a PWA-first approach, em
   - **Owners/Compliance**: Can view and manage all inspections in their organization
   - **Multi-layer Security**: List filtering + individual inspection authorization checks prevent unauthorized access
 - **Credit System**: Stripe-integrated credit-based subscription for AI features with multi-currency support and Eco-Admin pricing management.
+- **Eco Admin Dashboard**: Comprehensive admin interface for managing subscription tiers, pricing, and credit bundles:
+  - **Subscription Plans Management**: Create and manage subscription plans (Starter £49/50 credits, Professional £149/200 credits, Enterprise £349/500 credits, Enterprise+ custom/2000+ credits) with GBP base pricing
+  - **Credit Bundles**: Configure add-on credit packages with multi-currency pricing (GBP, USD, AED): 100 credits (£4.00/credit), 250 credits (£3.00/credit), 500 credits (£2.00/credit), 1000 credits (£1.50/credit)
+  - **Country Pricing Overrides**: Set region-specific pricing for plans using country codes (ISO 3166-1 alpha-2), enabling localized pricing in multiple currencies
+  - **Database Schema**: plans table for base subscription plans, credit_bundles table for add-on packages, country_pricing_overrides table for region-specific pricing
+  - **API Security**: All Eco Admin routes (/api/admin/plans, /api/admin/bundles, /api/admin/country-pricing) enforce admin-only access and include Zod validation for data integrity
+  - **Multi-Currency Support**: Full support for GBP, USD, and AED across all pricing entities
+  - **Frontend UI**: Tab-based interface (Plans, Credit Bundles, Multi-Currency Pricing) with comprehensive CRUD operations, accessible at /admin/eco-admin
 - **AI Features**: Integration with OpenAI GPT-5 Vision for photo analysis, comparison reports, maintenance triage, and an AI chatbot with knowledge base integration. Features include:
   - **Context-Aware Photo Analysis**: AI focuses specifically on the inspection point title (e.g., when analyzing "Doors and Handles", the AI ignores other room elements and concentrates only on doors/handles in the photo)
   - **Check-In Photo Reference**: During Check-Out inspections, the system displays corresponding Check-In photos for each field to help inventory clerks match camera angles for accurate comparisons

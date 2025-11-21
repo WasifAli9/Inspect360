@@ -41,6 +41,7 @@ import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminTeam from "@/pages/AdminTeam";
 import KnowledgeBase from "@/pages/KnowledgeBase";
+import EcoAdmin from "@/pages/EcoAdmin";
 import TenantLogin from "@/pages/TenantLogin";
 import TenantHome from "@/pages/TenantHome";
 import TenantMaintenance from "@/pages/TenantMaintenance";
@@ -72,6 +73,7 @@ function AppContent() {
           <Route path="/admin/dashboard" component={AdminDashboard} />
           <Route path="/admin/team" component={AdminTeam} />
           <Route path="/admin/knowledge-base" component={KnowledgeBase} />
+          <Route path="/admin/eco-admin" component={EcoAdmin} />
           <Route path="/tenant/login" component={TenantLogin} />
           <Route component={NotFound} />
         </Switch>

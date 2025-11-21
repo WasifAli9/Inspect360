@@ -134,6 +134,9 @@ import {
   countryPricingOverrides,
   type CountryPricingOverride,
   type InsertCountryPricingOverride,
+  creditBundles,
+  type CreditBundle,
+  type InsertCreditBundle,
   knowledgeBaseDocuments,
   type KnowledgeBaseDocument,
   type InsertKnowledgeBaseDocument,
@@ -257,6 +260,14 @@ export interface IStorage {
   createCountryPricingOverride(override: InsertCountryPricingOverride): Promise<CountryPricingOverride>;
   updateCountryPricingOverride(id: string, updates: Partial<InsertCountryPricingOverride>): Promise<CountryPricingOverride>;
   deleteCountryPricingOverride(id: string): Promise<void>;
+
+  // Credit Bundle operations
+  getCreditBundles(): Promise<CreditBundle[]>;
+  getActiveCreditBundles(): Promise<CreditBundle[]>;
+  getCreditBundle(id: string): Promise<CreditBundle | undefined>;
+  createCreditBundle(bundle: InsertCreditBundle): Promise<CreditBundle>;
+  updateCreditBundle(id: string, updates: Partial<InsertCreditBundle>): Promise<CreditBundle>;
+  deleteCreditBundle(id: string): Promise<void>;
 
   // Subscription operations
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
@@ -2861,6 +2872,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCountryPricingOverride(id: string): Promise<void> {
     await db.delete(countryPricingOverrides).where(eq(countryPricingOverrides.id, id));
+  }
+
+  // Credit Bundle operations
+  async getCreditBundles(): Promise<CreditBundle[]> {
+    return await db.select().from(creditBundles).orderBy(creditBundles.sortOrder, creditBundles.credits);
+  }
+
+  async getActiveCreditBundles(): Promise<CreditBundle[]> {
+    return await db
+      .select()
+      .from(creditBundles)
+      .where(eq(creditBundles.isActive, true))
+      .orderBy(creditBundles.sortOrder, creditBundles.credits);
+  }
+
+  async getCreditBundle(id: string): Promise<CreditBundle | undefined> {
+    const [bundle] = await db.select().from(creditBundles).where(eq(creditBundles.id, id));
+    return bundle;
+  }
+
+  async createCreditBundle(bundleData: InsertCreditBundle): Promise<CreditBundle> {
+    const [bundle] = await db.insert(creditBundles).values(bundleData).returning();
+    return bundle;
+  }
+
+  async updateCreditBundle(id: string, updates: Partial<InsertCreditBundle>): Promise<CreditBundle> {
+    const [bundle] = await db
+      .update(creditBundles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(creditBundles.id, id))
+      .returning();
+    return bundle;
+  }
+
+  async deleteCreditBundle(id: string): Promise<void> {
+    await db.delete(creditBundles).where(eq(creditBundles.id, id));
   }
 
   // Subscription operations

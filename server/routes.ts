@@ -66,7 +66,10 @@ import {
   maintenanceRequests,
   teams,
   teamMembers,
-  teamCategories
+  teamCategories,
+  insertPlanSchema,
+  insertCreditBundleSchema,
+  insertCountryPricingOverrideSchema
 } from "@shared/schema";
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
@@ -7441,30 +7444,14 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { 
-        countryCode, 
-        planId, 
-        currency, 
-        monthlyPriceMinorUnits, 
-        includedCreditsOverride, 
-        topupPricePerCreditMinorUnits,
-        activeFrom,
-        activeTo
-      } = req.body;
-
-      const override = await storage.createCountryPricingOverride({
-        countryCode,
-        planId,
-        currency: currency as any,
-        monthlyPriceMinorUnits,
-        includedCreditsOverride: includedCreditsOverride || null,
-        topupPricePerCreditMinorUnits: topupPricePerCreditMinorUnits || null,
-        activeFrom: activeFrom ? new Date(activeFrom) : new Date(),
-        activeTo: activeTo ? new Date(activeTo) : null,
-      });
-
+      // Validate request body
+      const validated = insertCountryPricingOverrideSchema.parse(req.body);
+      const override = await storage.createCountryPricingOverride(validated);
       res.json(override);
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid country pricing data", errors: error.errors });
+      }
       console.error("Error creating country pricing:", error);
       res.status(500).json({ message: "Failed to create country pricing", error: error.message });
     }
@@ -7479,12 +7466,15 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Validate request body
+      const validated = insertCountryPricingOverrideSchema.partial().parse(req.body);
       const { id } = req.params;
-      const updates = req.body;
-
-      const override = await storage.updateCountryPricingOverride(id, updates);
+      const override = await storage.updateCountryPricingOverride(id, validated);
       res.json(override);
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid country pricing data", errors: error.errors });
+      }
       console.error("Error updating country pricing:", error);
       res.status(500).json({ message: "Failed to update country pricing", error: error.message });
     }
@@ -7505,6 +7495,177 @@ Be objective and specific. Focus on actionable repairs.`;
     } catch (error: any) {
       console.error("Error deleting country pricing:", error);
       res.status(500).json({ message: "Failed to delete country pricing", error: error.message });
+    }
+  });
+
+  // ==================== SUBSCRIPTION PLAN ROUTES (Eco-Admin) ====================
+
+  // Get all plans
+  app.get("/api/admin/plans", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const plans = await storage.getPlans();
+      res.json(plans);
+    } catch (error: any) {
+      console.error("Error fetching plans:", error);
+      res.status(500).json({ message: "Failed to fetch plans" });
+    }
+  });
+
+  // Get active plans
+  app.get("/api/admin/plans/active", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const plans = await storage.getActivePlans();
+      res.json(plans);
+    } catch (error: any) {
+      console.error("Error fetching active plans:", error);
+      res.status(500).json({ message: "Failed to fetch active plans" });
+    }
+  });
+
+  // Create new plan
+  app.post("/api/admin/plans", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Validate request body
+      const validated = insertPlanSchema.parse(req.body);
+      const plan = await storage.createPlan(validated);
+      res.json(plan);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid plan data", errors: error.errors });
+      }
+      console.error("Error creating plan:", error);
+      res.status(500).json({ message: "Failed to create plan", error: error.message });
+    }
+  });
+
+  // Update plan
+  app.patch("/api/admin/plans/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Validate request body
+      const validated = insertPlanSchema.partial().parse(req.body);
+      const { id } = req.params;
+      const plan = await storage.updatePlan(id, validated);
+      res.json(plan);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid plan data", errors: error.errors });
+      }
+      console.error("Error updating plan:", error);
+      res.status(500).json({ message: "Failed to update plan", error: error.message });
+    }
+  });
+
+  // ==================== CREDIT BUNDLE ROUTES (Eco-Admin) ====================
+
+  // Get all credit bundles
+  app.get("/api/admin/bundles", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const bundles = await storage.getCreditBundles();
+      res.json(bundles);
+    } catch (error: any) {
+      console.error("Error fetching bundles:", error);
+      res.status(500).json({ message: "Failed to fetch bundles" });
+    }
+  });
+
+  // Get active credit bundles
+  app.get("/api/admin/bundles/active", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const bundles = await storage.getActiveCreditBundles();
+      res.json(bundles);
+    } catch (error: any) {
+      console.error("Error fetching active bundles:", error);
+      res.status(500).json({ message: "Failed to fetch active bundles" });
+    }
+  });
+
+  // Create new credit bundle
+  app.post("/api/admin/bundles", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Validate request body
+      const validated = insertCreditBundleSchema.parse(req.body);
+      const bundle = await storage.createCreditBundle(validated);
+      res.json(bundle);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid bundle data", errors: error.errors });
+      }
+      console.error("Error creating bundle:", error);
+      res.status(500).json({ message: "Failed to create bundle", error: error.message });
+    }
+  });
+
+  // Update credit bundle
+  app.patch("/api/admin/bundles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Validate request body
+      const validated = insertCreditBundleSchema.partial().parse(req.body);
+      const { id } = req.params;
+      const bundle = await storage.updateCreditBundle(id, validated);
+      res.json(bundle);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Invalid bundle data", errors: error.errors });
+      }
+      console.error("Error updating bundle:", error);
+      res.status(500).json({ message: "Failed to update bundle", error: error.message });
+    }
+  });
+
+  // Delete credit bundle
+  app.delete("/api/admin/bundles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { id } = req.params;
+      await storage.deleteCreditBundle(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting bundle:", error);
+      res.status(500).json({ message: "Failed to delete bundle", error: error.message });
     }
   });
 
