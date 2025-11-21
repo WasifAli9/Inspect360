@@ -36,12 +36,18 @@ export function AppSidebar() {
   const { user } = useAuth();
   const [location] = useLocation();
 
-  const menuItems = [
+  const mainMenuItems = [
     {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboard,
       roles: ["owner", "clerk", "compliance", "tenant", "contractor"],
+    },
+    {
+      title: "Contacts",
+      url: "/contacts",
+      icon: Contact,
+      roles: ["owner", "clerk", "compliance"],
     },
     {
       title: "Blocks",
@@ -60,12 +66,6 @@ export function AppSidebar() {
       url: "/inspections",
       icon: ClipboardCheck,
       roles: ["owner", "clerk"],
-    },
-    {
-      title: "Inspection Templates",
-      url: "/inspection-templates",
-      icon: List,
-      roles: ["owner", "compliance"],
     },
     {
       title: "Compliance",
@@ -110,16 +110,19 @@ export function AppSidebar() {
       roles: ["owner"],
     },
     {
-      title: "Contacts",
-      url: "/contacts",
-      icon: Contact,
-      roles: ["owner", "clerk", "compliance"],
-    },
-    {
       title: "Billing",
       url: "/billing",
       icon: CreditCard,
       roles: ["owner"],
+    },
+  ];
+
+  const settingsMenuItems = [
+    {
+      title: "Inspection Templates",
+      url: "/inspection-templates",
+      icon: List,
+      roles: ["owner", "compliance"],
     },
     {
       title: "Settings",
@@ -129,7 +132,11 @@ export function AppSidebar() {
     },
   ];
 
-  const filteredMenuItems = menuItems.filter((item) =>
+  const filteredMainMenu = mainMenuItems.filter((item) =>
+    item.roles.includes(user?.role || "")
+  );
+
+  const filteredSettingsMenu = settingsMenuItems.filter((item) =>
     item.roles.includes(user?.role || "")
   );
 
@@ -144,7 +151,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {filteredMenuItems.map((item) => (
+              {filteredMainMenu.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -162,6 +169,31 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {filteredSettingsMenu.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Settings</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredSettingsMenu.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      data-active={location === item.url}
+                      className="data-[active=true]:bg-sidebar-accent"
+                      data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );
