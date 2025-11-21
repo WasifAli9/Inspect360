@@ -23,7 +23,7 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 ### Technical Implementations
 - **Frontend**: React with TypeScript, Vite, Wouter, TanStack Query, Shadcn UI, Tailwind CSS, Uppy.
 - **Backend**: Express.js, PostgreSQL with Drizzle ORM, Passport.js for authentication.
-- **Authentication**: Custom username/password authentication with session management, case-insensitive email handling, and duplicate account detection.
+- **Authentication**: Custom username/password authentication with session management, case-insensitive email handling, duplicate account detection, and streamlined registration flow. All self-registrations are automatically assigned the "owner" role and receive an auto-provisioned organization with welcome credits, default templates, and sample data.
 - **Object Storage**: Google Cloud Storage for media files with public ACLs for organization-wide viewing.
 - **Database Schema**: Comprehensive schema including users, organizations, properties, blocks, inspections, compliance documents, maintenance requests, asset inventory, contacts, tenant assignments, message templates, and a tagging system.
 - **Role-Based Access**: Granular control for various user roles with comprehensive access controls:
