@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, DollarSign, User, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface WorkOrder {
   id: string;
@@ -47,6 +48,7 @@ const priorityColors: Record<string, string> = {
 export default function WorkOrders() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const locale = useLocale();
 
   const { data: workOrders = [], isLoading } = useQuery<WorkOrder[]>({
     queryKey: ["/api/work-orders"],
@@ -64,11 +66,6 @@ export default function WorkOrders() {
       toast({ title: "Failed to update status", variant: "destructive" });
     },
   });
-
-  const formatCurrency = (amount?: number | null) => {
-    if (!amount) return "N/A";
-    return `$${(amount / 100).toFixed(2)}`;
-  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -167,8 +164,8 @@ export default function WorkOrders() {
                         <p className="font-medium">Cost</p>
                         <p className="text-muted-foreground">
                           {workOrder.costActual 
-                            ? `Actual: ${formatCurrency(workOrder.costActual)}`
-                            : `Est: ${formatCurrency(workOrder.costEstimate)}`}
+                            ? `Actual: ${locale.formatCurrency(workOrder.costActual)}`
+                            : `Est: ${locale.formatCurrency(workOrder.costEstimate || 0)}`}
                         </p>
                       </div>
                     </div>

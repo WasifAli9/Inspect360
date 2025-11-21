@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,8 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import logoUrl from "@assets/Inspect360 Logo_1761302629835.png";
+import { getCachedUserCountry } from "@/lib/geolocation";
+import { COMMON_COUNTRIES } from "@shared/countryUtils";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -29,6 +31,26 @@ export default function Auth() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [countryCode, setCountryCode] = useState("GB");
+
+  // Auto-detect country on component mount
+  useEffect(() => {
+    getCachedUserCountry().then((result) => {
+      if (result?.countryCode) {
+        // Validate detected country is in our supported list
+        const isSupported = COMMON_COUNTRIES.some(c => c.code === result.countryCode);
+        if (isSupported) {
+          setCountryCode(result.countryCode);
+        } else {
+          console.warn(`Detected country ${result.countryCode} not in supported list, using GB`);
+          setCountryCode("GB");
+        }
+      }
+    }).catch((error) => {
+      console.error("Failed to detect country, using default GB:", error);
+      setCountryCode("GB");
+    });
+  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -95,6 +117,7 @@ export default function Auth() {
         email,
         username,
         password,
+        countryCode,
         role: "owner", // All self-registrations are owners
       });
 
@@ -251,6 +274,30 @@ export default function Auth() {
                       disabled={registerMutation.isPending}
                       data-testid="input-register-username"
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="country">Country</Label>
+                    <Select
+                      value={countryCode}
+                      onValueChange={setCountryCode}
+                      disabled={registerMutation.isPending}
+                    >
+                      <SelectTrigger id="country" data-testid="select-country">
+                        <SelectValue placeholder="Select country" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMMON_COUNTRIES.map((country) => (
+                          <SelectItem 
+                            key={country.code} 
+                            value={country.code}
+                            data-testid={`option-country-${country.code}`}
+                          >
+                            {country.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">

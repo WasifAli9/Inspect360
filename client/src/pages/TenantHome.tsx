@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, Home, FileText, MessageSquare, Calendar, DollarSign, MapPin } from "lucide-react";
 import { useLocation } from "wouter";
-import { format } from "date-fns";
+import { useLocale } from "@/contexts/LocaleContext";
 
 export default function TenantHome() {
   const [, navigate] = useLocation();
+  const locale = useLocale();
 
   const { data: tenancyData, isLoading } = useQuery<any>({
     queryKey: ["/api/tenant/tenancy"],
@@ -169,7 +170,7 @@ export default function TenantHome() {
                 <div className="text-sm text-muted-foreground">Lease Start</div>
                 <div className="font-semibold" data-testid="text-lease-start">
                   {tenancy.leaseStartDate 
-                    ? format(new Date(tenancy.leaseStartDate), "MMM dd, yyyy")
+                    ? locale.formatDate(tenancy.leaseStartDate)
                     : "Not specified"}
                 </div>
               </div>
@@ -177,7 +178,7 @@ export default function TenantHome() {
                 <div className="text-sm text-muted-foreground">Lease End</div>
                 <div className="font-semibold" data-testid="text-lease-end">
                   {tenancy.leaseEndDate 
-                    ? format(new Date(tenancy.leaseEndDate), "MMM dd, yyyy")
+                    ? locale.formatDate(tenancy.leaseEndDate)
                     : "Not specified"}
                 </div>
               </div>
@@ -188,7 +189,7 @@ export default function TenantHome() {
                     Monthly Rent
                   </div>
                   <div className="font-semibold" data-testid="text-monthly-rent">
-                    £{parseFloat(tenancy.monthlyRent).toLocaleString()}
+                    {locale.currencySymbol}{parseFloat(tenancy.monthlyRent).toLocaleString()}
                   </div>
                 </div>
               )}
@@ -196,7 +197,7 @@ export default function TenantHome() {
                 <div>
                   <div className="text-sm text-muted-foreground">Deposit</div>
                   <div className="font-semibold">
-                    £{parseFloat(tenancy.depositAmount).toLocaleString()}
+                    {locale.currencySymbol}{parseFloat(tenancy.depositAmount).toLocaleString()}
                   </div>
                 </div>
               )}

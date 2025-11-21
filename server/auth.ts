@@ -140,10 +140,22 @@ export async function setupAuth(app: Express) {
       // Only create organization for owner role
       if (user.role === "owner") {
         try {
+          // Get and validate country code from registration or default to GB
+          const { COMMON_COUNTRIES } = await import('../shared/countryUtils');
+          let countryCode = validatedData.countryCode || "GB";
+          
+          // Validate country code against supported countries
+          const isValidCountry = COMMON_COUNTRIES.some(c => c.code === countryCode);
+          if (!isValidCountry) {
+            console.warn(`Invalid country code ${countryCode} provided, defaulting to GB`);
+            countryCode = "GB";
+          }
+          
           // Create organization using username as company name
           const organization = await storage.createOrganization({
             name: validatedData.username, // Company name from registration form
             ownerId: user.id,
+            countryCode: countryCode,
             creditsRemaining: 5, // Give 5 free credits to start
           });
 
@@ -332,14 +344,23 @@ export async function setupAuth(app: Express) {
   });
 
   // Get current user endpoint
-  app.get("/api/user", (req, res) => {
+  app.get("/api/user", async (req, res) => {
     if (!req.isAuthenticated() || !req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
     
-    // Don't send password to client
+    // Fetch organization to get country code
+    let organizationCountryCode = "GB"; // Default
+    if (req.user.organizationId) {
+      const org = await storage.getOrganization(req.user.organizationId);
+      if (org) {
+        organizationCountryCode = org.countryCode || "GB";
+      }
+    }
+    
+    // Don't send password to client, add organizationCountryCode
     const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = req.user;
-    res.json(userWithoutPassword);
+    res.json({ ...userWithoutPassword, organizationCountryCode });
   });
 
   // Forgot password - request reset token

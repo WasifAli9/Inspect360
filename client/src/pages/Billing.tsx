@@ -7,7 +7,6 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { CreditCard, Package, TrendingUp, ExternalLink, Zap, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { format } from "date-fns";
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
@@ -15,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface Plan {
   id: string;
@@ -65,11 +65,13 @@ interface LedgerEntry {
 export default function Billing() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const locale = useLocale();
   const [selectedTopup, setSelectedTopup] = useState<number | null>(null);
   const [topupDialogOpen, setTopupDialogOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
-  const [currency, setCurrency] = useState<"GBP" | "USD" | "AED">("GBP");
+  // Initialize currency from user's organization country
+  const [currency, setCurrency] = useState<"GBP" | "USD" | "AED">(locale.currency);
 
   // Helper function to format price based on currency
   const formatPrice = (penceAmount: number | null | undefined, curr: "GBP" | "USD" | "AED") => {

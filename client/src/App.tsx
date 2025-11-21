@@ -50,6 +50,7 @@ import { Loader2 } from "lucide-react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { UserProfileMenu } from "@/components/UserProfileMenu";
 import { AIChatbot } from "@/components/AIChatbot";
+import { LocaleProvider } from "@/contexts/LocaleContext";
 
 function AppContent() {
   // Always call hooks at the top level
@@ -182,7 +183,9 @@ function AppContent() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <LocaleProvider>
+        <AppContent />
+      </LocaleProvider>
     </QueryClientProvider>
   );
 }

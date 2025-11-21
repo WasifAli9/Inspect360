@@ -97,6 +97,7 @@ export const registerUserSchema = insertUserSchema.pick({
 }).extend({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  countryCode: z.string().length(2).optional(), // ISO 3166-1 alpha-2
 });
 
 export const loginUserSchema = z.object({
