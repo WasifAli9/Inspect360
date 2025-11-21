@@ -81,6 +81,15 @@ The platform is built on a robust web architecture with a PWA-first approach, em
   - **API Endpoints**: RESTful endpoints for managing tags on entities (/api/{entity}/{id}/tags)
   - **React Query Integration**: Query keys include entity IDs for automatic cache invalidation when entities change
   - **Known Limitation**: Current implementation uses N+1 queries (one per entity) for tag fetching; future optimization should implement batch endpoints for better scalability
+- **Professional BTR Reports System**: Comprehensive reporting suite for data analysis and stakeholder communication:
+  - **Reports Hub**: Central landing page at `/reports` with navigation cards for Inspections, Blocks, Properties, Tenants, and Inventory reports (Owner/Compliance role access only)
+  - **Inspections Report** (Fully Functional): Multi-criteria filtering (status, type, property, block, date range), summary statistics (total/completed/in-progress/scheduled counts), tabular display, and PDF export with branded INSPECT360 cover page using Puppeteer
+  - **Blocks Report** (Fully Functional): Block-level occupancy metrics including total units, occupied/vacant counts, occupancy rates, searchable table view, and PDF export with branded cover page
+  - **Advanced Filtering**: Implemented reports include customizable filters with clear-all functionality and real-time data updates via React Query
+  - **PDF Generation**: Server-side PDF creation using Puppeteer with branded templates (INSPECT360 logo, cyan/teal gradient covers, professional layouts, summary statistics)
+  - **Database Integration**: Reports leverage existing storage layer methods (getInspectionsByOrganization, getBlocksByOrganization, etc.) with client-side filtering
+  - **Backend Security**: All PDF endpoints (/api/reports/inspections/pdf, /api/reports/blocks/pdf) enforce multi-tenant isolation and session authentication
+  - **Future Roadmap**: Properties, Tenants, and Inventory reports marked as "Coming Soon" in the Reports Hub; to be implemented following the established pattern
 - **Tenant Portal**: Dedicated portal for tenants with PWA-first mobile experience:
   - **Separate Authentication**: Independent login system at `/tenant/login` for tenant users (role='tenant')
   - **Tenant Home Dashboard**: Displays property details, block information, tenancy information (lease dates, rent, deposit), and quick action cards

@@ -9154,6 +9154,495 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
+  // ==================== REPORTS ====================
+
+  // Helper function to generate Inspections Report HTML
+  function generateInspectionsReportHTML(
+    inspections: any[],
+    properties: any[],
+    blocks: any[],
+    users: any[],
+    filters: any
+  ): string {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    const formatDate = (date: string | null) => {
+      if (!date) return "N/A";
+      return format(new Date(date), "MMM d, yyyy");
+    };
+
+    const getStatusBadge = (status: string) => {
+      const statusMap: Record<string, { bg: string; color: string }> = {
+        scheduled: { bg: "#f3f4f6", color: "#374151" },
+        in_progress: { bg: "#dbeafe", color: "#1e40af" },
+        completed: { bg: "#dcfce7", color: "#166534" },
+        cancelled: { bg: "#fee2e2", color: "#991b1b" },
+      };
+      const config = statusMap[status] || { bg: "#f3f4f6", color: "#374151" };
+      return `<span style="background: ${config.bg}; color: ${config.color}; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: capitalize;">${escapeHtml(status.replace(/_/g, " "))}</span>`;
+    };
+
+    const totalInspections = inspections.length;
+    const completedCount = inspections.filter(i => i.status === "completed").length;
+    const inProgressCount = inspections.filter(i => i.status === "in_progress").length;
+    const scheduledCount = inspections.filter(i => i.status === "scheduled").length;
+
+    const filterSummary = [];
+    if (filters.status && filters.status !== "all") filterSummary.push(`Status: ${filters.status}`);
+    if (filters.type && filters.type !== "all") filterSummary.push(`Type: ${filters.type}`);
+    if (filters.dateFrom) filterSummary.push(`From: ${formatDate(filters.dateFrom)}`);
+    if (filters.dateTo) filterSummary.push(`To: ${formatDate(filters.dateTo)}`);
+
+    const tableRows = inspections.map((inspection) => {
+      const property = properties.find(p => p.id === inspection.propertyId);
+      const block = blocks.find(b => b.id === property?.blockId);
+      const inspector = users.find(u => u.id === inspection.inspectorId);
+      const inspectorName = inspector
+        ? `${inspector.firstName || ""} ${inspector.lastName || ""}`.trim() || inspector.email
+        : "Unassigned";
+
+      return `
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 12px 8px;">${formatDate(inspection.scheduledDate || inspection.createdAt)}</td>
+          <td style="padding: 12px 8px; font-weight: 500;">${escapeHtml(property?.name || "Unknown")}</td>
+          <td style="padding: 12px 8px;">${escapeHtml(block?.name || "N/A")}</td>
+          <td style="padding: 12px 8px; text-transform: capitalize;">${escapeHtml(inspection.type?.replace(/-/g, " ") || "N/A")}</td>
+          <td style="padding: 12px 8px;">${escapeHtml(inspectorName)}</td>
+          <td style="padding: 12px 8px;">${getStatusBadge(inspection.status)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background: white;
+    }
+    .cover-page {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
+      color: white;
+      page-break-after: always;
+    }
+    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
+    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
+    .cover-date { font-size: 18px; opacity: 0.9; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
+    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
+    .stat-value { font-size: 32px; font-weight: 700; color: #00D5CC; }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    <div class="cover-logo">INSPECT360</div>
+    <div class="cover-title">Inspections Report</div>
+    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    ${filterSummary.length > 0 ? `<div style="margin-top: 24px; font-size: 16px;">Filters: ${escapeHtml(filterSummary.join(" • "))}</div>` : ""}
+  </div>
+
+  <div style="padding: 40px;">
+    <h1 style="font-size: 32px; font-weight: 800; color: #00D5CC; margin-bottom: 32px;">Inspections Summary</h1>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Inspections</div>
+        <div class="stat-value">${totalInspections}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Completed</div>
+        <div class="stat-value">${completedCount}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">In Progress</div>
+        <div class="stat-value">${inProgressCount}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Scheduled</div>
+        <div class="stat-value">${scheduledCount}</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Inspection Records</h2>
+    
+    ${inspections.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Property</th>
+            <th>Block</th>
+            <th>Type</th>
+            <th>Inspector</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    ` : `
+      <div style="text-align: center; padding: 48px; color: #999;">
+        No inspections found matching the selected filters
+      </div>
+    `}
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Helper function to generate Blocks Report HTML
+  function generateBlocksReportHTML(
+    blocks: any[],
+    properties: any[],
+    tenantAssignments: any[]
+  ): string {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    // Calculate block statistics
+    const blocksWithStats = blocks.map(block => {
+      const blockProperties = properties.filter(p => p.blockId === block.id);
+      const totalUnits = blockProperties.length;
+      
+      const occupiedUnits = blockProperties.filter(property => {
+        return tenantAssignments.some(
+          assignment => 
+            assignment.propertyId === property.id && 
+            assignment.status === "active"
+        );
+      }).length;
+
+      const occupancyRate = totalUnits > 0 
+        ? Math.round((occupiedUnits / totalUnits) * 100) 
+        : 0;
+
+      return {
+        ...block,
+        totalUnits,
+        occupiedUnits,
+        vacantUnits: totalUnits - occupiedUnits,
+        occupancyRate,
+      };
+    });
+
+    const totalProperties = properties.length;
+    const avgOccupancyRate = blocksWithStats.length > 0
+      ? Math.round(
+          blocksWithStats.reduce((sum, block) => sum + block.occupancyRate, 0) / 
+          blocksWithStats.length
+        )
+      : 0;
+    const totalActiveTenants = tenantAssignments.filter(a => a.status === "active").length;
+
+    const getOccupancyColor = (rate: number) => {
+      if (rate >= 90) return { bg: "#dcfce7", color: "#166534" };
+      if (rate >= 70) return { bg: "#fef3c7", color: "#92400e" };
+      return { bg: "#fee2e2", color: "#991b1b" };
+    };
+
+    const tableRows = blocksWithStats.map((block) => {
+      const colors = getOccupancyColor(block.occupancyRate);
+      return `
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 12px 8px; font-weight: 500;">${escapeHtml(block.name)}</td>
+          <td style="padding: 12px 8px;">
+            <div>${escapeHtml(block.address || "N/A")}</div>
+            ${block.postcode ? `<div style="color: #666; font-size: 13px;">${escapeHtml(block.postcode)}</div>` : ""}
+          </td>
+          <td style="padding: 12px 8px; text-align: center;">${block.totalUnits}</td>
+          <td style="padding: 12px 8px; text-align: center;">${block.occupiedUnits}</td>
+          <td style="padding: 12px 8px; text-align: center;">${block.vacantUnits}</td>
+          <td style="padding: 12px 8px; text-align: center;">
+            <span style="background: ${colors.bg}; color: ${colors.color}; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">
+              ${block.occupancyRate}%
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background: white;
+    }
+    .cover-page {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
+      color: white;
+      page-break-after: always;
+    }
+    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
+    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
+    .cover-date { font-size: 18px; opacity: 0.9; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
+    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #3B7A8C; }
+    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
+    .stat-value { font-size: 32px; font-weight: 700; color: #3B7A8C; }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    <div class="cover-logo">INSPECT360</div>
+    <div class="cover-title">Blocks Report</div>
+    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+  </div>
+
+  <div style="padding: 40px;">
+    <h1 style="font-size: 32px; font-weight: 800; color: #3B7A8C; margin-bottom: 32px;">Blocks Overview</h1>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Blocks</div>
+        <div class="stat-value">${blocksWithStats.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Properties</div>
+        <div class="stat-value">${totalProperties}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Occupancy</div>
+        <div class="stat-value">${avgOccupancyRate}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Tenants</div>
+        <div class="stat-value">${totalActiveTenants}</div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Block Details</h2>
+    
+    ${blocksWithStats.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Block Name</th>
+            <th>Address</th>
+            <th style="text-align: center;">Total Units</th>
+            <th style="text-align: center;">Occupied</th>
+            <th style="text-align: center;">Vacant</th>
+            <th style="text-align: center;">Occupancy Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    ` : `
+      <div style="text-align: center; padding: 48px; color: #999;">
+        No blocks found
+      </div>
+    `}
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Generate Blocks Report PDF
+  app.post("/api/reports/blocks/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const blocks = await storage.getBlocksByOrganization(user.organizationId);
+      const properties = await storage.getPropertiesByOrganization(user.organizationId);
+      const tenantAssignments = await storage.getTenantAssignmentsByOrganization(user.organizationId);
+
+      const html = generateBlocksReportHTML(blocks, properties, tenantAssignments);
+
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
+      let browser;
+      try {
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "20mm",
+            right: "15mm",
+            bottom: "20mm",
+            left: "15mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating blocks report PDF:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
+  // Generate Inspections Report PDF
+  app.post("/api/reports/inspections/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { status, type, propertyId, blockId, dateFrom, dateTo } = req.body;
+
+      // Get all inspections for the organization
+      let inspections = await storage.getInspectionsByOrganization(user.organizationId);
+
+      // Apply filters
+      if (status && status !== "all") {
+        inspections = inspections.filter(i => i.status === status);
+      }
+
+      if (type && type !== "all") {
+        inspections = inspections.filter(i => i.type === type);
+      }
+
+      if (propertyId && propertyId !== "all") {
+        inspections = inspections.filter(i => i.propertyId === propertyId);
+      }
+
+      if (blockId && blockId !== "all") {
+        const properties = await storage.getPropertiesByOrganization(user.organizationId);
+        const blockProperties = properties.filter(p => p.blockId === blockId);
+        const blockPropertyIds = blockProperties.map(p => p.id);
+        inspections = inspections.filter(i => blockPropertyIds.includes(i.propertyId));
+      }
+
+      if (dateFrom) {
+        inspections = inspections.filter(i => {
+          const inspectionDate = new Date(i.scheduledDate || i.createdAt);
+          return inspectionDate >= new Date(dateFrom);
+        });
+      }
+
+      if (dateTo) {
+        inspections = inspections.filter(i => {
+          const inspectionDate = new Date(i.scheduledDate || i.createdAt);
+          return inspectionDate <= new Date(dateTo);
+        });
+      }
+
+      // Sort by date
+      inspections.sort((a, b) => {
+        const dateA = new Date(a.scheduledDate || a.createdAt);
+        const dateB = new Date(b.scheduledDate || b.createdAt);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      // Get related data for the PDF
+      const properties = await storage.getPropertiesByOrganization(user.organizationId);
+      const blocks = await storage.getBlocksByOrganization(user.organizationId);
+      const users = await storage.getUsersByOrganization(user.organizationId);
+
+      // Generate HTML for PDF
+      const html = generateInspectionsReportHTML(inspections, properties, blocks, users, req.body);
+
+      // Generate PDF using Puppeteer
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
+      let browser;
+      try {
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "20mm",
+            right: "15mm",
+            bottom: "20mm",
+            left: "15mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating inspections report PDF:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
