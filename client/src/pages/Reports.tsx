@@ -1,4 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { 
   FileText, 
@@ -103,41 +104,44 @@ export default function Reports() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {reportCards.map((report) => {
           const Icon = report.icon;
-          const CardWrapper = report.available ? Link : 'div';
-          const cardProps = report.available 
-            ? { href: report.link }
-            : {};
+          const cardContent = (
+            <Card 
+              className={`glass-card transition-all h-full ${report.available ? 'hover-elevate cursor-pointer' : 'opacity-60'}`}
+              data-testid={`card-report-${report.title.toLowerCase().replace(/\s+/g, '-')}`}
+            >
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div className={`w-12 h-12 rounded-xl ${report.bgColor} flex items-center justify-center flex-shrink-0`}>
+                    <Icon className={`h-6 w-6 ${report.color}`} />
+                  </div>
+                  {report.comingSoon ? (
+                    <Badge variant="secondary">Coming Soon</Badge>
+                  ) : (
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+                <CardTitle className="mt-4">{report.title}</CardTitle>
+                <CardDescription className="text-base">
+                  {report.description}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className={`flex items-center text-sm font-medium ${report.available ? 'text-primary' : 'text-muted-foreground'}`}>
+                  {report.available ? 'View Report' : 'Coming Soon'}
+                  {report.available && <span className="ml-2">→</span>}
+                </div>
+              </CardContent>
+            </Card>
+          );
           
-          return (
-            <CardWrapper key={report.title} {...cardProps}>
-              <Card 
-                className={`glass-card transition-all h-full ${report.available ? 'hover-elevate cursor-pointer' : 'opacity-60'}`}
-                data-testid={`card-report-${report.title.toLowerCase().replace(/\s+/g, '-')}`}
-              >
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className={`w-12 h-12 rounded-xl ${report.bgColor} flex items-center justify-center flex-shrink-0`}>
-                      <Icon className={`h-6 w-6 ${report.color}`} />
-                    </div>
-                    {report.comingSoon ? (
-                      <Badge variant="secondary">Coming Soon</Badge>
-                    ) : (
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <CardTitle className="mt-4">{report.title}</CardTitle>
-                  <CardDescription className="text-base">
-                    {report.description}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className={`flex items-center text-sm font-medium ${report.available ? 'text-primary' : 'text-muted-foreground'}`}>
-                    {report.available ? 'View Report' : 'Coming Soon'}
-                    {report.available && <span className="ml-2">→</span>}
-                  </div>
-                </CardContent>
-              </Card>
-            </CardWrapper>
+          return report.available ? (
+            <Link key={report.title} href={report.link}>
+              {cardContent}
+            </Link>
+          ) : (
+            <div key={report.title}>
+              {cardContent}
+            </div>
           );
         })}
       </div>
