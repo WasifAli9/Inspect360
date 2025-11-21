@@ -11,12 +11,16 @@ import { format } from "date-fns";
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Plan {
   id: string;
   code: string;
   name: string;
   monthlyPriceGbp: number;
+  annualPriceGbp?: number | null;
   includedCreditsPerMonth: number;
   active: boolean;
 }
@@ -57,6 +61,19 @@ export default function Billing() {
   const [selectedTopup, setSelectedTopup] = useState<number | null>(null);
   const [topupDialogOpen, setTopupDialogOpen] = useState(false);
   const [location, setLocation] = useLocation();
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
+  const [currency, setCurrency] = useState<"GBP" | "USD" | "AED">("GBP");
+
+  // Helper function to format price based on currency
+  const formatPrice = (penceAmount: number | null | undefined, curr: "GBP" | "USD" | "AED") => {
+    if (!penceAmount) return "N/A";
+    
+    const currencySymbols = { GBP: "£", USD: "$", AED: "د.إ" };
+    const conversionRates = { GBP: 1, USD: 1.27, AED: 4.67 }; // Approximate rates from GBP
+    
+    const convertedAmount = (penceAmount / 100) * conversionRates[curr];
+    return `${currencySymbols[curr]}${convertedAmount.toFixed(2)}`;
+  };
 
   // Check for action=topup URL parameter and auto-open dialog
   useEffect(() => {
@@ -659,7 +676,43 @@ export default function Billing() {
 
       {/* Available Plans */}
       <div id="plans">
-        <h2 className="text-2xl font-bold mb-4">Available Plans</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold">Available Plans</h2>
+          
+          <div className="flex items-center gap-6">
+            {/* Currency Selector */}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="currency" className="text-sm">Currency:</Label>
+              <Select value={currency} onValueChange={(val) => setCurrency(val as "GBP" | "USD" | "AED")}>
+                <SelectTrigger id="currency" className="w-[100px]" data-testid="select-currency">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GBP">GBP (£)</SelectItem>
+                  <SelectItem value="USD">USD ($)</SelectItem>
+                  <SelectItem value="AED">AED (د.إ)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Billing Period Toggle */}
+            <div className="flex items-center gap-3">
+              <Label htmlFor="billing-period" className={billingPeriod === "monthly" ? "font-semibold" : "text-muted-foreground"}>
+                Monthly
+              </Label>
+              <Switch
+                id="billing-period"
+                checked={billingPeriod === "annual"}
+                onCheckedChange={(checked) => setBillingPeriod(checked ? "annual" : "monthly")}
+                data-testid="switch-billing-period"
+              />
+              <Label htmlFor="billing-period" className={billingPeriod === "annual" ? "font-semibold" : "text-muted-foreground"}>
+                Annual <Badge variant="secondary" className="ml-1">Save up to 10%</Badge>
+              </Label>
+            </div>
+          </div>
+        </div>
+        
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {plans
             .sort((a, b) => {
@@ -718,7 +771,28 @@ export default function Billing() {
                     </CardDescription>
                   ) : (
                     <CardDescription>
-                      <span className="text-3xl font-bold">{formatCurrency(plan.monthlyPriceGbp)}</span>/month
+                      {billingPeriod === "annual" && plan.annualPriceGbp ? (
+                        <>
+                          <span className="text-3xl font-bold">{formatPrice(plan.annualPriceGbp, currency)}</span>
+                          <span className="text-base text-muted-foreground">/year</span>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            ({formatPrice(Math.floor(plan.annualPriceGbp / 12), currency)}/month billed annually)
+                          </div>
+                        </>
+                      ) : billingPeriod === "annual" && !plan.annualPriceGbp ? (
+                        <div className="space-y-1">
+                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, currency)}</span>
+                          <span className="text-base text-muted-foreground">/month</span>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Annual billing not available for this plan
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, currency)}</span>
+                          <span className="text-base text-muted-foreground">/month</span>
+                        </>
+                      )}
                     </CardDescription>
                   )}
                 </CardHeader>
