@@ -12,7 +12,9 @@ import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTri
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { TagInput } from "@/components/TagInput";
+import { TagFilter } from "@/components/TagFilter";
 import type { Tag } from "@shared/schema";
+import { Tag as TagIcon } from "lucide-react";
 
 interface BlockStats {
   totalProperties: number;
@@ -33,6 +35,7 @@ interface Block {
   createdAt: string | null;
   updatedAt: string | null;
   stats?: BlockStats;
+  tags?: Tag[];
 }
 
 export default function Blocks() {
@@ -42,6 +45,7 @@ export default function Blocks() {
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [filterTags, setFilterTags] = useState<Tag[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
@@ -49,15 +53,65 @@ export default function Blocks() {
     queryKey: ["/api/blocks"],
   });
 
-  // Filter blocks by search query
+  // Fetch tags for all blocks
+  const { data: blockTagsMap = {} } = useQuery<Record<string, Tag[]>>({
+    queryKey: ["/api/blocks/tags"],
+    enabled: blocks.length > 0,
+    queryFn: async () => {
+      const tagPromises = blocks.map(async (block) => {
+        try {
+          const res = await fetch(`/api/blocks/${block.id}/tags`, { credentials: "include" });
+          if (res.ok) {
+            const tags = await res.json();
+            return { blockId: block.id, tags };
+          }
+        } catch (error) {
+          console.error(`Error fetching tags for block ${block.id}:`, error);
+        }
+        return { blockId: block.id, tags: [] };
+      });
+      
+      const results = await Promise.all(tagPromises);
+      return results.reduce((acc, { blockId, tags }) => {
+        acc[blockId] = tags;
+        return acc;
+      }, {} as Record<string, Tag[]>);
+    },
+  });
+
+  // Merge tags into blocks
+  const blocksWithTags = useMemo(() => {
+    return blocks.map(block => ({
+      ...block,
+      tags: blockTagsMap[block.id] || [],
+    }));
+  }, [blocks, blockTagsMap]);
+
+  // Filter blocks by search query and tags
   const filteredBlocks = useMemo(() => {
-    if (!searchQuery.trim()) return blocks;
-    const query = searchQuery.toLowerCase();
-    return blocks.filter(block => 
-      block.name.toLowerCase().includes(query) ||
-      block.address.toLowerCase().includes(query)
-    );
-  }, [blocks, searchQuery]);
+    let filtered = blocksWithTags;
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(block => 
+        block.name.toLowerCase().includes(query) ||
+        block.address.toLowerCase().includes(query)
+      );
+    }
+
+    // Filter by tags (show blocks that have ALL selected tags)
+    if (filterTags.length > 0) {
+      filtered = filtered.filter(block => {
+        if (!block.tags || block.tags.length === 0) return false;
+        return filterTags.every(filterTag =>
+          block.tags!.some(blockTag => blockTag.id === filterTag.id)
+        );
+      });
+    }
+
+    return filtered;
+  }, [blocksWithTags, searchQuery, filterTags]);
 
   const createBlockMutation = useMutation({
     mutationFn: async (data: { name: string; address: string; notes?: string }) => {
@@ -225,17 +279,24 @@ export default function Blocks() {
 
       {/* Modern Search Filter */}
       {blocks.length > 0 && (
-        <div className="max-w-2xl">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground h-5 w-5" />
-            <Input
-              placeholder="Search blocks by name or address..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 h-12 text-base glass-card border-border/50"
-              data-testid="input-search-blocks"
-            />
+        <div className="space-y-4">
+          <div className="max-w-2xl">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-muted-foreground h-5 w-5" />
+              <Input
+                placeholder="Search blocks by name or address..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-12 h-12 text-base glass-card border-border/50"
+                data-testid="input-search-blocks"
+              />
+            </div>
           </div>
+          <TagFilter
+            selectedTags={filterTags}
+            onTagsChange={setFilterTags}
+            placeholder="Filter by tags..."
+          />
         </div>
       )}
 
@@ -398,6 +459,30 @@ export default function Blocks() {
                     <div className="space-y-1">
                       <span className="text-xs font-medium text-muted-foreground">Notes</span>
                       <p className="text-sm text-foreground line-clamp-2">{block.notes}</p>
+                    </div>
+                  </>
+                )}
+
+                {/* Tags */}
+                {block.tags && block.tags.length > 0 && (
+                  <>
+                    <div className="h-px bg-border/30" />
+                    <div className="space-y-2">
+                      <span className="text-xs font-medium text-muted-foreground">Tags</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {block.tags.map(tag => (
+                          <Badge
+                            key={tag.id}
+                            variant="secondary"
+                            className="gap-1 text-xs"
+                            style={{ backgroundColor: tag.color || undefined }}
+                            data-testid={`tag-${block.id}-${tag.id}`}
+                          >
+                            <TagIcon className="h-3 w-3" />
+                            {tag.name}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </>
                 )}
