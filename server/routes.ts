@@ -69,10 +69,19 @@ import {
   teamCategories
 } from "@shared/schema";
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-09-30.clover",
-});
+// Initialize Stripe (lazy initialization)
+let stripe: Stripe | null = null;
+function getStripe(): Stripe {
+  if (!stripe) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw new Error("Stripe secret key not configured. Please set STRIPE_SECRET_KEY environment variable.");
+    }
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-09-30.clover",
+    });
+  }
+  return stripe;
+}
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
 // Using gpt-5 for vision analysis - the newest OpenAI model (released August 7, 2025), supports images and provides excellent results
@@ -3370,7 +3379,7 @@ Be objective and specific. Focus on actionable repairs.`;
       const { credits } = req.body;
       const amount = credits * 100; // $1 per credit, in cents
 
-      const session = await stripe.checkout.sessions.create({
+      const session = await getStripe().checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [
           {
@@ -3406,7 +3415,7 @@ Be objective and specific. Focus on actionable repairs.`;
     const sig = req.headers['stripe-signature'];
     
     try {
-      const event = stripe.webhooks.constructEvent(
+      const event = getStripe().webhooks.constructEvent(
         req.body,
         sig!,
         process.env.STRIPE_WEBHOOK_SECRET || "whsec_test"
@@ -6811,7 +6820,7 @@ Be objective and specific. Focus on actionable repairs.`;
       // Create or get Stripe customer
       let stripeCustomerId = org.stripeCustomerId;
       if (!stripeCustomerId) {
-        const customer = await stripe.customers.create({
+        const customer = await getStripe().customers.create({
           email: user.email,
           name: org.name,
           metadata: {
@@ -6838,7 +6847,7 @@ Be objective and specific. Focus on actionable repairs.`;
         organizationId: org.id
       });
       
-      const session = await stripe.checkout.sessions.create({
+      const session = await getStripe().checkout.sessions.create({
         customer: stripeCustomerId,
         mode: "subscription",
         line_items: [
@@ -6896,7 +6905,7 @@ Be objective and specific. Focus on actionable repairs.`;
         ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
         : "http://localhost:5000";
       
-      const session = await stripe.billingPortal.sessions.create({
+      const session = await getStripe().billingPortal.sessions.create({
         customer: org.stripeCustomerId,
         return_url: `${baseUrl}/billing`,
       });
@@ -6924,7 +6933,7 @@ Be objective and specific. Focus on actionable repairs.`;
       console.log(`[Process Session] Retrieving session ${sessionId} for org ${user.organizationId}`);
 
       // Retrieve the session from Stripe
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const session = await getStripe().checkout.sessions.retrieve(sessionId);
 
       // Verify the session belongs to this organization
       if (session.metadata?.organizationId !== user.organizationId) {
@@ -7016,7 +7025,7 @@ Be objective and specific. Focus on actionable repairs.`;
         await storage.updateOrganizationStripe(user.organizationId, session.customer as string, "active");
 
         // Retrieve full subscription details
-        const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+        const subscription = await getStripe().subscriptions.retrieve(session.subscription as string);
         
         // Get plan details
         const plan = await storage.getPlan(planId);
@@ -7157,7 +7166,7 @@ Be objective and specific. Focus on actionable repairs.`;
               break;
             }
 
-            const subscription = await stripe.subscriptions.retrieve(session.subscription);
+            const subscription = await getStripe().subscriptions.retrieve(session.subscription);
             const plan = await storage.getPlan(planId);
             
             if (plan) {
@@ -7200,7 +7209,7 @@ Be objective and specific. Focus on actionable repairs.`;
           const invoice = event.data.object;
           
           if (invoice.subscription) {
-            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+            const subscription = await getStripe().subscriptions.retrieve(invoice.subscription);
             const dbSubscription = await storage.getSubscriptionByStripeId(subscription.id);
 
             if (dbSubscription) {
@@ -7236,7 +7245,7 @@ Be objective and specific. Focus on actionable repairs.`;
           const invoice = event.data.object;
           
           if (invoice.subscription) {
-            const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+            const subscription = await getStripe().subscriptions.retrieve(invoice.subscription);
             const dbSubscription = await storage.getSubscriptionByStripeId(subscription.id);
 
             if (dbSubscription) {
@@ -7340,7 +7349,7 @@ Be objective and specific. Focus on actionable repairs.`;
         ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
         : "http://localhost:5000";
       
-      const session = await stripe.checkout.sessions.create({
+      const session = await getStripe().checkout.sessions.create({
         customer: org.stripeCustomerId || undefined,
         mode: "payment",
         line_items: [
