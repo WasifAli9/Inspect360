@@ -151,14 +151,14 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
 
   const assignTenantMutation = useMutation({
     mutationFn: async (data: { tenantId: string; leaseData: any }) => {
-      // Build payload - convert string numbers to actual numbers for schema validation
+      // Build payload - convert dates to ISO strings and numbers for schema validation
       const payload = {
         propertyId,
         tenantId: data.tenantId,
-        leaseStartDate: data.leaseData.leaseStartDate || undefined,
-        leaseEndDate: data.leaseData.leaseEndDate || undefined,
-        monthlyRent: data.leaseData.monthlyRent ? parseFloat(data.leaseData.monthlyRent) : undefined,
-        depositAmount: data.leaseData.depositAmount ? parseFloat(data.leaseData.depositAmount) : undefined,
+        leaseStartDate: data.leaseData.leaseStartDate ? new Date(data.leaseData.leaseStartDate).toISOString() : undefined,
+        leaseEndDate: data.leaseData.leaseEndDate ? new Date(data.leaseData.leaseEndDate).toISOString() : undefined,
+        monthlyRent: data.leaseData.monthlyRent ? data.leaseData.monthlyRent : undefined,
+        depositAmount: data.leaseData.depositAmount ? data.leaseData.depositAmount : undefined,
         isActive: data.leaseData.isActive,
       };
       return apiRequest("POST", "/api/tenant-assignments", payload);
@@ -183,23 +183,11 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
       setMode("select");
       onSuccess?.();
     },
-    onError: async (error: any) => {
-      // Try to get detailed error message from response
-      let errorMessage = "An error occurred while assigning the tenant";
-      try {
-        if (error.response) {
-          const errorData = await error.response.json().catch(() => null);
-          if (errorData?.details) {
-            errorMessage = JSON.stringify(errorData.details);
-          } else if (errorData?.error) {
-            errorMessage = errorData.error;
-          }
-        }
-      } catch (e) {
-        // Use default error message
-      }
+    onError: (error: any) => {
+      // Extract error message from the thrown error
+      const errorMessage = error?.message || "An error occurred while assigning the tenant";
       
-      console.error("Tenant assignment error:", error, errorMessage);
+      console.error("Tenant assignment error:", error);
       toast({
         title: "Failed to assign tenant",
         description: errorMessage,
