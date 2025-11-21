@@ -54,8 +54,9 @@ export default function Blocks() {
   });
 
   // Fetch tags for all blocks
+  const blockIds = useMemo(() => blocks.map(b => b.id).sort().join(','), [blocks]);
   const { data: blockTagsMap = {} } = useQuery<Record<string, Tag[]>>({
-    queryKey: ["/api/blocks/tags"],
+    queryKey: ["/api/blocks/tags", blockIds],
     enabled: blocks.length > 0,
     queryFn: async () => {
       const tagPromises = blocks.map(async (block) => {
@@ -124,6 +125,7 @@ export default function Blocks() {
         await updateBlockTags(newBlock.id, selectedTags);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks/tags"] });
       toast({ title: "Block created successfully" });
       handleCloseDialog();
     },
@@ -146,6 +148,7 @@ export default function Blocks() {
       // Update tags for the block
       await updateBlockTags(variables.id, selectedTags);
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks/tags"] });
       toast({ title: "Block updated successfully" });
       handleCloseDialog();
     },
@@ -160,6 +163,7 @@ export default function Blocks() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks/tags"] });
       toast({ title: "Block deleted successfully" });
     },
     onError: () => {

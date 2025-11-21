@@ -50,8 +50,9 @@ export default function Properties() {
   });
 
   // Fetch tags for all properties
+  const propertyIds = useMemo(() => properties.map(p => p.id).sort().join(','), [properties]);
   const { data: propertyTagsMap = {} } = useQuery<Record<string, Tag[]>>({
-    queryKey: ["/api/properties/tags"],
+    queryKey: ["/api/properties/tags", propertyIds],
     enabled: properties.length > 0,
     queryFn: async () => {
       const tagPromises = properties.map(async (property: any) => {
@@ -134,6 +135,7 @@ export default function Properties() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/properties/tags"] });
       toast({
         title: "Success",
         description: "Property created successfully",
@@ -159,6 +161,7 @@ export default function Properties() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/properties/tags"] });
       toast({
         title: "Success",
         description: "Property updated successfully",

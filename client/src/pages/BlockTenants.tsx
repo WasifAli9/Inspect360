@@ -81,8 +81,12 @@ export default function BlockTenants() {
   });
 
   // Fetch tags for all tenant assignments
+  const tenantAssignmentIds = useMemo(() => 
+    (tenantsData?.tenants || []).map((t: TenantAssignment) => t.assignment.id).sort().join(','), 
+    [tenantsData]
+  );
   const { data: tenantTagsMap = {} } = useQuery<Record<string, Tag[]>>({
-    queryKey: ["/api/tenant-assignments/tags", blockId],
+    queryKey: ["/api/tenant-assignments/tags", blockId, tenantAssignmentIds],
     enabled: !!tenantsData?.tenants && tenantsData.tenants.length > 0,
     queryFn: async () => {
       const tenants = tenantsData?.tenants || [];

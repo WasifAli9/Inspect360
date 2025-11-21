@@ -72,6 +72,15 @@ The platform is built on a robust web architecture with a PWA-first approach, em
   - **OpenAI Integration**: Uses GPT-5 with proper parameters (max_completion_tokens, no temperature) for main responses and GPT-5-mini for conversation title generation.
   - **Frontend Components**: AIChatbot component with conversation history drawer, message threading, loading states, and error handling. Knowledge Base management UI with Uppy-based document upload.
   - **Session-based Security**: All chat and KB routes use session authentication with multi-tenant isolation.
+- **Tag-Based Filtering System**: Comprehensive tagging and filtering system for organizing entities:
+  - **Reusable TagFilter Component**: Multi-select tag filtering interface with organization-wide tag management
+  - **Entity Tagging**: Tags can be applied to Blocks, Properties, and Tenant Assignments for flexible organization
+  - **Combined Filtering**: Search by text AND filter by tags (entities must have ALL selected tags)
+  - **Visual Tag Display**: Colored tag badges displayed on entity cards for quick identification
+  - **Database Schema**: Tags table with color support; junction tables (block_tags, property_tags, tenant_assignment_tags) for many-to-many relationships
+  - **API Endpoints**: RESTful endpoints for managing tags on entities (/api/{entity}/{id}/tags)
+  - **React Query Integration**: Query keys include entity IDs for automatic cache invalidation when entities change
+  - **Known Limitation**: Current implementation uses N+1 queries (one per entity) for tag fetching; future optimization should implement batch endpoints for better scalability
 - **Tenant Portal**: Dedicated portal for tenants with PWA-first mobile experience:
   - **Separate Authentication**: Independent login system at `/tenant/login` for tenant users (role='tenant')
   - **Tenant Home Dashboard**: Displays property details, block information, tenancy information (lease dates, rent, deposit), and quick action cards
