@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/TagInput";
+import { TagFilter } from "@/components/TagFilter";
 import type { Tag } from "@shared/schema";
 import {
   Select,
@@ -21,7 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft, Pencil } from "lucide-react";
+import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft, Pencil, Tag as TagIcon } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useSearch } from "wouter";
@@ -37,6 +38,8 @@ export default function Properties() {
   const [address, setAddress] = useState("");
   const [blockId, setBlockId] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterTags, setFilterTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
 
   const { data: properties = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/properties"],
@@ -46,15 +49,49 @@ export default function Properties() {
     queryKey: ["/api/blocks"],
   });
 
+  // Fetch tags for all properties
+  const { data: propertyTagsMap = {} } = useQuery<Record<string, Tag[]>>({
+    queryKey: ["/api/properties/tags"],
+    enabled: properties.length > 0,
+    queryFn: async () => {
+      const tagPromises = properties.map(async (property: any) => {
+        try {
+          const res = await fetch(`/api/properties/${property.id}/tags`, { credentials: "include" });
+          if (res.ok) {
+            const tags = await res.json();
+            return { propertyId: property.id, tags };
+          }
+        } catch (error) {
+          console.error(`Error fetching tags for property ${property.id}:`, error);
+        }
+        return { propertyId: property.id, tags: [] };
+      });
+      
+      const results = await Promise.all(tagPromises);
+      return results.reduce((acc, { propertyId, tags }) => {
+        acc[propertyId] = tags;
+        return acc;
+      }, {} as Record<string, Tag[]>);
+    },
+  });
+
+  // Merge tags into properties
+  const propertiesWithTags = useMemo(() => {
+    return properties.map(property => ({
+      ...property,
+      tags: propertyTagsMap[property.id] || [],
+    }));
+  }, [properties, propertyTagsMap]);
+
   // Fetch block details if filtering by block
   const { data: selectedBlock } = useQuery<any>({
     queryKey: ["/api/blocks", urlBlockId],
     enabled: !!urlBlockId,
   });
 
-  // Filter properties by block (from URL) and search query
+  // Filter properties by block (from URL), search query, and tags
   const filteredProperties = useMemo(() => {
-    let filtered = properties;
+    let filtered = propertiesWithTags;
     
     // First filter by blockId from URL if present
     if (urlBlockId) {
@@ -69,9 +106,19 @@ export default function Properties() {
         property.address.toLowerCase().includes(query)
       );
     }
+
+    // Filter by tags (show properties that have ALL selected tags)
+    if (filterTags.length > 0) {
+      filtered = filtered.filter(property => {
+        if (!property.tags || property.tags.length === 0) return false;
+        return filterTags.every(filterTag =>
+          property.tags!.some((propertyTag: Tag) => propertyTag.id === filterTag.id)
+        );
+      });
+    }
     
     return filtered;
-  }, [properties, urlBlockId, searchQuery]);
+  }, [propertiesWithTags, urlBlockId, searchQuery, filterTags]);
 
   // Prepopulate form when dialog opens and we have a selected block (only for new properties, not edits)
   useEffect(() => {
@@ -272,16 +319,23 @@ export default function Properties() {
         </Dialog>
       </div>
 
-      {/* Search Filter */}
+      {/* Search and Tag Filter */}
       {properties.length > 0 && (
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-          <Input
-            placeholder="Search properties by name or address..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-            data-testid="input-search-properties"
+        <div className="space-y-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search properties by name or address..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+              data-testid="input-search-properties"
+            />
+          </div>
+          <TagFilter
+            selectedTags={filterTags}
+            onTagsChange={setFilterTags}
+            placeholder="Filter by tags..."
           />
         </div>
       )}
@@ -340,6 +394,21 @@ export default function Properties() {
                         <MapPin className="w-3 h-3" />
                         {propertyBlock.name}
                       </p>
+                    )}
+                    {property.tags && property.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {property.tags.map((tag: Tag) => (
+                          <span
+                            key={tag.id}
+                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md"
+                            style={{ backgroundColor: tag.color || '#e2e8f0' }}
+                            data-testid={`tag-${property.id}-${tag.id}`}
+                          >
+                            <TagIcon className="h-3 w-3" />
+                            {tag.name}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </CardContent>
                 </Link>
