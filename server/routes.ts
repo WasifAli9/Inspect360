@@ -377,7 +377,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const organizationId = user.organizationId;
 
-      const teamMembers = await storage.getUsersByOrganization(organizationId);
+      // Fetch all users but exclude tenants (they should appear in Contacts instead)
+      const allUsers = await storage.getUsersByOrganization(organizationId);
+      const teamMembers = allUsers.filter(u => u.role !== 'tenant');
       res.json(teamMembers);
     } catch (error) {
       console.error("Error fetching team members:", error);
