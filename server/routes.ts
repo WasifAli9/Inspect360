@@ -313,6 +313,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         console.log(`✓ Created sample tenant Joe Bloggs (${joeBloggs.email}) for organization ${organization.id}`);
 
+        // Create contact record for Joe Bloggs
+        await storage.createContact({
+          organizationId: organization.id,
+          type: 'tenant',
+          firstName: "Joe",
+          lastName: "Bloggs",
+          email: `joe.bloggs+${uniqueSuffix}@inspect360.demo`,
+          phone: "+44 7700 900123",
+          linkedUserId: joeBloggs.id,
+          notes: "Sample tenant contact created automatically for demonstration purposes",
+        });
+        console.log(`✓ Created contact record for Joe Bloggs`);
+
         // Create tenant assignment linking Joe Bloggs to Property A
         const tenantAssignment = await storage.createTenantAssignment({
           organizationId: organization.id,
@@ -507,6 +520,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         certificateUrls,
         organizationId: requester.organizationId,
       });
+
+      // If the user is a tenant, automatically create a corresponding contact
+      if (role === 'tenant') {
+        try {
+          await storage.createContact({
+            organizationId: requester.organizationId,
+            type: 'tenant',
+            firstName: firstName || '',
+            lastName: lastName || '',
+            email: email,
+            phone: phone || undefined,
+            profileImageUrl: profileImageUrl || undefined,
+            linkedUserId: newUser.id,
+            notes: 'Automatically created from tenant user',
+          });
+          console.log(`✓ Created contact record for tenant user ${newUser.id}`);
+        } catch (contactError) {
+          // Log error but don't fail the user creation
+          console.error(`Warning: Failed to create contact for tenant user ${newUser.id}:`, contactError);
+        }
+      }
 
       // Don't return password
       const { password: _, ...userWithoutPassword } = newUser;
