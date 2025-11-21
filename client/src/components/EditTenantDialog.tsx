@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { updateTenantAssignmentSchema } from "@shared/schema";
 import {
@@ -21,12 +21,22 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Loader2 } from "lucide-react";
+import { Loader2, Send, Upload, X, FileText, Download } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 const formSchema = z.object({
   leaseStartDate: z.string().optional(),
@@ -34,6 +44,11 @@ const formSchema = z.object({
   monthlyRent: z.string().optional(),
   depositAmount: z.string().optional(),
   isActive: z.boolean(),
+  hasPortalAccess: z.boolean(),
+  nextOfKinName: z.string().optional(),
+  nextOfKinPhone: z.string().optional(),
+  nextOfKinEmail: z.string().optional(),
+  nextOfKinRelationship: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -50,7 +65,28 @@ interface TenantAssignment {
     monthlyRent?: string;
     depositAmount?: string;
     isActive: boolean;
+    hasPortalAccess?: boolean;
+    nextOfKinName?: string;
+    nextOfKinPhone?: string;
+    nextOfKinEmail?: string;
+    nextOfKinRelationship?: string;
   };
+}
+
+interface Tag {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+interface Attachment {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  fileType?: string;
+  fileSize?: number;
+  description?: string;
+  createdAt: string;
 }
 
 interface EditTenantDialogProps {
@@ -67,7 +103,35 @@ export default function EditTenantDialog({
   onSuccess,
 }: EditTenantDialogProps) {
   const [open, setOpen] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  // Fetch organization tags
+  const { data: tags = [] } = useQuery<Tag[]>({
+    queryKey: ["/api/tags"],
+    enabled: open,
+  });
+
+  // Fetch tenant assignment tags
+  const { data: assignmentTags = [] } = useQuery<Tag[]>({
+    queryKey: ["/api/tenant-assignments", tenant.assignment.id, "tags"],
+    enabled: open,
+  });
+
+  // Fetch attachments
+  const { data: attachments = [] } = useQuery<Attachment[]>({
+    queryKey: ["/api/tenant-assignments", tenant.assignment.id, "attachments"],
+    enabled: open,
+  });
+
+  // Update selected tags when assignment tags load
+  useEffect(() => {
+    if (assignmentTags.length > 0) {
+      setSelectedTags(assignmentTags.map((t) => t.id));
+    }
+  }, [assignmentTags]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -77,6 +141,11 @@ export default function EditTenantDialog({
       monthlyRent: "",
       depositAmount: "",
       isActive: true,
+      hasPortalAccess: true,
+      nextOfKinName: "",
+      nextOfKinPhone: "",
+      nextOfKinEmail: "",
+      nextOfKinRelationship: "",
     },
   });
 
@@ -95,19 +164,28 @@ export default function EditTenantDialog({
         monthlyRent: tenant.assignment.monthlyRent || "",
         depositAmount: tenant.assignment.depositAmount || "",
         isActive: tenant.assignment.isActive,
+        hasPortalAccess: tenant.assignment.hasPortalAccess ?? true,
+        nextOfKinName: tenant.assignment.nextOfKinName || "",
+        nextOfKinPhone: tenant.assignment.nextOfKinPhone || "",
+        nextOfKinEmail: tenant.assignment.nextOfKinEmail || "",
+        nextOfKinRelationship: tenant.assignment.nextOfKinRelationship || "",
       });
     }
   }, [open, tenant, form]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      // Transform form data to match API expectations
       const payload = updateTenantAssignmentSchema.parse({
         leaseStartDate: data.leaseStartDate ? new Date(data.leaseStartDate) : null,
         leaseEndDate: data.leaseEndDate ? new Date(data.leaseEndDate) : null,
         monthlyRent: data.monthlyRent && data.monthlyRent.trim() !== "" ? data.monthlyRent : null,
         depositAmount: data.depositAmount && data.depositAmount.trim() !== "" ? data.depositAmount : null,
         isActive: data.isActive,
+        hasPortalAccess: data.hasPortalAccess,
+        nextOfKinName: data.nextOfKinName && data.nextOfKinName.trim() !== "" ? data.nextOfKinName : null,
+        nextOfKinPhone: data.nextOfKinPhone && data.nextOfKinPhone.trim() !== "" ? data.nextOfKinPhone : null,
+        nextOfKinEmail: data.nextOfKinEmail && data.nextOfKinEmail.trim() !== "" ? data.nextOfKinEmail : null,
+        nextOfKinRelationship: data.nextOfKinRelationship && data.nextOfKinRelationship.trim() !== "" ? data.nextOfKinRelationship : null,
       });
       return apiRequest(`/api/tenant-assignments/${tenant.assignment.id}`, "PUT", payload);
     },
@@ -129,8 +207,115 @@ export default function EditTenantDialog({
     },
   });
 
+  const sendPasswordMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/tenant-assignments/${tenant.assignment.id}/send-password`, "POST", {});
+    },
+    onSuccess: () => {
+      toast({
+        title: "Password sent",
+        description: `Portal credentials have been sent to ${tenant.email}`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to send password",
+        description: "An error occurred while sending the password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateTagsMutation = useMutation({
+    mutationFn: async (tagIds: string[]) => {
+      return apiRequest(`/api/tenant-assignments/${tenant.assignment.id}/tags`, "PUT", { tagIds });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant-assignments", tenant.assignment.id, "tags"] });
+      toast({
+        title: "Tags updated",
+        description: "Tenant tags have been successfully updated",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to update tags",
+        description: "An error occurred while updating tags",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: string) => {
+      return apiRequest(`/api/tenancy-attachments/${attachmentId}`, "DELETE", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant-assignments", tenant.assignment.id, "attachments"] });
+      toast({
+        title: "Attachment deleted",
+        description: "The attachment has been removed",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to delete attachment",
+        description: "An error occurred while deleting the attachment",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: FormData) => {
     updateMutation.mutate(data);
+  };
+
+  const handleToggleTag = (tagId: string) => {
+    const newTags = selectedTags.includes(tagId)
+      ? selectedTags.filter((id) => id !== tagId)
+      : [...selectedTags, tagId];
+    setSelectedTags(newTags);
+    updateTagsMutation.mutate(newTags);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("tenantAssignmentId", tenant.assignment.id);
+
+    try {
+      await fetch("/api/tenancy-attachments", {
+        method: "POST",
+        body: formData,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant-assignments", tenant.assignment.id, "attachments"] });
+      toast({
+        title: "File uploaded",
+        description: `${file.name} has been uploaded successfully`,
+      });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: "An error occurred while uploading the file",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      e.target.value = ""; // Reset input
+    }
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return "Unknown size";
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1) return `${mb.toFixed(2)} MB`;
+    const kb = bytes / 1024;
+    return `${kb.toFixed(2)} KB`;
   };
 
   const fullName = [tenant.firstName, tenant.lastName].filter(Boolean).join(" ") || tenant.email;
@@ -138,117 +323,385 @@ export default function EditTenantDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Tenant Assignment</DialogTitle>
           <DialogDescription>Update lease details for {fullName}</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="leaseStartDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Lease Start Date</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
-                        data-testid="input-lease-start"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {/* Lease Details Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Lease Details</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="leaseStartDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Lease Start Date</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          {...field}
+                          data-testid="input-lease-start"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="leaseEndDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Lease End Date</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
-                        data-testid="input-lease-end"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="leaseEndDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Lease End Date</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          {...field}
+                          data-testid="input-lease-end"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="monthlyRent"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Monthly Rent</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          {...field}
+                          data-testid="input-monthly-rent"
+                        />
+                      </FormControl>
+                      <FormDescription>In dollars</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="depositAmount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Deposit Amount</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          {...field}
+                          data-testid="input-deposit"
+                        />
+                      </FormControl>
+                      <FormDescription>In dollars</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="monthlyRent"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Monthly Rent</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                        data-testid="input-monthly-rent"
-                      />
-                    </FormControl>
-                    <FormDescription>In dollars</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <Separator />
 
-              <FormField
-                control={form.control}
-                name="depositAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Deposit Amount</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                        data-testid="input-deposit"
-                      />
-                    </FormControl>
-                    <FormDescription>In dollars</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* Next of Kin Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Next of Kin Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="nextOfKinName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Full Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="John Doe"
+                          {...field}
+                          data-testid="input-next-of-kin-name"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="nextOfKinRelationship"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Relationship</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-next-of-kin-relationship">
+                            <SelectValue placeholder="Select relationship" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Parent">Parent</SelectItem>
+                          <SelectItem value="Sibling">Sibling</SelectItem>
+                          <SelectItem value="Spouse">Spouse</SelectItem>
+                          <SelectItem value="Partner">Partner</SelectItem>
+                          <SelectItem value="Child">Child</SelectItem>
+                          <SelectItem value="Friend">Friend</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="nextOfKinPhone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone Number</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          placeholder="+44 7700 900000"
+                          {...field}
+                          data-testid="input-next-of-kin-phone"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="nextOfKinEmail"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email Address</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          placeholder="email@example.com"
+                          {...field}
+                          data-testid="input-next-of-kin-email"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
-            <FormField
-              control={form.control}
-              name="isActive"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-base">Active Status</FormLabel>
-                    <FormDescription>
-                      Mark this tenant assignment as active or inactive
-                    </FormDescription>
+            <Separator />
+
+            {/* Portal Access & Status Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Access & Status</h3>
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="hasPortalAccess"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Tenant Portal Access</FormLabel>
+                        <FormDescription>
+                          Allow tenant to access the portal
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-portal-access"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch("hasPortalAccess") && (
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">Send Portal Credentials</p>
+                        <p className="text-sm text-muted-foreground">
+                          Email login credentials to {tenant.email}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => sendPasswordMutation.mutate()}
+                        disabled={sendPasswordMutation.isPending}
+                        data-testid="button-send-password"
+                      >
+                        {sendPasswordMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Send className="mr-2 h-4 w-4" />
+                            Send Password
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      data-testid="switch-is-active"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+                )}
+
+                <FormField
+                  control={form.control}
+                  name="isActive"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Active Status</FormLabel>
+                        <FormDescription>
+                          Mark this tenant assignment as active or inactive
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-is-active"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Tags Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Tags</h3>
+              <div className="flex flex-wrap gap-2">
+                {tags.length > 0 ? (
+                  tags.map((tag) => (
+                    <Badge
+                      key={tag.id}
+                      variant={selectedTags.includes(tag.id) ? "default" : "outline"}
+                      className="cursor-pointer hover-elevate"
+                      onClick={() => handleToggleTag(tag.id)}
+                      style={
+                        selectedTags.includes(tag.id) && tag.color
+                          ? { backgroundColor: tag.color, borderColor: tag.color }
+                          : {}
+                      }
+                      data-testid={`badge-tag-${tag.id}`}
+                    >
+                      {tag.name}
+                    </Badge>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No tags available</p>
+                )}
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Attachments Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Tenancy Attachments</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => document.getElementById("file-upload")?.click()}
+                  disabled={uploading}
+                  data-testid="button-upload-attachment"
+                >
+                  {uploading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Upload File
+                </Button>
+                <input
+                  id="file-upload"
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                />
+              </div>
+
+              <div className="space-y-2">
+                {attachments.length > 0 ? (
+                  attachments.map((attachment) => (
+                    <div
+                      key={attachment.id}
+                      className="flex items-center justify-between rounded-lg border p-3"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">{attachment.fileName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatFileSize(attachment.fileSize)} · {new Date(attachment.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          asChild
+                          data-testid={`button-download-${attachment.id}`}
+                        >
+                          <a href={attachment.fileUrl} target="_blank" rel="noopener noreferrer">
+                            <Download className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteAttachmentMutation.mutate(attachment.id)}
+                          disabled={deleteAttachmentMutation.isPending}
+                          data-testid={`button-delete-${attachment.id}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No attachments uploaded yet
+                  </p>
+                )}
+              </div>
+            </div>
 
             <div className="flex justify-end gap-2 pt-4">
               <Button

@@ -37,6 +37,8 @@ import {
   contactTags,
   dashboardPreferences,
   tenantAssignments,
+  tenantAssignmentTags,
+  tenancyAttachments,
   messageTemplates,
   fixfloConfig,
   fixfloWebhookLogs,
@@ -116,6 +118,8 @@ import {
   type InsertDashboardPreferences,
   type TenantAssignment,
   type InsertTenantAssignment,
+  type TenancyAttachment,
+  type InsertTenancyAttachment,
   plans,
   type Plan,
   type InsertPlan,
@@ -312,6 +316,14 @@ export interface IStorage {
   updateTenantAssignment(id: string, updates: Partial<InsertTenantAssignment>): Promise<TenantAssignment>;
   deleteTenantAssignment(id: string): Promise<void>;
   getTenantAssignmentsByProperty(propertyId: string, organizationId: string): Promise<any[]>;
+  getTenantAssignmentTags(tenantAssignmentId: string, organizationId: string): Promise<any[]>;
+  updateTenantAssignmentTags(tenantAssignmentId: string, tagIds: string[], organizationId: string): Promise<void>;
+  
+  // Tenancy Attachment operations
+  createTenancyAttachment(attachment: InsertTenancyAttachment & { organizationId: string }): Promise<TenancyAttachment>;
+  getTenancyAttachment(id: string, organizationId: string): Promise<TenancyAttachment | undefined>;
+  getTenancyAttachments(tenantAssignmentId: string, organizationId: string): Promise<TenancyAttachment[]>;
+  deleteTenancyAttachment(id: string, organizationId: string): Promise<void>;
 
   // Inventory Template operations
   createInventoryTemplate(template: InsertInventoryTemplate): Promise<InventoryTemplate>;
@@ -1556,6 +1568,145 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTenantAssignment(id: string): Promise<void> {
     await db.delete(tenantAssignments).where(eq(tenantAssignments.id, id));
+  }
+
+  async getTenantAssignmentTags(tenantAssignmentId: string, organizationId: string): Promise<any[]> {
+    const result = await db
+      .select({
+        id: tags.id,
+        name: tags.name,
+        color: tags.color,
+      })
+      .from(tenantAssignmentTags)
+      .innerJoin(tags, eq(tenantAssignmentTags.tagId, tags.id))
+      .innerJoin(tenantAssignments, eq(tenantAssignmentTags.tenantAssignmentId, tenantAssignments.id))
+      .where(
+        and(
+          eq(tenantAssignmentTags.tenantAssignmentId, tenantAssignmentId),
+          eq(tenantAssignments.organizationId, organizationId)
+        )
+      );
+    
+    return result;
+  }
+
+  async updateTenantAssignmentTags(tenantAssignmentId: string, tagIds: string[], organizationId: string): Promise<void> {
+    // Verify tenant assignment belongs to organization
+    const assignment = await db
+      .select()
+      .from(tenantAssignments)
+      .where(
+        and(
+          eq(tenantAssignments.id, tenantAssignmentId),
+          eq(tenantAssignments.organizationId, organizationId)
+        )
+      );
+    
+    if (assignment.length === 0) {
+      throw new Error("Tenant assignment not found or access denied");
+    }
+    
+    // Delete existing tags
+    await db.delete(tenantAssignmentTags).where(eq(tenantAssignmentTags.tenantAssignmentId, tenantAssignmentId));
+    
+    // Insert new tags
+    if (tagIds.length > 0) {
+      await db.insert(tenantAssignmentTags).values(
+        tagIds.map(tagId => ({
+          tenantAssignmentId,
+          tagId,
+        }))
+      );
+    }
+  }
+
+  async createTenancyAttachment(attachment: InsertTenancyAttachment & { organizationId: string }): Promise<TenancyAttachment> {
+    // Verify tenant assignment belongs to organization
+    const assignment = await db
+      .select()
+      .from(tenantAssignments)
+      .where(
+        and(
+          eq(tenantAssignments.id, attachment.tenantAssignmentId),
+          eq(tenantAssignments.organizationId, attachment.organizationId)
+        )
+      );
+    
+    if (assignment.length === 0) {
+      throw new Error("Tenant assignment not found or access denied");
+    }
+    
+    const [created] = await db.insert(tenancyAttachments).values(attachment).returning();
+    return created;
+  }
+
+  async getTenancyAttachment(id: string, organizationId: string): Promise<TenancyAttachment | undefined> {
+    const [attachment] = await db
+      .select({
+        id: tenancyAttachments.id,
+        tenantAssignmentId: tenancyAttachments.tenantAssignmentId,
+        fileName: tenancyAttachments.fileName,
+        fileUrl: tenancyAttachments.fileUrl,
+        fileType: tenancyAttachments.fileType,
+        fileSize: tenancyAttachments.fileSize,
+        uploadedBy: tenancyAttachments.uploadedBy,
+        organizationId: tenancyAttachments.organizationId,
+        createdAt: tenancyAttachments.createdAt,
+      })
+      .from(tenancyAttachments)
+      .innerJoin(tenantAssignments, eq(tenancyAttachments.tenantAssignmentId, tenantAssignments.id))
+      .where(
+        and(
+          eq(tenancyAttachments.id, id),
+          eq(tenantAssignments.organizationId, organizationId)
+        )
+      );
+    
+    return attachment;
+  }
+
+  async getTenancyAttachments(tenantAssignmentId: string, organizationId: string): Promise<TenancyAttachment[]> {
+    return await db
+      .select({
+        id: tenancyAttachments.id,
+        tenantAssignmentId: tenancyAttachments.tenantAssignmentId,
+        fileName: tenancyAttachments.fileName,
+        fileUrl: tenancyAttachments.fileUrl,
+        fileType: tenancyAttachments.fileType,
+        fileSize: tenancyAttachments.fileSize,
+        uploadedBy: tenancyAttachments.uploadedBy,
+        organizationId: tenancyAttachments.organizationId,
+        createdAt: tenancyAttachments.createdAt,
+      })
+      .from(tenancyAttachments)
+      .innerJoin(tenantAssignments, eq(tenancyAttachments.tenantAssignmentId, tenantAssignments.id))
+      .where(
+        and(
+          eq(tenancyAttachments.tenantAssignmentId, tenantAssignmentId),
+          eq(tenantAssignments.organizationId, organizationId)
+        )
+      )
+      .orderBy(desc(tenancyAttachments.createdAt));
+  }
+
+  async deleteTenancyAttachment(id: string, organizationId: string): Promise<void> {
+    // Verify attachment belongs to organization
+    const attachment = await db
+      .select()
+      .from(tenancyAttachments)
+      .innerJoin(tenantAssignments, eq(tenancyAttachments.tenantAssignmentId, tenantAssignments.id))
+      .where(
+        and(
+          eq(tenancyAttachments.id, id),
+          eq(tenantAssignments.organizationId, organizationId)
+        )
+      );
+    
+    if (attachment.length === 0) {
+      throw new Error("Attachment not found or access denied");
+    }
+    
+    await db.delete(tenancyAttachments).where(eq(tenancyAttachments.id, id));
   }
 
   async getBlockTenantStats(blockId: string): Promise<{ totalUnits: number; occupiedUnits: number; occupancyRate: number; totalMonthlyRent: number }> {

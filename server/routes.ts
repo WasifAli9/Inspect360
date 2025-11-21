@@ -3988,6 +3988,209 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
+  // Get tags for a tenant assignment
+  app.get("/api/tenant-assignments/:id/tags", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify assignment belongs to user's organization
+      const assignment = await storage.getTenantAssignment(req.params.id);
+      if (!assignment || assignment.organizationId !== user.organizationId) {
+        return res.status(404).json({ error: "Tenant assignment not found" });
+      }
+
+      const tags = await storage.getTenantAssignmentTags(req.params.id, user.organizationId);
+      res.json(tags);
+    } catch (error) {
+      console.error("Error fetching tenant assignment tags:", error);
+      res.status(500).json({ error: "Failed to fetch tags" });
+    }
+  });
+
+  // Update tags for a tenant assignment
+  app.put("/api/tenant-assignments/:id/tags", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify assignment belongs to user's organization
+      const assignment = await storage.getTenantAssignment(req.params.id);
+      if (!assignment || assignment.organizationId !== user.organizationId) {
+        return res.status(404).json({ error: "Tenant assignment not found" });
+      }
+
+      const { tagIds } = req.body;
+      if (!Array.isArray(tagIds)) {
+        return res.status(400).json({ error: "tagIds must be an array" });
+      }
+
+      await storage.updateTenantAssignmentTags(req.params.id, tagIds, user.organizationId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating tenant assignment tags:", error);
+      res.status(500).json({ error: "Failed to update tags" });
+    }
+  });
+
+  // Send portal credentials to tenant
+  app.post("/api/tenant-assignments/:id/send-password", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify assignment belongs to user's organization
+      const assignment = await storage.getTenantAssignment(req.params.id);
+      if (!assignment || assignment.organizationId !== user.organizationId) {
+        return res.status(404).json({ error: "Tenant assignment not found" });
+      }
+
+      // Get tenant user details
+      const tenant = await storage.getUser(assignment.tenantId);
+      if (!tenant) {
+        return res.status(404).json({ error: "Tenant user not found" });
+      }
+
+      // Generate a temporary password
+      const tempPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10).toUpperCase();
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      // Update tenant password
+      await storage.upsertUser({
+        ...tenant,
+        password: hashedPassword,
+      });
+
+      // Send email with credentials using Resend
+      const { Resend } = await import('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+
+      const fullName = [tenant.firstName, tenant.lastName].filter(Boolean).join(" ") || tenant.email;
+      
+      await resend.emails.send({
+        from: 'Inspect360 <noreply@inspect360.app>',
+        to: tenant.email,
+        subject: 'Your Tenant Portal Credentials',
+        html: `
+          <h2>Welcome to Your Tenant Portal</h2>
+          <p>Hello ${fullName},</p>
+          <p>Your tenant portal credentials have been set up. You can now access the portal to:</p>
+          <ul>
+            <li>View your property and lease details</li>
+            <li>Submit maintenance requests</li>
+            <li>Chat with our AI assistant for quick fixes</li>
+          </ul>
+          <p><strong>Login URL:</strong> ${process.env.REPLIT_DEV_DOMAIN || 'https://your-domain.com'}/tenant/login</p>
+          <p><strong>Email:</strong> ${tenant.email}</p>
+          <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+          <p><em>Please change your password after your first login.</em></p>
+          <br/>
+          <p>Best regards,<br/>The Inspect360 Team</p>
+        `,
+      });
+
+      res.json({ success: true, message: "Credentials sent successfully" });
+    } catch (error) {
+      console.error("Error sending tenant password:", error);
+      res.status(500).json({ error: "Failed to send credentials" });
+    }
+  });
+
+  // Get attachments for a tenant assignment
+  app.get("/api/tenant-assignments/:id/attachments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify assignment belongs to user's organization
+      const assignment = await storage.getTenantAssignment(req.params.id);
+      if (!assignment || assignment.organizationId !== user.organizationId) {
+        return res.status(404).json({ error: "Tenant assignment not found" });
+      }
+
+      const attachments = await storage.getTenancyAttachments(req.params.id, user.organizationId);
+      res.json(attachments);
+    } catch (error) {
+      console.error("Error fetching tenancy attachments:", error);
+      res.status(500).json({ error: "Failed to fetch attachments" });
+    }
+  });
+
+  // Upload tenancy attachment
+  app.post("/api/tenancy-attachments", isAuthenticated, requireRole("owner", "clerk"), upload.single('file'), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      const { tenantAssignmentId } = req.body;
+      if (!tenantAssignmentId) {
+        return res.status(400).json({ error: "tenantAssignmentId is required" });
+      }
+
+      // Verify assignment belongs to user's organization
+      const assignment = await storage.getTenantAssignment(tenantAssignmentId);
+      if (!assignment || assignment.organizationId !== user.organizationId) {
+        return res.status(404).json({ error: "Tenant assignment not found" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      // Upload to Google Cloud Storage
+      const fileUrl = await uploadToGCS(req.file.buffer, req.file.originalname, user.organizationId);
+
+      // Create attachment record
+      const attachment = await storage.createTenancyAttachment({
+        tenantAssignmentId,
+        fileName: req.file.originalname,
+        fileUrl,
+        fileType: req.file.mimetype,
+        fileSize: req.file.size,
+        uploadedBy: userId,
+        organizationId: user.organizationId,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      console.error("Error uploading tenancy attachment:", error);
+      res.status(500).json({ error: "Failed to upload attachment" });
+    }
+  });
+
+  // Delete tenancy attachment
+  app.delete("/api/tenancy-attachments/:id", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Verify attachment belongs to user's organization and delete it
+      await storage.deleteTenancyAttachment(req.params.id, user.organizationId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting tenancy attachment:", error);
+      res.status(500).json({ error: "Failed to delete attachment" });
+    }
+  });
+
   // ==================== ASSET INVENTORY ROUTES ====================
 
   app.post("/api/asset-inventory", isAuthenticated, requireRole("owner", "clerk", "compliance"), async (req: any, res) => {

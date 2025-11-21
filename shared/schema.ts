@@ -252,6 +252,13 @@ export const tenantAssignments = pgTable("tenant_assignments", {
   depositAmount: numeric("deposit_amount", { precision: 10, scale: 2 }),
   notes: text("notes"),
   isActive: boolean("is_active").notNull().default(true),
+  // Next of Kin Information
+  nextOfKinName: varchar("next_of_kin_name", { length: 255 }),
+  nextOfKinPhone: varchar("next_of_kin_phone", { length: 50 }),
+  nextOfKinEmail: varchar("next_of_kin_email", { length: 255 }),
+  nextOfKinRelationship: varchar("next_of_kin_relationship", { length: 100 }),
+  // Tenant Portal Access
+  hasPortalAccess: boolean("has_portal_access").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -265,6 +272,40 @@ export const insertTenantAssignmentSchema = createInsertSchema(tenantAssignments
 export const updateTenantAssignmentSchema = insertTenantAssignmentSchema.partial();
 export type TenantAssignment = typeof tenantAssignments.$inferSelect;
 export type InsertTenantAssignment = z.infer<typeof insertTenantAssignmentSchema>;
+
+// Tenant Assignment Tags (many-to-many relationship)
+export const tenantAssignmentTags = pgTable("tenant_assignment_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantAssignmentId: varchar("tenant_assignment_id").notNull(),
+  tagId: varchar("tag_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type TenantAssignmentTag = typeof tenantAssignmentTags.$inferSelect;
+
+// Tenancy Attachments (documents related to tenant assignments)
+export const tenancyAttachments = pgTable("tenancy_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantAssignmentId: varchar("tenant_assignment_id").notNull(),
+  organizationId: varchar("organization_id").notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileType: varchar("file_type", { length: 100 }), // e.g., "application/pdf", "image/png"
+  fileSize: integer("file_size"), // Size in bytes
+  description: text("description"),
+  uploadedBy: varchar("uploaded_by"), // References users.id
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertTenancyAttachmentSchema = createInsertSchema(tenancyAttachments).omit({
+  id: true,
+  organizationId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type TenancyAttachment = typeof tenancyAttachments.$inferSelect;
+export type InsertTenancyAttachment = z.infer<typeof insertTenancyAttachmentSchema>;
 
 // Inspection Categories
 export const inspectionCategories = pgTable("inspection_categories", {
