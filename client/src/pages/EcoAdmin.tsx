@@ -139,6 +139,7 @@ function PlansManagement() {
       code: formData.code,
       name: formData.name,
       monthlyPriceGbp: formData.monthlyPriceGbp,
+      annualPriceGbp: formData.annualPriceGbp || null,
       includedCredits: formData.includedCredits,
       softCap: formData.softCap || 5000,
       isCustom: formData.isCustom || false,
@@ -196,7 +197,7 @@ function PlansManagement() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="space-y-2">
               <Label htmlFor="price">Monthly Price (GBP Pence)</Label>
               <Input
@@ -208,6 +209,20 @@ function PlansManagement() {
                 data-testid="input-monthly-price"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="annual-price">Annual Price (GBP Pence - Optional)</Label>
+              <Input
+                id="annual-price"
+                type="number"
+                value={formData.annualPriceGbp || ""}
+                onChange={(e) => setFormData({ ...formData, annualPriceGbp: parseInt(e.target.value) || null })}
+                placeholder="52920 = £529.20 (save 10%)"
+                data-testid="input-annual-price"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="credits">Included Credits</Label>
               <Input

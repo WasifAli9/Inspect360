@@ -1552,6 +1552,7 @@ export const plans = pgTable("plans", {
   code: planCodeEnum("code").notNull().unique(),
   name: varchar("name", { length: 100 }).notNull(),
   monthlyPriceGbp: integer("monthly_price_gbp").notNull(), // Price in pence
+  annualPriceGbp: integer("annual_price_gbp"), // Price in pence (nullable for plans without annual option)
   includedCredits: integer("included_credits").notNull(),
   softCap: integer("soft_cap").default(5000), // Fair usage limit for "unlimited" plans
   isCustom: boolean("is_custom").default(false),
