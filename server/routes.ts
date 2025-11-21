@@ -7,7 +7,7 @@ import { setupAuth, isAuthenticated, requireRole, hashPassword, comparePasswords
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and, lt, gt } from "drizzle-orm";
 import { getUncachableStripeClient } from "./stripeClient";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
@@ -69,7 +69,8 @@ import {
   teamCategories,
   insertPlanSchema,
   insertCreditBundleSchema,
-  insertCountryPricingOverrideSchema
+  insertCountryPricingOverrideSchema,
+  creditBatches
 } from "@shared/schema";
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
@@ -7489,7 +7490,42 @@ Be objective and specific. Focus on actionable repairs.`;
       }
 
       const balance = await storage.getCreditBalance(user.organizationId);
-      res.json(balance);
+      
+      // Get ledger to calculate consumed credits
+      const ledger = await storage.getCreditLedgerByOrganization(user.organizationId, 10000);
+      
+      let consumed = 0;
+      let expired = 0;
+      
+      for (const entry of ledger) {
+        if (entry.quantity < 0) {
+          // Negative quantities are consumption
+          consumed += Math.abs(entry.quantity);
+        }
+      }
+      
+      // Get expired batches
+      const expiredBatches = await db
+        .select()
+        .from(creditBatches)
+        .where(
+          and(
+            eq(creditBatches.organizationId, user.organizationId),
+            lt(creditBatches.expiresAt, new Date()),
+            gt(creditBatches.remainingQuantity, 0)
+          )
+        );
+      
+      for (const batch of expiredBatches) {
+        expired += batch.remainingQuantity;
+      }
+      
+      // Return in the format the frontend expects
+      res.json({
+        available: balance.total,
+        consumed,
+        expired
+      });
     } catch (error: any) {
       console.error("Error fetching credit balance:", error);
       res.status(500).json({ message: "Failed to fetch credit balance" });
