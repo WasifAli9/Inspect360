@@ -676,6 +676,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Sync tenant users to contacts (migration endpoint for existing tenants)
+  app.post("/api/contacts/sync-tenants", isAuthenticated, requireRole("owner"), async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+      
+      // Get all tenant users in the organization
+      const allUsers = await storage.getUsersByOrganization(user.organizationId);
+      const tenantUsers = allUsers.filter(u => u.role === 'tenant');
+      
+      // Get all existing contacts to check for linkedUserId
+      const existingContacts = await storage.getContactsByOrganization(user.organizationId);
+      const linkedUserIds = new Set(
+        existingContacts
+          .filter(c => c.linkedUserId)
+          .map(c => c.linkedUserId)
+      );
+      
+      // Create contacts for tenant users that don't have one yet
+      const results = {
+        total: tenantUsers.length,
+        created: 0,
+        skipped: 0,
+        errors: [] as string[],
+      };
+      
+      for (const tenant of tenantUsers) {
+        if (linkedUserIds.has(tenant.id)) {
+          results.skipped++;
+          continue;
+        }
+        
+        try {
+          await storage.createContact({
+            organizationId: user.organizationId,
+            type: 'tenant',
+            firstName: tenant.firstName || '',
+            lastName: tenant.lastName || '',
+            email: tenant.email,
+            phone: tenant.phone || undefined,
+            profileImageUrl: tenant.profileImageUrl || undefined,
+            linkedUserId: tenant.id,
+            notes: 'Migrated from tenant user',
+          });
+          results.created++;
+          console.log(`✓ Created contact for tenant user ${tenant.id}`);
+        } catch (contactError) {
+          results.errors.push(`Failed to create contact for ${tenant.email}: ${contactError instanceof Error ? contactError.message : String(contactError)}`);
+          console.error(`Error creating contact for tenant ${tenant.id}:`, contactError);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Error syncing tenants to contacts:", error);
+      res.status(500).json({ error: "Failed to sync tenants" });
+    }
+  });
+
   app.patch("/api/contacts/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.id;
