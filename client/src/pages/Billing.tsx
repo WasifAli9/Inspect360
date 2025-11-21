@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useLocale } from "@/contexts/LocaleContext";
+import { format } from "date-fns";
 
 interface Plan {
   id: string;
@@ -53,6 +54,7 @@ interface LedgerEntry {
   changeType: string;
   quantity: number;
   description: string;
+  notes?: string | null;
   createdAt: string;
   source: string;
   createdByUser?: {
