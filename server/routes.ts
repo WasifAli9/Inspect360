@@ -9722,7 +9722,7 @@ Be objective and specific. Focus on actionable repairs.`;
     const tableRows = propertiesWithStats.map(property => `
       <tr>
         <td>${property.block?.name || "N/A"}</td>
-        <td>${property.unitNumber || "N/A"}</td>
+        <td>${property.name || "N/A"}</td>
         <td>${property.address || ""}</td>
         <td style="text-align: center;">
           <span style="padding: 4px 12px; border-radius: 4px; background: ${property.isOccupied ? '#00D5CC' : '#e5e7eb'}; color: ${property.isOccupied ? 'white' : '#374151'}; font-size: 12px;">
@@ -10193,7 +10193,7 @@ Be objective and specific. Focus on actionable repairs.`;
         </td>
         <td>${asset.location || 'N/A'}</td>
         <td>${asset.block ? asset.block.name : '-'}</td>
-        <td>${asset.property ? asset.property.unitNumber : '-'}</td>
+        <td>${asset.property ? asset.property.name : '-'}</td>
         <td style="text-align: center;">
           <span style="padding: 4px 12px; border-radius: 4px; background: ${
             asset.condition === 'excellent' || asset.condition === 'good' ? '#00D5CC' :
@@ -10443,7 +10443,7 @@ Be objective and specific. Focus on actionable repairs.`;
           </span>
         </td>
         <td>${doc.block ? doc.block.name : '-'}</td>
-        <td>${doc.property ? doc.property.unitNumber : '-'}</td>
+        <td>${doc.property ? doc.property.name : '-'}</td>
         <td>
           ${doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No expiry'}
           ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry >= 0 ? `<br><span style="font-size: 11px; color: #6b7280;">${doc.daysUntilExpiry} days left</span>` : ''}
