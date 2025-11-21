@@ -9,7 +9,8 @@ import {
   Package, 
   ClipboardCheck,
   BarChart3,
-  FileBarChart
+  FileBarChart,
+  ShieldCheck
 } from "lucide-react";
 
 export default function Reports() {
@@ -36,31 +37,37 @@ export default function Reports() {
       title: "Properties Report",
       description: "Property portfolio overview with maintenance and inspection data",
       icon: Home,
-      link: "#",
+      link: "/reports/properties",
       color: "text-chart-1",
       bgColor: "bg-chart-1/10",
-      available: false,
-      comingSoon: true
+      available: true
     },
     {
       title: "Tenants Report",
       description: "Tenant occupancy, lease tracking, and rental income analysis",
       icon: Users,
-      link: "#",
+      link: "/reports/tenants",
       color: "text-chart-3",
       bgColor: "bg-chart-3/10",
-      available: false,
-      comingSoon: true
+      available: true
     },
     {
       title: "Inventory Report",
       description: "Asset tracking across all properties with condition reports",
       icon: Package,
-      link: "#",
+      link: "/reports/inventory",
       color: "text-chart-2",
       bgColor: "bg-chart-2/10",
-      available: false,
-      comingSoon: true
+      available: true
+    },
+    {
+      title: "Compliance Report",
+      description: "Document tracking and compliance management by block and property",
+      icon: ShieldCheck,
+      link: "/reports/compliance",
+      color: "text-chart-4",
+      bgColor: "bg-chart-4/10",
+      available: true
     }
   ];
 

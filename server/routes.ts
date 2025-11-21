@@ -9679,6 +9679,926 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
+  // HTML generation function for Properties Report
+  function generatePropertiesReportHTML(properties: any[], blocks: any[], inspections: any[], tenantAssignments: any[], maintenanceRequests: any[]) {
+    const propertiesWithStats = properties.map(property => {
+      const propertyInspections = inspections.filter(i => i.propertyId === property.id);
+      const latestInspection = propertyInspections.sort((a, b) => 
+        new Date(b.scheduledDate || b.createdAt).getTime() - 
+        new Date(a.scheduledDate || a.createdAt).getTime()
+      )[0];
+
+      const tenantAssignment = tenantAssignments.find(
+        t => t.propertyId === property.id && t.status === "active"
+      );
+
+      const propertyMaintenance = maintenanceRequests.filter(
+        m => m.propertyId === property.id
+      );
+      const openMaintenance = propertyMaintenance.filter(
+        m => m.status === "open" || m.status === "in_progress"
+      ).length;
+
+      const block = blocks.find(b => b.id === property.blockId);
+
+      return {
+        ...property,
+        block,
+        totalInspections: propertyInspections.length,
+        lastInspection: latestInspection,
+        isOccupied: !!tenantAssignment,
+        tenant: tenantAssignment,
+        openMaintenanceCount: openMaintenance,
+        totalMaintenanceCount: propertyMaintenance.length,
+      };
+    });
+
+    const totalProperties = propertiesWithStats.length;
+    const occupiedProperties = propertiesWithStats.filter(p => p.isOccupied).length;
+    const vacantProperties = propertiesWithStats.filter(p => !p.isOccupied).length;
+    const totalOpenMaintenance = propertiesWithStats.reduce((sum, p) => sum + p.openMaintenanceCount, 0);
+
+    const tableRows = propertiesWithStats.map(property => `
+      <tr>
+        <td>${property.block?.name || "N/A"}</td>
+        <td>${property.unitNumber || "N/A"}</td>
+        <td>${property.address || ""}</td>
+        <td style="text-align: center;">
+          <span style="padding: 4px 12px; border-radius: 4px; background: ${property.isOccupied ? '#00D5CC' : '#e5e7eb'}; color: ${property.isOccupied ? 'white' : '#374151'}; font-size: 12px;">
+            ${property.isOccupied ? 'Occupied' : 'Vacant'}
+          </span>
+        </td>
+        <td>${property.tenant ? `${property.tenant.tenantFirstName} ${property.tenant.tenantLastName}` : '-'}</td>
+        <td style="text-align: center;">${property.totalInspections}</td>
+        <td style="text-align: center;">${property.openMaintenanceCount}</td>
+        <td>${property.lastInspection ? new Date(property.lastInspection.scheduledDate || property.lastInspection.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never'}</td>
+      </tr>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #1f2937; line-height: 1.5; }
+    .header { background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; padding: 32px; margin-bottom: 24px; }
+    .logo { width: 48px; height: 48px; margin-bottom: 16px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 16px; opacity: 0.95; }
+    .meta { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 24px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { padding: 16px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #1f2937; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th { background: #f3f4f6; padding: 12px; text-align: left; font-weight: 600; font-size: 13px; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+    tr:hover { background: #f9fafb; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Properties Report</h1>
+    <p class="subtitle">Property portfolio overview with maintenance and inspection data</p>
+  </div>
+  
+  <div class="meta">
+    <div><strong>Generated:</strong> ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+    <div><strong>Total Properties:</strong> ${totalProperties}</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Properties</div>
+      <div class="stat-value">${totalProperties}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Occupied</div>
+      <div class="stat-value" style="color: #10b981;">${occupiedProperties}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Vacant</div>
+      <div class="stat-value" style="color: #f59e0b;">${vacantProperties}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Open Maintenance</div>
+      <div class="stat-value" style="color: #ef4444;">${totalOpenMaintenance}</div>
+    </div>
+  </div>
+
+  <div>
+    ${properties.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Block</th>
+            <th>Unit</th>
+            <th>Address</th>
+            <th style="text-align: center;">Status</th>
+            <th>Tenant</th>
+            <th style="text-align: center;">Inspections</th>
+            <th style="text-align: center;">Open Maint.</th>
+            <th>Last Inspection</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    ` : `
+      <div style="text-align: center; padding: 48px; color: #999;">
+        No properties found
+      </div>
+    `}
+  </div>
+
+  <div class="footer">
+    <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Generate Properties Report PDF
+  app.post("/api/reports/properties/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { blockId, status, searchTerm } = req.body;
+
+      let properties = await storage.getPropertiesByOrganization(user.organizationId);
+      const blocks = await storage.getBlocksByOrganization(user.organizationId);
+      const inspections = await storage.getInspectionsByOrganization(user.organizationId);
+      const tenantAssignments = await storage.getTenantAssignmentsByOrganization(user.organizationId);
+      const maintenanceRequests = await storage.getMaintenanceRequestsByOrganization(user.organizationId);
+
+      // Apply filters
+      if (blockId && blockId !== "all") {
+        properties = properties.filter(p => p.blockId === blockId);
+      }
+
+      if (status && status !== "all") {
+        if (status === "occupied") {
+          const occupiedPropertyIds = tenantAssignments
+            .filter(t => t.status === "active")
+            .map(t => t.propertyId);
+          properties = properties.filter(p => occupiedPropertyIds.includes(p.id));
+        } else if (status === "vacant") {
+          const occupiedPropertyIds = tenantAssignments
+            .filter(t => t.status === "active")
+            .map(t => t.propertyId);
+          properties = properties.filter(p => !occupiedPropertyIds.includes(p.id));
+        }
+      }
+
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        properties = properties.filter(p => 
+          p.address?.toLowerCase().includes(searchLower) ||
+          p.unitNumber?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      const html = generatePropertiesReportHTML(properties, blocks, inspections, tenantAssignments, maintenanceRequests);
+
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
+      let browser;
+      try {
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "20mm",
+            right: "15mm",
+            bottom: "20mm",
+            left: "15mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating properties report PDF:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
+  // HTML generation function for Tenants Report
+  function generateTenantsReportHTML(tenantAssignments: any[], properties: any[], blocks: any[]) {
+    const enrichedTenants = tenantAssignments.map(tenant => {
+      const property = properties.find(p => p.id === tenant.propertyId);
+      const block = property ? blocks.find(b => b.id === property.blockId) : null;
+
+      const leaseEndDate = tenant.leaseEndDate ? new Date(tenant.leaseEndDate) : null;
+      const daysUntilExpiry = leaseEndDate ? Math.floor((leaseEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+
+      return {
+        ...tenant,
+        property,
+        block,
+        daysUntilExpiry,
+        monthlyRent: tenant.monthlyRent ? parseFloat(tenant.monthlyRent) : 0,
+      };
+    });
+
+    const totalTenants = enrichedTenants.length;
+    const activeTenants = enrichedTenants.filter(t => t.status === "active").length;
+    const expiringSoon = enrichedTenants.filter(t => t.daysUntilExpiry !== null && t.daysUntilExpiry >= 0 && t.daysUntilExpiry <= 60).length;
+    const totalMonthlyRent = enrichedTenants
+      .filter(t => t.status === "active")
+      .reduce((sum, t) => sum + t.monthlyRent, 0);
+
+    const tableRows = enrichedTenants.map(tenant => `
+      <tr>
+        <td>${tenant.tenantFirstName} ${tenant.tenantLastName}</td>
+        <td>${tenant.tenantEmail || 'N/A'}</td>
+        <td>${tenant.block?.name || 'N/A'}</td>
+        <td>${tenant.property?.unitNumber || 'N/A'}</td>
+        <td>${tenant.leaseStartDate ? new Date(tenant.leaseStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+        <td>${tenant.leaseEndDate ? new Date(tenant.leaseEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}${tenant.daysUntilExpiry !== null && tenant.daysUntilExpiry >= 0 ? ` (${tenant.daysUntilExpiry} days)` : ''}</td>
+        <td style="text-align: right;">${tenant.monthlyRent > 0 ? '£' + tenant.monthlyRent.toLocaleString() : '-'}</td>
+        <td style="text-align: center;">
+          <span style="padding: 4px 12px; border-radius: 4px; background: ${tenant.status === 'active' ? '#00D5CC' : '#e5e7eb'}; color: ${tenant.status === 'active' ? 'white' : '#374151'}; font-size: 12px;">
+            ${tenant.status === 'active' ? 'Active' : 'Inactive'}
+          </span>
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #1f2937; line-height: 1.5; }
+    .header { background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; padding: 32px; margin-bottom: 24px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 16px; opacity: 0.95; }
+    .meta { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 24px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { padding: 16px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #1f2937; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th { background: #f3f4f6; padding: 12px; text-align: left; font-weight: 600; font-size: 13px; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+    tr:hover { background: #f9fafb; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Tenants Report</h1>
+    <p class="subtitle">Tenant occupancy, lease tracking, and rental income analysis</p>
+  </div>
+  
+  <div class="meta">
+    <div><strong>Generated:</strong> ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+    <div><strong>Total Tenants:</strong> ${totalTenants}</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Tenants</div>
+      <div class="stat-value">${totalTenants}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Active</div>
+      <div class="stat-value" style="color: #10b981;">${activeTenants}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Expiring Soon</div>
+      <div class="stat-value" style="color: #f59e0b;">${expiringSoon}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Monthly Rent</div>
+      <div class="stat-value">£${totalMonthlyRent.toLocaleString()}</div>
+    </div>
+  </div>
+
+  <div>
+    ${tenantAssignments.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Tenant Name</th>
+            <th>Email</th>
+            <th>Block</th>
+            <th>Property</th>
+            <th>Lease Start</th>
+            <th>Lease End</th>
+            <th style="text-align: right;">Monthly Rent</th>
+            <th style="text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    ` : `
+      <div style="text-align: center; padding: 48px; color: #999;">
+        No tenants found
+      </div>
+    `}
+  </div>
+
+  <div class="footer">
+    <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Generate Tenants Report PDF
+  app.post("/api/reports/tenants/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { blockId, propertyId, status, searchTerm } = req.body;
+
+      let tenantAssignments = await storage.getTenantAssignmentsByOrganization(user.organizationId);
+      const properties = await storage.getPropertiesByOrganization(user.organizationId);
+      const blocks = await storage.getBlocksByOrganization(user.organizationId);
+
+      // Apply filters
+      if (blockId && blockId !== "all") {
+        tenantAssignments = tenantAssignments.filter(t => {
+          const property = properties.find(p => p.id === t.propertyId);
+          return property?.blockId === blockId;
+        });
+      }
+
+      if (propertyId && propertyId !== "all") {
+        tenantAssignments = tenantAssignments.filter(t => t.propertyId === propertyId);
+      }
+
+      if (status && status !== "all") {
+        if (status === "active") {
+          tenantAssignments = tenantAssignments.filter(t => t.status === "active");
+        } else if (status === "expiring") {
+          tenantAssignments = tenantAssignments.filter(t => {
+            const leaseEndDate = t.leaseEndDate ? new Date(t.leaseEndDate) : null;
+            const daysUntilExpiry = leaseEndDate ? Math.floor((leaseEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+            return daysUntilExpiry !== null && daysUntilExpiry >= 0 && daysUntilExpiry <= 60;
+          });
+        } else if (status === "expired") {
+          tenantAssignments = tenantAssignments.filter(t => {
+            const leaseEndDate = t.leaseEndDate ? new Date(t.leaseEndDate) : null;
+            const daysUntilExpiry = leaseEndDate ? Math.floor((leaseEndDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+            return daysUntilExpiry !== null && daysUntilExpiry < 0;
+          });
+        }
+      }
+
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        tenantAssignments = tenantAssignments.filter(t => 
+          t.tenantFirstName?.toLowerCase().includes(searchLower) ||
+          t.tenantLastName?.toLowerCase().includes(searchLower) ||
+          t.tenantEmail?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      const html = generateTenantsReportHTML(tenantAssignments, properties, blocks);
+
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
+      let browser;
+      try {
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "20mm",
+            right: "15mm",
+            bottom: "20mm",
+            left: "15mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating tenants report PDF:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
+  // HTML generation function for Inventory Report
+  function generateInventoryReportHTML(assetInventory: any[], properties: any[], blocks: any[]) {
+    const enrichedInventory = assetInventory.map(asset => {
+      const property = properties.find(p => p.id === asset.propertyId);
+      const block = property ? blocks.find(b => b.id === property.blockId) : 
+                    blocks.find(b => b.id === asset.blockId);
+
+      return {
+        ...asset,
+        property,
+        block,
+      };
+    });
+
+    const totalAssets = enrichedInventory.length;
+    const blockAssets = enrichedInventory.filter(i => i.blockId && !i.propertyId).length;
+    const propertyAssets = enrichedInventory.filter(i => i.propertyId).length;
+    const damagedAssets = enrichedInventory.filter(i => 
+      i.condition === "poor" || i.condition === "damaged"
+    ).length;
+
+    const tableRows = enrichedInventory.map(asset => `
+      <tr>
+        <td>${asset.name}</td>
+        <td>
+          <span style="padding: 4px 12px; border-radius: 4px; background: #f3f4f6; color: #374151; font-size: 12px;">
+            ${asset.category || 'Uncategorized'}
+          </span>
+        </td>
+        <td>${asset.location || 'N/A'}</td>
+        <td>${asset.block ? asset.block.name : '-'}</td>
+        <td>${asset.property ? asset.property.unitNumber : '-'}</td>
+        <td style="text-align: center;">
+          <span style="padding: 4px 12px; border-radius: 4px; background: ${
+            asset.condition === 'excellent' || asset.condition === 'good' ? '#00D5CC' :
+            asset.condition === 'fair' ? '#e5e7eb' : '#ef4444'
+          }; color: ${
+            asset.condition === 'excellent' || asset.condition === 'good' ? 'white' :
+            asset.condition === 'fair' ? '#374151' : 'white'
+          }; font-size: 12px;">
+            ${asset.condition || 'Unknown'}
+          </span>
+        </td>
+        <td style="font-family: monospace; font-size: 12px;">${asset.serialNumber || '-'}</td>
+        <td>${asset.createdAt ? new Date(asset.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+      </tr>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #1f2937; line-height: 1.5; }
+    .header { background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; padding: 32px; margin-bottom: 24px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 16px; opacity: 0.95; }
+    .meta { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 24px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { padding: 16px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #1f2937; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th { background: #f3f4f6; padding: 12px; text-align: left; font-weight: 600; font-size: 13px; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+    tr:hover { background: #f9fafb; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Inventory Report</h1>
+    <p class="subtitle">Asset tracking and inventory management across blocks and properties</p>
+  </div>
+  
+  <div class="meta">
+    <div><strong>Generated:</strong> ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+    <div><strong>Total Assets:</strong> ${totalAssets}</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Assets</div>
+      <div class="stat-value">${totalAssets}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Block Assets</div>
+      <div class="stat-value" style="color: #00D5CC;">${blockAssets}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Property Assets</div>
+      <div class="stat-value" style="color: #3B7A8C;">${propertyAssets}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Needs Attention</div>
+      <div class="stat-value" style="color: #ef4444;">${damagedAssets}</div>
+    </div>
+  </div>
+
+  <div>
+    ${assetInventory.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Asset Name</th>
+            <th>Category</th>
+            <th>Location</th>
+            <th>Block</th>
+            <th>Property</th>
+            <th style="text-align: center;">Condition</th>
+            <th>Serial Number</th>
+            <th>Added</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    ` : `
+      <div style="text-align: center; padding: 48px; color: #999;">
+        No inventory items found
+      </div>
+    `}
+  </div>
+
+  <div class="footer">
+    <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Generate Inventory Report PDF
+  app.post("/api/reports/inventory/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { blockId, propertyId, category, condition, searchTerm } = req.body;
+
+      let assetInventory = await storage.getAssetInventoryByOrganization(user.organizationId);
+      const properties = await storage.getPropertiesByOrganization(user.organizationId);
+      const blocks = await storage.getBlocksByOrganization(user.organizationId);
+
+      // Apply filters
+      if (blockId && blockId !== "all") {
+        assetInventory = assetInventory.filter(i => 
+          i.blockId === blockId || properties.find(p => p.id === i.propertyId)?.blockId === blockId
+        );
+      }
+
+      if (propertyId && propertyId !== "all") {
+        assetInventory = assetInventory.filter(i => i.propertyId === propertyId);
+      }
+
+      if (category && category !== "all") {
+        assetInventory = assetInventory.filter(i => i.category === category);
+      }
+
+      if (condition && condition !== "all") {
+        assetInventory = assetInventory.filter(i => i.condition === condition);
+      }
+
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        assetInventory = assetInventory.filter(i => 
+          i.name?.toLowerCase().includes(searchLower) ||
+          i.description?.toLowerCase().includes(searchLower) ||
+          i.serialNumber?.toLowerCase().includes(searchLower) ||
+          i.location?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      const html = generateInventoryReportHTML(assetInventory, properties, blocks);
+
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
+      let browser;
+      try {
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "20mm",
+            right: "15mm",
+            bottom: "20mm",
+            left: "15mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating inventory report PDF:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
+  // HTML generation function for Compliance Report
+  function generateComplianceReportHTML(complianceDocuments: any[], properties: any[], blocks: any[]) {
+    const enrichedDocuments = complianceDocuments.map(doc => {
+      const property = properties.find(p => p.id === doc.propertyId);
+      const block = property ? blocks.find(b => b.id === property.blockId) : 
+                    blocks.find(b => b.id === doc.blockId);
+
+      let status = "current";
+      let daysUntilExpiry = null;
+
+      if (doc.expiryDate) {
+        const expiryDate = new Date(doc.expiryDate);
+        daysUntilExpiry = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        
+        if (daysUntilExpiry < 0) {
+          status = "expired";
+        } else if (daysUntilExpiry <= 30) {
+          status = "expiring-soon";
+        } else {
+          status = "current";
+        }
+      }
+
+      return {
+        ...doc,
+        property,
+        block,
+        status,
+        daysUntilExpiry,
+      };
+    });
+
+    const totalDocuments = enrichedDocuments.length;
+    const currentDocuments = enrichedDocuments.filter(d => d.status === "current").length;
+    const expiringSoon = enrichedDocuments.filter(d => d.status === "expiring-soon").length;
+    const expired = enrichedDocuments.filter(d => d.status === "expired").length;
+
+    const tableRows = enrichedDocuments.map(doc => `
+      <tr>
+        <td>${doc.documentType}</td>
+        <td>
+          <span style="padding: 4px 12px; border-radius: 4px; background: #f3f4f6; color: #374151; font-size: 12px;">
+            ${doc.blockId && !doc.propertyId ? 'Block-Level' : 'Property-Level'}
+          </span>
+        </td>
+        <td>${doc.block ? doc.block.name : '-'}</td>
+        <td>${doc.property ? doc.property.unitNumber : '-'}</td>
+        <td>
+          ${doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No expiry'}
+          ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry >= 0 ? `<br><span style="font-size: 11px; color: #6b7280;">${doc.daysUntilExpiry} days left</span>` : ''}
+          ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry < 0 ? `<br><span style="font-size: 11px; color: #ef4444;">${Math.abs(doc.daysUntilExpiry)} days overdue</span>` : ''}
+        </td>
+        <td style="text-align: center;">
+          <span style="padding: 4px 12px; border-radius: 4px; background: ${
+            doc.status === 'expired' ? '#ef4444' :
+            doc.status === 'expiring-soon' ? '#f59e0b' : '#00D5CC'
+          }; color: white; font-size: 12px;">
+            ${doc.status === 'expired' ? 'Expired' : doc.status === 'expiring-soon' ? 'Expiring Soon' : 'Current'}
+          </span>
+        </td>
+        <td>${doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+      </tr>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; color: #1f2937; line-height: 1.5; }
+    .header { background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; padding: 32px; margin-bottom: 24px; }
+    h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { font-size: 16px; opacity: 0.95; }
+    .meta { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 24px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { padding: 16px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #1f2937; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th { background: #f3f4f6; padding: 12px; text-align: left; font-weight: 600; font-size: 13px; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+    tr:hover { background: #f9fafb; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Compliance Report</h1>
+    <p class="subtitle">Document tracking and compliance management by block and property</p>
+  </div>
+  
+  <div class="meta">
+    <div><strong>Generated:</strong> ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+    <div><strong>Total Documents:</strong> ${totalDocuments}</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Documents</div>
+      <div class="stat-value">${totalDocuments}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Current</div>
+      <div class="stat-value" style="color: #10b981;">${currentDocuments}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Expiring Soon</div>
+      <div class="stat-value" style="color: #f59e0b;">${expiringSoon}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Expired</div>
+      <div class="stat-value" style="color: #ef4444;">${expired}</div>
+    </div>
+  </div>
+
+  <div>
+    ${complianceDocuments.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Document Type</th>
+            <th>Location</th>
+            <th>Block</th>
+            <th>Property</th>
+            <th>Expiry Date</th>
+            <th style="text-align: center;">Status</th>
+            <th>Uploaded</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    ` : `
+      <div style="text-align: center; padding: 48px; color: #999;">
+        No compliance documents found
+      </div>
+    `}
+  </div>
+
+  <div class="footer">
+    <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // Generate Compliance Report PDF
+  app.post("/api/reports/compliance/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user || !user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { blockId, propertyId, documentType, status, searchTerm } = req.body;
+
+      let complianceDocuments = await storage.getComplianceDocumentsByOrganization(user.organizationId);
+      const properties = await storage.getPropertiesByOrganization(user.organizationId);
+      const blocks = await storage.getBlocksByOrganization(user.organizationId);
+
+      // Apply filters
+      if (blockId && blockId !== "all") {
+        complianceDocuments = complianceDocuments.filter(d => 
+          d.blockId === blockId || properties.find(p => p.id === d.propertyId)?.blockId === blockId
+        );
+      }
+
+      if (propertyId && propertyId !== "all") {
+        complianceDocuments = complianceDocuments.filter(d => d.propertyId === propertyId);
+      }
+
+      if (documentType && documentType !== "all") {
+        complianceDocuments = complianceDocuments.filter(d => d.documentType === documentType);
+      }
+
+      if (status && status !== "all") {
+        complianceDocuments = complianceDocuments.filter(d => {
+          let docStatus = "current";
+          if (d.expiryDate) {
+            const expiryDate = new Date(d.expiryDate);
+            const daysUntilExpiry = Math.floor((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            
+            if (daysUntilExpiry < 0) {
+              docStatus = "expired";
+            } else if (daysUntilExpiry <= 30) {
+              docStatus = "expiring-soon";
+            } else {
+              docStatus = "current";
+            }
+          }
+          return docStatus === status;
+        });
+      }
+
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        complianceDocuments = complianceDocuments.filter(d => 
+          d.documentType?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      const html = generateComplianceReportHTML(complianceDocuments, properties, blocks);
+
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
+      let browser;
+      try {
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: {
+            top: "20mm",
+            right: "15mm",
+            bottom: "20mm",
+            left: "15mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating compliance report PDF:", error);
+      res.status(500).json({ message: "Failed to generate report" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

@@ -25,6 +25,10 @@ import Analytics from "@/pages/Analytics";
 import Reports from "@/pages/Reports";
 import InspectionsReport from "@/pages/InspectionsReport";
 import BlocksReport from "@/pages/BlocksReport";
+import PropertiesReport from "@/pages/PropertiesReport";
+import TenantsReport from "@/pages/TenantsReport";
+import InventoryReport from "@/pages/InventoryReport";
+import ComplianceReport from "@/pages/ComplianceReport";
 import ComparisonReports from "@/pages/ComparisonReports";
 import ComparisonReportDetail from "@/pages/ComparisonReportDetail";
 import OrganizationSetup from "@/pages/OrganizationSetup";
@@ -164,6 +168,10 @@ function AppContent() {
                 <Route path="/analytics" component={Analytics} />
                 <Route path="/reports/inspections" component={InspectionsReport} />
                 <Route path="/reports/blocks" component={BlocksReport} />
+                <Route path="/reports/properties" component={PropertiesReport} />
+                <Route path="/reports/tenants" component={TenantsReport} />
+                <Route path="/reports/inventory" component={InventoryReport} />
+                <Route path="/reports/compliance" component={ComplianceReport} />
                 <Route path="/reports" component={Reports} />
                 <Route path="/comparisons/:id" component={ComparisonReportDetail} />
                 <Route path="/comparisons" component={ComparisonReports} />
