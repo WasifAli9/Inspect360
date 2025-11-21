@@ -159,9 +159,9 @@ export default function AssetInventory() {
       const res = await apiRequest("DELETE", `/api/asset-inventory/${id}`);
       return await res.json();
     },
-    onSuccess: async () => {
-      // Refetch global asset inventory
-      await queryClient.refetchQueries({ queryKey: ["/api/asset-inventory"] });
+    onSuccess: () => {
+      // Invalidate global asset inventory
+      queryClient.invalidateQueries({ queryKey: ["/api/asset-inventory"] });
       
       // Invalidate all property and block inventory queries
       queryClient.invalidateQueries({ queryKey: ["/api/properties"], predicate: (query) => 

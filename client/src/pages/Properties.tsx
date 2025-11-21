@@ -85,8 +85,8 @@ export default function Properties() {
     mutationFn: async (data: { name: string; address: string; blockId?: string }) => {
       return await apiRequest("POST", "/api/properties", data);
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["/api/properties"] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
       toast({
         title: "Success",
         description: "Property created successfully",
@@ -110,8 +110,8 @@ export default function Properties() {
         blockId: data.blockId,
       });
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["/api/properties"] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
       toast({
         title: "Success",
         description: "Property updated successfully",

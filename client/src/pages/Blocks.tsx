@@ -61,10 +61,15 @@ export default function Blocks() {
 
   const createBlockMutation = useMutation({
     mutationFn: async (data: { name: string; address: string; notes?: string }) => {
-      return apiRequest("POST", "/api/blocks", data);
+      const res = await apiRequest("POST", "/api/blocks", data);
+      return await res.json();
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
+    onSuccess: async (newBlock) => {
+      // Add tags to the new block if any are selected
+      if (selectedTags.length > 0) {
+        await updateBlockTags(newBlock.id, selectedTags);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block created successfully" });
       handleCloseDialog();
     },
@@ -83,8 +88,10 @@ export default function Blocks() {
         notes: data.notes 
       });
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
+    onSuccess: async (_, variables) => {
+      // Update tags for the block
+      await updateBlockTags(variables.id, selectedTags);
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block updated successfully" });
       handleCloseDialog();
     },
@@ -97,8 +104,8 @@ export default function Blocks() {
     mutationFn: async (id: string) => {
       return apiRequest("DELETE", `/api/blocks/${id}`);
     },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks"] });
       toast({ title: "Block deleted successfully" });
     },
     onError: () => {
@@ -144,7 +151,7 @@ export default function Blocks() {
     setSelectedTags([]);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!name || !address) {
@@ -156,41 +163,19 @@ export default function Blocks() {
       return;
     }
 
-    try {
-      if (editingBlock) {
-        // Update the block
-        const res = await apiRequest("PATCH", `/api/blocks/${editingBlock.id}`, { 
-          name, 
-          address, 
-          notes: notes || undefined 
-        });
-        
-        // Update tags
-        await updateBlockTags(editingBlock.id, selectedTags);
-        
-        await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
-        toast({ title: "Block updated successfully" });
-        handleCloseDialog();
-      } else {
-        // Create the block
-        const res = await apiRequest("POST", "/api/blocks", { 
-          name, 
-          address, 
-          notes: notes || undefined 
-        });
-        const newBlock = await res.json();
-        
-        // Add tags to the new block
-        await updateBlockTags(newBlock.id, selectedTags);
-        
-        await queryClient.refetchQueries({ queryKey: ["/api/blocks"] });
-        toast({ title: "Block created successfully" });
-        handleCloseDialog();
-      }
-    } catch (error: any) {
-      console.error("Error saving block:", error);
-      const message = error?.message || "Failed to save block";
-      toast({ title: message, variant: "destructive" });
+    if (editingBlock) {
+      updateBlockMutation.mutate({
+        id: editingBlock.id,
+        name,
+        address,
+        notes: notes || undefined
+      });
+    } else {
+      createBlockMutation.mutate({
+        name,
+        address,
+        notes: notes || undefined
+      });
     }
   };
 
