@@ -14,6 +14,7 @@ import { useLocation } from "wouter";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 interface Plan {
   id: string;
@@ -852,73 +853,76 @@ export default function Billing() {
           </CardTitle>
           <CardDescription>Frequently asked questions about credits</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div>
-            <h3 className="font-semibold mb-2">What are Inspection Credits?</h3>
-            <p className="text-sm text-muted-foreground">
-              Inspection Credits are used to perform property inspections in Inspect360. Each time you complete an inspection, 
-              credits are automatically deducted from your account based on the inspection type and complexity.
-            </p>
-          </div>
+        <CardContent>
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="what-are-credits" data-testid="faq-what-are-credits">
+              <AccordionTrigger className="text-left">What are Inspection Credits?</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground">
+                  Inspection Credits are used to perform AI-powered property inspections in Inspect360. Each time you complete an inspection, 
+                  1 AI credit is automatically deducted from your account.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
 
-          <Separator />
+            <AccordionItem value="credit-cost" data-testid="faq-credit-cost">
+              <AccordionTrigger className="text-left">How many credits does each inspection cost?</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground">
+                  <strong>Every inspection costs 1 AI credit</strong>, regardless of the inspection type (Check-In, Check-Out, Routine, or Maintenance).
+                </p>
+              </AccordionContent>
+            </AccordionItem>
 
-          <div>
-            <h3 className="font-semibold mb-2">How many credits does each inspection cost?</h3>
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p>• <strong>Routine Inspection:</strong> 1 credit</p>
-              <p>• <strong>Check-In / Check-Out Inspection:</strong> 2 credits</p>
-              <p>• <strong>Maintenance Inspection:</strong> 3 credits</p>
-              <p className="pt-2">AI-powered features like photo analysis and comparison reports may use additional credits.</p>
-            </div>
-          </div>
+            <AccordionItem value="unused-credits" data-testid="faq-unused-credits">
+              <AccordionTrigger className="text-left">What happens to unused credits?</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground">
+                  Unused credits automatically roll over to the next month, giving you an additional month to use them. 
+                  After that, any remaining credits from that batch will expire. This ensures you always have flexibility 
+                  while keeping your account current.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
 
-          <Separator />
+            <AccordionItem value="purchase-credits" data-testid="faq-purchase-credits">
+              <AccordionTrigger className="text-left">Can I purchase additional credits?</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Yes! When your subscription allowance is depleted, you can purchase add-on AI inspection bundles:
+                </p>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>• <strong>100 credits:</strong> £400 (£4.00 per credit)</p>
+                  <p>• <strong>250 credits:</strong> £750 (£3.00 per credit)</p>
+                  <p>• <strong>500 credits:</strong> £1,000 (£2.00 per credit) - Best Value</p>
+                  <p>• <strong>1000 credits:</strong> £1,500 (£1.50 per credit)</p>
+                  <p className="pt-3 text-xs italic">
+                    Top-up credits never expire and are consumed using FIFO (first-in, first-out) logic after your monthly credits.
+                  </p>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
 
-          <div>
-            <h3 className="font-semibold mb-2">What happens to unused credits?</h3>
-            <p className="text-sm text-muted-foreground">
-              Unused credits automatically roll over to the next month, giving you an additional month to use them. 
-              After that, any remaining credits from that batch will expire. This ensures you always have flexibility 
-              while keeping your account current.
-            </p>
-          </div>
+            <AccordionItem value="run-out" data-testid="faq-run-out">
+              <AccordionTrigger className="text-left">What happens if I run out of credits?</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground">
+                  If you run out of credits, you won't be able to complete new inspections until you purchase a top-up pack 
+                  or wait for your next monthly credit allocation. You can monitor your credit balance on this page at any time.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
 
-          <Separator />
-
-          <div>
-            <h3 className="font-semibold mb-2">Can I purchase additional credits?</h3>
-            <p className="text-sm text-muted-foreground">
-              Yes! When your subscription allowance is depleted, you can purchase add-on AI inspection bundles:
-            </p>
-            <div className="text-sm text-muted-foreground space-y-1 mt-2">
-              <p>• <strong>100 credits:</strong> £400 (£4.00 per credit)</p>
-              <p>• <strong>250 credits:</strong> £750 (£3.00 per credit)</p>
-              <p>• <strong>500 credits:</strong> £1,000 (£2.00 per credit) - Best Value</p>
-              <p>• <strong>1000 credits:</strong> £1,500 (£1.50 per credit)</p>
-              <p className="pt-2">Top-up credits never expire and are consumed using FIFO (first-in, first-out) logic after your monthly credits.</p>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div>
-            <h3 className="font-semibold mb-2">What happens if I run out of credits?</h3>
-            <p className="text-sm text-muted-foreground">
-              If you run out of credits, you won't be able to complete new inspections until you purchase a top-up pack 
-              or wait for your next monthly credit allocation. You can monitor your credit balance on this page at any time.
-            </p>
-          </div>
-
-          <Separator />
-
-          <div>
-            <h3 className="font-semibold mb-2">Can I upgrade or downgrade my plan?</h3>
-            <p className="text-sm text-muted-foreground">
-              Yes! You can upgrade or downgrade your plan at any time through the Stripe customer portal. Changes will be 
-              prorated, and your credit allocation will adjust with your next billing cycle.
-            </p>
-          </div>
+            <AccordionItem value="upgrade-plan" data-testid="faq-upgrade-plan">
+              <AccordionTrigger className="text-left">Can I upgrade or downgrade my plan?</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground">
+                  Yes! You can upgrade or downgrade your plan at any time through the Stripe customer portal. Changes will be 
+                  prorated, and your credit allocation will adjust with your next billing cycle.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </CardContent>
       </Card>
 
