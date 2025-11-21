@@ -1533,7 +1533,7 @@ export const analyzeMaintenanceImageSchema = z.object({
 
 // Contact update schema (for PATCH route)
 export const updateContactSchema = z.object({
-  type: z.enum(["internal", "contractor", "lead", "company", "partner", "vendor", "other"]).optional(),
+  type: z.enum(["internal", "contractor", "lead", "company", "partner", "vendor", "tenant", "other"]).optional(),
   firstName: z.string().min(1).max(255).optional(),
   lastName: z.string().min(1).max(255).optional(),
   email: z.string().email().optional(),
