@@ -122,11 +122,13 @@ export default function Billing() {
               await queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
               await queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
               await queryClient.invalidateQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.invalidateQueries({ queryKey: ['/api/billing/aggregate-credits'] });
               await queryClient.invalidateQueries({ queryKey: [orgQueryKey] });
               
               // Force immediate refetch to update UI
               await queryClient.refetchQueries({ queryKey: ['/api/credits/balance'] });
               await queryClient.refetchQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.refetchQueries({ queryKey: ['/api/billing/aggregate-credits'] });
               await queryClient.refetchQueries({ queryKey: [orgQueryKey] });
               
               success = true;
@@ -161,7 +163,7 @@ export default function Billing() {
       
       // Also poll for updates (in case webhook fires)
       const orgQueryKey = `/api/organizations/${user.organizationId}`;
-      pollForUpdates(['/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
+      pollForUpdates(['/api/credits/balance', '/api/credits/ledger', '/api/billing/aggregate-credits', orgQueryKey]);
     } else if (params.get('topup_canceled') === 'true') {
       toast({
         title: "Payment Canceled",
@@ -188,12 +190,14 @@ export default function Billing() {
               await queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
               await queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
               await queryClient.invalidateQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.invalidateQueries({ queryKey: ['/api/billing/aggregate-credits'] });
               await queryClient.invalidateQueries({ queryKey: [orgQueryKey] });
               
               // Force immediate refetch to update UI
               await queryClient.refetchQueries({ queryKey: ['/api/billing/subscription'] });
               await queryClient.refetchQueries({ queryKey: ['/api/credits/balance'] });
               await queryClient.refetchQueries({ queryKey: ['/api/credits/ledger'] });
+              await queryClient.refetchQueries({ queryKey: ['/api/billing/aggregate-credits'] });
               await queryClient.refetchQueries({ queryKey: [orgQueryKey] });
               
               success = true;
@@ -230,7 +234,7 @@ export default function Billing() {
       
       // Also poll for updates (in case webhook fires)
       const orgQueryKey = `/api/organizations/${user.organizationId}`;
-      pollForUpdates(['/api/billing/subscription', '/api/credits/balance', '/api/credits/ledger', orgQueryKey]);
+      pollForUpdates(['/api/billing/subscription', '/api/credits/balance', '/api/credits/ledger', '/api/billing/aggregate-credits', orgQueryKey]);
     } else if (params.get('canceled') === 'true') {
       toast({
         title: "Subscription Canceled",
