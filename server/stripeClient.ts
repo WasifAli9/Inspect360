@@ -1,8 +1,15 @@
 import Stripe from 'stripe';
 
 let connectionSettings: any;
+let cachedCredentials: { publishableKey: string; secretKey: string } | null = null;
+let credentialsCacheExpiry: number = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function getCredentials() {
+  // Return cached credentials if still valid
+  if (cachedCredentials && Date.now() < credentialsCacheExpiry) {
+    return cachedCredentials;
+  }
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
@@ -42,10 +49,14 @@ async function getCredentials() {
     throw new Error(`Stripe ${targetEnvironment} connection not found`);
   }
 
-  return {
+  // Cache the credentials
+  cachedCredentials = {
     publishableKey: connectionSettings.settings.publishable,
     secretKey: connectionSettings.settings.secret,
   };
+  credentialsCacheExpiry = Date.now() + CACHE_TTL_MS;
+
+  return cachedCredentials;
 }
 
 // WARNING: Never cache this client.

@@ -55,7 +55,20 @@ export default function Billing() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedTopup, setSelectedTopup] = useState<number | null>(null);
+  const [topupDialogOpen, setTopupDialogOpen] = useState(false);
   const [location, setLocation] = useLocation();
+
+  // Check for action=topup URL parameter and auto-open dialog
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'topup') {
+      setTopupDialogOpen(true);
+      // Remove the action parameter from URL
+      params.delete('action');
+      const newSearch = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`);
+    }
+  }, []);
 
   // Handle success/canceled query parameters with polling for webhook completion
   useEffect(() => {
@@ -520,7 +533,7 @@ export default function Billing() {
               </div>
             </div>
 
-            <Dialog>
+            <Dialog open={topupDialogOpen} onOpenChange={setTopupDialogOpen}>
               <DialogTrigger asChild>
                 <Button variant="default" className="w-full" data-testid="button-top-up-credits">
                   <Package className="mr-2 h-4 w-4" />
