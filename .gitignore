@@ -9,3 +9,20 @@ vite.config.ts.*
 .env
 .env.local
 .env.*.local
+
+# Storage directory (contains uploaded files)
+storage/
+
+# Temporary files
+/tmp/
+*.log
+*_cookies.txt
+test_*.sh
+
+# Backup files
+backup-*.sql
+storage-backup-*.tar.gz
+
+# OS files
+Thumbs.db
+.DS_Store

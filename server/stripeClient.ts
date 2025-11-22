@@ -10,6 +10,18 @@ async function getCredentials() {
   if (cachedCredentials && Date.now() < credentialsCacheExpiry) {
     return cachedCredentials;
   }
+
+  // Check for environment variables first (for non-Replit deployments)
+  if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PUBLISHABLE_KEY) {
+    cachedCredentials = {
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      secretKey: process.env.STRIPE_SECRET_KEY,
+    };
+    credentialsCacheExpiry = Date.now() + CACHE_TTL_MS;
+    return cachedCredentials;
+  }
+
+  // Fallback to Replit connector (if available)
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? 'repl ' + process.env.REPL_IDENTITY
@@ -17,8 +29,8 @@ async function getCredentials() {
       ? 'depl ' + process.env.WEB_REPL_RENEWAL
       : null;
 
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+  if (!xReplitToken || !hostname) {
+    throw new Error('Stripe credentials not configured. Set STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY environment variables.');
   }
 
   // Use stripe connector for all environments
@@ -68,7 +80,7 @@ export async function getUncachableStripeClient() {
   return new Stripe(secretKey, {
     // Note that this is the latest API version, don't change it to a old version of the
     // API.
-    apiVersion: '2025-08-27.basil',
+    apiVersion: '2025-10-29.clover',
   });
 }
 
