@@ -7144,7 +7144,11 @@ Be objective and specific. Focus on actionable repairs.`;
       }
 
       // Create checkout session
-      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5005}`;
+      // Use BASE_URL from env, or derive from request origin, or fallback to localhost
+      const baseUrl = process.env.BASE_URL 
+        || (req.headers.origin ? new URL(req.headers.origin).origin : null)
+        || `${req.protocol}://${req.get('host')}`
+        || `http://localhost:${process.env.PORT || 5005}`;
       
       const successUrl = `${baseUrl}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${baseUrl}/billing?canceled=true`;
@@ -7220,7 +7224,11 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(400).json({ message: "No active Stripe customer" });
       }
 
-      const baseUrl = process.env.BASE_URL || "http://localhost:5000";
+      // Use BASE_URL from env, or derive from request origin, or fallback to localhost
+      const baseUrl = process.env.BASE_URL 
+        || (req.headers.origin ? new URL(req.headers.origin).origin : null)
+        || `${req.protocol}://${req.get('host')}`
+        || "http://localhost:5000";
       
       const stripe = await getUncachableStripeClient();
       const session = await stripe.billingPortal.sessions.create({
@@ -7890,7 +7898,11 @@ Be objective and specific. Focus on actionable repairs.`;
       });
 
       // Create Stripe checkout session
-      const baseUrl = process.env.BASE_URL || "http://localhost:5000";
+      // Use BASE_URL from env, or derive from request origin, or fallback to localhost
+      const baseUrl = process.env.BASE_URL 
+        || (req.headers.origin ? new URL(req.headers.origin).origin : null)
+        || `${req.protocol}://${req.get('host')}`
+        || "http://localhost:5000";
       
       const stripe = await getUncachableStripeClient();
       const session = await stripe.checkout.sessions.create({
