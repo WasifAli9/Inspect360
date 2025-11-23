@@ -124,6 +124,75 @@ function getOpenAI(): OpenAI {
   return openai;
 }
 
+// Helper function to get the base URL from request, respecting proxy headers
+function getBaseUrl(req: any): string {
+  // 1. Check environment variable first
+  if (process.env.BASE_URL) {
+    console.log(`[getBaseUrl] Using BASE_URL from env: ${process.env.BASE_URL}`);
+    return process.env.BASE_URL;
+  }
+
+  // 2. Check for proxy headers (X-Forwarded-Proto and X-Forwarded-Host)
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const forwardedHost = req.headers['x-forwarded-host'];
+  if (forwardedProto && forwardedHost) {
+    const url = `${forwardedProto}://${forwardedHost}`;
+    console.log(`[getBaseUrl] Using forwarded headers: ${url}`);
+    return url;
+  }
+
+  // 3. Check request origin header
+  if (req.headers.origin) {
+    try {
+      const url = new URL(req.headers.origin).origin;
+      console.log(`[getBaseUrl] Using origin header: ${url}`);
+      return url;
+    } catch (e) {
+      // Invalid origin, continue to next option
+    }
+  }
+
+  // 4. Check referer header (often more reliable than origin)
+  if (req.headers.referer || req.headers.referrer) {
+    try {
+      const referer = req.headers.referer || req.headers.referrer;
+      const url = new URL(referer).origin;
+      console.log(`[getBaseUrl] Using referer header: ${url}`);
+      return url;
+    } catch (e) {
+      // Invalid referer, continue to next option
+    }
+  }
+
+  // 5. Use req.protocol and req.get('host') (works with trust proxy)
+  const protocol = req.protocol || 'http';
+  const host = req.get('host');
+  if (host) {
+    const url = `${protocol}://${host}`;
+    console.log(`[getBaseUrl] Using req.protocol/host: ${url}`);
+    return url;
+  }
+
+  // 6. Fallback to localhost
+  const fallback = `http://localhost:${process.env.PORT || 5005}`;
+  console.log(`[getBaseUrl] Using fallback: ${fallback}`);
+  console.log(`[getBaseUrl] Debug info:`, {
+    hasOrigin: !!req.headers.origin,
+    hasReferer: !!(req.headers.referer || req.headers.referrer),
+    hasForwardedProto: !!forwardedProto,
+    hasForwardedHost: !!forwardedHost,
+    protocol: req.protocol,
+    host: req.get('host'),
+    headers: {
+      origin: req.headers.origin,
+      referer: req.headers.referer || req.headers.referrer,
+      'x-forwarded-proto': forwardedProto,
+      'x-forwarded-host': forwardedHost,
+    }
+  });
+  return fallback;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
@@ -7144,11 +7213,7 @@ Be objective and specific. Focus on actionable repairs.`;
       }
 
       // Create checkout session
-      // Use BASE_URL from env, or derive from request origin, or fallback to localhost
-      const baseUrl = process.env.BASE_URL 
-        || (req.headers.origin ? new URL(req.headers.origin).origin : null)
-        || `${req.protocol}://${req.get('host')}`
-        || `http://localhost:${process.env.PORT || 5005}`;
+      const baseUrl = getBaseUrl(req);
       
       const successUrl = `${baseUrl}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${baseUrl}/billing?canceled=true`;
@@ -7224,11 +7289,7 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(400).json({ message: "No active Stripe customer" });
       }
 
-      // Use BASE_URL from env, or derive from request origin, or fallback to localhost
-      const baseUrl = process.env.BASE_URL 
-        || (req.headers.origin ? new URL(req.headers.origin).origin : null)
-        || `${req.protocol}://${req.get('host')}`
-        || "http://localhost:5000";
+      const baseUrl = getBaseUrl(req);
       
       const stripe = await getUncachableStripeClient();
       const session = await stripe.billingPortal.sessions.create({
@@ -7898,11 +7959,7 @@ Be objective and specific. Focus on actionable repairs.`;
       });
 
       // Create Stripe checkout session
-      // Use BASE_URL from env, or derive from request origin, or fallback to localhost
-      const baseUrl = process.env.BASE_URL 
-        || (req.headers.origin ? new URL(req.headers.origin).origin : null)
-        || `${req.protocol}://${req.get('host')}`
-        || "http://localhost:5000";
+      const baseUrl = getBaseUrl(req);
       
       const stripe = await getUncachableStripeClient();
       const session = await stripe.checkout.sessions.create({
