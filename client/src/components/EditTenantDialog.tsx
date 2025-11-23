@@ -37,6 +37,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Loader2, Send, Upload, X, FileText, Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useLocale } from "@/contexts/LocaleContext";
 
 const formSchema = z.object({
   leaseStartDate: z.string().optional(),
@@ -107,6 +108,7 @@ export default function EditTenantDialog({
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const locale = useLocale();
 
   // Fetch organization tags
   const { data: tags = [] } = useQuery<Tag[]>({
@@ -388,7 +390,7 @@ export default function EditTenantDialog({
                           data-testid="input-monthly-rent"
                         />
                       </FormControl>
-                      <FormDescription>In dollars</FormDescription>
+                      <FormDescription>In {locale.currency}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -409,7 +411,7 @@ export default function EditTenantDialog({
                           data-testid="input-deposit"
                         />
                       </FormControl>
-                      <FormDescription>In dollars</FormDescription>
+                      <FormDescription>In {locale.currency}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

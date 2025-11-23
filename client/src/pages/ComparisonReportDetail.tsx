@@ -25,6 +25,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface ComparisonReport {
   id: string;
@@ -76,6 +77,7 @@ export default function ComparisonReportDetail() {
   const { id } = useParams();
   const { toast } = useToast();
   const { user } = useAuth();
+  const locale = useLocale();
   const [commentText, setCommentText] = useState("");
   const [signatureName, setSignatureName] = useState("");
 
@@ -222,7 +224,7 @@ export default function ComparisonReportDetail() {
         </CardHeader>
         <CardContent>
           <div className="text-4xl font-bold text-primary">
-            ${totalCost.toFixed(2)}
+            {locale.formatCurrency(totalCost * 100, false)}
           </div>
           <p className="text-sm text-muted-foreground mt-2">
             Based on {report.items.length} items marked for review
@@ -350,7 +352,7 @@ export default function ComparisonReportDetail() {
                       <DollarSign className="w-4 h-4" />
                       Estimated Cost
                     </div>
-                    <div className="text-lg font-semibold">${estimatedCost.toFixed(2)}</div>
+                    <div className="text-lg font-semibold">{locale.formatCurrency(estimatedCost * 100, false)}</div>
                   </div>
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -358,7 +360,7 @@ export default function ComparisonReportDetail() {
                       Depreciation
                     </div>
                     <div className="text-lg font-semibold text-green-600">
-                      -${depreciation.toFixed(2)}
+                      -{locale.formatCurrency(depreciation * 100, false)}
                     </div>
                   </div>
                   <div className="space-y-1">
@@ -367,7 +369,7 @@ export default function ComparisonReportDetail() {
                       Tenant Liability
                     </div>
                     <div className="text-lg font-semibold text-primary">
-                      ${finalCost.toFixed(2)}
+                      {locale.formatCurrency(finalCost * 100, false)}
                     </div>
                   </div>
                 </div>

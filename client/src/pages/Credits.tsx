@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { CreditCard, Plus, Minus } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocale } from "@/contexts/LocaleContext";
 
 export default function Credits() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const locale = useLocale();
   const [selectedCredits, setSelectedCredits] = useState(10);
 
   const { data: transactions = [] } = useQuery({
@@ -89,7 +91,7 @@ export default function Credits() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-center">
-                  <div className="text-3xl font-bold">${option.price}</div>
+                  <div className="text-3xl font-bold">{locale.formatCurrency(option.price * 100, false)}</div>
                   {option.discount && (
                     <Badge variant="secondary" className="mt-2">
                       {option.discount}

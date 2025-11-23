@@ -1,46 +1,134 @@
--- Inspect360 PostgreSQL Database Schema
+-- Inspect360 PostgreSQL Database Schema (Idempotent Version)
 -- Generated from shared/schema.ts
+-- This script can be run multiple times safely - it will create missing tables/columns/indexes
+-- and skip existing ones without errors
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ==================== ENUMS ====================
+-- Create ENUMs only if they don't exist
 
-CREATE TYPE user_role AS ENUM ('owner', 'clerk', 'compliance', 'tenant', 'contractor');
-CREATE TYPE inspection_status AS ENUM ('scheduled', 'in_progress', 'completed', 'reviewed');
-CREATE TYPE inspection_type AS ENUM ('check_in', 'check_out', 'routine', 'maintenance');
-CREATE TYPE compliance_status AS ENUM ('current', 'expiring_soon', 'expired');
-CREATE TYPE maintenance_status AS ENUM ('open', 'in_progress', 'completed', 'closed');
-CREATE TYPE subscription_status AS ENUM ('active', 'inactive', 'cancelled');
-CREATE TYPE subscription_level AS ENUM ('free', 'starter', 'professional', 'enterprise');
-CREATE TYPE work_order_status AS ENUM ('assigned', 'in_progress', 'waiting_parts', 'completed', 'rejected');
-CREATE TYPE asset_condition AS ENUM ('excellent', 'good', 'fair', 'poor', 'needs_replacement');
-CREATE TYPE inspection_point_data_type AS ENUM ('text', 'number', 'checkbox', 'photo', 'rating');
-CREATE TYPE condition_rating AS ENUM ('excellent', 'good', 'fair', 'poor', 'not_applicable');
-CREATE TYPE cleanliness_rating AS ENUM ('very_clean', 'clean', 'acceptable', 'needs_cleaning', 'not_applicable');
-CREATE TYPE contact_type AS ENUM ('internal', 'contractor', 'lead', 'company', 'partner', 'vendor', 'other');
-CREATE TYPE template_scope AS ENUM ('block', 'property', 'both');
-CREATE TYPE field_type AS ENUM ('short_text', 'long_text', 'number', 'select', 'multiselect', 'boolean', 'rating', 'date', 'time', 'datetime', 'photo', 'photo_array', 'video', 'gps', 'signature');
-CREATE TYPE maintenance_source AS ENUM ('manual', 'inspection', 'tenant_portal', 'routine');
-CREATE TYPE comparison_report_status AS ENUM ('draft', 'under_review', 'awaiting_signatures', 'signed', 'filed');
-CREATE TYPE currency AS ENUM ('GBP', 'USD', 'AED');
-CREATE TYPE plan_code AS ENUM ('starter', 'professional', 'enterprise', 'enterprise_plus');
-CREATE TYPE credit_source AS ENUM ('plan_inclusion', 'topup', 'admin_grant', 'refund', 'adjustment', 'consumption', 'expiry');
-CREATE TYPE topup_status AS ENUM ('pending', 'paid', 'failed', 'refunded');
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('owner', 'clerk', 'compliance', 'tenant', 'contractor');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'inspection_status') THEN
+        CREATE TYPE inspection_status AS ENUM ('scheduled', 'in_progress', 'completed', 'reviewed');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'inspection_type') THEN
+        CREATE TYPE inspection_type AS ENUM ('check_in', 'check_out', 'routine', 'maintenance');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'compliance_status') THEN
+        CREATE TYPE compliance_status AS ENUM ('current', 'expiring_soon', 'expired');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'maintenance_status') THEN
+        CREATE TYPE maintenance_status AS ENUM ('open', 'in_progress', 'completed', 'closed');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
+        CREATE TYPE subscription_status AS ENUM ('active', 'inactive', 'cancelled');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_level') THEN
+        CREATE TYPE subscription_level AS ENUM ('free', 'starter', 'professional', 'enterprise');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_order_status') THEN
+        CREATE TYPE work_order_status AS ENUM ('assigned', 'in_progress', 'waiting_parts', 'completed', 'rejected');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'asset_condition') THEN
+        CREATE TYPE asset_condition AS ENUM ('excellent', 'good', 'fair', 'poor', 'needs_replacement');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'inspection_point_data_type') THEN
+        CREATE TYPE inspection_point_data_type AS ENUM ('text', 'number', 'checkbox', 'photo', 'rating');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'condition_rating') THEN
+        CREATE TYPE condition_rating AS ENUM ('excellent', 'good', 'fair', 'poor', 'not_applicable');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'cleanliness_rating') THEN
+        CREATE TYPE cleanliness_rating AS ENUM ('very_clean', 'clean', 'acceptable', 'needs_cleaning', 'not_applicable');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'contact_type') THEN
+        CREATE TYPE contact_type AS ENUM ('internal', 'contractor', 'lead', 'company', 'partner', 'vendor', 'other');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'template_scope') THEN
+        CREATE TYPE template_scope AS ENUM ('block', 'property', 'both');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'field_type') THEN
+        CREATE TYPE field_type AS ENUM ('short_text', 'long_text', 'number', 'select', 'multiselect', 'boolean', 'rating', 'date', 'time', 'datetime', 'photo', 'photo_array', 'video', 'gps', 'signature');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'maintenance_source') THEN
+        CREATE TYPE maintenance_source AS ENUM ('manual', 'inspection', 'tenant_portal', 'routine');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'comparison_report_status') THEN
+        CREATE TYPE comparison_report_status AS ENUM ('draft', 'under_review', 'awaiting_signatures', 'signed', 'filed');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'currency') THEN
+        CREATE TYPE currency AS ENUM ('GBP', 'USD', 'AED');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'plan_code') THEN
+        CREATE TYPE plan_code AS ENUM ('starter', 'professional', 'enterprise', 'enterprise_plus');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'credit_source') THEN
+        CREATE TYPE credit_source AS ENUM ('plan_inclusion', 'topup', 'admin_grant', 'refund', 'adjustment', 'consumption', 'expiry');
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'topup_status') THEN
+        CREATE TYPE topup_status AS ENUM ('pending', 'paid', 'failed', 'refunded');
+    END IF;
+END $$;
+
+-- ==================== HELPER FUNCTION ====================
+-- Function to add column if it doesn't exist
+CREATE OR REPLACE FUNCTION add_column_if_not_exists(
+    p_table_name TEXT,
+    p_column_name TEXT,
+    p_column_definition TEXT
+) RETURNS VOID AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public'
+        AND table_name = p_table_name 
+        AND column_name = p_column_name
+    ) THEN
+        EXECUTE format('ALTER TABLE %I ADD COLUMN %I %s', p_table_name, p_column_name, p_column_definition);
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
 
 -- ==================== TABLES ====================
 
--- Sessions table (required for session storage)
-CREATE TABLE sessions (
+-- Sessions table
+CREATE TABLE IF NOT EXISTS sessions (
     sid VARCHAR PRIMARY KEY,
     sess JSONB NOT NULL,
     expire TIMESTAMP NOT NULL
 );
 
-CREATE INDEX IDX_session_expire ON sessions(expire);
+CREATE INDEX IF NOT EXISTS IDX_session_expire ON sessions(expire);
 
 -- Users table
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     username VARCHAR UNIQUE NOT NULL,
     password VARCHAR NOT NULL,
@@ -63,7 +151,7 @@ CREATE TABLE users (
 );
 
 -- Admin Users table
-CREATE TABLE admin_users (
+CREATE TABLE IF NOT EXISTS admin_users (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     email VARCHAR UNIQUE NOT NULL,
     password VARCHAR NOT NULL,
@@ -74,7 +162,7 @@ CREATE TABLE admin_users (
 );
 
 -- Organizations table
-CREATE TABLE organizations (
+CREATE TABLE IF NOT EXISTS organizations (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     name VARCHAR NOT NULL,
     owner_id VARCHAR NOT NULL,
@@ -91,7 +179,7 @@ CREATE TABLE organizations (
 );
 
 -- Contacts table
-CREATE TABLE contacts (
+CREATE TABLE IF NOT EXISTS contacts (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     type contact_type NOT NULL DEFAULT 'other',
@@ -117,7 +205,7 @@ CREATE TABLE contacts (
 );
 
 -- Blocks table
-CREATE TABLE blocks (
+CREATE TABLE IF NOT EXISTS blocks (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -128,7 +216,7 @@ CREATE TABLE blocks (
 );
 
 -- Properties table
-CREATE TABLE properties (
+CREATE TABLE IF NOT EXISTS properties (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     block_id VARCHAR,
@@ -142,7 +230,7 @@ CREATE TABLE properties (
 );
 
 -- Tenant Assignments table
-CREATE TABLE tenant_assignments (
+CREATE TABLE IF NOT EXISTS tenant_assignments (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     tenant_id VARCHAR NOT NULL,
@@ -153,12 +241,17 @@ CREATE TABLE tenant_assignments (
     deposit_amount NUMERIC(10, 2),
     notes TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    next_of_kin_name VARCHAR(255),
+    next_of_kin_phone VARCHAR(50),
+    next_of_kin_email VARCHAR(255),
+    next_of_kin_relationship VARCHAR(100),
+    has_portal_access BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Inspection Categories table
-CREATE TABLE inspection_categories (
+CREATE TABLE IF NOT EXISTS inspection_categories (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -170,7 +263,7 @@ CREATE TABLE inspection_categories (
 );
 
 -- Template Categories table
-CREATE TABLE template_categories (
+CREATE TABLE IF NOT EXISTS template_categories (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -180,7 +273,7 @@ CREATE TABLE template_categories (
 );
 
 -- Inspection Templates table
-CREATE TABLE inspection_templates (
+CREATE TABLE IF NOT EXISTS inspection_templates (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -197,17 +290,17 @@ CREATE TABLE inspection_templates (
 );
 
 -- Template Inventory Links table
-CREATE TABLE template_inventory_links (
+CREATE TABLE IF NOT EXISTS template_inventory_links (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     template_id VARCHAR NOT NULL,
     inventory_template_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX template_inventory_links_template_id_idx ON template_inventory_links(template_id);
+CREATE INDEX IF NOT EXISTS template_inventory_links_template_id_idx ON template_inventory_links(template_id);
 
 -- Inspection Template Points table
-CREATE TABLE inspection_template_points (
+CREATE TABLE IF NOT EXISTS inspection_template_points (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     template_id VARCHAR NOT NULL,
     category_id VARCHAR,
@@ -222,7 +315,7 @@ CREATE TABLE inspection_template_points (
 );
 
 -- Inspections table
-CREATE TABLE inspections (
+CREATE TABLE IF NOT EXISTS inspections (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     template_id VARCHAR,
@@ -240,14 +333,13 @@ CREATE TABLE inspections (
     submitted_at TIMESTAMP,
     notes TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT inspections_location_check CHECK (block_id IS NOT NULL OR property_id IS NOT NULL)
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX inspections_organization_id_idx ON inspections(organization_id);
+CREATE INDEX IF NOT EXISTS inspections_organization_id_idx ON inspections(organization_id);
 
 -- Inspection Items table
-CREATE TABLE inspection_items (
+CREATE TABLE IF NOT EXISTS inspection_items (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     inspection_id VARCHAR NOT NULL,
     category_id VARCHAR,
@@ -261,7 +353,7 @@ CREATE TABLE inspection_items (
 );
 
 -- Inspection Responses table
-CREATE TABLE inspection_responses (
+CREATE TABLE IF NOT EXISTS inspection_responses (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     inspection_id VARCHAR NOT NULL,
     template_point_id VARCHAR NOT NULL,
@@ -279,7 +371,7 @@ CREATE TABLE inspection_responses (
 );
 
 -- Inspection Entries table
-CREATE TABLE inspection_entries (
+CREATE TABLE IF NOT EXISTS inspection_entries (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     inspection_id VARCHAR NOT NULL,
     section_ref TEXT NOT NULL,
@@ -294,16 +386,16 @@ CREATE TABLE inspection_entries (
     marked_for_review BOOLEAN DEFAULT FALSE,
     asset_inventory_id VARCHAR,
     defects_json JSONB,
-    offline_id VARCHAR UNIQUE,
+    offline_id VARCHAR,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX inspection_entries_inspection_id_idx ON inspection_entries(inspection_id);
-CREATE INDEX inspection_entries_offline_id_idx ON inspection_entries(offline_id);
+CREATE INDEX IF NOT EXISTS inspection_entries_inspection_id_idx ON inspection_entries(inspection_id);
+CREATE INDEX IF NOT EXISTS inspection_entries_offline_id_idx ON inspection_entries(offline_id);
 
 -- AI Image Analyses table
-CREATE TABLE ai_image_analyses (
+CREATE TABLE IF NOT EXISTS ai_image_analyses (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     inspection_entry_id VARCHAR,
     inspection_id VARCHAR,
@@ -317,11 +409,11 @@ CREATE TABLE ai_image_analyses (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX ai_image_analyses_entry_id_idx ON ai_image_analyses(inspection_entry_id);
-CREATE INDEX ai_image_analyses_inspection_id_idx ON ai_image_analyses(inspection_id);
+CREATE INDEX IF NOT EXISTS ai_image_analyses_entry_id_idx ON ai_image_analyses(inspection_entry_id);
+CREATE INDEX IF NOT EXISTS ai_image_analyses_inspection_id_idx ON ai_image_analyses(inspection_id);
 
 -- Compliance Documents table
-CREATE TABLE compliance_documents (
+CREATE TABLE IF NOT EXISTS compliance_documents (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     property_id VARCHAR,
@@ -336,7 +428,7 @@ CREATE TABLE compliance_documents (
 );
 
 -- Maintenance Requests table
-CREATE TABLE maintenance_requests (
+CREATE TABLE IF NOT EXISTS maintenance_requests (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     property_id VARCHAR NOT NULL,
@@ -362,7 +454,7 @@ CREATE TABLE maintenance_requests (
 );
 
 -- Tenant Maintenance Chats table
-CREATE TABLE tenant_maintenance_chats (
+CREATE TABLE IF NOT EXISTS tenant_maintenance_chats (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     tenant_id VARCHAR NOT NULL,
@@ -375,7 +467,7 @@ CREATE TABLE tenant_maintenance_chats (
 );
 
 -- Tenant Maintenance Chat Messages table
-CREATE TABLE tenant_maintenance_chat_messages (
+CREATE TABLE IF NOT EXISTS tenant_maintenance_chat_messages (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     chat_id VARCHAR NOT NULL,
     role VARCHAR NOT NULL,
@@ -386,7 +478,7 @@ CREATE TABLE tenant_maintenance_chat_messages (
 );
 
 -- Comparison Reports table
-CREATE TABLE comparison_reports (
+CREATE TABLE IF NOT EXISTS comparison_reports (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     property_id VARCHAR NOT NULL,
@@ -410,12 +502,12 @@ CREATE TABLE comparison_reports (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX comparison_reports_organization_id_idx ON comparison_reports(organization_id);
-CREATE INDEX comparison_reports_property_id_idx ON comparison_reports(property_id);
-CREATE INDEX comparison_reports_check_out_inspection_id_idx ON comparison_reports(check_out_inspection_id);
+CREATE INDEX IF NOT EXISTS comparison_reports_organization_id_idx ON comparison_reports(organization_id);
+CREATE INDEX IF NOT EXISTS comparison_reports_property_id_idx ON comparison_reports(property_id);
+CREATE INDEX IF NOT EXISTS comparison_reports_check_out_inspection_id_idx ON comparison_reports(check_out_inspection_id);
 
 -- Comparison Report Items table
-CREATE TABLE comparison_report_items (
+CREATE TABLE IF NOT EXISTS comparison_report_items (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     comparison_report_id VARCHAR NOT NULL,
     check_in_entry_id VARCHAR,
@@ -433,10 +525,10 @@ CREATE TABLE comparison_report_items (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX comparison_report_items_report_id_idx ON comparison_report_items(comparison_report_id);
+CREATE INDEX IF NOT EXISTS comparison_report_items_report_id_idx ON comparison_report_items(comparison_report_id);
 
 -- Comparison Comments table
-CREATE TABLE comparison_comments (
+CREATE TABLE IF NOT EXISTS comparison_comments (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     comparison_report_id VARCHAR NOT NULL,
     comparison_report_item_id VARCHAR,
@@ -448,22 +540,23 @@ CREATE TABLE comparison_comments (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX comparison_comments_report_id_idx ON comparison_comments(comparison_report_id);
-CREATE INDEX comparison_comments_item_id_idx ON comparison_comments(comparison_report_item_id);
+CREATE INDEX IF NOT EXISTS comparison_comments_report_id_idx ON comparison_comments(comparison_report_id);
+CREATE INDEX IF NOT EXISTS comparison_comments_item_id_idx ON comparison_comments(comparison_report_item_id);
 
 -- Credit Transactions table
-CREATE TABLE credit_transactions (
+CREATE TABLE IF NOT EXISTS credit_transactions (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     amount INTEGER NOT NULL,
     type VARCHAR NOT NULL,
     description TEXT,
     related_id VARCHAR,
+    created_by VARCHAR,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Inventory Templates table
-CREATE TABLE inventory_templates (
+CREATE TABLE IF NOT EXISTS inventory_templates (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -474,7 +567,7 @@ CREATE TABLE inventory_templates (
 );
 
 -- Inventories table
-CREATE TABLE inventories (
+CREATE TABLE IF NOT EXISTS inventories (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     property_id VARCHAR NOT NULL,
@@ -486,7 +579,7 @@ CREATE TABLE inventories (
 );
 
 -- Inventory Items table
-CREATE TABLE inventory_items (
+CREATE TABLE IF NOT EXISTS inventory_items (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     inventory_id VARCHAR NOT NULL,
     path TEXT NOT NULL,
@@ -499,7 +592,7 @@ CREATE TABLE inventory_items (
 );
 
 -- Work Orders table
-CREATE TABLE work_orders (
+CREATE TABLE IF NOT EXISTS work_orders (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     maintenance_request_id VARCHAR NOT NULL,
@@ -516,7 +609,7 @@ CREATE TABLE work_orders (
 );
 
 -- Work Logs table
-CREATE TABLE work_logs (
+CREATE TABLE IF NOT EXISTS work_logs (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     work_order_id VARCHAR NOT NULL,
     note TEXT NOT NULL,
@@ -526,7 +619,7 @@ CREATE TABLE work_logs (
 );
 
 -- Asset Inventory table
-CREATE TABLE asset_inventory (
+CREATE TABLE IF NOT EXISTS asset_inventory (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     property_id VARCHAR,
@@ -559,7 +652,7 @@ CREATE TABLE asset_inventory (
 );
 
 -- Fixflo Config table
-CREATE TABLE fixflo_config (
+CREATE TABLE IF NOT EXISTS fixflo_config (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL UNIQUE,
     base_url VARCHAR NOT NULL DEFAULT 'https://api-sandbox.fixflo.com/api/v2',
@@ -574,7 +667,7 @@ CREATE TABLE fixflo_config (
 );
 
 -- Fixflo Webhook Logs table
-CREATE TABLE fixflo_webhook_logs (
+CREATE TABLE IF NOT EXISTS fixflo_webhook_logs (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     event_type VARCHAR NOT NULL,
@@ -588,12 +681,12 @@ CREATE TABLE fixflo_webhook_logs (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX fixflo_webhook_logs_organization_id_idx ON fixflo_webhook_logs(organization_id);
-CREATE INDEX fixflo_webhook_logs_event_type_idx ON fixflo_webhook_logs(event_type);
-CREATE INDEX fixflo_webhook_logs_processing_status_idx ON fixflo_webhook_logs(processing_status);
+CREATE INDEX IF NOT EXISTS fixflo_webhook_logs_organization_id_idx ON fixflo_webhook_logs(organization_id);
+CREATE INDEX IF NOT EXISTS fixflo_webhook_logs_event_type_idx ON fixflo_webhook_logs(event_type);
+CREATE INDEX IF NOT EXISTS fixflo_webhook_logs_processing_status_idx ON fixflo_webhook_logs(processing_status);
 
 -- Fixflo Sync State table
-CREATE TABLE fixflo_sync_state (
+CREATE TABLE IF NOT EXISTS fixflo_sync_state (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     entity_type VARCHAR NOT NULL,
@@ -607,10 +700,10 @@ CREATE TABLE fixflo_sync_state (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX fixflo_sync_state_organization_id_idx ON fixflo_sync_state(organization_id);
+CREATE INDEX IF NOT EXISTS fixflo_sync_state_organization_id_idx ON fixflo_sync_state(organization_id);
 
 -- Teams table
-CREATE TABLE teams (
+CREATE TABLE IF NOT EXISTS teams (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -621,10 +714,10 @@ CREATE TABLE teams (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX teams_organization_id_idx ON teams(organization_id);
+CREATE INDEX IF NOT EXISTS teams_organization_id_idx ON teams(organization_id);
 
 -- Team Members table
-CREATE TABLE team_members (
+CREATE TABLE IF NOT EXISTS team_members (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     team_id VARCHAR NOT NULL,
     user_id VARCHAR,
@@ -633,22 +726,22 @@ CREATE TABLE team_members (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX team_members_team_id_idx ON team_members(team_id);
-CREATE INDEX team_members_user_id_idx ON team_members(user_id);
-CREATE INDEX team_members_contact_id_idx ON team_members(contact_id);
+CREATE INDEX IF NOT EXISTS team_members_team_id_idx ON team_members(team_id);
+CREATE INDEX IF NOT EXISTS team_members_user_id_idx ON team_members(user_id);
+CREATE INDEX IF NOT EXISTS team_members_contact_id_idx ON team_members(contact_id);
 
 -- Team Categories table
-CREATE TABLE team_categories (
+CREATE TABLE IF NOT EXISTS team_categories (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     team_id VARCHAR NOT NULL,
     category VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX team_categories_team_id_idx ON team_categories(team_id);
+CREATE INDEX IF NOT EXISTS team_categories_team_id_idx ON team_categories(team_id);
 
 -- Tags table
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
@@ -658,49 +751,49 @@ CREATE TABLE tags (
 );
 
 -- Tag join tables
-CREATE TABLE block_tags (
+CREATE TABLE IF NOT EXISTS block_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     block_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE property_tags (
+CREATE TABLE IF NOT EXISTS property_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     property_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE user_tags (
+CREATE TABLE IF NOT EXISTS user_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     user_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE compliance_document_tags (
+CREATE TABLE IF NOT EXISTS compliance_document_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     compliance_document_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE asset_inventory_tags (
+CREATE TABLE IF NOT EXISTS asset_inventory_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     asset_inventory_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE maintenance_request_tags (
+CREATE TABLE IF NOT EXISTS maintenance_request_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     maintenance_request_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE contact_tags (
+CREATE TABLE IF NOT EXISTS contact_tags (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     contact_id VARCHAR NOT NULL,
     tag_id VARCHAR NOT NULL,
@@ -708,7 +801,7 @@ CREATE TABLE contact_tags (
 );
 
 -- Dashboard Preferences table
-CREATE TABLE dashboard_preferences (
+CREATE TABLE IF NOT EXISTS dashboard_preferences (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     user_id VARCHAR NOT NULL,
     enabled_panels JSONB NOT NULL DEFAULT '["stats", "inspections", "compliance", "maintenance"]'::JSONB,
@@ -717,11 +810,12 @@ CREATE TABLE dashboard_preferences (
 );
 
 -- Plans table
-CREATE TABLE plans (
+CREATE TABLE IF NOT EXISTS plans (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     code plan_code NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     monthly_price_gbp INTEGER NOT NULL,
+    annual_price_gbp INTEGER,
     included_credits INTEGER NOT NULL,
     soft_cap INTEGER DEFAULT 5000,
     is_custom BOOLEAN DEFAULT FALSE,
@@ -731,7 +825,7 @@ CREATE TABLE plans (
 );
 
 -- Country Pricing Overrides table
-CREATE TABLE country_pricing_overrides (
+CREATE TABLE IF NOT EXISTS country_pricing_overrides (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     country_code VARCHAR(2) NOT NULL,
     plan_id VARCHAR NOT NULL,
@@ -745,10 +839,10 @@ CREATE TABLE country_pricing_overrides (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_country_pricing_country_plan ON country_pricing_overrides(country_code, plan_id);
+CREATE INDEX IF NOT EXISTS idx_country_pricing_country_plan ON country_pricing_overrides(country_code, plan_id);
 
 -- Subscriptions table
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT EXISTS subscriptions (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     plan_snapshot_json JSONB NOT NULL,
@@ -762,11 +856,11 @@ CREATE TABLE subscriptions (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_subscriptions_org ON subscriptions(organization_id);
-CREATE INDEX idx_subscriptions_period_end ON subscriptions(current_period_end);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_org ON subscriptions(organization_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_period_end ON subscriptions(current_period_end);
 
 -- Credit Batches table
-CREATE TABLE credit_batches (
+CREATE TABLE IF NOT EXISTS credit_batches (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     granted_quantity INTEGER NOT NULL,
@@ -781,13 +875,14 @@ CREATE TABLE credit_batches (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_credit_batches_org_expires ON credit_batches(organization_id, expires_at);
-CREATE INDEX idx_credit_batches_org_granted ON credit_batches(organization_id, granted_at);
+CREATE INDEX IF NOT EXISTS idx_credit_batches_org_expires ON credit_batches(organization_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_credit_batches_org_granted ON credit_batches(organization_id, granted_at);
 
 -- Credit Ledger table
-CREATE TABLE credit_ledger (
+CREATE TABLE IF NOT EXISTS credit_ledger (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
+    created_by VARCHAR,
     source credit_source NOT NULL,
     quantity INTEGER NOT NULL,
     batch_id VARCHAR,
@@ -798,11 +893,11 @@ CREATE TABLE credit_ledger (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_credit_ledger_org_created ON credit_ledger(organization_id, created_at);
-CREATE INDEX idx_credit_ledger_batch ON credit_ledger(batch_id);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_org_created ON credit_ledger(organization_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_batch ON credit_ledger(batch_id);
 
 -- Topup Orders table
-CREATE TABLE topup_orders (
+CREATE TABLE IF NOT EXISTS topup_orders (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     pack_size INTEGER NOT NULL,
@@ -816,10 +911,10 @@ CREATE TABLE topup_orders (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_topup_orders_org ON topup_orders(organization_id);
+CREATE INDEX IF NOT EXISTS idx_topup_orders_org ON topup_orders(organization_id);
 
 -- Message Templates table
-CREATE TABLE message_templates (
+CREATE TABLE IF NOT EXISTS message_templates (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -834,7 +929,7 @@ CREATE TABLE message_templates (
 );
 
 -- Knowledge Base Documents table
-CREATE TABLE knowledge_base_documents (
+CREATE TABLE IF NOT EXISTS knowledge_base_documents (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     title VARCHAR(500) NOT NULL,
     file_name VARCHAR(500) NOT NULL,
@@ -850,11 +945,11 @@ CREATE TABLE knowledge_base_documents (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_kb_docs_active ON knowledge_base_documents(is_active);
-CREATE INDEX idx_kb_docs_category ON knowledge_base_documents(category);
+CREATE INDEX IF NOT EXISTS idx_kb_docs_active ON knowledge_base_documents(is_active);
+CREATE INDEX IF NOT EXISTS idx_kb_docs_category ON knowledge_base_documents(category);
 
 -- Chat Conversations table
-CREATE TABLE chat_conversations (
+CREATE TABLE IF NOT EXISTS chat_conversations (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     organization_id VARCHAR NOT NULL,
     user_id VARCHAR NOT NULL,
@@ -864,11 +959,11 @@ CREATE TABLE chat_conversations (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_chat_conversations_user ON chat_conversations(user_id);
-CREATE INDEX idx_chat_conversations_org ON chat_conversations(organization_id);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_user ON chat_conversations(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_org ON chat_conversations(organization_id);
 
 -- Chat Messages table
-CREATE TABLE chat_messages (
+CREATE TABLE IF NOT EXISTS chat_messages (
     id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     conversation_id VARCHAR NOT NULL,
     role VARCHAR(50) NOT NULL,
@@ -877,14 +972,104 @@ CREATE TABLE chat_messages (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_chat_messages_conversation ON chat_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id);
+
+-- ==================== ADD MISSING COLUMNS ====================
+-- This section adds columns that might have been added later to existing tables
+
+-- Add created_by column to credit_transactions if it doesn't exist
+SELECT add_column_if_not_exists('credit_transactions', 'created_by', 'VARCHAR');
+
+-- Add created_by column to credit_ledger if it doesn't exist
+SELECT add_column_if_not_exists('credit_ledger', 'created_by', 'VARCHAR');
+
+-- Add annual_price_gbp column to plans if it doesn't exist
+SELECT add_column_if_not_exists('plans', 'annual_price_gbp', 'INTEGER');
+
+-- Add missing columns to tenant_assignments table
+SELECT add_column_if_not_exists('tenant_assignments', 'next_of_kin_name', 'VARCHAR(255)');
+SELECT add_column_if_not_exists('tenant_assignments', 'next_of_kin_phone', 'VARCHAR(50)');
+SELECT add_column_if_not_exists('tenant_assignments', 'next_of_kin_email', 'VARCHAR(255)');
+SELECT add_column_if_not_exists('tenant_assignments', 'next_of_kin_relationship', 'VARCHAR(100)');
+SELECT add_column_if_not_exists('tenant_assignments', 'has_portal_access', 'BOOLEAN NOT NULL DEFAULT TRUE');
+
+-- Add tenancy_attachments table if it doesn't exist (referenced in schema but might not be in DB)
+CREATE TABLE IF NOT EXISTS tenancy_attachments (
+    id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    tenant_assignment_id VARCHAR NOT NULL,
+    file_url TEXT NOT NULL,
+    file_name VARCHAR(500),
+    file_type VARCHAR(100),
+    file_size_bytes INTEGER,
+    uploaded_by VARCHAR,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ==================== ADD MISSING CONSTRAINTS ====================
+-- These constraints won't be added by CREATE TABLE IF NOT EXISTS on existing tables
+
+DO $$
+BEGIN
+    -- Add CHECK constraint to inspections table if it doesn't exist
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'inspections') THEN
+        IF NOT EXISTS (
+            SELECT 1 
+            FROM pg_constraint 
+            WHERE conname = 'inspections_location_check'
+        ) THEN
+            ALTER TABLE inspections 
+            ADD CONSTRAINT inspections_location_check 
+            CHECK (block_id IS NOT NULL OR property_id IS NOT NULL);
+        END IF;
+    END IF;
+
+    -- Add UNIQUE constraint to inspection_entries.offline_id if it doesn't exist
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'inspection_entries') THEN
+        IF EXISTS (
+            SELECT 1 
+            FROM information_schema.columns 
+            WHERE table_name = 'inspection_entries' 
+            AND column_name = 'offline_id'
+        ) THEN
+            IF NOT EXISTS (
+                SELECT 1 
+                FROM pg_constraint 
+                WHERE conname = 'inspection_entries_offline_id_key'
+                AND conrelid = 'inspection_entries'::regclass
+            ) THEN
+                ALTER TABLE inspection_entries 
+                ADD CONSTRAINT inspection_entries_offline_id_key UNIQUE (offline_id);
+            END IF;
+        END IF;
+    END IF;
+END $$;
 
 -- ==================== COMMENTS ====================
+-- Only add comments if tables exist to avoid errors
 
-COMMENT ON TABLE sessions IS 'Session storage for authentication';
-COMMENT ON TABLE users IS 'Application users with various roles';
-COMMENT ON TABLE organizations IS 'Organizations using the platform';
-COMMENT ON TABLE inspections IS 'Property and block inspections';
-COMMENT ON TABLE maintenance_requests IS 'Maintenance requests and work orders';
-COMMENT ON TABLE comparison_reports IS 'Check-in vs check-out comparison reports';
-
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'sessions') THEN
+        COMMENT ON TABLE sessions IS 'Session storage for authentication';
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'users') THEN
+        COMMENT ON TABLE users IS 'Application users with various roles';
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'organizations') THEN
+        COMMENT ON TABLE organizations IS 'Organizations using the platform';
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'inspections') THEN
+        COMMENT ON TABLE inspections IS 'Property and block inspections';
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'maintenance_requests') THEN
+        COMMENT ON TABLE maintenance_requests IS 'Maintenance requests and work orders';
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'comparison_reports') THEN
+        COMMENT ON TABLE comparison_reports IS 'Check-in vs check-out comparison reports';
+    END IF;
+END $$;

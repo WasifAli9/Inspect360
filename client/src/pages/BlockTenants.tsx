@@ -11,6 +11,7 @@ import type { Tag } from "@shared/schema";
 import { ArrowLeft, Users, Home, DollarSign, Percent, Mail, Phone, Building2, Calendar, MessageSquare, Search, Tag as TagIcon } from "lucide-react";
 import { format } from "date-fns";
 import { BroadcastDialog } from "@/components/BroadcastDialog";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface TenantAssignment {
   user: {
@@ -56,6 +57,7 @@ interface Block {
 export default function BlockTenants() {
   const [, params] = useRoute("/blocks/:id/tenants");
   const blockId = params?.id;
+  const locale = useLocale();
   const [broadcastDialogOpen, setBroadcastDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTags, setFilterTags] = useState<Tag[]>([]);
@@ -258,7 +260,7 @@ export default function BlockTenants() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${stats.totalMonthlyRent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {locale.formatCurrency(stats.totalMonthlyRent * 100, false)}
             </div>
             <p className="text-xs text-muted-foreground">
               Combined monthly revenue
@@ -394,7 +396,7 @@ export default function BlockTenants() {
                           {tenant.assignment.monthlyRent && (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <DollarSign className="h-4 w-4 shrink-0" />
-                              <span>Rent: ${parseFloat(tenant.assignment.monthlyRent).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month</span>
+                              <span>Rent: {locale.formatCurrency(parseFloat(tenant.assignment.monthlyRent) * 100, false)}/month</span>
                             </div>
                           )}
                         </div>

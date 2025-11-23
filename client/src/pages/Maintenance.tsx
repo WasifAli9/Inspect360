@@ -10,6 +10,7 @@ import { Plus, Wrench, Upload, Sparkles, Loader2, X, Check, ChevronsUpDown, Penc
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow } from "date-fns";
+import { useLocale } from "@/contexts/LocaleContext";
 import { FixfloSyncButton } from "@/components/FixfloSyncButton";
 import {
   Dialog,
@@ -118,6 +119,7 @@ const createMaintenanceSchema = insertMaintenanceRequestSchema
 export default function Maintenance() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const locale = useLocale();
   const [, navigate] = useLocation();
   const searchParams = useSearch();
   const urlPropertyId = new URLSearchParams(searchParams).get("propertyId");
@@ -1403,7 +1405,7 @@ function WorkOrderForm({
 
       <div className="space-y-2">
         <label className="text-sm font-medium" htmlFor="cost-estimate">
-          Cost Estimate ($)
+          Cost Estimate ({locale.currencySymbol})
         </label>
         <Input
           id="cost-estimate"

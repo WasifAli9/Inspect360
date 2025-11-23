@@ -224,7 +224,7 @@ export async function sendInspectionCompleteEmail(
 
       <!-- CTA Button -->
       <div style="text-align: center; margin: 32px 0;">
-        <a href="${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}/inspections/${inspectionDetails.inspectionId}` : '#'}" 
+        <a href="${process.env.BASE_URL ? `${process.env.BASE_URL}/inspections/${inspectionDetails.inspectionId}` : '#'}" 
            style="display: inline-block; background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">
           View Inspection Report
         </a>
@@ -369,7 +369,7 @@ export async function sendTeamWorkOrderNotification(
 
       <!-- CTA Button -->
       <div style="text-align: center; margin: 32px 0;">
-        <a href="${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}/maintenance?tab=work-orders` : '#'}" 
+        <a href="${process.env.BASE_URL ? `${process.env.BASE_URL}/maintenance?tab=work-orders` : '#'}" 
            style="display: inline-block; background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">
           View Work Orders
         </a>
@@ -514,7 +514,7 @@ export async function sendContractorWorkOrderNotification(
 
       <!-- CTA Button -->
       <div style="text-align: center; margin: 32px 0;">
-        <a href="${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}/maintenance?tab=work-orders` : '#'}" 
+        <a href="${process.env.BASE_URL ? `${process.env.BASE_URL}/maintenance?tab=work-orders` : '#'}" 
            style="display: inline-block; background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%); color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">
           View Work Order
         </a>

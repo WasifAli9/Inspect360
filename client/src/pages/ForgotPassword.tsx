@@ -122,8 +122,8 @@ export default function ForgotPassword() {
 
       {/* Right Column - Hero (Same as Auth page) */}
       <div className="hidden lg:flex lg:flex-1 items-center justify-center p-12 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[#003764]"></div>
-        <div className="absolute inset-0 bg-gradient-to-br from-[#003764] via-[#000092]/20 to-[#59B677]/10"></div>
+        <div className="absolute inset-0 bg-[#00D6C1]"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-[#00D6C1] via-[#00D6C1]/80 to-[#00D6C1]/60"></div>
 
         <div className="relative z-10 max-w-lg text-white">
           <h2 className="text-3xl font-bold mb-4">Secure Account Recovery</h2>

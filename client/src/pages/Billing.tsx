@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useLocale } from "@/contexts/LocaleContext";
 import { format } from "date-fns";
+import { getCurrencyForCountry, formatCurrency as formatCurrencyUtil } from "@shared/countryUtils";
 
 interface Plan {
   id: string;
@@ -23,8 +24,10 @@ interface Plan {
   name: string;
   monthlyPriceGbp: number;
   annualPriceGbp?: number | null;
-  includedCreditsPerMonth: number;
+  includedCredits: number;
+  includedCreditsPerMonth?: number; // For backwards compatibility
   active: boolean;
+  isActive?: boolean;
 }
 
 interface Subscription {
@@ -72,18 +75,25 @@ export default function Billing() {
   const [topupDialogOpen, setTopupDialogOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
-  // Initialize currency from user's organization country
-  const [currency, setCurrency] = useState<"GBP" | "USD" | "AED">(locale.currency);
+  
+  // Get currency from user's organization country (via locale context)
+  const currency = locale.currency;
+
+  // Fetch organization to get country code for proper currency detection
+  const { data: organization } = useQuery<{ id: string; name: string; countryCode?: string }>({
+    queryKey: user?.organizationId ? [`/api/organizations/${user.organizationId}`] : [],
+    enabled: !!user?.organizationId,
+  });
+
+  // Update currency based on organization country if available
+  const effectiveCurrency = organization?.countryCode 
+    ? getCurrencyForCountry(organization.countryCode)
+    : currency;
 
   // Helper function to format price based on currency
-  const formatPrice = (penceAmount: number | null | undefined, curr: "GBP" | "USD" | "AED") => {
+  const formatPrice = (penceAmount: number | null | undefined, curr: "GBP" | "USD" | "AED" = effectiveCurrency) => {
     if (!penceAmount) return "N/A";
-    
-    const currencySymbols = { GBP: "£", USD: "$", AED: "د.إ" };
-    const conversionRates = { GBP: 1, USD: 1.27, AED: 4.67 }; // Approximate rates from GBP
-    
-    const convertedAmount = (penceAmount / 100) * conversionRates[curr];
-    return `${currencySymbols[curr]}${convertedAmount.toFixed(2)}`;
+    return formatCurrencyUtil(penceAmount, curr, true);
   };
 
   // Check for action=topup URL parameter and auto-open dialog
@@ -209,6 +219,9 @@ export default function Billing() {
             console.log('[Billing] Session processed:', result);
             
             if (result.processed) {
+              // Small delay to ensure database write completes
+              await new Promise(resolve => setTimeout(resolve, 500));
+              
               // Invalidate queries to trigger refetch
               queryClient.invalidateQueries({ queryKey: ['/api/billing/subscription'] });
               queryClient.invalidateQueries({ queryKey: ['/api/credits/balance'] });
@@ -216,8 +229,15 @@ export default function Billing() {
               queryClient.invalidateQueries({ queryKey: ['/api/billing/aggregate-credits'] });
               queryClient.invalidateQueries({ queryKey: [`/api/organizations/${user.organizationId}`] });
               
-              // Explicitly refetch the critical credit balance query to ensure immediate UI update
-              await queryClient.refetchQueries({ queryKey: ['/api/credits/balance'] });
+              // Explicitly refetch critical queries to ensure immediate UI update
+              console.log('[Billing] Refetching subscription and credit balance...');
+              await Promise.all([
+                queryClient.refetchQueries({ queryKey: ['/api/billing/subscription'] }),
+                queryClient.refetchQueries({ queryKey: ['/api/credits/balance'] }),
+                queryClient.refetchQueries({ queryKey: ['/api/credits/ledger'] }),
+              ]);
+              
+              console.log('[Billing] Queries refetched, subscription should now be visible');
               
               toast({
                 title: "Subscription Active!",
@@ -270,16 +290,51 @@ export default function Billing() {
   }, [user, toast, setLocation]);
 
   // Fetch subscription plans
-  const { data: plans = [] } = useQuery<Plan[]>({
+  const { data: plansData = [], isLoading: plansLoading, error: plansError } = useQuery<Plan[]>({
     queryKey: ["/api/billing/plans"],
     enabled: !!user,
   });
 
+  // Debug: Log plans data
+  useEffect(() => {
+    if (plansData && plansData.length > 0) {
+      console.log('[Billing] Plans fetched:', plansData);
+    } else if (plansData && plansData.length === 0) {
+      console.warn('[Billing] No plans returned from API');
+    }
+    if (plansError) {
+      console.error('[Billing] Error fetching plans:', plansError);
+    }
+  }, [plansData, plansError]);
+
+  // Map plans to match frontend interface (transform isActive to active, includedCredits to includedCreditsPerMonth)
+  const plans = (plansData || []).map((plan: any) => ({
+    ...plan,
+    active: plan.isActive !== undefined ? plan.isActive : (plan.active ?? true),
+    isActive: plan.isActive !== undefined ? plan.isActive : (plan.active ?? true),
+    includedCreditsPerMonth: plan.includedCredits || plan.includedCreditsPerMonth || 0,
+  })).filter((plan: any) => (plan.isActive ?? plan.active ?? true)); // Only show active plans
+
   // Fetch current subscription
-  const { data: subscription } = useQuery<Subscription | null>({
+  const { data: subscription, isLoading: subscriptionLoading, error: subscriptionError } = useQuery<Subscription | null>({
     queryKey: ["/api/billing/subscription"],
     enabled: !!user,
   });
+
+  // Debug: Log subscription data changes
+  useEffect(() => {
+    if (subscription) {
+      console.log('[Billing] Subscription data loaded:', subscription);
+    } else if (subscription === null) {
+      console.log('[Billing] No subscription found (null)');
+    }
+    if (subscriptionError) {
+      console.error('[Billing] Subscription query error:', subscriptionError);
+    }
+    if (subscriptionLoading) {
+      console.log('[Billing] Subscription query loading...');
+    }
+  }, [subscription, subscriptionLoading, subscriptionError]);
 
   // Fetch credit balance
   const { data: balance } = useQuery<CreditBalance>({
@@ -310,24 +365,45 @@ export default function Billing() {
   // Create checkout session
   const checkoutMutation = useMutation({
     mutationFn: async (planCode: string) => {
-      console.log(`[Billing] SUBSCRIPTION CHECKOUT initiated for plan: ${planCode}`);
+      console.log(`[Billing] SUBSCRIPTION CHECKOUT initiated for plan: ${planCode}, billing period: ${billingPeriod}`);
       console.log(`[Billing] Calling POST /api/billing/checkout`);
-      const response = await apiRequest("POST", "/api/billing/checkout", { planCode });
+      const response = await apiRequest("POST", "/api/billing/checkout", { 
+        planCode,
+        billingPeriod // Send billing period (monthly or annual)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Unknown error" }));
+        throw new Error(errorData.error || errorData.message || "Failed to create checkout session");
+      }
+      
       const data = await response.json() as { url: string };
       console.log(`[Billing] SUBSCRIPTION checkout URL received:`, data.url);
+      
+      if (!data.url) {
+        throw new Error("No checkout URL returned from server");
+      }
+      
       return data;
     },
     onSuccess: (data) => {
       if (data.url) {
         console.log(`[Billing] Redirecting to SUBSCRIPTION checkout...`);
         window.location.href = data.url;
+      } else {
+        toast({
+          title: "Error",
+          description: "No checkout URL received",
+          variant: "destructive",
+        });
       }
     },
     onError: (error: any) => {
       console.error(`[Billing] SUBSCRIPTION checkout error:`, error);
+      const errorMessage = error.message || error.error || "Failed to start checkout";
       toast({
-        title: "Error",
-        description: error.message || "Failed to start checkout",
+        title: "Failed to create checkout session",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -691,21 +767,6 @@ export default function Billing() {
           <h2 className="text-2xl font-bold">Available Plans</h2>
           
           <div className="flex items-center gap-6">
-            {/* Currency Selector */}
-            <div className="flex items-center gap-2">
-              <Label htmlFor="currency" className="text-sm">Currency:</Label>
-              <Select value={currency} onValueChange={(val) => setCurrency(val as "GBP" | "USD" | "AED")}>
-                <SelectTrigger id="currency" className="w-[100px]" data-testid="select-currency">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GBP">GBP (£)</SelectItem>
-                  <SelectItem value="USD">USD ($)</SelectItem>
-                  <SelectItem value="AED">AED (د.إ)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
             {/* Billing Period Toggle */}
             <div className="flex items-center gap-3">
               <Label htmlFor="billing-period" className={billingPeriod === "monthly" ? "font-semibold" : "text-muted-foreground"}>
@@ -724,8 +785,13 @@ export default function Billing() {
           </div>
         </div>
         
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {plans
+        {plansLoading ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">Loading plans...</p>
+          </div>
+        ) : plans && plans.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {plans
             .sort((a, b) => {
               const order = ['starter', 'professional', 'enterprise', 'enterprise_plus'];
               return order.indexOf(a.code) - order.indexOf(b.code);
@@ -784,15 +850,15 @@ export default function Billing() {
                     <CardDescription>
                       {billingPeriod === "annual" && plan.annualPriceGbp ? (
                         <>
-                          <span className="text-3xl font-bold">{formatPrice(plan.annualPriceGbp, currency)}</span>
+                          <span className="text-3xl font-bold">{formatPrice(plan.annualPriceGbp, effectiveCurrency)}</span>
                           <span className="text-base text-muted-foreground">/year</span>
                           <div className="text-sm text-muted-foreground mt-1">
-                            ({formatPrice(Math.floor(plan.annualPriceGbp / 12), currency)}/month billed annually)
+                            ({formatPrice(Math.floor(plan.annualPriceGbp / 12), effectiveCurrency)}/month billed annually)
                           </div>
                         </>
                       ) : billingPeriod === "annual" && !plan.annualPriceGbp ? (
                         <div className="space-y-1">
-                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, currency)}</span>
+                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, effectiveCurrency)}</span>
                           <span className="text-base text-muted-foreground">/month</span>
                           <div className="text-xs text-muted-foreground mt-1">
                             Annual billing not available for this plan
@@ -800,7 +866,7 @@ export default function Billing() {
                         </div>
                       ) : (
                         <>
-                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, currency)}</span>
+                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, effectiveCurrency)}</span>
                           <span className="text-base text-muted-foreground">/month</span>
                         </>
                       )}
@@ -828,6 +894,7 @@ export default function Billing() {
                         window.location.href = "mailto:sales@inspect360.com?subject=Enterprise+ Inquiry";
                       } else {
                         console.log(`[Billing] SELECT PLAN CLICKED for plan: ${plan.code} (${plan.name})`);
+                        console.log(`[Billing] Billing period: ${billingPeriod}`);
                         console.log(`[Billing] This should trigger SUBSCRIPTION checkout, NOT top-up`);
                         checkoutMutation.mutate(plan.code);
                       }
@@ -845,7 +912,14 @@ export default function Billing() {
               </Card>
             );
           })}
-        </div>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">
+              {plansError ? `Error loading plans: ${(plansError as any)?.message || 'Unknown error'}` : 'No plans available. Please contact support.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* FAQ Section */}

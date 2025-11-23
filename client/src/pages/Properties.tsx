@@ -255,7 +255,7 @@ export default function Properties() {
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-accent" data-testid="button-create-property" onClick={handleOpenCreate}>
+            <Button style={{ backgroundColor: '#00D2BD' }} className="hover:opacity-90" data-testid="button-create-property" onClick={handleOpenCreate}>
               <Plus className="w-4 h-4 mr-2" />
               Add Property
             </Button>

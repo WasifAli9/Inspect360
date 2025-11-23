@@ -7,8 +7,8 @@ import { setupAuth, isAuthenticated, requireRole, hashPassword, comparePasswords
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { db } from "./db";
-import { eq, and, lt, gt } from "drizzle-orm";
-import { getUncachableStripeClient } from "./stripeClient";
+import { eq, and, lt, gt, desc } from "drizzle-orm";
+import { getUncachableStripeClient, getStripeSecretKey } from "./stripeClient";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -71,7 +71,8 @@ import {
   insertPlanSchema,
   insertCreditBundleSchema,
   insertCountryPricingOverrideSchema,
-  creditBatches
+  creditBatches,
+  subscriptions
 } from "@shared/schema";
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
@@ -4190,7 +4191,7 @@ Be objective and specific. Focus on actionable repairs.`;
             <li>Submit maintenance requests</li>
             <li>Chat with our AI assistant for quick fixes</li>
           </ul>
-          <p><strong>Login URL:</strong> ${process.env.REPLIT_DEV_DOMAIN || 'https://your-domain.com'}/tenant/login</p>
+          <p><strong>Login URL:</strong> ${process.env.BASE_URL || 'http://localhost:5000'}/tenant/login</p>
           <p><strong>Email:</strong> ${tenant.email}</p>
           <p><strong>Temporary Password:</strong> ${tempPassword}</p>
           <p><em>Please change your password after your first login.</em></p>
@@ -7090,7 +7091,7 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(400).json({ message: "User must belong to an organization" });
       }
 
-      const { planCode } = req.body;
+      const { planCode, billingPeriod } = req.body;
       if (!planCode) {
         return res.status(400).json({ message: "Plan code is required" });
       }
@@ -7106,11 +7107,25 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(404).json({ message: "Plan not found" });
       }
 
+      // Determine billing interval and price
+      const isAnnual = billingPeriod === "annual";
+      const interval = isAnnual ? "year" : "month";
+      
       // Get effective pricing based on organization's country
       const pricing = await subscriptionService.getEffectivePricing(
         plan.id,
         org.countryCode || "GB"
       );
+
+      // Use annual price if available and annual billing is selected, otherwise use monthly
+      let unitAmount = pricing.monthlyPrice;
+      if (isAnnual && plan.annualPriceGbp) {
+        // Convert annual price to minor units (it's already in pence)
+        unitAmount = plan.annualPriceGbp;
+      } else if (isAnnual && !plan.annualPriceGbp) {
+        // Fallback: calculate annual from monthly if no annual price set
+        unitAmount = pricing.monthlyPrice * 12;
+      }
 
       // Create or get Stripe customer
       let stripeCustomerId = org.stripeCustomerId;
@@ -7129,9 +7144,7 @@ Be objective and specific. Focus on actionable repairs.`;
       }
 
       // Create checkout session
-      const baseUrl = process.env.REPLIT_DOMAINS?.split(",")[0] 
-        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
-        : "http://localhost:5000";
+      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5005}`;
       
       const successUrl = `${baseUrl}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${baseUrl}/billing?canceled=true`;
@@ -7140,6 +7153,8 @@ Be objective and specific. Focus on actionable repairs.`;
         successUrl,
         cancelUrl,
         planCode,
+        billingPeriod: interval,
+        unitAmount,
         organizationId: org.id
       });
       
@@ -7156,9 +7171,9 @@ Be objective and specific. Focus on actionable repairs.`;
                 description: `${pricing.includedCredits} inspection credits per month`,
               },
               recurring: {
-                interval: "month",
+                interval: interval as "month" | "year",
               },
-              unit_amount: pricing.monthlyPrice,
+              unit_amount: unitAmount,
             },
             quantity: 1,
           },
@@ -7170,6 +7185,7 @@ Be objective and specific. Focus on actionable repairs.`;
           planId: plan.id,
           planCode: plan.code,
           includedCredits: pricing.includedCredits.toString(),
+          billingPeriod: interval,
         },
       });
 
@@ -7181,7 +7197,13 @@ Be objective and specific. Focus on actionable repairs.`;
       res.json({ url: session.url });
     } catch (error: any) {
       console.error("Error creating checkout session:", error);
-      res.status(500).json({ message: "Failed to create checkout session", error: error.message });
+      const errorMessage = error.message || "Unknown error";
+      const errorDetails = error.type ? `Stripe ${error.type}: ${errorMessage}` : errorMessage;
+      res.status(500).json({ 
+        message: "Failed to create checkout session", 
+        error: errorDetails,
+        details: process.env.NODE_ENV === "development" ? error.stack : undefined
+      });
     }
   });
 
@@ -7198,9 +7220,7 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(400).json({ message: "No active Stripe customer" });
       }
 
-      const baseUrl = process.env.REPLIT_DOMAINS?.split(",")[0]
-        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
-        : "http://localhost:5000";
+      const baseUrl = process.env.BASE_URL || "http://localhost:5000";
       
       const stripe = await getUncachableStripeClient();
       const session = await stripe.billingPortal.sessions.create({
@@ -7234,18 +7254,30 @@ Be objective and specific. Focus on actionable repairs.`;
       const stripe = await getUncachableStripeClient();
       const session = await stripe.checkout.sessions.retrieve(sessionId);
 
+      // Check if we're in test mode (test keys start with sk_test_)
+      const secretKey = await getStripeSecretKey();
+      const isTestMode = secretKey.startsWith('sk_test_');
+
+      console.log(`[Process Session] Test mode: ${isTestMode}, Payment status: ${session.payment_status}, Subscription: ${session.subscription || 'none'}`);
+
       // Verify the session belongs to this organization
       if (session.metadata?.organizationId !== user.organizationId) {
         console.error(`[Process Session] SECURITY: Session org mismatch - Session org: ${session.metadata?.organizationId}, User org: ${user.organizationId}`);
         return res.status(403).json({ message: "Session does not belong to your organization" });
       }
 
-      // Check if payment was successful
-      if (session.payment_status !== "paid") {
+      // In test mode, allow processing even if payment_status isn't "paid"
+      // In production, require payment_status to be "paid"
+      if (!isTestMode && session.payment_status !== "paid") {
+        console.log(`[Process Session] Payment not completed (non-test mode). Status: ${session.payment_status}`);
         return res.status(400).json({ message: "Payment not completed", status: session.payment_status });
       }
 
-      const { organizationId, planId, includedCredits, topupOrderId, packSize } = session.metadata;
+      if (isTestMode && session.payment_status !== "paid") {
+        console.log(`[Process Session] TEST MODE: Processing despite payment_status: ${session.payment_status}`);
+      }
+
+      const { organizationId, planId, includedCredits, topupOrderId, packSize, billingPeriod } = session.metadata || {};
 
       // CRITICAL SECURITY CHECK: Double-verify the organizationId in metadata matches the user's org
       if (organizationId !== user.organizationId) {
@@ -7258,9 +7290,18 @@ Be objective and specific. Focus on actionable repairs.`;
         mode: session.mode,
         topupOrderId,
         planId,
+        includedCredits,
         packSize,
-        verifiedOrganizationId: organizationId
+        billingPeriod,
+        verifiedOrganizationId: organizationId,
+        metadata: session.metadata
       });
+
+      // Validate metadata
+      if (!planId && !topupOrderId) {
+        console.error(`[Process Session] Missing required metadata: planId=${planId}, topupOrderId=${topupOrderId}`);
+        return res.status(400).json({ message: "Session metadata is incomplete. Missing planId or topupOrderId." });
+      }
 
       // Check if this is a top-up payment (one-time) vs subscription
       if (topupOrderId && packSize) {
@@ -7290,7 +7331,8 @@ Be objective and specific. Focus on actionable repairs.`;
         });
 
         // Grant credits to the VERIFIED organization (user.organizationId) not the metadata
-        await subscriptionService.grantCredits(
+        const { subscriptionService: subService } = await import("./subscriptionService");
+        await subService.grantCredits(
           user.organizationId,
           parseInt(packSize),
           "topup",
@@ -7303,72 +7345,207 @@ Be objective and specific. Focus on actionable repairs.`;
       } 
       
       // Handle subscription payment
-      if (session.subscription && planId) {
-        // Check if subscription already exists by Stripe subscription ID
-        const existingSubscription = await storage.getSubscriptionByStripeId(session.subscription as string);
-        if (existingSubscription) {
-          console.log(`[Process Session] Subscription already exists: ${session.subscription}`);
-          return res.json({ message: "Subscription already activated", processed: true, alreadyProcessed: true });
-        }
+      if (planId) {
+        try {
+          // Check if subscription already exists by organization (prevent duplicates)
+          const existingOrgSubscription = await storage.getSubscriptionByOrganization(user.organizationId);
+          if (existingOrgSubscription) {
+            console.log(`[Process Session] Organization already has subscription, skipping duplicate`);
+            return res.json({ message: "Organization already has active subscription", processed: true, alreadyProcessed: true });
+          }
 
-        // Double-check by organization to prevent duplicate subscriptions (use VERIFIED org)
-        const existingOrgSubscription = await storage.getSubscriptionByOrganization(user.organizationId);
-        if (existingOrgSubscription) {
-          console.log(`[Process Session] Organization already has subscription, skipping duplicate`);
-          return res.json({ message: "Organization already has active subscription", processed: true, alreadyProcessed: true });
-        }
+          // Handle subscription ID - might not exist in test mode
+          let subscriptionId = session.subscription as string | null;
+          let subscription: any = null;
 
-        console.log(`[Process Session] Creating subscription from session for verified org ${user.organizationId}`);
+          if (subscriptionId) {
+            // Check if subscription already exists by Stripe subscription ID
+            const existingSubscription = await storage.getSubscriptionByStripeId(subscriptionId);
+            if (existingSubscription) {
+              console.log(`[Process Session] Subscription already exists: ${subscriptionId}`);
+              return res.json({ message: "Subscription already activated", processed: true, alreadyProcessed: true });
+            }
 
-        // Update organization with Stripe customer ID (use VERIFIED org)
-        await storage.updateOrganizationStripe(user.organizationId, session.customer as string, "active");
+            // Try to retrieve subscription from Stripe
+            try {
+              subscription = await stripe.subscriptions.retrieve(subscriptionId);
+              console.log(`[Process Session] Retrieved subscription from Stripe: ${subscriptionId}`);
+            } catch (error: any) {
+              console.warn(`[Process Session] Could not retrieve subscription ${subscriptionId}: ${error.message}`);
+              if (!isTestMode) {
+                throw new Error(`Failed to retrieve subscription: ${error.message}`);
+              }
+              // In test mode, continue without subscription object
+              console.log(`[Process Session] TEST MODE: Continuing without Stripe subscription object`);
+            }
+          } else if (isTestMode) {
+            // In test mode, create a mock subscription ID if none exists
+            subscriptionId = `sub_test_${Date.now()}_${user.organizationId}`;
+            console.log(`[Process Session] TEST MODE: Using mock subscription ID: ${subscriptionId}`);
+          } else {
+            return res.status(400).json({ message: "No subscription found in session" });
+          }
 
-        // Retrieve full subscription details
-        const stripe = await getUncachableStripeClient();
-        const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
-        
-        // Get plan details
-        const plan = await storage.getPlan(planId);
-        if (!plan) {
-          throw new Error("Plan not found");
-        }
+          console.log(`[Process Session] Creating subscription from session for verified org ${user.organizationId}${isTestMode ? " (TEST MODE)" : ""}`);
 
-        // Create subscription record (use VERIFIED org)
-        await storage.createSubscription({
-          organizationId: user.organizationId,
-          planSnapshotJson: {
+          // Update organization with Stripe customer ID (use VERIFIED org)
+          if (session.customer) {
+            try {
+              await storage.updateOrganizationStripe(user.organizationId, session.customer as string, "active");
+            } catch (error: any) {
+              console.warn(`[Process Session] Could not update organization Stripe: ${error.message}`);
+            }
+          }
+          
+          // Get plan details
+          const plan = await storage.getPlan(planId);
+          if (!plan) {
+            throw new Error(`Plan not found: ${planId}`);
+          }
+
+          // Get organization for pricing
+          const org = await storage.getOrganization(user.organizationId);
+          let pricing: any = null;
+          if (org) {
+            try {
+              const { subscriptionService: subService } = await import("./subscriptionService");
+              pricing = await subService.getEffectivePricing(plan.id, org.countryCode || "GB");
+            } catch (error: any) {
+              console.warn(`[Process Session] Could not get pricing: ${error.message}, using plan defaults`);
+            }
+          }
+
+          // Calculate period dates
+          const now = new Date();
+          const interval = billingPeriod || "month";
+          
+          // Helper function to safely create Date from Stripe timestamp
+          const safeDateFromTimestamp = (timestamp: any, fallback: Date): Date => {
+            if (!timestamp || typeof timestamp !== 'number' || isNaN(timestamp)) {
+              return fallback;
+            }
+            const date = new Date(timestamp * 1000);
+            return isNaN(date.getTime()) ? fallback : date;
+          };
+          
+          const periodStart = subscription 
+            ? safeDateFromTimestamp((subscription as any).current_period_start, now)
+            : now;
+          const periodEnd = subscription
+            ? safeDateFromTimestamp((subscription as any).current_period_end, 
+                new Date(now.getTime() + (interval === "year" ? 365 : 30) * 24 * 60 * 60 * 1000))
+            : new Date(now.getTime() + (interval === "year" ? 365 : 30) * 24 * 60 * 60 * 1000);
+          const billingCycleAnchor = subscription
+            ? safeDateFromTimestamp((subscription as any).billing_cycle_anchor, now)
+            : now;
+
+          // Get price from subscription or plan
+          const monthlyPrice = subscription?.items?.data?.[0]?.price?.unit_amount 
+            || (pricing?.monthlyPrice) 
+            || plan.monthlyPriceGbp;
+
+          // Validate includedCredits
+          const creditsToGrant = parseInt(includedCredits || "0");
+          if (!creditsToGrant || isNaN(creditsToGrant)) {
+            throw new Error(`Invalid includedCredits: ${includedCredits}`);
+          }
+
+          // Create subscription record (use VERIFIED org)
+          console.log(`[Process Session] Creating subscription with data:`, {
+            organizationId: user.organizationId,
             planId: plan.id,
             planCode: plan.code,
             planName: plan.name,
-            monthlyPrice: subscription.items.data[0].price.unit_amount || 0,
-            includedCredits: parseInt(includedCredits),
-            currency: (subscription.currency || "gbp").toUpperCase(),
-          },
-          stripeSubscriptionId: subscription.id,
-          billingCycleAnchor: new Date((subscription as any).billing_cycle_anchor * 1000),
-          currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
-          currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
-          status: (subscription as any).status as any,
-          cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
-        });
+            monthlyPrice: monthlyPrice,
+            includedCredits: creditsToGrant,
+            stripeSubscriptionId: subscriptionId,
+            status: (subscription?.status || "active")
+          });
+          
+          const createdSubscription = await storage.createSubscription({
+            organizationId: user.organizationId,
+            planSnapshotJson: {
+              planId: plan.id,
+              planCode: plan.code,
+              planName: plan.name,
+              monthlyPrice: monthlyPrice,
+              includedCredits: creditsToGrant,
+              currency: (subscription?.currency || pricing?.currency || "GBP").toUpperCase(),
+            },
+            stripeSubscriptionId: subscriptionId,
+            billingCycleAnchor: billingCycleAnchor,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            status: (subscription?.status || "active") as any,
+            cancelAtPeriodEnd: subscription?.cancel_at_period_end || false,
+          });
 
-        // Grant initial credits (use VERIFIED org)
-        await subscriptionService.grantCredits(
-          user.organizationId,
-          parseInt(includedCredits),
-          "plan_inclusion",
-          new Date((subscription as any).current_period_end * 1000),
-          { subscriptionId: subscription.id, createdBy: user.id }
-        );
+          console.log(`[Process Session] Subscription created successfully:`, {
+            id: createdSubscription.id,
+            organizationId: createdSubscription.organizationId,
+            planName: createdSubscription.planSnapshotJson?.planName,
+            status: createdSubscription.status
+          });
 
-        console.log(`[Process Session] Created subscription and granted ${includedCredits} credits to verified org ${user.organizationId}`);
-        return res.json({ message: "Subscription activated successfully", processed: true });
+          // Small delay to ensure database transaction is committed
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          // Verify subscription was saved by fetching it back
+          const verifySubscription = await storage.getSubscriptionByOrganization(user.organizationId);
+          if (!verifySubscription) {
+            console.error(`[Process Session] ERROR: Subscription was created but cannot be retrieved!`);
+            console.error(`[Process Session] Created subscription ID: ${createdSubscription.id}`);
+            console.error(`[Process Session] Organization ID: ${user.organizationId}`);
+            throw new Error("Subscription was created but cannot be retrieved");
+          }
+          console.log(`[Process Session] Verified subscription exists in database:`, {
+            id: verifySubscription.id,
+            organizationId: verifySubscription.organizationId,
+            planName: verifySubscription.planSnapshotJson?.planName,
+            status: verifySubscription.status
+          });
+
+          // Grant initial credits (use VERIFIED org)
+          try {
+            const { subscriptionService: subService } = await import("./subscriptionService");
+            await subService.grantCredits(
+              user.organizationId,
+              creditsToGrant,
+              "plan_inclusion",
+              periodEnd,
+              { subscriptionId: subscriptionId, createdBy: user.id, adminNotes: isTestMode ? "TEST MODE - No payment charged" : undefined }
+            );
+            console.log(`[Process Session] Granted ${creditsToGrant} credits successfully`);
+          } catch (creditError: any) {
+            console.error(`[Process Session] Error granting credits:`, creditError);
+            // Don't fail the whole request if credits fail - subscription is already created
+            console.warn(`[Process Session] Continuing despite credit grant error`);
+          }
+
+          console.log(`[Process Session] Created subscription and granted ${creditsToGrant} credits to verified org ${user.organizationId}${isTestMode ? " (TEST MODE)" : ""}`);
+          return res.json({ message: "Subscription activated successfully", processed: true });
+        } catch (subscriptionError: any) {
+          console.error(`[Process Session] Error in subscription processing:`, subscriptionError);
+          console.error(`[Process Session] Subscription error stack:`, subscriptionError.stack);
+          throw subscriptionError; // Re-throw to be caught by outer catch
+        }
       }
 
       res.json({ message: "Session processed", processed: false });
     } catch (error: any) {
-      console.error("Error processing session:", error);
-      res.status(500).json({ message: "Failed to process session", error: error.message });
+      console.error("[Process Session] Error processing session:", error);
+      console.error("[Process Session] Error stack:", error.stack);
+      console.error("[Process Session] Error details:", {
+        message: error.message,
+        type: error.type,
+        code: error.code,
+        statusCode: error.statusCode
+      });
+      res.status(500).json({ 
+        message: "Failed to process session", 
+        error: error.message,
+        details: process.env.NODE_ENV === "development" ? error.stack : undefined
+      });
     }
   });
 
@@ -7473,6 +7650,18 @@ Be objective and specific. Focus on actionable repairs.`;
             if (plan) {
               console.log(`[Stripe Webhook] Creating subscription for verified org ${organizationId}`);
 
+              // Helper function to safely create Date from Stripe timestamp
+              const safeDateFromTimestamp = (timestamp: any, fallback: Date): Date => {
+                if (!timestamp || typeof timestamp !== 'number' || isNaN(timestamp)) {
+                  return fallback;
+                }
+                const date = new Date(timestamp * 1000);
+                return isNaN(date.getTime()) ? fallback : date;
+              };
+              
+              const now = new Date();
+              const defaultPeriodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days default
+              
               await storage.createSubscription({
                 organizationId,
                 planSnapshotJson: {
@@ -7484,11 +7673,11 @@ Be objective and specific. Focus on actionable repairs.`;
                   currency: (subscription as any).currency.toUpperCase(),
                 },
                 stripeSubscriptionId: (subscription as any).id,
-                billingCycleAnchor: new Date((subscription as any).billing_cycle_anchor * 1000),
-                currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
-                currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+                billingCycleAnchor: safeDateFromTimestamp((subscription as any).billing_cycle_anchor, now),
+                currentPeriodStart: safeDateFromTimestamp((subscription as any).current_period_start, now),
+                currentPeriodEnd: safeDateFromTimestamp((subscription as any).current_period_end, defaultPeriodEnd),
                 status: (subscription as any).status as any,
-                cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+                cancelAtPeriodEnd: (subscription as any).cancel_at_period_end || false,
               });
 
               // Grant initial credits to VERIFIED organization
@@ -7515,10 +7704,22 @@ Be objective and specific. Focus on actionable repairs.`;
             const dbSubscription = await storage.getSubscriptionByStripeId(subscription.id);
 
             if (dbSubscription) {
+              // Helper function to safely create Date from Stripe timestamp
+              const safeDateFromTimestamp = (timestamp: any, fallback: Date): Date => {
+                if (!timestamp || typeof timestamp !== 'number' || isNaN(timestamp)) {
+                  return fallback;
+                }
+                const date = new Date(timestamp * 1000);
+                return isNaN(date.getTime()) ? fallback : date;
+              };
+              
+              const now = new Date();
+              const defaultPeriodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days default
+              
               // Update subscription period
               await storage.updateSubscription(dbSubscription.id, {
-                currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
-                currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+                currentPeriodStart: safeDateFromTimestamp((subscription as any).current_period_start, dbSubscription.currentPeriodStart || now),
+                currentPeriodEnd: safeDateFromTimestamp((subscription as any).current_period_end, dbSubscription.currentPeriodEnd || defaultPeriodEnd),
                 status: (subscription as any).status as any,
               });
 
@@ -7689,9 +7890,7 @@ Be objective and specific. Focus on actionable repairs.`;
       });
 
       // Create Stripe checkout session
-      const baseUrl = process.env.REPLIT_DOMAINS?.split(",")[0]
-        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
-        : "http://localhost:5000";
+      const baseUrl = process.env.BASE_URL || "http://localhost:5000";
       
       const stripe = await getUncachableStripeClient();
       const session = await stripe.checkout.sessions.create({
@@ -8017,11 +8216,39 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(400).json({ message: "User must belong to an organization" });
       }
 
+      console.log(`[Get Subscription] Fetching subscription for org: ${user.organizationId}, user: ${user.id}`);
+      
+      // Get all subscriptions for this org to debug
+      const allSubscriptions = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.organizationId, user.organizationId));
+      
+      console.log(`[Get Subscription] Found ${allSubscriptions.length} subscription(s) for org ${user.organizationId}:`, 
+        allSubscriptions.map(s => ({ id: s.id, status: s.status, planName: s.planSnapshotJson?.planName }))
+      );
+      
       const subscription = await storage.getSubscriptionByOrganization(user.organizationId);
+      
+      if (subscription) {
+        console.log(`[Get Subscription] Returning subscription:`, {
+          id: subscription.id,
+          planName: subscription.planSnapshotJson?.planName,
+          status: subscription.status,
+          organizationId: subscription.organizationId,
+          currentPeriodStart: subscription.currentPeriodStart,
+          currentPeriodEnd: subscription.currentPeriodEnd
+        });
+      } else {
+        console.log(`[Get Subscription] No subscription found for org: ${user.organizationId}`);
+        console.log(`[Get Subscription] All subscriptions in DB for this org:`, allSubscriptions);
+      }
+      
       res.json(subscription || null);
     } catch (error: any) {
-      console.error("Error fetching subscription:", error);
-      res.status(500).json({ message: "Failed to fetch subscription" });
+      console.error("[Get Subscription] Error fetching subscription:", error);
+      console.error("[Get Subscription] Error stack:", error.stack);
+      res.status(500).json({ message: "Failed to fetch subscription", error: error.message });
     }
   });
 

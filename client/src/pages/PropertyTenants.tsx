@@ -23,6 +23,7 @@ import {
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocale } from "@/contexts/LocaleContext";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,6 +66,7 @@ export default function PropertyTenants() {
   const [, params] = useRoute("/properties/:id/tenants");
   const propertyId = params?.id;
   const { toast } = useToast();
+  const locale = useLocale();
 
   const [activeTab, setActiveTab] = useState<"active" | "historical">("active");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -228,7 +230,7 @@ export default function PropertyTenants() {
                   <div>
                     <span className="text-muted-foreground text-xs">Monthly Rent: </span>
                     <span className="font-medium">
-                      ${monthlyRent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {locale.formatCurrency(monthlyRent * 100, false)}
                     </span>
                   </div>
                 )}
@@ -236,7 +238,7 @@ export default function PropertyTenants() {
                   <div>
                     <span className="text-muted-foreground text-xs">Deposit: </span>
                     <span className="font-medium">
-                      ${depositAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {locale.formatCurrency(depositAmount * 100, false)}
                     </span>
                   </div>
                 )}
@@ -332,10 +334,11 @@ export default function PropertyTenants() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              $
-              {activeTenants
-                .reduce((sum, t) => sum + (t.assignment.monthlyRent ? parseFloat(t.assignment.monthlyRent) : 0), 0)
-                .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {locale.formatCurrency(
+                activeTenants
+                  .reduce((sum, t) => sum + (t.assignment.monthlyRent ? parseFloat(t.assignment.monthlyRent) : 0), 0) * 100,
+                false
+              )}
             </div>
             <p className="text-xs text-muted-foreground">From active leases</p>
           </CardContent>

@@ -15,9 +15,21 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('[Service Worker] Caching app shell');
-        return cache.addAll(APP_SHELL);
+        // Use addAll but catch errors gracefully
+        return Promise.allSettled(
+          APP_SHELL.map(url => 
+            cache.add(url).catch(err => {
+              console.warn(`[Service Worker] Failed to cache ${url}:`, err);
+              return null;
+            })
+          )
+        ).then(() => self.skipWaiting());
       })
-      .then(() => self.skipWaiting())
+      .catch((err) => {
+        console.warn('[Service Worker] Install failed (non-critical):', err);
+        // Still skip waiting even if caching fails
+        return self.skipWaiting();
+      })
   );
 });
 
@@ -68,17 +80,24 @@ self.addEventListener('fetch', (event) => {
       // Not in cache - fetch from network
       return fetch(event.request).then((networkResponse) => {
         // Cache successful responses
-        if (networkResponse && networkResponse.status === 200) {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type !== 'error') {
           const responseClone = networkResponse.clone();
           caches.open(RUNTIME_CACHE).then((cache) => {
-            cache.put(event.request, responseClone);
+            // Only cache if response is valid and not a stream
+            if (responseClone.body) {
+              cache.put(event.request, responseClone).catch((err) => {
+                console.warn('[Service Worker] Failed to cache response:', err);
+              });
+            }
+          }).catch((err) => {
+            console.warn('[Service Worker] Failed to open cache:', err);
           });
         }
         return networkResponse;
       }).catch((error) => {
-        console.error('[Service Worker] Fetch failed:', error);
-        // Return offline page if available
-        return caches.match('/offline.html') || new Response('Offline');
+        console.warn('[Service Worker] Fetch failed (this is normal for dev mode):', event.request.url, error);
+        // Don't try to return offline page in dev mode - just pass through
+        throw error;
       });
     })
   );

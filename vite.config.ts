@@ -36,6 +36,13 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    hmr: process.env.NODE_ENV === 'development' ? {
+      // Fix WebSocket connection issues in development
+      protocol: 'ws',
+      host: 'localhost',
+      // Use PORT from env or default to 5000/5005
+      port: process.env.PORT ? parseInt(process.env.PORT, 10) : undefined,
+    } : undefined,
   },
   optimizeDeps: {
     // Force re-optimization on dependency changes

@@ -12,13 +12,22 @@ async function getCredentials() {
   }
 
   // Check for environment variables first (for non-Replit deployments)
-  if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PUBLISHABLE_KEY) {
+  const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
+  const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY?.trim();
+  
+  if (secretKey && publishableKey) {
+    console.log('[Stripe] Using environment variables for Stripe credentials');
     cachedCredentials = {
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-      secretKey: process.env.STRIPE_SECRET_KEY,
+      publishableKey: publishableKey,
+      secretKey: secretKey,
     };
     credentialsCacheExpiry = Date.now() + CACHE_TTL_MS;
     return cachedCredentials;
+  } else {
+    console.warn('[Stripe] Missing Stripe credentials:', {
+      hasSecretKey: !!secretKey,
+      hasPublishableKey: !!publishableKey
+    });
   }
 
   // Fallback to Replit connector (if available)

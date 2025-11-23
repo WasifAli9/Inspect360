@@ -34,6 +34,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Loader2, UserPlus, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface User {
   id: string;
@@ -78,6 +79,7 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"select" | "create">("select");
   const { toast } = useToast();
+  const locale = useLocale();
 
   const { data: tenantUsers = [], isLoading: loadingTenants } = useQuery<User[]>({
     queryKey: ["/api/users/role/tenant"],
@@ -371,7 +373,7 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
                             data-testid="input-monthly-rent"
                           />
                         </FormControl>
-                        <FormDescription>In dollars</FormDescription>
+                        <FormDescription>In {locale.currency}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -392,7 +394,7 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
                             data-testid="input-deposit"
                           />
                         </FormControl>
-                        <FormDescription>In dollars</FormDescription>
+                        <FormDescription>In {locale.currency}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -609,7 +611,7 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
                               data-testid="input-create-monthly-rent"
                             />
                           </FormControl>
-                          <FormDescription>In dollars</FormDescription>
+                          <FormDescription>In {locale.currency}</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -630,7 +632,7 @@ export default function AddTenantDialog({ propertyId, children, onSuccess }: Add
                               data-testid="input-create-deposit"
                             />
                           </FormControl>
-                          <FormDescription>In dollars</FormDescription>
+                          <FormDescription>In {locale.currency}</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

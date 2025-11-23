@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useLocale } from "@/contexts/LocaleContext";
 import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, DollarSign, FileText, MapPin, Tag as TagIcon, ArrowLeft } from "lucide-react";
 import type { AssetInventory, Property, Block } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,7 @@ const assetCategories = [
 export default function AssetInventory() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const locale = useLocale();
   const searchParams = useSearch();
   const urlParams = new URLSearchParams(searchParams);
   const blockIdFromUrl = urlParams.get("blockId");
@@ -410,7 +412,7 @@ export default function AssetInventory() {
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()} data-testid="button-add-asset">
+            <Button onClick={() => handleOpenDialog()} data-testid="button-add-asset" style={{ backgroundColor: '#00D2BD' }} className="hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
               Add Asset
             </Button>
@@ -576,7 +578,7 @@ export default function AssetInventory() {
                   </div>
 
                   <div>
-                    <Label htmlFor="purchasePrice">Purchase Price ($)</Label>
+                    <Label htmlFor="purchasePrice">Purchase Price ({locale.currencySymbol})</Label>
                     <Input
                       id="purchasePrice"
                       type="number"
@@ -601,7 +603,7 @@ export default function AssetInventory() {
                   </div>
 
                   <div>
-                    <Label htmlFor="depreciationPerYear">Depreciation per Year ($)</Label>
+                    <Label htmlFor="depreciationPerYear">Depreciation per Year ({locale.currencySymbol})</Label>
                     <Input
                       id="depreciationPerYear"
                       type="number"
@@ -820,7 +822,7 @@ export default function AssetInventory() {
                 : "Get started by adding your first asset"}
             </p>
             {!searchTerm && filterCategory === "all" && filterCondition === "all" && (
-              <Button onClick={() => handleOpenDialog()} data-testid="button-add-first-asset">
+              <Button onClick={() => handleOpenDialog()} data-testid="button-add-first-asset" style={{ backgroundColor: '#00D2BD' }} className="hover:opacity-90">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Your First Asset
               </Button>
@@ -901,7 +903,7 @@ export default function AssetInventory() {
                   {asset.purchasePrice && (
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <DollarSign className="w-4 h-4 shrink-0" />
-                      <span>Purchase: ${parseFloat(asset.purchasePrice.toString()).toFixed(2)}</span>
+                      <span>Purchase: {locale.formatCurrency(parseFloat(asset.purchasePrice.toString()) * 100, false)}</span>
                     </div>
                   )}
 
