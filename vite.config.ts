@@ -33,8 +33,14 @@ export default defineConfig({
   },
   server: {
     fs: {
-      strict: true,
+      // Less strict to allow workspace setups and sibling projects
+      strict: false,
       deny: ["**/.*"],
+      // Explicitly allow the sibling Inspect360 directory
+      allow: [
+        path.resolve(import.meta.dirname),
+        path.resolve(import.meta.dirname, "..", "Inspect360"),
+      ],
     },
     hmr: process.env.NODE_ENV === 'development' ? {
       // Fix WebSocket connection issues in development
