@@ -206,7 +206,17 @@ export function FieldWidget({
         photos: localPhotos,
       });
 
-      const { analysis } = await response.json();
+      const { analysis, tokenExceeded } = await response.json();
+
+      // Check if token limit was exceeded
+      if (tokenExceeded) {
+        toast({
+          title: "Token Limit Exceeded",
+          description: "Token limit exceeded. Please try again later.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Auto-populate the notes field with the AI analysis
       const newNote = analysis;
@@ -522,24 +532,6 @@ export function FieldWidget({
         [photoUrl]: result,
       }));
 
-      // Extract analysis text from result
-      // The server stores it in resultJson.text
-      const analysisText = result?.resultJson?.text || 
-                          (result?.resultJson && typeof result.resultJson === 'object' 
-                            ? (result.resultJson as any).text || (result.resultJson as any).analysis || (result.resultJson as any).content
-                            : null) ||
-                          result?.analysis ||
-                          "Analysis completed";
-
-      // Append AI analysis to notes field
-      const currentNote = localNote || "";
-      const separator = currentNote.trim() ? "\n\n--- AI Analysis ---\n" : "";
-      const newNote = currentNote + separator + analysisText;
-      
-      setLocalNote(newNote);
-      const composedValue = composeValue(localValue, localCondition, localCleanliness);
-      onChange(composedValue, newNote, localPhotos);
-
       // Invalidate organization query to update credit balance on dashboard and billing pages
       if (user?.organizationId) {
         queryClient.invalidateQueries({ queryKey: [`/api/organizations/${user.organizationId}`] });
@@ -547,7 +539,7 @@ export function FieldWidget({
 
       toast({
         title: "Analysis Complete",
-        description: "AI analysis has been added to the notes field",
+        description: "AI analysis generated successfully (1 credit used)",
       });
     } catch (error: any) {
       toast({

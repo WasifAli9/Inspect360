@@ -70,7 +70,7 @@ import { format } from "date-fns";
 import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification, sendContractorWorkOrderNotification } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
-import { generateInspectionPDF, launchPuppeteerBrowser } from "./pdfService";
+import { generateInspectionPDF } from "./pdfService";
 import { extractTextFromFile, findRelevantChunks } from "./documentProcessor";
 import {
   insertBlockSchema,
@@ -2463,19 +2463,19 @@ Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on 
         }
       ];
 
-      // Add all photos
+      // Add all photos - use string format directly for normalizeApiContent
       photoUrls.forEach((url, index) => {
         content.push({
           type: "image_url",
-          image_url: {
-            url: url
-          }
+          image_url: url // Pass as string, normalizeApiContent will handle it
         });
       });
 
-      console.log("[InspectAI] Sending to OpenAI - Photo URLs:", photoUrls);
+      console.log("[InspectAI] Sending to OpenAI - Photo URLs:", photoUrls.length, "photos");
+      console.log("[InspectAI] Content structure:", JSON.stringify(content.map(c => ({ type: c.type, hasUrl: !!c.image_url })), null, 2));
 
       // Call OpenAI Vision API using Responses API
+      // Set max_output_tokens to 10000 to allow for very detailed analysis
       const response = await getOpenAI().responses.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
         input: [
@@ -2484,10 +2484,90 @@ Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on 
             content: normalizeApiContent(content)
           }
         ],
-        max_output_tokens: 500,
+        max_output_tokens: 10000, // Increased to 10000 to allow very detailed responses
       });
 
-      let analysis = response.output_text || response.output?.[0]?.content?.[0]?.text || "Unable to analyze images";
+      // Check if response is incomplete due to token limit
+      if (response.status === "incomplete") {
+        const reason = response.incomplete_details?.reason;
+        console.error("[InspectAI] Response is incomplete:", {
+          reason,
+          maxOutputTokens: response.max_output_tokens,
+          outputTokens: response.usage?.output_tokens,
+          reasoningTokens: response.usage?.output_tokens_details?.reasoning_tokens,
+        });
+        
+        if (reason === "max_output_tokens") {
+          // Return user-friendly message instead of throwing error
+          return res.status(200).json({ 
+            analysis: "Token limit exceeded. Please try again later.",
+            tokenExceeded: true 
+          });
+        } else {
+          throw new Error(`The analysis response is incomplete: ${reason || "unknown reason"}. Please try again.`);
+        }
+      }
+
+      console.log("[InspectAI] OpenAI Response structure:", {
+        status: response.status,
+        hasOutputText: !!response.output_text,
+        outputTextLength: response.output_text?.length || 0,
+        hasOutput: !!response.output,
+        outputLength: response.output?.length || 0,
+        outputFirstItem: response.output?.[0] ? {
+          type: response.output[0].type,
+          hasContent: !!response.output[0].content,
+          contentLength: response.output[0].content?.length || 0,
+          firstContentType: response.output[0].content?.[0]?.type,
+          firstContentText: response.output[0].content?.[0]?.text?.substring(0, 100) || 'N/A'
+        } : null,
+      });
+
+      // Try multiple ways to extract the analysis text
+      let analysis = "";
+      
+      // Method 1: Direct output_text (most common)
+      if (response.output_text && response.output_text.trim().length > 0) {
+        analysis = response.output_text;
+        console.log("[InspectAI] Using output_text");
+      }
+      // Method 2: output[0].content[0].text
+      else if (response.output?.[0]?.content?.[0]?.text) {
+        analysis = response.output[0].content[0].text;
+        console.log("[InspectAI] Using output[0].content[0].text");
+      }
+      // Method 3: Check for text type in output array
+      else if (response.output) {
+        // Look for any output item with text content
+        for (const outputItem of response.output) {
+          if (outputItem.type === "text" && outputItem.text) {
+            analysis = outputItem.text;
+            console.log("[InspectAI] Using output item with type 'text'");
+            break;
+          }
+          if (outputItem.content) {
+            for (const contentItem of outputItem.content) {
+              if (contentItem.type === "text" && contentItem.text) {
+                analysis = contentItem.text;
+                console.log("[InspectAI] Using content item with type 'text'");
+                break;
+              }
+            }
+            if (analysis) break;
+          }
+        }
+      }
+      // Method 4: Check response directly
+      else if (typeof response === 'string') {
+        analysis = response;
+        console.log("[InspectAI] Response is a string");
+      }
+      
+      // Validate we got analysis text
+      if (!analysis || analysis.trim().length === 0) {
+        console.error("[InspectAI] Analysis text is empty. Response:", JSON.stringify(response, null, 2));
+        throw new Error("OpenAI API returned an empty analysis. The response may have been incomplete. Please try again.");
+      }
       
       // Strip markdown asterisks from the response
       analysis = analysis.replace(/\*\*/g, '');
@@ -2509,12 +2589,26 @@ Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on 
     } catch (error: any) {
       // Safely log error without circular reference issues
       const errorMessage = error?.message || String(error);
+      const errorStack = error?.stack;
       console.error("Error analyzing field:", {
         message: errorMessage,
+        stack: errorStack?.substring(0, 500), // Limit stack trace length
         status: error?.status,
         code: error?.code,
+        type: error?.type,
+        param: error?.param,
       });
-      res.status(500).json({ message: "Failed to analyze field" });
+      
+      // Return more specific error message
+      const userMessage = errorMessage.includes("OpenAI") 
+        ? "AI service returned an error. Please try again."
+        : errorMessage.includes("credits")
+        ? "Insufficient credits for AI analysis"
+        : errorMessage.includes("unexpected response format") || errorMessage.includes("empty analysis")
+        ? "AI service returned an invalid response. Please try again."
+        : "Failed to analyze field. Please try again.";
+      
+      res.status(500).json({ message: userMessage });
     }
   });
 
@@ -10337,9 +10431,16 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateBlocksReportHTML(blocks, properties, tenantAssignments);
 
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
       let browser;
       try {
-        browser = await launchPuppeteerBrowser();
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10433,9 +10534,16 @@ Be objective and specific. Focus on actionable repairs.`;
       const html = generateInspectionsReportHTML(inspections, properties, blocks, users, req.body);
 
       // Generate PDF using Puppeteer
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
       let browser;
       try {
-        browser = await launchPuppeteerBrowser();
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10669,9 +10777,16 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generatePropertiesReportHTML(properties, blocks, inspections, tenantAssignments, maintenanceRequests);
 
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
       let browser;
       try {
-        browser = await launchPuppeteerBrowser();
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10901,9 +11016,16 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateTenantsReportHTML(tenantAssignments, properties, blocks);
 
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
       let browser;
       try {
-        browser = await launchPuppeteerBrowser();
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -11129,9 +11251,16 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateInventoryReportHTML(assetInventory, properties, blocks);
 
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
       let browser;
       try {
-        browser = await launchPuppeteerBrowser();
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -11384,9 +11513,16 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateComplianceReportHTML(complianceDocuments, properties, blocks);
 
+      const puppeteer = await import("puppeteer");
+      const chromium = await import("@sparticuz/chromium");
+      
       let browser;
       try {
-        browser = await launchPuppeteerBrowser();
+        browser = await puppeteer.default.launch({
+          args: chromium.default.args,
+          executablePath: await chromium.default.executablePath(),
+          headless: true,
+        });
 
         const page = await browser.newPage();
         await page.setContent(html, {
