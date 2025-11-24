@@ -131,6 +131,38 @@ import {
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
 // Using gpt-5 for vision analysis - the newest OpenAI model (released August 7, 2025), supports images and provides excellent results
 
+// Detect if running in a serverless environment (AWS Lambda, etc.)
+const isServerless = process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL || process.env.NETLIFY;
+
+// Helper function to launch Puppeteer with appropriate configuration for local vs serverless
+async function launchPuppeteerBrowser() {
+  const puppeteer = await import("puppeteer");
+  
+  if (isServerless) {
+    // Serverless environment - use @sparticuz/chromium
+    const chromium = await import("@sparticuz/chromium");
+    return await puppeteer.default.launch({
+      args: chromium.default.args,
+      executablePath: await chromium.default.executablePath(),
+      headless: true,
+    });
+  } else {
+    // Local development - use Puppeteer's bundled Chromium
+    return await puppeteer.default.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ],
+    });
+  }
+}
+
 /**
  * Normalizes content for OpenAI Responses API format.
  * Converts legacy chat.completions format to responses.create format.
@@ -10431,16 +10463,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateBlocksReportHTML(blocks, properties, tenantAssignments);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10534,16 +10559,9 @@ Be objective and specific. Focus on actionable repairs.`;
       const html = generateInspectionsReportHTML(inspections, properties, blocks, users, req.body);
 
       // Generate PDF using Puppeteer
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10777,16 +10795,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generatePropertiesReportHTML(properties, blocks, inspections, tenantAssignments, maintenanceRequests);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -11016,16 +11027,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateTenantsReportHTML(tenantAssignments, properties, blocks);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -11251,16 +11255,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateInventoryReportHTML(assetInventory, properties, blocks);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -11513,16 +11510,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateComplianceReportHTML(complianceDocuments, properties, blocks);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {

@@ -69,13 +69,19 @@ export default function InspectionCapture() {
     queryKey: ["/api/inspections", id],
   });
 
+  // Fetch property details if inspection has a propertyId
+  const { data: property } = useQuery<any>({
+    queryKey: [`/api/properties/${inspection?.propertyId}`],
+    enabled: !!inspection?.propertyId,
+  });
+
   // Fetch existing entries for this inspection
   const { data: existingEntries = [] } = useQuery<any[]>({
     queryKey: [`/api/inspections/${id}/entries`],
     enabled: !!id,
   });
 
-  // Load existing entries into state on mount
+  // Load existing entries into state on mount and auto-populate property address
   useEffect(() => {
     if (existingEntries.length > 0) {
       const entriesMap: Record<string, InspectionEntry> = {};
@@ -206,6 +212,78 @@ export default function InspectionCapture() {
       });
     },
   });
+
+  // Auto-populate property address when property is loaded and template is available
+  useEffect(() => {
+    if (!property?.address || !templateStructure || !sections.length || !id) return;
+    
+    // Check if entry already exists in existingEntries (from server)
+    const hasExistingEntry = existingEntries.some((entry: any) => {
+      const labelLower = entry.fieldKey?.toLowerCase() || "";
+      return labelLower.includes("property_address") || labelLower.includes("property_address");
+    });
+    
+    if (hasExistingEntry) return; // Don't overwrite existing entries
+    
+    // Find the property address field in the General Information section
+    const generalInfoSection = sections.find(section => 
+      section.title.toLowerCase().includes("general") || 
+      section.id?.toLowerCase().includes("general")
+    );
+    
+    if (!generalInfoSection) return;
+    
+    // Find property address field by label or common field IDs
+    const addressField = generalInfoSection.fields.find(field => {
+      const labelLower = field.label?.toLowerCase() || "";
+      const fieldIdLower = field.id?.toLowerCase() || "";
+      const fieldKeyLower = field.key?.toLowerCase() || "";
+      
+      return (
+        labelLower.includes("property address") ||
+        (labelLower.includes("address") && labelLower.includes("property")) ||
+        fieldIdLower.includes("property_address") ||
+        fieldKeyLower.includes("property_address")
+      );
+    });
+    
+    if (!addressField) return;
+    
+    const entryKey = `${generalInfoSection.id}-${addressField.id}`;
+    const existingEntry = entries[entryKey];
+    
+    // Only auto-populate if the field is empty
+    if (!existingEntry || !existingEntry.valueJson) {
+      // Create entry directly (similar to handleFieldChange but without currentSection dependency)
+      const entry: InspectionEntry = {
+        sectionRef: generalInfoSection.id,
+        fieldKey: addressField.id,
+        fieldType: addressField.type as any,
+        valueJson: property.address,
+      };
+
+      // Update local state optimistically
+      setEntries(prev => ({
+        ...prev,
+        [entryKey]: entry,
+      }));
+
+      // Save to backend if online
+      if (isOnline) {
+        updateEntry.mutate(entry);
+      } else {
+        // If offline, queue the entry
+        offlineQueue.enqueue({
+          inspectionId: id,
+          sectionRef: generalInfoSection.id,
+          fieldKey: addressField.id,
+          fieldType: addressField.type,
+          valueJson: property.address,
+        });
+        setPendingCount(offlineQueue.getPendingCount());
+      }
+    }
+  }, [property, templateStructure, sections, entries, existingEntries, id, isOnline, updateEntry]);
 
   // Handle field value change
   const handleFieldChange = (fieldKey: string, value: any, note?: string | undefined, photos?: string[] | undefined) => {
