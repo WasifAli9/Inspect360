@@ -921,27 +921,25 @@ export default function Team() {
                       if (result.successful && result.successful.length > 0) {
                         let fileUrl = result.successful[0].uploadURL;
                         
-                        // Ensure it's a valid file path (should start with /objects/)
-                        if (!fileUrl || !fileUrl.startsWith('/objects/')) {
-                          // If it's an absolute URL, extract the path
-                          if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-                            try {
-                              const urlObj = new URL(fileUrl);
-                              fileUrl = urlObj.pathname;
-                            } catch (e) {
-                              console.error('[Team] Invalid file URL:', fileUrl);
-                              throw new Error('Invalid file URL format');
-                            }
-                          } else {
-                            console.error('[Team] Invalid file URL format:', fileUrl);
+                        // Normalize URL: if absolute, extract pathname; if relative, use as is
+                        if (fileUrl && (fileUrl.startsWith('http://') || fileUrl.startsWith('https://'))) {
+                          try {
+                            const urlObj = new URL(fileUrl);
+                            fileUrl = urlObj.pathname;
+                          } catch (e) {
+                            console.error('[Team] Invalid file URL:', fileUrl);
                             throw new Error('Invalid file URL format');
                           }
                         }
                         
+                        // Ensure it's a valid file path (should start with /objects/)
+                        if (!fileUrl || !fileUrl.startsWith('/objects/')) {
+                          console.error('[Team] Invalid file URL format:', fileUrl);
+                          throw new Error('Invalid file URL format. Expected path starting with /objects/');
+                        }
+                        
                         // Convert to absolute URL for ACL call
-                        const absoluteUrl = fileUrl.startsWith('/') 
-                          ? `${window.location.origin}${fileUrl}`
-                          : fileUrl;
+                        const absoluteUrl = `${window.location.origin}${fileUrl}`;
                         
                         const response = await fetch('/api/objects/set-acl', {
                           method: 'PUT',

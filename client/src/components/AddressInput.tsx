@@ -194,22 +194,51 @@ export function AddressInput({
         // Test that autocomplete is working
         console.log('[AddressInput] Autocomplete instance created:', !!autocomplete);
 
-        // Handle place selection
+        // Handle place selection - this fires when user selects a suggestion
         autocomplete.addListener('place_changed', () => {
           const place = autocomplete.getPlace();
           console.log('[AddressInput] Place selected:', place.formatted_address);
-          if (place.formatted_address) {
+          
+          if (place.formatted_address && inputRef.current) {
             const addressValue = place.formatted_address;
+            
+            // Update internal state immediately
             setInternalValue(addressValue);
+            
+            // Call onChange callback if provided
             if (onChange) {
               onChange(addressValue);
             }
-            // Update form field if name is provided
-            if (name && inputRef.current) {
+            
+            // Ensure the input value is set (Google Maps usually does this, but ensure it)
+            if (inputRef.current.value !== addressValue) {
               inputRef.current.value = addressValue;
-              // Trigger input event for form libraries
-              inputRef.current.dispatchEvent(new Event('input', { bubbles: true }));
             }
+            
+            // Trigger events for form libraries (React Hook Form, etc.)
+            // Use a small delay to ensure Google Maps has finished updating the input
+            setTimeout(() => {
+              if (inputRef.current) {
+                // Trigger both input and change events
+                const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                inputRef.current.dispatchEvent(inputEvent);
+                inputRef.current.dispatchEvent(changeEvent);
+                
+                // Also trigger React's synthetic event
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                  window.HTMLInputElement.prototype,
+                  'value'
+                )?.set;
+                if (nativeInputValueSetter) {
+                  nativeInputValueSetter.call(inputRef.current, addressValue);
+                  const reactEvent = new Event('input', { bubbles: true });
+                  inputRef.current.dispatchEvent(reactEvent);
+                }
+              }
+            }, 10);
+            
+            console.log('[AddressInput] Address updated to:', addressValue);
           }
         });
 
@@ -255,7 +284,6 @@ export function AddressInput({
         id={id}
         name={name}
         value={currentValue}
-        defaultValue={defaultValue}
         onChange={(e) => {
           const newValue = e.target.value;
           setInternalValue(newValue);

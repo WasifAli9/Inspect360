@@ -58,13 +58,28 @@ export default function InspectionDetail() {
 
   const addItemMutation = useMutation({
     mutationFn: async (itemData: any) => {
-      return await apiRequest("POST", "/api/inspection-items", {
+      const response = await apiRequest("POST", "/api/inspection-items", {
         inspectionId: id,
         ...itemData,
       });
+      return await response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
+    onSuccess: async (newItem) => {
+      console.log('[InspectionDetail] Item created:', newItem);
+      
+      // Optimistically update the cache
+      queryClient.setQueryData(["/api/inspections", id], (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          items: [...(oldData.items || []), newItem],
+        };
+      });
+      
+      // Invalidate and refetch to ensure we have the latest data
+      await queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
+      await queryClient.refetchQueries({ queryKey: ["/api/inspections", id] });
+      
       setShowAddForm(false);
       setNewItem({ category: "", itemName: "", photoUrl: "", conditionRating: 5, notes: "" });
       toast({
@@ -72,10 +87,11 @@ export default function InspectionDetail() {
         description: "Inspection item added successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('[InspectionDetail] Error adding item:', error);
       toast({
         title: "Error",
-        description: "Failed to add inspection item",
+        description: error.message || "Failed to add inspection item",
         variant: "destructive",
       });
     },
@@ -161,7 +177,16 @@ export default function InspectionDetail() {
     return <Badge variant="outline">{labels[type] || type}</Badge>;
   };
 
-  const items = inspection.items || [];
+  const items = inspection?.items || [];
+  
+  // Debug logging
+  if (inspection) {
+    console.log('[InspectionDetail] Inspection data:', {
+      id: inspection.id,
+      itemsCount: items.length,
+      items: items,
+    });
+  }
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -336,12 +361,35 @@ export default function InspectionDetail() {
                     }}
                     onComplete={async (result) => {
                       if (result.successful && result.successful[0]) {
-                        const uploadURL = result.successful[0].uploadURL;
+                        let uploadURL = result.successful[0].uploadURL;
+                        
+                        // Normalize URL: if absolute, extract pathname; if relative, use as is
+                        if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
+                          try {
+                            const urlObj = new URL(uploadURL);
+                            uploadURL = urlObj.pathname;
+                          } catch (e) {
+                            console.error('[InspectionDetail] Invalid upload URL:', uploadURL);
+                          }
+                        }
+                        
+                        // Ensure it's a relative path starting with /objects/
+                        if (!uploadURL || !uploadURL.startsWith('/objects/')) {
+                          toast({
+                            title: "Upload Error",
+                            description: "Invalid file URL format. Please try again.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        
+                        // Convert to absolute URL for ACL call
+                        const absoluteUrl = `${window.location.origin}${uploadURL}`;
                         const response = await fetch('/api/objects/set-acl', {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           credentials: 'include',
-                          body: JSON.stringify({ photoUrl: uploadURL }),
+                          body: JSON.stringify({ photoUrl: absoluteUrl }),
                         });
                         const { objectPath } = await response.json();
                         setNewItem({ ...newItem, photoUrl: objectPath });
@@ -356,7 +404,16 @@ export default function InspectionDetail() {
                     {newItem.photoUrl ? "Change Photo" : "Upload Photo"}
                   </ObjectUploader>
                   {newItem.photoUrl && (
-                    <p className="text-sm text-muted-foreground">Photo uploaded</p>
+                    <div className="space-y-2">
+                      <div className="relative aspect-video rounded-md overflow-hidden bg-muted border">
+                        <img
+                          src={newItem.photoUrl.startsWith('/objects/') ? newItem.photoUrl : `/objects/${newItem.photoUrl}`}
+                          alt="Preview"
+                          className="object-cover w-full h-full"
+                        />
+                      </div>
+                      <p className="text-sm text-muted-foreground">Photo uploaded</p>
+                    </div>
                   )}
                 </div>
 
@@ -411,7 +468,7 @@ export default function InspectionDetail() {
             </Card>
           )}
 
-          {items.length === 0 && !showAddForm && (
+          {!showAddForm && items.length === 0 && (
             <div className="text-center py-8">
               <Camera className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-muted-foreground mb-2">No inspection items yet</p>
@@ -423,7 +480,9 @@ export default function InspectionDetail() {
 
           {items.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2">
-              {items.map((item: any) => (
+              {items.map((item: any) => {
+                console.log('[InspectionDetail] Rendering item:', item);
+                return (
                 <Card key={item.id} data-testid={`card-item-${item.id}`}>
                   <CardHeader>
                     <div className="flex items-start justify-between gap-2">
@@ -440,7 +499,7 @@ export default function InspectionDetail() {
                     {item.photoUrl && (
                       <div className="relative aspect-video rounded-md overflow-hidden bg-muted">
                         <img
-                          src={`/objects/${item.photoUrl}`}
+                          src={item.photoUrl.startsWith('/objects/') ? item.photoUrl : `/objects/${item.photoUrl}`}
                           alt={item.itemName}
                           className="object-cover w-full h-full"
                           data-testid={`img-item-${item.id}`}
@@ -483,7 +542,8 @@ export default function InspectionDetail() {
                     )}
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

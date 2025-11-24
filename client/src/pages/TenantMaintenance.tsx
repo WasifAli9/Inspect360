@@ -306,8 +306,38 @@ export default function TenantMaintenance() {
                 }}
                 onComplete={(result) => {
                   if (result.successful && result.successful[0]) {
-                    const uploadedUrl = result.successful[0].uploadURL;
-                    setUploadedImage(uploadedUrl);
+                    let uploadedUrl = result.successful[0].uploadURL;
+                    
+                    // Normalize URL: if absolute, extract pathname; if relative, use as is
+                    if (uploadedUrl && (uploadedUrl.startsWith('http://') || uploadedUrl.startsWith('https://'))) {
+                      try {
+                        const urlObj = new URL(uploadedUrl);
+                        uploadedUrl = urlObj.pathname;
+                      } catch (e) {
+                        console.error('[TenantMaintenance] Invalid upload URL:', uploadedUrl);
+                        toast({
+                          title: "Upload Error",
+                          description: "Invalid file URL format. Please try again.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                    }
+                    
+                    // Ensure it's a valid file path (should start with /objects/)
+                    if (!uploadedUrl || !uploadedUrl.startsWith('/objects/')) {
+                      console.error('[TenantMaintenance] Invalid file URL format:', uploadedUrl);
+                      toast({
+                        title: "Upload Error",
+                        description: "Invalid file URL format. Please try again.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    // Convert to absolute URL for display
+                    const absoluteUrl = `${window.location.origin}${uploadedUrl}`;
+                    setUploadedImage(absoluteUrl);
                     toast({
                       title: "Image Uploaded",
                       description: "Your image has been uploaded successfully",

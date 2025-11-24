@@ -17,6 +17,7 @@ import Webcam from "@uppy/webcam";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { extractFileUrlFromUploadResponse } from "@/lib/utils";
 import SignatureCanvas from "react-signature-canvas";
 
 interface TemplateField {
@@ -276,7 +277,20 @@ export function FieldWidget({
 
             // Validate URL
             try {
-              new URL(uploadURL);
+              const urlObj = new URL(uploadURL);
+              
+              // Extract objectId from upload URL and store in metadata for fallback
+              const objectId = urlObj.searchParams.get('objectId');
+              if (objectId) {
+                uppy.setFileMeta(file.id, { 
+                  originalUploadURL: uploadURL,
+                  objectId: objectId,
+                });
+              } else {
+                uppy.setFileMeta(file.id, { 
+                  originalUploadURL: uploadURL,
+                });
+              }
             } catch (e) {
               throw new Error(`Invalid upload URL format: ${uploadURL}`);
             }
@@ -296,57 +310,19 @@ export function FieldWidget({
       });
 
     uppy.on("upload-success", async (file: any, response: any) => {
-      // Extract the file URL from the PUT response
-      // Uppy's AwsS3 plugin stores the response in file.response.body
-      let uploadUrl: string | null = null;
+      // Extract the file URL from the PUT response using the utility function
+      let uploadUrl = extractFileUrlFromUploadResponse(file, response);
       
-      // Check file.response.body (most reliable location)
-      if (file?.response?.body) {
-        try {
-          const body = typeof file.response.body === 'string' 
-            ? JSON.parse(file.response.body) 
-            : file.response.body;
-          uploadUrl = body?.url || body?.uploadURL;
-        } catch (e) {
-          // Not JSON
-        }
-      }
-      
-      // Fallback: check response.body
-      if (!uploadUrl && response?.body) {
-        try {
-          const body = typeof response.body === 'string' 
-            ? JSON.parse(response.body) 
-            : response.body;
-          uploadUrl = body?.url || body?.uploadURL;
-        } catch (e) {
-          // Not JSON
-        }
-      }
-      
-      // Fallback: check top-level properties
-      if (!uploadUrl) {
-        uploadUrl = response?.uploadURL || response?.url || file?.response?.uploadURL || file?.response?.url;
+      // If extraction failed, try to use objectId from metadata as fallback
+      if (!uploadUrl && file?.meta?.objectId) {
+        uploadUrl = `/objects/${file.meta.objectId}`;
+        console.log('[FieldWidget] Using objectId fallback:', uploadUrl);
       }
       
       if (uploadUrl) {
-        const rawPhotoUrl = uploadUrl.split("?")[0];
-        
-        // Ensure it's a valid file path
-        if (!rawPhotoUrl.startsWith('/objects/')) {
-          console.error('[FieldWidget] Invalid photo URL format:', rawPhotoUrl);
-          toast({
-            title: "Upload Error",
-            description: "Invalid photo URL format. Please try again.",
-            variant: "destructive",
-          });
-          return;
-        }
-        
+        // uploadUrl is already normalized to a relative path starting with /objects/
         // Convert to absolute URL for ACL call
-        const absolutePhotoUrl = rawPhotoUrl.startsWith('/') 
-          ? `${window.location.origin}${rawPhotoUrl}`
-          : rawPhotoUrl;
+        const absolutePhotoUrl = `${window.location.origin}${uploadUrl}`;
         
         // Set ACL to public so OpenAI can access the photo
         try {
@@ -381,7 +357,17 @@ export function FieldWidget({
           // This prevents non-public photos from breaking the AI analysis pipeline
         }
       } else {
-        console.error('[FieldWidget] No upload URL found in response:', { file, response });
+        // Enhanced debugging - log the full structure to help diagnose
+        console.error('[FieldWidget] No upload URL found in response. Debug info:', {
+          fileKeys: file ? Object.keys(file) : null,
+          fileResponse: file?.response,
+          fileResponseBody: file?.response?.body,
+          fileMeta: file?.meta,
+          responseKeys: response ? Object.keys(response) : null,
+          responseBody: response?.body,
+          fullFile: file,
+          fullResponse: response
+        });
         toast({
           title: "Upload Error",
           description: "Upload succeeded but could not get photo URL. Please try again.",
@@ -536,6 +522,24 @@ export function FieldWidget({
         [photoUrl]: result,
       }));
 
+      // Extract analysis text from result
+      // The server stores it in resultJson.text
+      const analysisText = result?.resultJson?.text || 
+                          (result?.resultJson && typeof result.resultJson === 'object' 
+                            ? (result.resultJson as any).text || (result.resultJson as any).analysis || (result.resultJson as any).content
+                            : null) ||
+                          result?.analysis ||
+                          "Analysis completed";
+
+      // Append AI analysis to notes field
+      const currentNote = localNote || "";
+      const separator = currentNote.trim() ? "\n\n--- AI Analysis ---\n" : "";
+      const newNote = currentNote + separator + analysisText;
+      
+      setLocalNote(newNote);
+      const composedValue = composeValue(localValue, localCondition, localCleanliness);
+      onChange(composedValue, newNote, localPhotos);
+
       // Invalidate organization query to update credit balance on dashboard and billing pages
       if (user?.organizationId) {
         queryClient.invalidateQueries({ queryKey: [`/api/organizations/${user.organizationId}`] });
@@ -543,7 +547,7 @@ export function FieldWidget({
 
       toast({
         title: "Analysis Complete",
-        description: "AI analysis generated successfully (1 credit used)",
+        description: "AI analysis has been added to the notes field",
       });
     } catch (error: any) {
       toast({

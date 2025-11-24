@@ -2,6 +2,38 @@ import puppeteer from "puppeteer";
 import chromium from "@sparticuz/chromium";
 import { format } from "date-fns";
 
+/**
+ * Launch Puppeteer browser with appropriate configuration for the environment.
+ * Uses @sparticuz/chromium for serverless environments, bundled Chromium for local development.
+ */
+export async function launchPuppeteerBrowser() {
+  // Check if we're in a serverless environment (AWS Lambda, etc.)
+  const isServerless = process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL || process.env.NETLIFY;
+  
+  if (isServerless) {
+    // Use @sparticuz/chromium for serverless environments
+    return await puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    });
+  } else {
+    // Use bundled Chromium for local development
+    return await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ],
+    });
+  }
+}
+
 // HTML escape utility to prevent XSS
 function escapeHtml(unsafe: string): string {
   if (typeof unsafe !== 'string') return String(unsafe || '');
@@ -146,12 +178,7 @@ export async function generateInspectionPDF(
 
   let browser;
   try {
-    // Use chromium for serverless environments
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    });
+    browser = await launchPuppeteerBrowser();
 
     const page = await browser.newPage();
     await page.setContent(html, {

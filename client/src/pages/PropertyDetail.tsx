@@ -666,12 +666,35 @@ export default function PropertyDetail() {
                               }}
                               onComplete={async (result) => {
                                 if (result.successful && result.successful[0]) {
-                                  const uploadURL = result.successful[0].uploadURL;
+                                  let uploadURL = result.successful[0].uploadURL;
+                                  
+                                  // Normalize URL: if absolute, extract pathname; if relative, use as is
+                                  if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
+                                    try {
+                                      const urlObj = new URL(uploadURL);
+                                      uploadURL = urlObj.pathname;
+                                    } catch (e) {
+                                      console.error('[PropertyDetail] Invalid upload URL:', uploadURL);
+                                    }
+                                  }
+                                  
+                                  // Ensure it's a relative path starting with /objects/
+                                  if (!uploadURL || !uploadURL.startsWith('/objects/')) {
+                                    toast({
+                                      title: "Upload Error",
+                                      description: "Invalid file URL format. Please try again.",
+                                      variant: "destructive",
+                                    });
+                                    return;
+                                  }
+                                  
+                                  // Convert to absolute URL for ACL call
+                                  const absoluteUrl = `${window.location.origin}${uploadURL}`;
                                   const response = await fetch('/api/objects/set-acl', {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     credentials: 'include',
-                                    body: JSON.stringify({ photoUrl: uploadURL }),
+                                    body: JSON.stringify({ photoUrl: absoluteUrl }),
                                   });
                                   const { objectPath } = await response.json();
                                   field.onChange(objectPath);

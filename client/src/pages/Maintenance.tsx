@@ -308,7 +308,13 @@ export default function Maintenance() {
       uppy.on("upload-success", async (file, response) => {
         // Import the helper function
         const { extractFileUrlFromUploadResponse } = await import("@/lib/utils");
-        const fileUrl = extractFileUrlFromUploadResponse(file, response);
+        let fileUrl = extractFileUrlFromUploadResponse(file, response);
+        
+        // If extraction failed, try to use objectId from metadata as fallback
+        if (!fileUrl && file?.meta?.objectId) {
+          fileUrl = `/objects/${file.meta.objectId}`;
+          console.log('[Maintenance] Using objectId fallback:', fileUrl);
+        }
         
         if (fileUrl) {
           // Convert relative path to absolute URL for display
@@ -332,6 +338,8 @@ export default function Maintenance() {
           }).catch(error => {
             console.error('[Maintenance] Error setting ACL:', error);
           });
+        } else {
+          console.error('[Maintenance] No upload URL found in response:', { file, response });
         }
       });
 
@@ -901,12 +909,32 @@ export default function Maintenance() {
                           if (result.successful && result.successful.length > 0) {
                             const newPaths: string[] = [];
                             for (const file of result.successful) {
-                              const uploadURL = file.uploadURL;
+                              let uploadURL = file.uploadURL;
+                              
+                              // Normalize URL: if absolute, extract pathname; if relative, use as is
+                              if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
+                                try {
+                                  const urlObj = new URL(uploadURL);
+                                  uploadURL = urlObj.pathname;
+                                } catch (e) {
+                                  console.error('[Maintenance] Invalid upload URL:', uploadURL);
+                                  continue; // Skip this file
+                                }
+                              }
+                              
+                              // Ensure it's a relative path starting with /objects/
+                              if (!uploadURL || !uploadURL.startsWith('/objects/')) {
+                                console.error('[Maintenance] Invalid file URL format:', uploadURL);
+                                continue; // Skip this file
+                              }
+                              
+                              // Convert to absolute URL for ACL call
+                              const absoluteUrl = `${window.location.origin}${uploadURL}`;
                               const response = await fetch('/api/objects/set-acl', {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
                                 credentials: 'include',
-                                body: JSON.stringify({ photoUrl: uploadURL }),
+                                body: JSON.stringify({ photoUrl: absoluteUrl }),
                               });
                               
                               if (!response.ok) {
@@ -916,7 +944,16 @@ export default function Maintenance() {
                               const { objectPath } = await response.json();
                               newPaths.push(objectPath);
                             }
-                            setUploadedImages(prev => [...prev, ...newPaths]);
+                            
+                            if (newPaths.length > 0) {
+                              setUploadedImages(prev => [...prev, ...newPaths]);
+                            } else {
+                              toast({
+                                title: "Upload Error",
+                                description: "No photos were uploaded successfully. Please try again.",
+                                variant: "destructive",
+                              });
+                            }
                           }
                         } catch (error) {
                           console.error('[Maintenance] Photo upload error:', error);

@@ -2,7 +2,60 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { randomUUID, createHash } from "crypto";
+import { promises as fs } from "fs";
 import { storage } from "./storage";
+
+/**
+ * Detect image MIME type from file buffer using magic bytes
+ * Returns a valid image MIME type (always starts with 'image/')
+ */
+function detectImageMimeType(buffer: Buffer): string {
+  // Validate buffer
+  if (!buffer || buffer.length === 0) {
+    console.warn('[detectImageMimeType] Empty buffer, defaulting to image/jpeg');
+    return 'image/jpeg';
+  }
+
+  // Check file signatures (magic bytes)
+  if (buffer.length < 4) {
+    console.warn('[detectImageMimeType] Buffer too small, defaulting to image/jpeg');
+    return 'image/jpeg';
+  }
+
+  // JPEG: FF D8 FF (can be followed by E0, E1, etc.)
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    return 'image/jpeg';
+  }
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+    return 'image/png';
+  }
+
+  // GIF: 47 49 46 38 (GIF8) or 47 49 46 39 (GIF9)
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && 
+      (buffer[3] === 0x38 || buffer[3] === 0x39)) {
+    return 'image/gif';
+  }
+
+  // WebP: Check for RIFF...WEBP
+  if (buffer.length >= 12 &&
+      buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+      buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+    return 'image/webp';
+  }
+
+  // BMP: 42 4D
+  if (buffer[0] === 0x42 && buffer[1] === 0x4D) {
+    return 'image/bmp';
+  }
+
+  // Default to JPEG if we can't detect (most common image format)
+  // This ensures we always return a valid image MIME type
+  console.warn('[detectImageMimeType] Could not detect image type from magic bytes, defaulting to image/jpeg. First bytes:', 
+    Array.from(buffer.slice(0, 8)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' '));
+  return 'image/jpeg';
+}
 import { setupAuth, isAuthenticated, requireRole, hashPassword, comparePasswords } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
@@ -17,7 +70,7 @@ import { format } from "date-fns";
 import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification, sendContractorWorkOrderNotification } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
-import { generateInspectionPDF } from "./pdfService";
+import { generateInspectionPDF, launchPuppeteerBrowser } from "./pdfService";
 import { extractTextFromFile, findRelevantChunks } from "./documentProcessor";
 import {
   insertBlockSchema,
@@ -1595,7 +1648,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied: Inspection does not belong to your organization" });
       }
 
-      res.json(inspection);
+      // Fetch inspection items
+      const items = await storage.getInspectionItems(id);
+      console.log(`[GET /api/inspections/:id] Fetched ${items.length} items for inspection ${id}`);
+
+      // Fetch related data
+      let property = null;
+      let block = null;
+      let clerk = null;
+
+      if (inspection.propertyId) {
+        property = await storage.getProperty(inspection.propertyId);
+      }
+      if (inspection.blockId) {
+        block = await storage.getBlock(inspection.blockId);
+      }
+      if (inspection.inspectorId) {
+        clerk = await storage.getUser(inspection.inspectorId);
+      }
+
+      const response = {
+        ...inspection,
+        items,
+        property,
+        block,
+        clerk,
+      };
+      
+      console.log(`[GET /api/inspections/:id] Returning inspection with ${response.items.length} items`);
+      res.json(response);
     } catch (error) {
       console.error("Error fetching inspection:", error);
       res.status(500).json({ message: "Failed to fetch inspection" });
@@ -2053,6 +2134,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: notes || null,
       });
 
+      console.log(`[POST /api/inspection-items] Created item:`, {
+        id: item.id,
+        inspectionId: item.inspectionId,
+        category: item.category,
+        itemName: item.itemName,
+      });
+
       res.json(item);
     } catch (error) {
       console.error("Error creating inspection item:", error);
@@ -2133,22 +2221,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         photoUrl = item.photoUrl;
       } else {
         // Internal object storage - convert to base64
-        const objectStorageService = new ObjectStorageService();
-        const photoPath = item.photoUrl.replace(/^\/objects\//, '');
-        const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
-        
-        // Download the file contents
-        const [photoBuffer] = await objectFile.download();
-        
-        // Get the content type from metadata
-        const [metadata] = await objectFile.getMetadata();
-        const mimeType = metadata.contentType || 'image/jpeg';
-        
-        // Convert to base64 data URL
-        const base64Image = photoBuffer.toString('base64');
-        photoUrl = `data:${mimeType};base64,${base64Image}`;
-        
-        console.log("[Inspection Item Analysis] Converted to base64 data URL:", photoPath, `(${mimeType})`);
+        try {
+          const objectStorageService = new ObjectStorageService();
+          // Ensure path starts with /objects/
+          const photoPath = item.photoUrl.startsWith('/objects/') ? item.photoUrl : `/objects/${item.photoUrl}`;
+          const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
+          
+          // Read the file contents using fs.readFile first
+          const photoBuffer = await fs.readFile(objectFile.name);
+          
+          // Always detect MIME type from buffer for reliability
+          let mimeType = detectImageMimeType(photoBuffer);
+          
+          // Get metadata for logging purposes
+          const [metadata] = await objectFile.getMetadata();
+          const metadataContentType = metadata.contentType;
+          
+          console.log(`[Inspection Item Analysis] MIME type detection:`, {
+            detected: mimeType,
+            fromMetadata: metadataContentType,
+            bufferSize: photoBuffer.length,
+          });
+          
+          // Ensure we have a valid image MIME type
+          if (!mimeType || !mimeType.startsWith('image/')) {
+            console.warn(`[Inspection Item Analysis] Invalid MIME type detected: ${mimeType}, defaulting to image/jpeg`);
+            mimeType = 'image/jpeg';
+          }
+          
+          // Convert to base64 data URL
+          const base64Image = photoBuffer.toString('base64');
+          photoUrl = `data:${mimeType};base64,${base64Image}`;
+          
+          console.log("[Inspection Item Analysis] Converted to base64 data URL:", photoPath, `(${mimeType})`);
+        } catch (error: any) {
+          // Safely log error without circular reference issues
+          const errorMessage = error?.message || String(error);
+          console.error("[Inspection Item Analysis] Error converting photo to base64:", {
+            photoUrl: item.photoUrl,
+            message: errorMessage,
+            errorType: error?.constructor?.name,
+          });
+          if (error instanceof ObjectNotFoundError) {
+            throw new Error(`Photo not found: ${item.photoUrl}. The file may have been deleted or moved.`);
+          }
+          throw new Error(`Failed to load photo for analysis: ${item.photoUrl}. ${errorMessage}`);
+        }
       }
 
       // Call OpenAI Vision API using Responses API
@@ -2194,8 +2312,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ analysis });
-    } catch (error) {
-      console.error("Error analyzing photo:", error);
+    } catch (error: any) {
+      // Safely log error without circular reference issues
+      const errorMessage = error?.message || String(error);
+      console.error("Error analyzing photo:", {
+        message: errorMessage,
+        status: error?.status,
+        code: error?.code,
+      });
       res.status(500).json({ message: "Failed to analyze photo" });
     }
   });
@@ -2268,24 +2392,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // If it's an /objects/ path, download the image and convert to base64 data URL
         try {
-          const objectFile = await objectStorageService.getObjectEntityFile(photo);
+          // Ensure path starts with /objects/
+          const photoPath = photo.startsWith('/objects/') ? photo : `/objects/${photo}`;
+          const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
           
-          // Download the file contents
-          const [fileBuffer] = await objectFile.download();
+          // Read the file contents using fs.readFile first
+          const fileBuffer = await fs.readFile(objectFile.name);
           
-          // Get the content type from metadata
+          // Always detect MIME type from buffer for reliability
+          let contentType = detectImageMimeType(fileBuffer);
+          
+          // Get metadata for logging purposes
           const [metadata] = await objectFile.getMetadata();
-          const contentType = metadata.contentType || 'image/jpeg';
+          const metadataContentType = metadata.contentType;
+          
+          console.log(`[InspectAI] MIME type detection:`, {
+            detected: contentType,
+            fromMetadata: metadataContentType,
+            bufferSize: fileBuffer.length,
+          });
+          
+          // Ensure we have a valid image MIME type
+          if (!contentType || !contentType.startsWith('image/')) {
+            console.warn(`[InspectAI] Invalid MIME type detected: ${contentType}, defaulting to image/jpeg`);
+            contentType = 'image/jpeg';
+          }
           
           // Convert to base64 data URL
           const base64Data = fileBuffer.toString('base64');
           const dataUrl = `data:${contentType};base64,${base64Data}`;
           
-          console.log(`[InspectAI] Converted photo to base64 data URL: ${photo} (${contentType})`);
+          console.log(`[InspectAI] Converted photo to base64 data URL: ${photoPath} (${contentType}, ${base64Data.length} bytes)`);
           return dataUrl;
-        } catch (error) {
-          console.error("[InspectAI] Error converting photo to base64:", photo, error);
-          throw new Error(`Failed to load photo for analysis: ${photo}`);
+        } catch (error: any) {
+          // Safely log error without circular reference issues
+          const errorMessage = error?.message || String(error);
+          console.error("[InspectAI] Error converting photo to base64:", {
+            photo,
+            message: errorMessage,
+            errorType: error?.constructor?.name,
+          });
+          if (error instanceof ObjectNotFoundError) {
+            throw new Error(`Photo not found: ${photo}. The file may have been deleted or moved.`);
+          }
+          throw new Error(`Failed to load photo for analysis: ${photo}. ${errorMessage}`);
         }
       }));
 
@@ -2356,8 +2506,14 @@ Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on 
       });
 
       res.json({ analysis });
-    } catch (error) {
-      console.error("Error analyzing field:", error);
+    } catch (error: any) {
+      // Safely log error without circular reference issues
+      const errorMessage = error?.message || String(error);
+      console.error("Error analyzing field:", {
+        message: errorMessage,
+        status: error?.status,
+        code: error?.code,
+      });
       res.status(500).json({ message: "Failed to analyze field" });
     }
   });
@@ -6426,22 +6582,58 @@ Be objective and specific. Focus on actionable repairs.`;
         console.log("[Individual Photo Analysis] Using external URL directly");
       } else {
         // Internal object storage - convert to base64
-        const objectStorageService = new ObjectStorageService();
-        const photoPath = imageUrl.replace(/^\/objects\//, '');
-        const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
-        
-        // Download the file contents
-        const [photoBuffer] = await objectFile.download();
-        
-        // Get the content type from metadata
-        const [metadata] = await objectFile.getMetadata();
-        const mimeType = metadata.contentType || 'image/jpeg';
-        
-        // Convert to base64 data URL
-        const base64Image = photoBuffer.toString('base64');
-        dataUrl = `data:${mimeType};base64,${base64Image}`;
-        
-        console.log("[Individual Photo Analysis] Converted to base64 data URL:", photoPath, `(${mimeType})`);
+        try {
+          const objectStorageService = new ObjectStorageService();
+          // Ensure path starts with /objects/
+          const photoPath = imageUrl.startsWith('/objects/') ? imageUrl : `/objects/${imageUrl}`;
+          const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
+          
+          // Read the file contents using fs.readFile first
+          const photoBuffer = await fs.readFile(objectFile.name);
+          
+          // Always detect MIME type from buffer for reliability
+          let mimeType = detectImageMimeType(photoBuffer);
+          
+          // Get metadata for logging purposes
+          const [metadata] = await objectFile.getMetadata();
+          const metadataContentType = metadata.contentType;
+          
+          console.log(`[Individual Photo Analysis] MIME type detection:`, {
+            detected: mimeType,
+            fromMetadata: metadataContentType,
+            bufferSize: photoBuffer.length,
+            firstBytes: Array.from(photoBuffer.slice(0, 12)).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ')
+          });
+          
+          // Ensure we have a valid image MIME type
+          if (!mimeType || !mimeType.startsWith('image/')) {
+            console.warn(`[Individual Photo Analysis] Invalid MIME type detected: ${mimeType}, defaulting to image/jpeg`);
+            mimeType = 'image/jpeg';
+          }
+          
+          // Convert to base64 data URL
+          const base64Image = photoBuffer.toString('base64');
+          dataUrl = `data:${mimeType};base64,${base64Image}`;
+          
+          // Validate the data URL format
+          if (!dataUrl.startsWith(`data:${mimeType};base64,`)) {
+            throw new Error(`Invalid data URL format: ${dataUrl.substring(0, 50)}...`);
+          }
+          
+          console.log("[Individual Photo Analysis] Converted to base64 data URL:", photoPath, `(${mimeType}, ${base64Image.length} bytes)`);
+        } catch (error: any) {
+          // Safely log error without circular reference issues
+          const errorMessage = error?.message || String(error);
+          console.error("[Individual Photo Analysis] Error converting photo to base64:", {
+            imageUrl,
+            message: errorMessage,
+            errorType: error?.constructor?.name,
+          });
+          if (error instanceof ObjectNotFoundError) {
+            throw new Error(`Photo not found: ${imageUrl}. The file may have been deleted or moved.`);
+          }
+          throw new Error(`Failed to load photo for analysis: ${imageUrl}. ${errorMessage}`);
+        }
       }
 
       // Call OpenAI Vision API using Responses API
@@ -6476,17 +6668,27 @@ Be objective and specific. Focus on actionable repairs.`;
 
       // Save analysis
       const validatedData = insertAiImageAnalysisSchema.parse({
-        inspectionId,
-        inspectionEntryId,
-        imageUrl,
-        analysisJson: { text: analysisText, model: "gpt-5" },
-        createdBy: req.user.id
+        inspectionId: inspectionId || undefined,
+        inspectionEntryId: inspectionEntryId || undefined,
+        mediaUrl: imageUrl, // Schema expects mediaUrl, not imageUrl
+        mediaType: "photo",
+        model: "gpt-5",
+        resultJson: { text: analysisText, model: "gpt-5" },
       });
       const analysis = await storage.createAiImageAnalysis(validatedData);
 
       res.status(201).json({ ...analysis, remainingCredits: (org.creditsRemaining ?? 0) - 1 });
-    } catch (error) {
-      console.error("Error creating AI analysis:", error);
+    } catch (error: any) {
+      // Safely log error without circular reference issues
+      const errorMessage = error?.message || String(error);
+      const errorStack = error?.stack;
+      console.error("Error creating AI analysis:", {
+        message: errorMessage,
+        stack: errorStack,
+        status: error?.status,
+        code: error?.code,
+        type: error?.type,
+      });
       res.status(500).json({ message: "Failed to create AI analysis" });
     }
   });
@@ -10135,16 +10337,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateBlocksReportHTML(blocks, properties, tenantAssignments);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10238,16 +10433,9 @@ Be objective and specific. Focus on actionable repairs.`;
       const html = generateInspectionsReportHTML(inspections, properties, blocks, users, req.body);
 
       // Generate PDF using Puppeteer
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10481,16 +10669,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generatePropertiesReportHTML(properties, blocks, inspections, tenantAssignments, maintenanceRequests);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10720,16 +10901,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateTenantsReportHTML(tenantAssignments, properties, blocks);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -10955,16 +11129,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateInventoryReportHTML(assetInventory, properties, blocks);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {
@@ -11217,16 +11384,9 @@ Be objective and specific. Focus on actionable repairs.`;
 
       const html = generateComplianceReportHTML(complianceDocuments, properties, blocks);
 
-      const puppeteer = await import("puppeteer");
-      const chromium = await import("@sparticuz/chromium");
-      
       let browser;
       try {
-        browser = await puppeteer.default.launch({
-          args: chromium.default.args,
-          executablePath: await chromium.default.executablePath(),
-          headless: true,
-        });
+        browser = await launchPuppeteerBrowser();
 
         const page = await browser.newPage();
         await page.setContent(html, {

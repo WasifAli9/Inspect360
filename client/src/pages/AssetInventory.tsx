@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { extractFileUrlFromUploadResponse } from "@/lib/utils";
 import { useLocale } from "@/contexts/LocaleContext";
 import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, DollarSign, FileText, MapPin, Tag as TagIcon, ArrowLeft } from "lucide-react";
 import type { AssetInventory, Property, Block } from "@shared/schema";
@@ -288,79 +289,14 @@ export default function AssetInventory() {
         fullFile: file
       });
       
-      // Extract the file URL from the PUT response
-      // The upload-direct endpoint returns: { url: "/objects/...", uploadURL: "/objects/..." }
-      let photoUrl: string | null = null;
+      // Extract the file URL from the PUT response using the utility function
+      // This handles both absolute and relative URLs and normalizes to /objects/...
+      let photoUrl = extractFileUrlFromUploadResponse(file, response);
       
-      // Method 1: Check file.response.body (Uppy stores PUT response here)
-      if (file?.response?.body) {
-        try {
-          const body = typeof file.response.body === 'string' 
-            ? JSON.parse(file.response.body) 
-            : file.response.body;
-          photoUrl = body?.url || body?.uploadURL;
-          console.log('[AssetInventory] Method 1 - Extracted from file.response.body:', photoUrl);
-        } catch (e) {
-          console.warn('[AssetInventory] Method 1 - Failed to parse:', e);
-        }
-      }
-      
-      // Method 2: Check file.response directly (sometimes it's already parsed)
-      if (!photoUrl && file?.response) {
-        photoUrl = file.response.url || file.response.uploadURL;
-        if (photoUrl) {
-          console.log('[AssetInventory] Method 2 - Extracted from file.response:', photoUrl);
-        }
-      }
-      
-      // Method 3: Check response.body directly
-      if (!photoUrl && response?.body) {
-        try {
-          const body = typeof response.body === 'string' 
-            ? JSON.parse(response.body) 
-            : response.body;
-          photoUrl = body?.url || body?.uploadURL;
-          // Validate it's a file path, not an upload endpoint
-          if (photoUrl && photoUrl.includes('/upload-direct')) {
-            photoUrl = null; // Reject upload endpoint URLs
-          }
-          if (photoUrl) {
-            console.log('[AssetInventory] Method 3 - Extracted from response.body:', photoUrl);
-          }
-        } catch (e) {
-          console.warn('[AssetInventory] Method 3 - Failed to parse:', e);
-        }
-      }
-      
-      // Method 4: Construct from objectId if we have it (prioritize this over response properties)
+      // If extraction failed, try to use objectId from metadata as fallback
       if (!photoUrl && file?.meta?.objectId) {
         photoUrl = `/objects/${file.meta.objectId}`;
-        console.log('[AssetInventory] Method 4 - Constructed from objectId:', photoUrl);
-      }
-      
-      // Method 5: Extract objectId from upload URL and construct path
-      if (!photoUrl && file?.meta?.originalUploadURL) {
-        try {
-          const uploadUrl = file.meta.originalUploadURL;
-          const urlObj = new URL(uploadUrl);
-          const objectId = urlObj.searchParams.get('objectId');
-          if (objectId) {
-            photoUrl = `/objects/${objectId}`;
-            console.log('[AssetInventory] Method 5 - Constructed from upload URL objectId:', photoUrl);
-          }
-        } catch (e) {
-          console.warn('[AssetInventory] Method 5 - Failed to extract objectId:', e);
-        }
-      }
-      
-      // Method 6: Check top-level response properties (only if it's a valid file path)
-      if (!photoUrl && response) {
-        const candidate = response.uploadURL || response.url;
-        // Only use if it's a file path, not an upload endpoint
-        if (candidate && !candidate.includes('/upload-direct') && candidate.startsWith('/objects/')) {
-          photoUrl = candidate;
-          console.log('[AssetInventory] Method 6 - Extracted from response top-level:', photoUrl);
-        }
+        console.log('[AssetInventory] Using objectId fallback:', photoUrl);
       }
       
       if (!photoUrl) {
@@ -379,20 +315,7 @@ export default function AssetInventory() {
         return;
       }
       
-      // Remove query params if any
-      photoUrl = photoUrl.split('?')[0];
-      
-      // Ensure it's a valid file path (should start with /objects/)
-      if (!photoUrl.startsWith('/objects/')) {
-        console.error('[AssetInventory] Invalid photo URL format:', photoUrl);
-        toast({
-          variant: "destructive",
-          title: "Upload Error",
-          description: "Invalid photo URL format. Please try again.",
-        });
-        return;
-      }
-      
+      // photoUrl is already normalized to a relative path starting with /objects/
       // Convert relative path to absolute URL for display
       const absolutePhotoUrl = `${window.location.origin}${photoUrl}`;
       console.log('[AssetInventory] Final photo URL:', absolutePhotoUrl);
