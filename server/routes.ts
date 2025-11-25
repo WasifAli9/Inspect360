@@ -2471,21 +2471,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }));
 
-      // Build the prompt with field context - emphasizing focus on the specific inspection point
-      let promptText = `You are analyzing a property inspection photo. Focus SPECIFICALLY on: "${fieldLabel}"`;
-      if (fieldDescription) {
-        promptText += `\nContext: ${fieldDescription}`;
+      // Get template settings for AI configuration with proper inheritance:
+      // Template settings > Organization defaults > System defaults
+      let aiMaxWords: number;
+      let aiInstruction: string;
+      
+      // Get template settings if available
+      let templateAiMaxWords: number | null = null;
+      let templateAiInstruction: string | null = null;
+      
+      if (inspection.templateId) {
+        const template = await storage.getInspectionTemplate(inspection.templateId);
+        if (template) {
+          templateAiMaxWords = template.aiMaxWords;
+          templateAiInstruction = template.aiInstruction || null;
+        }
       }
-      promptText += `\n\nIMPORTANT: The photo may show an entire room or area, but you must focus your analysis ONLY on "${fieldLabel}". Ignore other elements in the photo that are not directly related to this inspection point.
 
-I have ${photoUrls.length} image(s). Provide a comprehensive inspection report for "${fieldLabel}" including:
-1. Overall condition assessment of the ${fieldLabel}
-2. Any visible damage, defects, or wear on the ${fieldLabel}
-3. Cleanliness and maintenance issues related to the ${fieldLabel}
-4. Notable features or observations about the ${fieldLabel}
-5. Recommendations for the ${fieldLabel} (if any)
+      // Apply inheritance chain independently for each field:
+      // aiMaxWords: template > organization > system default (150)
+      aiMaxWords = templateAiMaxWords ?? organization.defaultAiMaxWords ?? 150;
+      
+      // aiInstruction: template > organization > empty (use default prompt)
+      aiInstruction = templateAiInstruction ?? organization.defaultAiInstruction ?? "";
 
-Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on items outside the scope of "${fieldLabel}". This will be used in a professional property inspection report.`;
+      // Build the prompt with field context - using custom instruction if provided
+      let promptText: string;
+      
+      if (aiInstruction) {
+        // Use custom AI instruction from template or organization
+        promptText = `${aiInstruction}
+
+Focus SPECIFICALLY on: "${fieldLabel}"`;
+        if (fieldDescription) {
+          promptText += `\nContext: ${fieldDescription}`;
+        }
+        promptText += `\n\nI have ${photoUrls.length} image(s) to analyze. Provide your assessment for "${fieldLabel}".
+
+IMPORTANT FORMATTING RULES:
+- Keep your response under ${aiMaxWords} words
+- Write in plain text only - do NOT use asterisks (*), hash symbols (#), bullet points, or numbered lists
+- Do NOT use any markdown formatting
+- Do NOT include emojis
+- Write in professional, flowing paragraphs`;
+      } else {
+        // Default prompt
+        promptText = `You are analyzing a property inspection photo. Focus SPECIFICALLY on: "${fieldLabel}"`;
+        if (fieldDescription) {
+          promptText += `\nContext: ${fieldDescription}`;
+        }
+        promptText += `\n\nIMPORTANT: The photo may show an entire room or area, but you must focus your analysis ONLY on "${fieldLabel}". Ignore other elements in the photo that are not directly related to this inspection point.
+
+I have ${photoUrls.length} image(s). Provide a concise inspection report for "${fieldLabel}" covering:
+- Overall condition assessment
+- Any visible damage, defects, or wear
+- Cleanliness and maintenance issues
+- Notable features or observations
+- Recommendations (if any)
+
+IMPORTANT FORMATTING RULES:
+- Keep your response under ${aiMaxWords} words
+- Write in plain text only - do NOT use asterisks (*), hash symbols (#), bullet points, or numbered lists
+- Do NOT use any markdown formatting
+- Do NOT include emojis
+- Write in professional, flowing paragraphs
+
+Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not comment on items outside the scope of "${fieldLabel}". This will be used in a professional property inspection report.`;
+      }
 
       // Build content array with text and all images
       const content: any[] = [
@@ -2601,8 +2653,16 @@ Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on 
         throw new Error("OpenAI API returned an empty analysis. The response may have been incomplete. Please try again.");
       }
       
-      // Strip markdown asterisks from the response
-      analysis = analysis.replace(/\*\*/g, '');
+      // Strip forbidden characters from the response:
+      // - Remove all asterisks (*, **)
+      // - Remove all hash symbols (#)
+      // - Remove emojis
+      analysis = analysis
+        .replace(/\*+/g, '') // Remove asterisks
+        .replace(/#+/g, '') // Remove hash symbols
+        .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '') // Remove emojis using Unicode property escapes
+        .replace(/\n{3,}/g, '\n\n') // Collapse multiple newlines
+        .trim();
 
       // Deduct credit
       await storage.updateOrganizationCredits(

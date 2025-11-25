@@ -151,6 +151,8 @@ export const organizations = pgTable("organizations", {
   trialEndAt: timestamp("trial_end_at"),
   isActive: boolean("is_active").default(true),
   creditsRemaining: integer("credits_remaining").default(5),
+  defaultAiMaxWords: integer("default_ai_max_words").default(150), // Eco Admin default max word count
+  defaultAiInstruction: text("default_ai_instruction"), // Eco Admin default AI instruction
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -357,6 +359,8 @@ export const inspectionTemplates = pgTable("inspection_templates", {
   isActive: boolean("is_active").default(true),
   structureJson: jsonb("structure_json").notNull(), // Full template schema with sections/fields
   categoryId: varchar("category_id"), // Optional link to template_categories
+  aiMaxWords: integer("ai_max_words").default(150), // Max word count for AI analysis output
+  aiInstruction: text("ai_instruction"), // Custom AI instruction/prompt for this template
   createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

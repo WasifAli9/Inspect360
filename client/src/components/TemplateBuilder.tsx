@@ -18,16 +18,21 @@ import { type InspectionTemplate, type TemplateCategory } from "@shared/schema";
 import { z } from "zod";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
+// Default AI instruction for inspection analysis
+const DEFAULT_AI_INSTRUCTION = `You are analyzing a property inspection photo. Provide a professional, objective assessment focused on condition, cleanliness, and any maintenance issues. Be specific and concise. Format your response as plain text without bullet points, numbered lists, or special formatting.`;
+
 // UI-specific schema - only includes fields user can edit
 // Backend will populate organizationId, createdBy, createdAt, updatedAt
 const templateMetaSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   scope: z.enum(["property", "block", "both"]),
-  categoryId: z.number().optional(),
+  categoryId: z.string().optional(),
   isActive: z.boolean().default(true),
   version: z.number().default(1),
   structureJson: z.any(),
+  aiMaxWords: z.number().min(50).max(500).default(150),
+  aiInstruction: z.string().optional(),
 });
 
 type TemplateMetaForm = z.infer<typeof templateMetaSchema>;
@@ -113,10 +118,12 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
       name: template?.name || "",
       description: template?.description || "",
       scope: template?.scope || "property",
-      categoryId: template?.categoryId !== null && template?.categoryId !== undefined ? template.categoryId : undefined,
+      categoryId: template?.categoryId || undefined,
       isActive: template?.isActive ?? true,
       version: template?.version || 1,
       structureJson: initialStructure,
+      aiMaxWords: template?.aiMaxWords ?? 150,
+      aiInstruction: template?.aiInstruction || "",
     },
   });
 
@@ -353,8 +360,8 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                           <FormItem>
                             <FormLabel>Category</FormLabel>
                             <Select 
-                              value={field.value?.toString() || "none"} 
-                              onValueChange={(v) => field.onChange(v === "none" ? undefined : parseInt(v))}
+                              value={field.value || "none"} 
+                              onValueChange={(v) => field.onChange(v === "none" ? undefined : v)}
                             >
                               <FormControl>
                                 <SelectTrigger data-testid="select-template-category">
@@ -364,7 +371,7 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                               <SelectContent>
                                 <SelectItem value="none">No Category</SelectItem>
                                 {categories.map((cat) => (
-                                  <SelectItem key={cat.id} value={cat.id.toString()}>
+                                  <SelectItem key={cat.id} value={cat.id}>
                                     {cat.name}
                                   </SelectItem>
                                 ))}
@@ -387,6 +394,62 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                                 data-testid="switch-template-active"
                               />
                             </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </Form>
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-lg">AI Analysis Settings</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Form {...form}>
+                      <FormField
+                        control={form.control}
+                        name="aiMaxWords"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Max Word Count</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number"
+                                min={50}
+                                max={500}
+                                {...field}
+                                value={field.value ?? 150}
+                                onChange={(e) => field.onChange(parseInt(e.target.value) || 150)}
+                                data-testid="input-ai-max-words" 
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Maximum words for AI analysis output (50-500)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="aiInstruction"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>AI Instruction</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                {...field}
+                                value={field.value || ""}
+                                placeholder={DEFAULT_AI_INSTRUCTION}
+                                rows={6}
+                                data-testid="input-ai-instruction"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Custom instruction for AI analysis. Leave blank to use default. The AI will focus on condition, cleanliness, and maintenance issues.
+                            </FormDescription>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />
