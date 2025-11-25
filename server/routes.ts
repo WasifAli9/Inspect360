@@ -612,6 +612,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Complete onboarding for first-time users
+  app.post('/api/auth/complete-onboarding', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      
+      const updatedUser = await storage.updateUser(userId, { onboardingCompleted: true });
+      
+      // Exclude password from response
+      const { password, ...userWithoutPassword } = updatedUser;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error completing onboarding:", error);
+      res.status(500).json({ message: "Failed to complete onboarding" });
+    }
+  });
+
   // ==================== ORGANIZATION ROUTES ====================
   
   app.post("/api/organizations", isAuthenticated, async (req: any, res) => {
