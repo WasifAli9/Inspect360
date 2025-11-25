@@ -38,10 +38,7 @@ export function FeedbackForm({ trigger }: FeedbackFormProps) {
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("/api/feedback", {
-        method: "POST",
-        body: JSON.stringify({ title, description, priority, category }),
-      });
+      return await apiRequest("POST", "/api/feedback", { title, description, priority, category });
     },
     onSuccess: () => {
       toast({

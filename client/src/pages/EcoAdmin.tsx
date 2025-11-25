@@ -9,7 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2, Settings, Gift, Info } from "lucide-react";
+import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2, Settings, Gift, Info, MessageSquarePlus, Bug, Lightbulb, TrendingUp, Clock, Eye, CheckCircle2, XCircle, AlertCircle, Filter } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { format } from "date-fns";
 import type { Plan, CreditBundle, CountryPricingOverride } from "@shared/schema";
 
 export default function EcoAdmin() {
@@ -51,18 +54,22 @@ export default function EcoAdmin() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="plans" data-testid="tab-plans">
             <Package className="h-4 w-4 mr-2" />
-            Subscription Plans
+            Plans
           </TabsTrigger>
           <TabsTrigger value="bundles" data-testid="tab-bundles">
             <CreditCard className="h-4 w-4 mr-2" />
-            Credit Bundles
+            Bundles
           </TabsTrigger>
           <TabsTrigger value="pricing" data-testid="tab-pricing">
             <Globe className="h-4 w-4 mr-2" />
-            Multi-Currency Pricing
+            Pricing
+          </TabsTrigger>
+          <TabsTrigger value="feedback" data-testid="tab-feedback">
+            <MessageSquarePlus className="h-4 w-4 mr-2" />
+            Feedback
           </TabsTrigger>
           <TabsTrigger value="settings" data-testid="tab-settings">
             <Settings className="h-4 w-4 mr-2" />
@@ -80,6 +87,10 @@ export default function EcoAdmin() {
 
         <TabsContent value="pricing" className="mt-6">
           <CountryPricingManagement />
+        </TabsContent>
+
+        <TabsContent value="feedback" className="mt-6">
+          <FeedbackManagement />
         </TabsContent>
 
         <TabsContent value="settings" className="mt-6">
@@ -903,6 +914,411 @@ function RegistrationSettings() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+interface FeedbackSubmission {
+  id: string;
+  userId: string;
+  organizationId: string;
+  title: string;
+  description: string;
+  priority: "low" | "medium" | "high";
+  category: "bug" | "feature" | "improvement";
+  status: "new" | "in_review" | "in_progress" | "completed" | "rejected";
+  resolutionNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  user?: { username: string; firstName: string; lastName: string };
+  organization?: { name: string };
+}
+
+function FeedbackManagement() {
+  const { toast } = useToast();
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackSubmission | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState("");
+  const [newStatus, setNewStatus] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+
+  const { data: feedback = [], isLoading } = useQuery<FeedbackSubmission[]>({
+    queryKey: ["/api/admin/feedback"],
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, status, resolutionNotes }: { id: string; status: string; resolutionNotes?: string }) => {
+      return await apiRequest("PATCH", `/api/admin/feedback/${id}`, { status, resolutionNotes });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/feedback"] });
+      toast({ title: "Feedback updated successfully" });
+      setSelectedFeedback(null);
+      setResolutionNotes("");
+      setNewStatus("");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update feedback", 
+        description: error.message || "An error occurred",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case "bug":
+        return <Bug className="h-4 w-4" />;
+      case "feature":
+        return <Lightbulb className="h-4 w-4" />;
+      case "improvement":
+        return <TrendingUp className="h-4 w-4" />;
+      default:
+        return null;
+    }
+  };
+
+  const getCategoryLabel = (category: string) => {
+    switch (category) {
+      case "bug":
+        return "Bug Report";
+      case "feature":
+        return "Feature Request";
+      case "improvement":
+        return "Improvement";
+      default:
+        return category;
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "new":
+        return <Clock className="h-4 w-4" />;
+      case "in_review":
+        return <Eye className="h-4 w-4" />;
+      case "in_progress":
+        return <AlertCircle className="h-4 w-4" />;
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4" />;
+      case "rejected":
+        return <XCircle className="h-4 w-4" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "new":
+        return "secondary";
+      case "in_review":
+        return "outline";
+      case "in_progress":
+        return "default";
+      case "completed":
+        return "default";
+      case "rejected":
+        return "destructive";
+      default:
+        return "secondary";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "new":
+        return "New";
+      case "in_review":
+        return "In Review";
+      case "in_progress":
+        return "In Progress";
+      case "completed":
+        return "Completed";
+      case "rejected":
+        return "Rejected";
+      default:
+        return status;
+    }
+  };
+
+  const getPriorityBadgeVariant = (priority: string) => {
+    switch (priority) {
+      case "high":
+        return "destructive";
+      case "medium":
+        return "default";
+      case "low":
+        return "secondary";
+      default:
+        return "secondary";
+    }
+  };
+
+  const filteredFeedback = feedback.filter((item) => {
+    if (statusFilter !== "all" && item.status !== statusFilter) return false;
+    if (categoryFilter !== "all" && item.category !== categoryFilter) return false;
+    if (priorityFilter !== "all" && item.priority !== priorityFilter) return false;
+    return true;
+  });
+
+  const statusCounts = {
+    new: feedback.filter((f) => f.status === "new").length,
+    in_review: feedback.filter((f) => f.status === "in_review").length,
+    in_progress: feedback.filter((f) => f.status === "in_progress").length,
+    completed: feedback.filter((f) => f.status === "completed").length,
+    rejected: feedback.filter((f) => f.status === "rejected").length,
+  };
+
+  const handleUpdateStatus = () => {
+    if (!selectedFeedback || !newStatus) return;
+    updateMutation.mutate({
+      id: selectedFeedback.id,
+      status: newStatus,
+      resolutionNotes: resolutionNotes || undefined,
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="animate-spin h-8 w-8 text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquarePlus className="h-5 w-5 text-primary" />
+            User Feedback
+          </CardTitle>
+          <CardDescription>
+            Manage feedback, feature requests, and bug reports from users
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-5 gap-4 mb-6">
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">New</span>
+              </div>
+              <p className="text-2xl font-bold mt-1" data-testid="count-new">{statusCounts.new}</p>
+            </Card>
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <Eye className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">In Review</span>
+              </div>
+              <p className="text-2xl font-bold mt-1" data-testid="count-in-review">{statusCounts.in_review}</p>
+            </Card>
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">In Progress</span>
+              </div>
+              <p className="text-2xl font-bold mt-1" data-testid="count-in-progress">{statusCounts.in_progress}</p>
+            </Card>
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Completed</span>
+              </div>
+              <p className="text-2xl font-bold mt-1" data-testid="count-completed">{statusCounts.completed}</p>
+            </Card>
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Rejected</span>
+              </div>
+              <p className="text-2xl font-bold mt-1" data-testid="count-rejected">{statusCounts.rejected}</p>
+            </Card>
+          </div>
+
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Filters:</span>
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[150px]" data-testid="select-status-filter">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="new">New</SelectItem>
+                <SelectItem value="in_review">In Review</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-[150px]" data-testid="select-category-filter">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="bug">Bug Report</SelectItem>
+                <SelectItem value="feature">Feature Request</SelectItem>
+                <SelectItem value="improvement">Improvement</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger className="w-[150px]" data-testid="select-priority-filter">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priorities</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {filteredFeedback.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <MessageSquarePlus className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No feedback found matching your filters</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredFeedback.map((item) => (
+                <Card 
+                  key={item.id} 
+                  className={`cursor-pointer transition-colors ${selectedFeedback?.id === item.id ? 'ring-2 ring-primary' : ''}`}
+                  onClick={() => {
+                    setSelectedFeedback(item);
+                    setNewStatus(item.status);
+                    setResolutionNotes(item.resolutionNotes || "");
+                  }}
+                  data-testid={`card-feedback-admin-${item.id}`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <Badge variant={getStatusBadgeVariant(item.status) as any} className="gap-1">
+                            {getStatusIcon(item.status)}
+                            {getStatusLabel(item.status)}
+                          </Badge>
+                          <Badge variant="outline" className="gap-1">
+                            {getCategoryIcon(item.category)}
+                            {getCategoryLabel(item.category)}
+                          </Badge>
+                          <Badge variant={getPriorityBadgeVariant(item.priority) as any}>
+                            {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                          </Badge>
+                        </div>
+                        <h3 className="font-semibold">{item.title}</h3>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{item.description}</p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                          <span>By: {item.user?.firstName} {item.user?.lastName} ({item.user?.username})</span>
+                          <span>Org: {item.organization?.name}</span>
+                          <span>{format(new Date(item.createdAt), "MMM d, yyyy")}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedFeedback && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Update Feedback Status</CardTitle>
+            <CardDescription>
+              Update the status and add resolution notes for: {selectedFeedback.title}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Current Status</Label>
+                <Badge variant={getStatusBadgeVariant(selectedFeedback.status) as any} className="gap-1">
+                  {getStatusIcon(selectedFeedback.status)}
+                  {getStatusLabel(selectedFeedback.status)}
+                </Badge>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-status">New Status</Label>
+                <Select value={newStatus} onValueChange={setNewStatus}>
+                  <SelectTrigger id="new-status" data-testid="select-new-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="in_review">In Review</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="resolution-notes">Resolution Notes (visible to user)</Label>
+              <Textarea
+                id="resolution-notes"
+                placeholder="Add notes about the resolution or next steps..."
+                value={resolutionNotes}
+                onChange={(e) => setResolutionNotes(e.target.value)}
+                rows={3}
+                data-testid="input-resolution-notes"
+              />
+            </div>
+
+            <div className="p-3 bg-muted rounded-md">
+              <h4 className="font-medium text-sm mb-2">Full Description</h4>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedFeedback.description}</p>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setSelectedFeedback(null);
+                  setNewStatus("");
+                  setResolutionNotes("");
+                }}
+                data-testid="button-cancel-update"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleUpdateStatus}
+                disabled={updateMutation.isPending || newStatus === selectedFeedback.status}
+                data-testid="button-update-status"
+              >
+                {updateMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Update Status
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
