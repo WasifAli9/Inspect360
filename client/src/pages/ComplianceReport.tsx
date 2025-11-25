@@ -394,20 +394,24 @@ export default function ComplianceReport() {
                       </TableCell>
                       <TableCell>
                         {doc.block ? (
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            {doc.block.name}
-                          </div>
+                          <Link href={`/blocks/${doc.block.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-block-${doc.id}`}>
+                              <Building2 className="h-4 w-4" />
+                              {doc.block.name}
+                            </div>
+                          </Link>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
                       <TableCell>
                         {doc.property ? (
-                          <div className="flex items-center gap-2">
-                            <Home className="h-4 w-4 text-muted-foreground" />
-                            {doc.property.unitNumber}
-                          </div>
+                          <Link href={`/properties/${doc.property.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-property-${doc.id}`}>
+                              <Home className="h-4 w-4" />
+                              {doc.property.unitNumber}
+                            </div>
+                          </Link>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}

@@ -399,7 +399,15 @@ export default function InspectionsReport() {
                           </div>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {property?.name || "Unknown Property"}
+                          {property ? (
+                            <Link href={`/properties/${property.id}`}>
+                              <span className="text-primary hover:underline cursor-pointer" data-testid={`link-property-${inspection.id}`}>
+                                {property.name || property.address || "View Property"}
+                              </span>
+                            </Link>
+                          ) : (
+                            "Unknown Property"
+                          )}
                         </TableCell>
                         <TableCell className="capitalize">
                           {inspection.type?.replace('-', ' ') || "N/A"}

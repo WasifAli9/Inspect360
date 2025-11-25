@@ -325,12 +325,27 @@ export default function PropertiesReport() {
                   {filteredProperties.map((property) => (
                     <TableRow key={property.id} data-testid={`row-property-${property.id}`}>
                       <TableCell className="font-medium" data-testid={`text-block-${property.id}`}>
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {property.block?.name || "N/A"}
-                        </div>
+                        {property.block ? (
+                          <Link href={`/blocks/${property.block.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-block-${property.id}`}>
+                              <Building2 className="h-4 w-4" />
+                              {property.block.name}
+                            </div>
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Building2 className="h-4 w-4" />
+                            N/A
+                          </div>
+                        )}
                       </TableCell>
-                      <TableCell data-testid={`text-unit-${property.id}`}>{property.unitNumber || "N/A"}</TableCell>
+                      <TableCell data-testid={`text-unit-${property.id}`}>
+                        <Link href={`/properties/${property.id}`}>
+                          <span className="text-primary hover:underline cursor-pointer" data-testid={`link-property-${property.id}`}>
+                            {property.unitNumber || property.address || "View"}
+                          </span>
+                        </Link>
+                      </TableCell>
                       <TableCell className="max-w-xs truncate" data-testid={`text-address-${property.id}`}>
                         {property.address}
                       </TableCell>

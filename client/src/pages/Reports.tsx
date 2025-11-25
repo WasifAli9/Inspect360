@@ -121,10 +121,10 @@ export default function Reports() {
                   <div className={`w-12 h-12 rounded-xl ${report.bgColor} flex items-center justify-center flex-shrink-0`}>
                     <Icon className={`h-6 w-6 ${report.color}`} />
                   </div>
-                  {report.comingSoon ? (
-                    <Badge variant="secondary">Coming Soon</Badge>
-                  ) : (
+                  {report.available ? (
                     <FileText className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <Badge variant="secondary">Coming Soon</Badge>
                   )}
                 </div>
                 <CardTitle className="mt-4">{report.title}</CardTitle>

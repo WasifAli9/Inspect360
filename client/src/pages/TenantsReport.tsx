@@ -343,16 +343,34 @@ export default function TenantsReport() {
                         {tenant.tenantEmail || "N/A"}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {tenant.block?.name || "N/A"}
-                        </div>
+                        {tenant.block ? (
+                          <Link href={`/blocks/${tenant.block.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-block-${tenant.id}`}>
+                              <Building2 className="h-4 w-4" />
+                              {tenant.block.name}
+                            </div>
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Building2 className="h-4 w-4" />
+                            N/A
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Home className="h-4 w-4 text-muted-foreground" />
-                          {tenant.property?.unitNumber || "N/A"}
-                        </div>
+                        {tenant.property ? (
+                          <Link href={`/properties/${tenant.property.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-property-${tenant.id}`}>
+                              <Home className="h-4 w-4" />
+                              {tenant.property.unitNumber || "View Property"}
+                            </div>
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Home className="h-4 w-4" />
+                            N/A
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {tenant.leaseStartDate ? (

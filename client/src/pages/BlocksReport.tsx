@@ -269,10 +269,12 @@ export default function BlocksReport() {
                     return (
                       <TableRow key={block.id}>
                         <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            {block.name}
-                          </div>
+                          <Link href={`/blocks/${block.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-block-${block.id}`}>
+                              <Building2 className="h-4 w-4" />
+                              {block.name}
+                            </div>
+                          </Link>
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">

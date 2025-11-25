@@ -378,20 +378,24 @@ export default function InventoryReport() {
                       </TableCell>
                       <TableCell>
                         {asset.block ? (
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            {asset.block.name}
-                          </div>
+                          <Link href={`/blocks/${asset.block.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-block-${asset.id}`}>
+                              <Building2 className="h-4 w-4" />
+                              {asset.block.name}
+                            </div>
+                          </Link>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
                       <TableCell>
                         {asset.property ? (
-                          <div className="flex items-center gap-2">
-                            <Home className="h-4 w-4 text-muted-foreground" />
-                            {asset.property.unitNumber}
-                          </div>
+                          <Link href={`/properties/${asset.property.id}`}>
+                            <div className="flex items-center gap-2 text-primary hover:underline cursor-pointer" data-testid={`link-property-${asset.id}`}>
+                              <Home className="h-4 w-4" />
+                              {asset.property.unitNumber}
+                            </div>
+                          </Link>
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
