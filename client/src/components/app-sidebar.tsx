@@ -16,10 +16,12 @@ import {
   GitCompare,
   BarChart3,
   FileBarChart,
+  MessageSquarePlus,
 } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -129,6 +131,12 @@ export function AppSidebar() {
       url: "/settings",
       icon: Settings,
       roles: ["owner"],
+    },
+    {
+      title: "My Feedback",
+      url: "/my-feedback",
+      icon: MessageSquarePlus,
+      roles: ["owner", "clerk", "compliance", "contractor"],
     },
   ];
 
