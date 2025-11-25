@@ -432,6 +432,11 @@ export const inspections = pgTable("inspections", {
   completedDate: timestamp("completed_date"),
   submittedAt: timestamp("submitted_at"), // When inspector submits
   notes: text("notes"),
+  // AI Analysis tracking for full-report analysis
+  aiAnalysisStatus: varchar("ai_analysis_status").default("idle"), // idle, processing, completed, failed
+  aiAnalysisProgress: integer("ai_analysis_progress").default(0), // Number of fields processed
+  aiAnalysisTotalFields: integer("ai_analysis_total_fields").default(0), // Total fields with photos
+  aiAnalysisError: text("ai_analysis_error"), // Error message if failed
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
