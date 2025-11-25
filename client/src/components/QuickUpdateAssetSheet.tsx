@@ -64,10 +64,12 @@ export function QuickUpdateAssetSheet({
   const queryParams = new URLSearchParams();
   if (propertyId) queryParams.append("propertyId", propertyId);
   if (blockId) queryParams.append("blockId", blockId);
+  const queryString = queryParams.toString();
+  const assetUrl = queryString ? `/api/asset-inventory?${queryString}` : "/api/asset-inventory";
 
   // Fetch assets for the current property/block
   const { data: assets = [], isLoading: isLoadingAssets } = useQuery<AssetInventory[]>({
-    queryKey: ["/api/asset-inventory", propertyId, blockId],
+    queryKey: [assetUrl],
     enabled: open && (!!propertyId || !!blockId),
   });
 
@@ -109,14 +111,17 @@ export function QuickUpdateAssetSheet({
       return await apiRequest("PATCH", `/api/asset-inventory/${assetId}/quick`, payload);
     },
     onSuccess: () => {
-      // Invalidate global asset inventory query
+      // Invalidate all asset inventory queries (including filtered ones)
+      queryClient.invalidateQueries({ queryKey: [assetUrl] });
       queryClient.invalidateQueries({ queryKey: ["/api/asset-inventory"] });
       // Invalidate property-specific inventory query if propertyId exists
       if (propertyId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/asset-inventory?propertyId=${propertyId}`] });
         queryClient.invalidateQueries({ queryKey: ["/api/properties", propertyId, "inventory"] });
       }
       // Invalidate block-specific inventory query if blockId exists
       if (blockId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/asset-inventory?blockId=${blockId}`] });
         queryClient.invalidateQueries({ queryKey: ["/api/blocks", blockId, "inventory"] });
       }
       toast({

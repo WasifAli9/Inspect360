@@ -96,14 +96,16 @@ export function QuickAddAssetSheet({
       return await apiRequest("POST", "/api/asset-inventory/quick", data);
     },
     onSuccess: () => {
-      // Invalidate global asset inventory query
+      // Invalidate all asset inventory queries (including filtered ones)
       queryClient.invalidateQueries({ queryKey: ["/api/asset-inventory"] });
       // Invalidate property-specific inventory query if propertyId exists
       if (propertyId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/asset-inventory?propertyId=${propertyId}`] });
         queryClient.invalidateQueries({ queryKey: ["/api/properties", propertyId, "inventory"] });
       }
       // Invalidate block-specific inventory query if blockId exists
       if (blockId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/asset-inventory?blockId=${blockId}`] });
         queryClient.invalidateQueries({ queryKey: ["/api/blocks", blockId, "inventory"] });
       }
       toast({

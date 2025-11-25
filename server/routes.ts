@@ -5526,6 +5526,35 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         return res.status(403).json({ error: "No organization found" });
       }
 
+      const { propertyId, blockId } = req.query;
+
+      // If propertyId is provided, filter by property
+      if (propertyId) {
+        const property = await storage.getProperty(propertyId);
+        if (!property) {
+          return res.status(404).json({ error: "Property not found" });
+        }
+        if (property.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        const assets = await storage.getAssetInventoryByProperty(propertyId);
+        return res.json(assets);
+      }
+
+      // If blockId is provided, filter by block
+      if (blockId) {
+        const block = await storage.getBlock(blockId);
+        if (!block) {
+          return res.status(404).json({ error: "Block not found" });
+        }
+        if (block.organizationId !== user.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+        const assets = await storage.getAssetInventoryByBlock(blockId);
+        return res.json(assets);
+      }
+
+      // Otherwise return all assets for the organization
       const assets = await storage.getAssetInventoryByOrganization(user.organizationId);
       res.json(assets);
     } catch (error) {
