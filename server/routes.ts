@@ -131,32 +131,46 @@ import {
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
 // Using gpt-5 for vision analysis - the newest OpenAI model (released August 7, 2025), supports images and provides excellent results
 
-// Detect if running in a serverless environment (AWS Lambda, etc.)
-const isServerless = process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL || process.env.NETLIFY;
+// Detect if running in a cloud/sandboxed environment (AWS Lambda, Vercel, Netlify, Replit)
+const isCloudEnvironment = !!(
+  process.env.AWS_LAMBDA_FUNCTION_NAME || 
+  process.env.VERCEL || 
+  process.env.NETLIFY || 
+  process.env.REPLIT_ENVIRONMENT ||
+  process.env.REPLIT_CLUSTER
+);
 
-// Helper function to launch Puppeteer with appropriate configuration for local vs serverless
+// Helper function to launch Puppeteer with appropriate configuration
 async function launchPuppeteerBrowser() {
-  const puppeteer = await import("puppeteer");
-  
-  if (isServerless) {
-    // Serverless environment - use @sparticuz/chromium
+  if (isCloudEnvironment) {
+    // Cloud/sandboxed environment (Replit, AWS Lambda, etc.) - use @sparticuz/chromium
     const chromium = await import("@sparticuz/chromium");
+    const puppeteer = await import("puppeteer-core");
+    
     return await puppeteer.default.launch({
-      args: chromium.default.args,
-      executablePath: await chromium.default.executablePath(),
-      headless: true,
-    });
-  } else {
-    // Local development - use Puppeteer's bundled Chromium
-    return await puppeteer.default.launch({
-      headless: true,
       args: [
+        ...chromium.default.args,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
+        '--disable-gpu',
+        '--single-process',
+      ],
+      executablePath: await chromium.default.executablePath(),
+      headless: true,
+    });
+  } else {
+    // Local development - use Puppeteer's bundled Chromium
+    const puppeteer = await import("puppeteer");
+    return await puppeteer.default.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
         '--disable-gpu'
       ],
     });
