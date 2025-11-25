@@ -2537,7 +2537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         max_output_tokens: 300,
       });
 
-      let analysis = response.output_text || response.output?.[0]?.content?.[0]?.text || "Unable to analyze image";
+      let analysis = response.output_text || (response.output?.[0] as any)?.content?.[0]?.text || "Unable to analyze image";
       
       // Strip markdown asterisks from the response
       analysis = analysis.replace(/\*\*/g, '');
@@ -2807,18 +2807,19 @@ Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not
         }
       }
 
+      const outputItem = response.output?.[0] as any;
       console.log("[InspectAI] OpenAI Response structure:", {
         status: response.status,
         hasOutputText: !!response.output_text,
         outputTextLength: response.output_text?.length || 0,
         hasOutput: !!response.output,
         outputLength: response.output?.length || 0,
-        outputFirstItem: response.output?.[0] ? {
-          type: response.output[0].type,
-          hasContent: !!response.output[0].content,
-          contentLength: response.output[0].content?.length || 0,
-          firstContentType: response.output[0].content?.[0]?.type,
-          firstContentText: response.output[0].content?.[0]?.text?.substring(0, 100) || 'N/A'
+        outputFirstItem: outputItem ? {
+          type: outputItem.type,
+          hasContent: !!outputItem.content,
+          contentLength: outputItem.content?.length || 0,
+          firstContentType: outputItem.content?.[0]?.type,
+          firstContentText: outputItem.content?.[0]?.text?.substring(0, 100) || 'N/A'
         } : null,
       });
 
@@ -2831,21 +2832,22 @@ Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not
         console.log("[InspectAI] Using output_text");
       }
       // Method 2: output[0].content[0].text
-      else if (response.output?.[0]?.content?.[0]?.text) {
-        analysis = response.output[0].content[0].text;
+      else if (outputItem?.content?.[0]?.text) {
+        analysis = outputItem.content[0].text;
         console.log("[InspectAI] Using output[0].content[0].text");
       }
       // Method 3: Check for text type in output array
       else if (response.output) {
         // Look for any output item with text content
-        for (const outputItem of response.output) {
-          if (outputItem.type === "text" && outputItem.text) {
-            analysis = outputItem.text;
+        for (const item of response.output) {
+          const typedItem = item as any;
+          if (typedItem.type === "text" && typedItem.text) {
+            analysis = typedItem.text;
             console.log("[InspectAI] Using output item with type 'text'");
             break;
           }
-          if (outputItem.content) {
-            for (const contentItem of outputItem.content) {
+          if (typedItem.content) {
+            for (const contentItem of typedItem.content) {
               if (contentItem.type === "text" && contentItem.text) {
                 analysis = contentItem.text;
                 console.log("[InspectAI] Using content item with type 'text'");
@@ -3302,7 +3304,7 @@ LIABILITY: [tenant/landlord/shared]`;
                   max_output_tokens: 800,
                 });
 
-                const analysis = visionResponse.output_text || visionResponse.output?.[0]?.content?.[0]?.text || "";
+                const analysis = visionResponse.output_text || (visionResponse.output?.[0] as any)?.content?.[0]?.text || "";
                 
                 // Parse structured response
                 const costMatch = analysis.match(/COST:\s*£?(\d+)/i) || analysis.match(/COST:\s*(\d+)/i);
@@ -3544,7 +3546,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
                   max_output_tokens: 800,
                 });
 
-                let aiResponse = response.output_text || response.output?.[0]?.content?.[0]?.text || "{}";
+                let aiResponse = response.output_text || (response.output?.[0] as any)?.content?.[0]?.text || "{}";
                 
                 // Strip markdown code blocks and asterisks from the response
                 aiResponse = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').replace(/\*\*/g, '').trim();
@@ -4166,7 +4168,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         max_output_tokens: 800,
       });
 
-      const suggestedFixes = response.output_text || response.output?.[0]?.content?.[0]?.text || "Unable to analyze the image at this time.";
+      const suggestedFixes = response.output_text || (response.output?.[0] as any)?.content?.[0]?.text || "Unable to analyze the image at this time.";
 
       // Deduct credit
       await storage.deductCredit(user.organizationId, 1, "AI maintenance image analysis");
@@ -6333,7 +6335,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       // Calculate category distribution from linked maintenance requests
       const categoryDistribution: { [key: string]: number } = {};
       for (const wo of workOrders) {
-        const mr = maintenanceRequestsById.get(wo.maintenanceRequestId);
+        const mr = maintenanceRequestsById.get(wo.maintenanceRequestId) as any;
         if (mr?.category) {
           categoryDistribution[mr.category] = (categoryDistribution[mr.category] || 0) + 1;
         }
@@ -7337,7 +7339,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         max_output_tokens: 500
       });
 
-      let analysisText = response.output_text || response.output?.[0]?.content?.[0]?.text || "";
+      let analysisText = response.output_text || (response.output?.[0] as any)?.content?.[0]?.text || "";
       
       // Strip markdown asterisks from the response
       analysisText = analysisText.replace(/\*\*/g, '');
@@ -9491,17 +9493,17 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
             organizationId: org.organizationId,
             organizationName: org.organizationName,
             userRole: org.userRole,
-            credits: balance.total,
-            consumed: balance.consumed,
-            expired: balance.expired,
+            credits: balance.current,
+            rolled: balance.rolled,
+            total: balance.total,
           };
         })
       );
 
       // Calculate aggregate totals
       const totalCredits = orgBalances.reduce((sum, org) => sum + org.credits, 0);
-      const totalConsumed = orgBalances.reduce((sum, org) => sum + org.consumed, 0);
-      const totalExpired = orgBalances.reduce((sum, org) => sum + org.expired, 0);
+      const totalRolled = orgBalances.reduce((sum, org) => sum + org.rolled, 0);
+      const grandTotal = orgBalances.reduce((sum, org) => sum + org.total, 0);
       
       // Find current org balance
       const currentOrgBalance = orgBalances.find(org => org.organizationId === user.organizationId);
@@ -9511,8 +9513,8 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         duplicateOrganizations: orgBalances.filter(org => org.organizationId !== user.organizationId),
         allOrganizations: orgBalances,
         totalCredits,
-        totalConsumed,
-        totalExpired,
+        totalRolled,
+        grandTotal,
         hasDuplicates: orgBalances.length > 1,
       });
     } catch (error: any) {
@@ -10454,7 +10456,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      if (user.isDeactivated) {
+      if (!user.isActive) {
         return res.status(403).json({ message: "Account is deactivated. Please contact property management." });
       }
 
@@ -11607,7 +11609,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         const searchLower = searchTerm.toLowerCase();
         properties = properties.filter(p => 
           p.address?.toLowerCase().includes(searchLower) ||
-          p.unitNumber?.toLowerCase().includes(searchLower)
+          p.name?.toLowerCase().includes(searchLower)
         );
       }
 
