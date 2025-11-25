@@ -156,7 +156,7 @@ export async function setupAuth(app: Express) {
             name: validatedData.username, // Company name from registration form
             ownerId: user.id,
             countryCode: countryCode,
-            creditsRemaining: 5, // Give 5 free credits to start
+            creditsRemaining: 10, // Give 10 free inspection credits to start
           });
 
           // Update user with organization ID and set role to owner
@@ -169,9 +169,9 @@ export async function setupAuth(app: Express) {
           // Create initial credit transaction for free credits
           await storage.createCreditTransaction({
             organizationId: organization.id,
-            amount: 5,
+            amount: 10,
             type: "purchase",
-            description: "Welcome credits",
+            description: "Welcome credits - 10 free inspection credits",
           });
 
           // Create default inspection templates

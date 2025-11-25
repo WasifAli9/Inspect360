@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2 } from "lucide-react";
+import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2, Settings, Gift, Info } from "lucide-react";
 import type { Plan, CreditBundle, CountryPricingOverride } from "@shared/schema";
 
 export default function EcoAdmin() {
@@ -51,7 +51,7 @@ export default function EcoAdmin() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="plans" data-testid="tab-plans">
             <Package className="h-4 w-4 mr-2" />
             Subscription Plans
@@ -63,6 +63,10 @@ export default function EcoAdmin() {
           <TabsTrigger value="pricing" data-testid="tab-pricing">
             <Globe className="h-4 w-4 mr-2" />
             Multi-Currency Pricing
+          </TabsTrigger>
+          <TabsTrigger value="settings" data-testid="tab-settings">
+            <Settings className="h-4 w-4 mr-2" />
+            Settings
           </TabsTrigger>
         </TabsList>
 
@@ -76,6 +80,10 @@ export default function EcoAdmin() {
 
         <TabsContent value="pricing" className="mt-6">
           <CountryPricingManagement />
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-6">
+          <RegistrationSettings />
         </TabsContent>
       </Tabs>
     </div>
@@ -796,6 +804,102 @@ function CountryPricingManagement() {
             ) : (
               <p className="text-center text-muted-foreground py-8" data-testid="text-no-overrides">No country pricing overrides created yet</p>
             )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function RegistrationSettings() {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Gift className="h-5 w-5 text-primary" />
+            Registration Defaults
+          </CardTitle>
+          <CardDescription>
+            Default settings applied when new users register for Inspect360
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="p-4 border rounded-lg bg-muted/50">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <CreditCard className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold" data-testid="text-welcome-credits-title">Welcome Credits</h3>
+                  <p className="text-sm text-muted-foreground">Credits given to new registrations</p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Badge variant="default" className="text-lg px-3 py-1" data-testid="badge-welcome-credits">
+                  10 Inspection Credits
+                </Badge>
+              </div>
+            </div>
+
+            <div className="p-4 border rounded-lg bg-muted/50">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center">
+                  <Package className="h-5 w-5 text-accent" />
+                </div>
+                <div>
+                  <h3 className="font-semibold" data-testid="text-default-templates-title">Default Templates</h3>
+                  <p className="text-sm text-muted-foreground">Inspection templates included</p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Badge variant="secondary" className="text-lg px-3 py-1" data-testid="badge-default-templates">
+                  BTR Inspection Templates
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 border rounded-lg border-primary/20 bg-primary/5">
+            <div className="flex items-start gap-3">
+              <Info className="h-5 w-5 text-primary mt-0.5" />
+              <div>
+                <h4 className="font-medium text-sm">New User Registration Benefits</h4>
+                <p className="text-sm text-muted-foreground mt-1" data-testid="text-registration-info">
+                  When a new owner registers for Inspect360, they automatically receive:
+                </p>
+                <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
+                  <li data-testid="text-benefit-credits">10 free inspection credits to get started</li>
+                  <li data-testid="text-benefit-templates">Pre-configured BTR inspection templates (Check In, Check Out, Periodic, Maintenance)</li>
+                  <li data-testid="text-benefit-sample">Sample block and property data for demonstration</li>
+                  <li data-testid="text-benefit-org">Automatic organization setup with their company name</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>System Configuration Notes</CardTitle>
+          <CardDescription>Important information about the credit system</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3 border rounded-lg">
+              <Badge variant="outline" className="mt-0.5">Credit Usage</Badge>
+              <p className="text-sm text-muted-foreground" data-testid="text-credit-usage-info">
+                1 credit is consumed per AI-powered photo analysis during inspections. Welcome credits allow new users to complete approximately 10 AI photo analyses for free.
+              </p>
+            </div>
+            <div className="flex items-start gap-3 p-3 border rounded-lg">
+              <Badge variant="outline" className="mt-0.5">Credit Purchase</Badge>
+              <p className="text-sm text-muted-foreground" data-testid="text-credit-purchase-info">
+                Users can purchase additional credits through the Credit Bundles configured in this dashboard, with multi-currency support for GBP, USD, and AED.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

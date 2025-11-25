@@ -26,7 +26,7 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 - **Object Storage**: Google Cloud Storage for media files.
 - **Database Schema**: Comprehensive schema covering users, organizations, properties, inspections, compliance, maintenance, assets, and more.
 - **Role-Based Access**: Granular control ensuring multi-layer security and data isolation for different user roles (e.g., Inspection Clerks, Owners).
-- **Credit System**: Stripe-integrated, credit-based subscription model with multi-currency support and an Eco-Admin dashboard for plan and bundle management.
+- **Credit System**: Stripe-integrated, credit-based subscription model with multi-currency support and an Eco-Admin dashboard for plan and bundle management. New registrations receive 10 free inspection credits.
 - **AI Features**: Integration with OpenAI GPT-5 Vision for context-aware photo analysis, comparison reporting, maintenance triage, and an intelligent chatbot with knowledge base integration.
 - **PWA**: `manifest.json` and service worker for offline capabilities, caching, and install prompts.
 - **Inspection Templates System**: JSON-based templates with a flexible editor, versioning, and default BTR templates.
