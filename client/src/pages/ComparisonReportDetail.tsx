@@ -100,8 +100,7 @@ const itemStatusOptions = [
   { value: "reviewed", label: "Reviewed" },
   { value: "disputed", label: "Disputed" },
   { value: "resolved", label: "Resolved" },
-  { value: "accepted", label: "Accepted" },
-  { value: "rejected", label: "Rejected" },
+  { value: "waived", label: "Waived" },
 ];
 
 const liabilityOptions = [

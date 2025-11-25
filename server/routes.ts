@@ -3425,9 +3425,9 @@ Provide analysis in EXACT JSON format (no markdown):
         }
       }
 
-      // Validate status if provided
+      // Validate status if provided (must match comparisonItemStatusEnum)
       if (updates.status) {
-        const validStatuses = ["pending", "reviewed", "disputed", "resolved", "accepted", "rejected"];
+        const validStatuses = ["pending", "reviewed", "disputed", "resolved", "waived"];
         if (!validStatuses.includes(updates.status)) {
           return res.status(400).json({ message: "Invalid status value" });
         }
