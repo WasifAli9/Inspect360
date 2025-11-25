@@ -785,26 +785,8 @@ export function FieldWidget({
                           <X className="w-4 h-4" />
                         </Button>
                       </div>
-                      <div className="p-3 space-y-2">
-                        {inspectionId && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleAnalyzePhoto(photoUrl)}
-                            disabled={analyzingPhoto === photoUrl || !!aiAnalyses[photoUrl]}
-                            data-testid={`button-analyze-photo-${index}`}
-                            className="w-full"
-                          >
-                            <Sparkles className="w-4 h-4 mr-2" />
-                            {analyzingPhoto === photoUrl
-                              ? "Analyzing..."
-                              : aiAnalyses[photoUrl]
-                              ? "Analyzed"
-                              : "Analyze with AI"}
-                          </Button>
-                        )}
-                        {aiAnalyses[photoUrl] && (
+                      {aiAnalyses[photoUrl] && (
+                        <div className="p-3">
                           <div className="p-3 bg-muted rounded-lg text-sm">
                             <p className="font-medium mb-1 flex items-center gap-2">
                               <Sparkles className="w-4 h-4" />
@@ -816,8 +798,8 @@ export function FieldWidget({
                                "Analysis completed"}
                             </p>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 ))}
