@@ -1,82 +1,78 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { X, Download, Share } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Download, Share, MoreVertical, Plus, Monitor, Smartphone, ChevronDown, ChevronUp } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+type BrowserType = 'chrome' | 'safari' | 'firefox' | 'edge' | 'samsung' | 'opera' | 'other';
+type DeviceType = 'ios' | 'android' | 'desktop';
+
 export function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showIOSInstructions, setShowIOSInstructions] = useState(false);
-  const [showAndroidPrompt, setShowAndroidPrompt] = useState(false);
-  const [isDismissed, setIsDismissed] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [browserType, setBrowserType] = useState<BrowserType>('other');
+  const [deviceType, setDeviceType] = useState<DeviceType>('desktop');
 
-  // Detect if running in standalone mode (already installed)
   const isStandalone = () => {
     return window.matchMedia('(display-mode: standalone)').matches ||
            (window.navigator as any).standalone === true;
   };
 
-  // Detect iOS Safari
-  const isIOSSafari = () => {
-    const ua = window.navigator.userAgent;
-    const iOS = /iPhone|iPad|iPod/.test(ua);
-    const webkit = /WebKit/.test(ua);
-    const notChrome = !/CriOS/.test(ua);
-    const notFirefox = !/FxiOS/.test(ua);
-    
-    return iOS && webkit && notChrome && notFirefox;
+  const checkIfInstalled = () => {
+    if (isStandalone()) return true;
+    if (localStorage.getItem('pwa-installed') === 'true') return true;
+    return false;
   };
 
-  // Check if user has previously dismissed the prompt
-  const hasBeenDismissed = () => {
-    const dismissed = localStorage.getItem('pwa-install-dismissed');
-    if (!dismissed) return false;
+  const [isInstalled, setIsInstalled] = useState(checkIfInstalled);
+
+  const detectBrowser = (): BrowserType => {
+    const ua = window.navigator.userAgent.toLowerCase();
     
-    // Check if dismissed more than 7 days ago
-    const dismissedTime = parseInt(dismissed, 10);
-    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
-    return dismissedTime > sevenDaysAgo;
+    if (ua.includes('edg/')) return 'edge';
+    if (ua.includes('opr/') || ua.includes('opera')) return 'opera';
+    if (ua.includes('samsungbrowser')) return 'samsung';
+    if (ua.includes('firefox') || ua.includes('fxios')) return 'firefox';
+    if (ua.includes('crios') || (ua.includes('chrome') && !ua.includes('edg'))) return 'chrome';
+    if (ua.includes('safari') && !ua.includes('chrome')) return 'safari';
+    
+    return 'other';
+  };
+
+  const detectDevice = (): DeviceType => {
+    const ua = window.navigator.userAgent;
+    
+    if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    return 'desktop';
   };
 
   useEffect(() => {
-    // Don't show if already installed or dismissed
-    if (isStandalone() || hasBeenDismissed()) {
+    if (checkIfInstalled()) {
+      setIsInstalled(true);
       return;
     }
 
-    // Android: Listen for beforeinstallprompt event
+    setBrowserType(detectBrowser());
+    setDeviceType(detectDevice());
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setShowAndroidPrompt(true);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      localStorage.setItem('pwa-installed', 'true');
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    // iOS: Show instructions after 5 seconds of page load
-    if (isIOSSafari()) {
-      const timer = setTimeout(() => {
-        setShowIOSInstructions(true);
-      }, 5000);
-      
-      return () => {
-        clearTimeout(timer);
-        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      };
-    }
-
-    // Track successful installation
-    const handleAppInstalled = () => {
-      setShowAndroidPrompt(false);
-      setDeferredPrompt(null);
-      localStorage.removeItem('pwa-install-dismissed');
-    };
-
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
@@ -93,119 +89,349 @@ export function PWAInstallPrompt() {
       const choiceResult = await deferredPrompt.userChoice;
 
       if (choiceResult.outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      } else {
-        console.log('User dismissed the install prompt');
+        setIsInstalled(true);
       }
 
       setDeferredPrompt(null);
-      setShowAndroidPrompt(false);
     } catch (error) {
       console.error('Error showing install prompt:', error);
     }
   };
 
-  const handleDismiss = () => {
-    setIsDismissed(true);
-    setShowAndroidPrompt(false);
-    setShowIOSInstructions(false);
-    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
-  };
-
-  // Don't render if dismissed
-  if (isDismissed || isStandalone()) {
+  if (isInstalled) {
     return null;
   }
 
-  // Android Install Prompt
-  if (showAndroidPrompt && deferredPrompt) {
+  const getDeviceIcon = () => {
+    if (deviceType === 'desktop') return <Monitor className="w-4 h-4" />;
+    return <Smartphone className="w-4 h-4" />;
+  };
+
+  const getBrowserName = () => {
+    const names: Record<BrowserType, string> = {
+      chrome: 'Chrome',
+      safari: 'Safari',
+      firefox: 'Firefox',
+      edge: 'Edge',
+      samsung: 'Samsung Internet',
+      opera: 'Opera',
+      other: 'Browser'
+    };
+    return names[browserType];
+  };
+
+  const renderInstallInstructions = () => {
+    if (deferredPrompt) {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Click the button below to install Inspect360 on your device for quick access and offline support.
+          </p>
+          <Button 
+            onClick={handleInstallClick} 
+            className="w-full"
+            data-testid="button-install-pwa"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Install Now
+          </Button>
+        </div>
+      );
+    }
+
+    if (deviceType === 'ios') {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Follow these steps to install Inspect360 on your iPhone or iPad:
+          </p>
+          <ol className="space-y-2 text-sm">
+            <li className="flex items-start gap-2">
+              <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+              <span>
+                Tap the <strong>Share</strong> button{" "}
+                <Share className="w-4 h-4 inline-block align-text-bottom text-primary" />{" "}
+                at the bottom of your screen
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+              <span>
+                Scroll down and tap{" "}
+                <strong className="inline-flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Add to Home Screen
+                </strong>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <Badge variant="secondary" className="mt-0.5 shrink-0">3</Badge>
+              <span>Tap <strong>Add</strong> in the top right corner</span>
+            </li>
+          </ol>
+        </div>
+      );
+    }
+
+    if (deviceType === 'android') {
+      if (browserType === 'chrome' || browserType === 'edge') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Follow these steps to install Inspect360 on your Android device:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Tap the <strong>menu</strong> button{" "}
+                  <MoreVertical className="w-4 h-4 inline-block align-text-bottom text-primary" />{" "}
+                  in the top right corner
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>
+                  Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">3</Badge>
+                <span>Tap <strong>Install</strong> to confirm</span>
+              </li>
+            </ol>
+          </div>
+        );
+      }
+
+      if (browserType === 'firefox') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Follow these steps to install Inspect360 using Firefox:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Tap the <strong>menu</strong> button{" "}
+                  <MoreVertical className="w-4 h-4 inline-block align-text-bottom text-primary" />{" "}
+                  in the top right corner
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>Tap <strong>"Install"</strong></span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">3</Badge>
+                <span>Tap <strong>Add</strong> to confirm</span>
+              </li>
+            </ol>
+          </div>
+        );
+      }
+
+      if (browserType === 'samsung') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Follow these steps to install Inspect360 using Samsung Internet:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Tap the <strong>menu</strong> button at the bottom of the screen
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>Tap <strong>"Add page to"</strong> then <strong>"Home screen"</strong></span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">3</Badge>
+                <span>Tap <strong>Add</strong> to confirm</span>
+              </li>
+            </ol>
+          </div>
+        );
+      }
+    }
+
+    if (deviceType === 'desktop') {
+      if (browserType === 'chrome') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Follow these steps to install Inspect360 on your computer:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Look for the <strong>install icon</strong>{" "}
+                  <Download className="w-4 h-4 inline-block align-text-bottom text-primary" />{" "}
+                  in the address bar (right side)
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>Click <strong>"Install"</strong> in the popup</span>
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground mt-2">
+              Or click the menu <MoreVertical className="w-3 h-3 inline" /> then "Install Inspect360..."
+            </p>
+          </div>
+        );
+      }
+
+      if (browserType === 'edge') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Follow these steps to install Inspect360 on your computer:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Look for the <strong>install icon</strong>{" "}
+                  <Plus className="w-4 h-4 inline-block align-text-bottom text-primary" />{" "}
+                  in the address bar (right side)
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>Click <strong>"Install"</strong> to add the app</span>
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground mt-2">
+              Or click the menu <MoreVertical className="w-3 h-3 inline" /> then "Apps" then "Install this site as an app"
+            </p>
+          </div>
+        );
+      }
+
+      if (browserType === 'safari') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Follow these steps to add Inspect360 to your Dock:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Click <strong>File</strong> in the menu bar
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>Click <strong>"Add to Dock"</strong></span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">3</Badge>
+                <span>Click <strong>Add</strong> to confirm</span>
+              </li>
+            </ol>
+          </div>
+        );
+      }
+
+      if (browserType === 'firefox') {
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Firefox desktop doesn't support PWA installation natively. For the best experience:
+            </p>
+            <ol className="space-y-2 text-sm">
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+                <span>
+                  Open this page in <strong>Chrome</strong> or <strong>Edge</strong>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+                <span>Look for the install icon in the address bar</span>
+              </li>
+            </ol>
+            <p className="text-xs text-muted-foreground mt-2">
+              Or bookmark this page for quick access.
+            </p>
+          </div>
+        );
+      }
+    }
+
     return (
-      <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:right-4 md:max-w-md">
-        <Card className="shadow-lg border-2 border-primary/20">
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Download className="w-5 h-5 text-primary" />
-                <CardTitle className="text-base">Install Inspect360</CardTitle>
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 -mt-1"
-                onClick={handleDismiss}
-                data-testid="button-dismiss-install"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            <CardDescription className="text-sm">
-              Install our app for quick access, offline support, and a better experience
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="flex gap-2">
-              <Button
-                onClick={handleInstallClick}
-                className="flex-1"
-                data-testid="button-install-pwa"
-              >
-                Install App
-              </Button>
-              <Button
-                onClick={handleDismiss}
-                variant="outline"
-                data-testid="button-not-now"
-              >
-                Not Now
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          To install Inspect360 on your device:
+        </p>
+        <ol className="space-y-2 text-sm">
+          <li className="flex items-start gap-2">
+            <Badge variant="secondary" className="mt-0.5 shrink-0">1</Badge>
+            <span>Open the browser menu</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <Badge variant="secondary" className="mt-0.5 shrink-0">2</Badge>
+            <span>Look for <strong>"Install"</strong>, <strong>"Add to Home Screen"</strong>, or similar option</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <Badge variant="secondary" className="mt-0.5 shrink-0">3</Badge>
+            <span>Confirm the installation</span>
+          </li>
+        </ol>
       </div>
     );
-  }
+  };
 
-  // iOS Instructions
-  if (showIOSInstructions && isIOSSafari()) {
-    return (
-      <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:right-4 md:max-w-md">
-        <Alert className="shadow-lg border-2 border-primary/20 bg-card">
-          <div className="flex items-start justify-between gap-2">
-            <Share className="w-5 h-5 text-primary mt-0.5" />
-            <div className="flex-1">
-              <h4 className="font-semibold mb-1 text-sm">Install Inspect360</h4>
-              <AlertDescription className="text-sm space-y-2">
-                <p>Add this app to your home screen for quick access:</p>
-                <ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground">
-                  <li>Tap the <strong>Share</strong> button <Share className="w-3 h-3 inline" /> below</li>
-                  <li>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
-                  <li>Tap <strong>"Add"</strong> to confirm</li>
-                </ol>
-                <Button
-                  onClick={handleDismiss}
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-2"
-                  data-testid="button-dismiss-ios-instructions"
-                >
-                  Got it
-                </Button>
-              </AlertDescription>
+  return (
+    <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:right-4 md:max-w-sm" data-testid="pwa-install-prompt">
+      <Card className="shadow-lg border-2 border-primary/30 bg-card">
+        <CardHeader className="pb-2 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Download className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Install Inspect360</CardTitle>
+                <CardDescription className="text-xs flex items-center gap-1 mt-0.5">
+                  {getDeviceIcon()}
+                  <span>{getBrowserName()}</span>
+                </CardDescription>
+              </div>
             </div>
             <Button
               size="icon"
               variant="ghost"
-              className="h-6 w-6 -mt-1"
-              onClick={handleDismiss}
-              data-testid="button-close-ios-instructions"
+              className="h-8 w-8 shrink-0"
+              data-testid="button-toggle-install-instructions"
             >
-              <X className="w-4 h-4" />
+              {isExpanded ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronUp className="w-4 h-4" />
+              )}
             </Button>
           </div>
-        </Alert>
-      </div>
-    );
-  }
-
-  return null;
+        </CardHeader>
+        {isExpanded && (
+          <CardContent className="pt-0 pb-4">
+            {renderInstallInstructions()}
+          </CardContent>
+        )}
+        {!isExpanded && (
+          <CardContent className="pt-0 pb-3">
+            <p className="text-xs text-muted-foreground">
+              Tap to see how to install the app on your device
+            </p>
+          </CardContent>
+        )}
+      </Card>
+    </div>
+  );
 }
