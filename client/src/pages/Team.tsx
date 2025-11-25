@@ -16,6 +16,7 @@ import { Users, Mail, Phone, MapPin, Plus, Upload, X, GraduationCap, Briefcase, 
 import type { User } from "@shared/schema";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { AddressInput } from "@/components/AddressInput";
+import { PhoneInput } from "@/components/PhoneInput";
 
 export default function Team() {
   const { toast } = useToast();
@@ -766,13 +767,11 @@ export default function Team() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
+                <PhoneInput
                   id="phone"
-                  type="tel"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1 (555) 123-4567"
+                  onChange={(value) => setPhone(value)}
+                  placeholder="Enter phone number"
                   data-testid="input-phone"
                 />
               </div>

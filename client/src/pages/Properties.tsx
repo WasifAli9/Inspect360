@@ -132,11 +132,18 @@ export default function Properties() {
 
   const createProperty = useMutation({
     mutationFn: async (data: { name: string; address: string; blockId?: string }) => {
-      return await apiRequest("POST", "/api/properties", data);
+      const res = await apiRequest("POST", "/api/properties", data);
+      return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: async (property: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
       queryClient.invalidateQueries({ queryKey: ["/api/properties/tags"] });
+      
+      // Update tags for the newly created property
+      if (selectedTags.length > 0 && property?.id) {
+        await updatePropertyTags(property.id, selectedTags);
+      }
+      
       toast({
         title: "Success",
         description: "Property created successfully",
@@ -160,9 +167,13 @@ export default function Properties() {
         blockId: data.blockId,
       });
     },
-    onSuccess: () => {
+    onSuccess: async (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/properties"] });
       queryClient.invalidateQueries({ queryKey: ["/api/properties/tags"] });
+      
+      // Update tags for the property (always update, even if empty, to handle removals)
+      await updatePropertyTags(variables.id, selectedTags);
+      
       toast({
         title: "Success",
         description: "Property updated successfully",
@@ -183,14 +194,27 @@ export default function Properties() {
     setName("");
     setAddress("");
     setBlockId(urlBlockId || undefined);
+    setSelectedTags([]);
     setDialogOpen(true);
   };
 
-  const handleOpenEdit = (property: any) => {
+  const handleOpenEdit = async (property: any) => {
     setEditingProperty(property);
     setName(property.name);
     setAddress(property.address);
     setBlockId(property.blockId || undefined);
+    
+    // Fetch tags for this property
+    try {
+      const res = await fetch(`/api/properties/${property.id}/tags`, { credentials: "include" });
+      if (res.ok) {
+        const tags = await res.json();
+        setSelectedTags(tags);
+      }
+    } catch (error) {
+      console.error("Error fetching property tags:", error);
+    }
+    
     setDialogOpen(true);
   };
 
@@ -200,6 +224,31 @@ export default function Properties() {
     setName("");
     setAddress("");
     setBlockId(undefined);
+    setSelectedTags([]);
+  };
+
+  const updatePropertyTags = async (propertyId: string, tags: Tag[]) => {
+    // Get current tags for the property
+    try {
+      const res = await fetch(`/api/properties/${propertyId}/tags`, { credentials: "include" });
+      const currentTags = res.ok ? await res.json() : [];
+      
+      // Remove tags that are no longer selected
+      for (const currentTag of currentTags) {
+        if (!tags.find(t => t.id === currentTag.id)) {
+          await apiRequest("DELETE", `/api/properties/${propertyId}/tags/${currentTag.id}`);
+        }
+      }
+      
+      // Add new tags
+      for (const tag of tags) {
+        if (!currentTags.find((t: Tag) => t.id === tag.id)) {
+          await apiRequest("POST", `/api/properties/${propertyId}/tags/${tag.id}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating property tags:", error);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -307,6 +356,16 @@ export default function Properties() {
                   Assign this property to a building/block for better organization
                 </p>
               </div>
+              
+              <div className="space-y-2">
+                <Label>Tags</Label>
+                <TagInput
+                  selectedTags={selectedTags}
+                  onTagsChange={setSelectedTags}
+                  placeholder="Add tags to organize this property..."
+                />
+              </div>
+
               <Button
                 type="submit"
                 className="w-full"

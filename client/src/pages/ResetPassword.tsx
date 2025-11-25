@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Loader2, ArrowLeft, CheckCircle2, Eye, EyeOff, Lock, FileCheck, Building2 } from "lucide-react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ResetPassword() {
+  const searchParams = useSearch();
+  const urlParams = new URLSearchParams(searchParams);
+  const emailFromUrl = urlParams.get("email");
+  
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -19,6 +23,13 @@ export default function ResetPassword() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+
+  // Pre-fill email from URL if present
+  useEffect(() => {
+    if (emailFromUrl) {
+      setEmail(decodeURIComponent(emailFromUrl));
+    }
+  }, [emailFromUrl]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -116,9 +127,15 @@ export default function ResetPassword() {
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="Enter your email"
                       required
-                      disabled={isLoading}
+                      disabled={isLoading || !!emailFromUrl}
                       data-testid="input-email"
+                      className={emailFromUrl ? "bg-muted" : ""}
                     />
+                    {emailFromUrl && (
+                      <p className="text-xs text-muted-foreground">
+                        Email address is pre-filled from your reset request
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-2">

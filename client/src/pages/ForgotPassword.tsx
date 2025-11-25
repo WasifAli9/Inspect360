@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -11,7 +11,6 @@ import { useToast } from "@/hooks/use-toast";
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -21,11 +20,12 @@ export default function ForgotPassword() {
 
     try {
       await apiRequest("POST", "/api/forgot-password", { email });
-      setIsSuccess(true);
       toast({
-        title: "Reset email sent",
-        description: "Check your email for password reset instructions",
+        title: "Reset code sent",
+        description: "Check your email for the 6-digit reset code",
       });
+      // Redirect to reset password page with email
+      navigate(`/reset-password?email=${encodeURIComponent(email)}`);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -60,61 +60,42 @@ export default function ForgotPassword() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {isSuccess ? (
-                <div className="text-center space-y-4 py-8">
-                  <CheckCircle2 className="h-16 w-16 text-[#59B677] mx-auto" />
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Check your email</h3>
-                    <p className="text-sm text-muted-foreground">
-                      We've sent password reset instructions to {email}
-                    </p>
-                  </div>
-                  <Button
-                    className="w-full"
-                    onClick={() => navigate("/auth")}
-                    data-testid="button-back-to-login"
-                  >
-                    Back to login
-                  </Button>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    required
+                    disabled={isLoading}
+                    data-testid="input-email"
+                  />
                 </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email address</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Enter your email"
-                      required
-                      disabled={isLoading}
-                      data-testid="input-email"
-                    />
-                  </div>
 
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={isLoading || !email}
-                    data-testid="button-submit"
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading || !email}
+                  data-testid="button-submit"
+                >
+                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Send reset instructions
+                </Button>
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    className="text-sm text-primary hover:underline transition-all"
+                    onClick={() => navigate("/reset-password")}
+                    data-testid="button-have-code"
                   >
-                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Send reset instructions
-                  </Button>
-
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      className="text-sm text-primary hover:underline transition-all"
-                      onClick={() => navigate("/reset-password")}
-                      data-testid="button-have-code"
-                    >
-                      Already have a reset code?
-                    </button>
-                  </div>
-                </form>
-              )}
+                    Already have a reset code?
+                  </button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>

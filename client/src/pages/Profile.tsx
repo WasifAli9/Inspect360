@@ -11,6 +11,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User as UserIcon, Loader2 } from "lucide-react";
 import { updateSelfProfileSchema, type User } from "@shared/schema";
 import { z } from "zod";
+import { PhoneInput } from "@/components/PhoneInput";
 
 type ProfileFormValues = z.infer<typeof updateSelfProfileSchema>;
 
@@ -139,11 +140,10 @@ export default function Profile() {
                   <FormItem>
                     <FormLabel>Phone Number</FormLabel>
                     <FormControl>
-                      <Input
+                      <PhoneInput
+                        field={field}
                         placeholder="Enter your phone number"
                         data-testid="input-phone"
-                        {...field}
-                        value={field.value || ""}
                       />
                     </FormControl>
                     <FormMessage />

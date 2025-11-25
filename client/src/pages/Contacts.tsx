@@ -14,6 +14,9 @@ import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, 
 import type { Contact, Tag as TagType } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AddressInput } from "@/components/AddressInput";
+import { PhoneInput } from "@/components/PhoneInput";
+import { parsePhoneNumber, combinePhoneNumber, getPhoneCodeForCountry } from "@shared/phoneCountryCodes";
+import { useLocale } from "@/contexts/LocaleContext";
 
 type ContactWithTags = Omit<Contact, 'tags'> & { tags?: TagType[] };
 
@@ -41,6 +44,8 @@ const contactTypeBadgeVariants: Record<string, "default" | "secondary" | "outlin
 
 export default function Contacts() {
   const { toast } = useToast();
+  const { countryCode: userCountryCode } = useLocale();
+  const defaultPhoneCode = getPhoneCodeForCountry(userCountryCode);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterTag, setFilterTag] = useState<string>("all");
@@ -48,6 +53,7 @@ export default function Contacts() {
   const [editingContact, setEditingContact] = useState<ContactWithTags | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState("");
+  const [phoneValue, setPhoneValue] = useState<string>("");
 
   const { data: contacts, isLoading } = useQuery<ContactWithTags[]>({
     queryKey: ["/api/contacts"],
@@ -167,13 +173,16 @@ export default function Contacts() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
+    // Use phoneValue from state (already combined)
+    const parsedPhone = parsePhoneNumber(phoneValue);
+    
     const data = {
       type: formData.get("type") as string,
       firstName: formData.get("firstName") as string,
       lastName: formData.get("lastName") as string,
       email: formData.get("email") as string || undefined,
-      phone: formData.get("phone") as string || undefined,
-      countryCode: formData.get("countryCode") as string || "+1",
+      phone: phoneValue || undefined, // Combined phone number
+      countryCode: parsedPhone.countryCode || defaultPhoneCode, // Extract country code for schema compatibility
       companyName: formData.get("companyName") as string || undefined,
       jobTitle: formData.get("jobTitle") as string || undefined,
       address: formData.get("address") as string || undefined,
@@ -220,6 +229,7 @@ export default function Contacts() {
       setDialogOpen(false);
       setEditingContact(null);
       setSelectedTags([]);
+      setPhoneValue("");
       
       toast({
         title: "Success",
@@ -281,7 +291,10 @@ export default function Contacts() {
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button
-                onClick={() => setEditingContact(null)}
+                onClick={() => {
+                  setEditingContact(null);
+                  setPhoneValue("");
+                }}
                 data-testid="button-add-contact"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -388,29 +401,15 @@ export default function Contacts() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="countryCode">Country Code</Label>
-                    <Input
-                      id="countryCode"
-                      name="countryCode"
-                      defaultValue={editingContact?.countryCode || "+1"}
-                      placeholder="+1"
-                      data-testid="input-country-code"
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input
-                      id="phone"
-                      name="phone"
-                      type="tel"
-                      defaultValue={editingContact?.phone || ""}
-                      placeholder="(555) 123-4567"
-                      data-testid="input-phone"
-                    />
-                  </div>
+                <div>
+                  <PhoneInput
+                    id="phone"
+                    name="phone"
+                    value={phoneValue}
+                    onChange={(value) => setPhoneValue(value)}
+                    placeholder="Enter phone number"
+                    data-testid="input-phone"
+                  />
                 </div>
 
                 <div>
@@ -693,6 +692,12 @@ export default function Contacts() {
                         onClick={() => {
                           setEditingContact(contact);
                           setSelectedTags(contact.tags?.map(t => t.id) || []);
+                          // Combine country code and phone for PhoneInput
+                          const combinedPhone = combinePhoneNumber(
+                            contact.countryCode || defaultPhoneCode,
+                            contact.phone || ""
+                          );
+                          setPhoneValue(combinedPhone);
                           setDialogOpen(true);
                         }}
                         data-testid={`button-edit-${contact.id}`}
@@ -742,7 +747,7 @@ export default function Contacts() {
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Phone className="w-4 h-4 shrink-0" />
                         <span className="truncate" data-testid={`text-phone-${contact.id}`}>
-                          {contact.countryCode} {contact.phone}
+                          {contact.phone}
                         </span>
                       </div>
                     )}

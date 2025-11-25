@@ -38,6 +38,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Loader2, Send, Upload, X, FileText, Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocale } from "@/contexts/LocaleContext";
+import { PhoneInput } from "@/components/PhoneInput";
 
 const formSchema = z.object({
   leaseStartDate: z.string().optional(),
@@ -538,10 +539,9 @@ export default function EditTenantDialog({
                     <FormItem>
                       <FormLabel>Phone Number</FormLabel>
                       <FormControl>
-                        <Input
-                          type="tel"
-                          placeholder="+44 7700 900000"
-                          {...field}
+                        <PhoneInput
+                          field={field}
+                          placeholder="Enter phone number"
                           data-testid="input-next-of-kin-phone"
                         />
                       </FormControl>
