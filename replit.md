@@ -41,6 +41,7 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 - **Professional BTR Reports System**: Centralized reports hub with fully functional Inspections and Blocks reports, multi-criteria filtering, summary statistics, and server-side PDF export with branded cover pages using Puppeteer.
 - **Tenant Portal**: Dedicated PWA-first portal with separate authentication, a home dashboard, an AI preventative maintenance chatbot, and maintenance request tracking.
 - **First-Time User Onboarding**: Beautiful swipeable 5-screen onboarding experience for new users with Inspect360 branding, feature highlights, and smooth Embla carousel transitions. Only appears on first login; completion is persisted to the database.
+- **Feedback & Feature Request System**: Complete user feedback system with dialog-based submission form (title, description, priority, category), user feedback history page ("My Feedback" in sidebar), and comprehensive Eco-Admin management panel with status counts, multi-criteria filtering (status/category/priority), status updates with resolution notes, and automatic email notifications to the central team on new submissions.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
