@@ -7253,6 +7253,73 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     }
   });
 
+  // Backfill route: Sync photos from valueJson to photos column for all inspection entries
+  app.post("/api/objects/sync-entry-photos", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Get all inspections for the organization
+      const inspections = await storage.getInspectionsByOrganization(user.organizationId);
+      let syncedCount = 0;
+      let errorCount = 0;
+      
+      for (const inspection of inspections) {
+        const entries = await storage.getInspectionEntries(inspection.id);
+        for (const entry of entries) {
+          try {
+            // Extract photos from valueJson
+            let extractedPhotos: string[] | null = null;
+            const valueJson = entry.valueJson as any;
+            
+            if (valueJson && typeof valueJson === 'object') {
+              if (Array.isArray(valueJson.photos)) {
+                extractedPhotos = valueJson.photos;
+              } else if (typeof valueJson.photo === 'string' && valueJson.photo) {
+                extractedPhotos = [valueJson.photo];
+              } else if (Array.isArray(valueJson)) {
+                const isAllStrings = valueJson.every((item: any) => typeof item === 'string');
+                if (isAllStrings && valueJson.length > 0) {
+                  extractedPhotos = valueJson;
+                }
+              }
+            }
+            
+            // Check if photos column needs updating
+            const currentPhotos = entry.photos || [];
+            const newPhotos = extractedPhotos || [];
+            
+            // Only update if there's a difference
+            const photosMatch = currentPhotos.length === newPhotos.length && 
+              currentPhotos.every((p, i) => p === newPhotos[i]);
+            
+            if (!photosMatch && extractedPhotos !== null) {
+              await storage.updateInspectionEntry(entry.id, {
+                photos: extractedPhotos.length > 0 ? extractedPhotos : null
+              } as any);
+              syncedCount++;
+              console.log(`[Sync Entry Photos] Updated entry ${entry.id}: ${currentPhotos.length} -> ${newPhotos.length} photos`);
+            }
+          } catch (error) {
+            console.error(`Error syncing photos for entry ${entry.id}:`, error);
+            errorCount++;
+          }
+        }
+      }
+      
+      res.json({ 
+        message: `Synced photos for ${syncedCount} entries, ${errorCount} errors`,
+        synced: syncedCount,
+        errors: errorCount 
+      });
+    } catch (error) {
+      console.error("Error syncing entry photos:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ==================== ADMIN ROUTES ====================
   
   // Admin authentication middleware

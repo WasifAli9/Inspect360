@@ -432,6 +432,7 @@ export interface IStorage {
   getAiImageAnalysesByInspection(inspectionId: string): Promise<AiImageAnalysis[]>;
   getAiImageAnalysesByEntry(entryId: string): Promise<AiImageAnalysis[]>;
   getAiImageAnalysis(id: string): Promise<AiImageAnalysis | undefined>;
+  deleteAiImageAnalysesByEntry(entryId: string): Promise<void>;
 
   // Inspection Snapshot operations
   updateInspectionSnapshots(id: string, templateSnapshot: any, inventorySnapshot: any, version: number): Promise<Inspection>;
@@ -2673,17 +2674,51 @@ export class DatabaseStorage implements IStorage {
 
   // Inspection Entry operations (New JSON-based system)
   async createInspectionEntry(entryData: InsertInspectionEntry): Promise<InspectionEntry> {
-    const [entry] = await db.insert(inspectionEntries).values(entryData).returning();
+    // Sync photos from valueJson to photos column for consistency
+    const dataToInsert = this.syncPhotosFromValueJson(entryData);
+    const [entry] = await db.insert(inspectionEntries).values(dataToInsert).returning();
     return entry;
+  }
+  
+  // Helper to extract photos from valueJson and sync to photos column
+  private syncPhotosFromValueJson(data: Partial<InsertInspectionEntry>): Partial<InsertInspectionEntry> {
+    const result = { ...data };
+    
+    if (data.valueJson && typeof data.valueJson === 'object') {
+      const valueJson = data.valueJson as any;
+      // Extract photos from various possible valueJson structures
+      let extractedPhotos: string[] | null = null;
+      
+      if (Array.isArray(valueJson.photos)) {
+        extractedPhotos = valueJson.photos;
+      } else if (typeof valueJson.photo === 'string' && valueJson.photo) {
+        extractedPhotos = [valueJson.photo];
+      } else if (Array.isArray(valueJson)) {
+        // valueJson might be the photos array directly for photo fields
+        const isAllStrings = valueJson.every((item: any) => typeof item === 'string');
+        if (isAllStrings && valueJson.length > 0) {
+          extractedPhotos = valueJson;
+        }
+      }
+      
+      // Only update photos column if we found photos in valueJson
+      if (extractedPhotos !== null) {
+        result.photos = extractedPhotos.length > 0 ? extractedPhotos : null;
+      }
+    }
+    
+    return result;
   }
 
   async createInspectionEntriesBatch(entriesData: InsertInspectionEntry[]): Promise<InspectionEntry[]> {
     if (entriesData.length === 0) return [];
+    // Sync photos from valueJson to photos column for each entry
+    const syncedData = entriesData.map(entry => this.syncPhotosFromValueJson(entry) as InsertInspectionEntry);
     // Use onConflictDoUpdate to handle offline sync retries idempotently
     // If offlineId exists, update the entry; otherwise insert new
     const entries = await db
       .insert(inspectionEntries)
-      .values(entriesData)
+      .values(syncedData)
       .onConflictDoUpdate({
         target: inspectionEntries.offlineId,
         set: {
@@ -2718,9 +2753,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateInspectionEntry(id: string, updates: Partial<InsertInspectionEntry>): Promise<InspectionEntry> {
+    // Sync photos from valueJson to photos column for consistency
+    const syncedUpdates = this.syncPhotosFromValueJson(updates);
     const [updated] = await db
       .update(inspectionEntries)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...syncedUpdates, updatedAt: new Date() })
       .where(eq(inspectionEntries.id, id))
       .returning();
     return updated;
@@ -2763,6 +2800,10 @@ export class DatabaseStorage implements IStorage {
   async getAiImageAnalysis(id: string): Promise<AiImageAnalysis | undefined> {
     const [analysis] = await db.select().from(aiImageAnalyses).where(eq(aiImageAnalyses.id, id));
     return analysis;
+  }
+
+  async deleteAiImageAnalysesByEntry(entryId: string): Promise<void> {
+    await db.delete(aiImageAnalyses).where(eq(aiImageAnalyses.inspectionEntryId, entryId));
   }
 
   // Inspection Snapshot operations
