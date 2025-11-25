@@ -156,6 +156,13 @@ import {
   tenantMaintenanceChatMessages,
   type TenantMaintenanceChatMessage,
   type InsertTenantMaintenanceChatMessage,
+  feedbackSubmissions,
+  type FeedbackSubmission,
+  type InsertFeedback,
+  type UpdateFeedback,
+  centralTeamConfig,
+  type CentralTeamConfig,
+  type InsertCentralTeamConfig,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, gte, lte, ne, isNull, or } from "drizzle-orm";
@@ -536,6 +543,19 @@ export interface IStorage {
   createTenantMaintenanceChatMessage(message: any): Promise<any>;
   updateTenantMaintenanceChat(chatId: string, updates: any): Promise<any>;
   getMaintenanceRequestsByReporter(reporterId: string): Promise<MaintenanceRequest[]>;
+
+  // Feedback system operations
+  createFeedback(feedback: InsertFeedback): Promise<FeedbackSubmission>;
+  getFeedbackById(id: string): Promise<FeedbackSubmission | undefined>;
+  getFeedbackByUser(userId: string): Promise<FeedbackSubmission[]>;
+  getAllFeedback(filters?: { status?: string; category?: string; priority?: string; }): Promise<FeedbackSubmission[]>;
+  updateFeedback(id: string, updates: UpdateFeedback): Promise<FeedbackSubmission>;
+  
+  // Central team config operations
+  getCentralTeamConfig(): Promise<CentralTeamConfig[]>;
+  addCentralTeamEmail(email: string): Promise<CentralTeamConfig>;
+  removeCentralTeamEmail(id: string): Promise<void>;
+  updateCentralTeamEmail(id: string, isActive: boolean): Promise<CentralTeamConfig>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3606,6 +3626,101 @@ export class DatabaseStorage implements IStorage {
       .from(maintenanceRequests)
       .where(eq(maintenanceRequests.reportedBy, reporterId))
       .orderBy(desc(maintenanceRequests.createdAt));
+  }
+
+  // Feedback system operations
+  async createFeedback(feedbackData: InsertFeedback): Promise<FeedbackSubmission> {
+    const [feedback] = await db
+      .insert(feedbackSubmissions)
+      .values(feedbackData)
+      .returning();
+    return feedback;
+  }
+
+  async getFeedbackById(id: string): Promise<FeedbackSubmission | undefined> {
+    const [feedback] = await db
+      .select()
+      .from(feedbackSubmissions)
+      .where(eq(feedbackSubmissions.id, id));
+    return feedback;
+  }
+
+  async getFeedbackByUser(userId: string): Promise<FeedbackSubmission[]> {
+    return await db
+      .select()
+      .from(feedbackSubmissions)
+      .where(eq(feedbackSubmissions.userId, userId))
+      .orderBy(desc(feedbackSubmissions.createdAt));
+  }
+
+  async getAllFeedback(filters?: { status?: string; category?: string; priority?: string; }): Promise<FeedbackSubmission[]> {
+    let query = db.select().from(feedbackSubmissions);
+    
+    const conditions = [];
+    if (filters?.status) {
+      conditions.push(eq(feedbackSubmissions.status, filters.status as any));
+    }
+    if (filters?.category) {
+      conditions.push(eq(feedbackSubmissions.category, filters.category as any));
+    }
+    if (filters?.priority) {
+      conditions.push(eq(feedbackSubmissions.priority, filters.priority as any));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+    
+    return await query.orderBy(desc(feedbackSubmissions.createdAt));
+  }
+
+  async updateFeedback(id: string, updates: UpdateFeedback): Promise<FeedbackSubmission> {
+    const updateData: any = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+    
+    if (updates.status === 'completed' || updates.status === 'rejected') {
+      updateData.resolvedAt = new Date();
+    }
+    
+    const [feedback] = await db
+      .update(feedbackSubmissions)
+      .set(updateData)
+      .where(eq(feedbackSubmissions.id, id))
+      .returning();
+    return feedback;
+  }
+
+  // Central team config operations
+  async getCentralTeamConfig(): Promise<CentralTeamConfig[]> {
+    return await db
+      .select()
+      .from(centralTeamConfig)
+      .orderBy(centralTeamConfig.createdAt);
+  }
+
+  async addCentralTeamEmail(email: string): Promise<CentralTeamConfig> {
+    const [config] = await db
+      .insert(centralTeamConfig)
+      .values({ notificationEmail: email })
+      .returning();
+    return config;
+  }
+
+  async removeCentralTeamEmail(id: string): Promise<void> {
+    await db
+      .delete(centralTeamConfig)
+      .where(eq(centralTeamConfig.id, id));
+  }
+
+  async updateCentralTeamEmail(id: string, isActive: boolean): Promise<CentralTeamConfig> {
+    const [config] = await db
+      .update(centralTeamConfig)
+      .set({ isActive, updatedAt: new Date() })
+      .where(eq(centralTeamConfig.id, id))
+      .returning();
+    return config;
   }
 }
 
