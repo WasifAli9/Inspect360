@@ -1447,7 +1447,7 @@ export const createTeamMemberSchema = z.object({
   lastName: z.string().min(1).max(255).optional(),
   username: z.string().min(3, "Username must be at least 3 characters").max(100),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  role: z.enum(["owner", "clerk", "compliance", "tenant", "contractor"]),
+  role: z.enum(["owner", "clerk", "compliance", "contractor"]), // Tenants managed via Contacts
   phone: z.string().max(50).optional(),
   address: z.object({
     street: z.string().optional(),
@@ -1479,11 +1479,11 @@ export const updateTeamMemberSchema = z.object({
   education: z.string().optional(),
   profileImageUrl: z.union([z.string().url(), z.string().startsWith("/objects/"), z.literal("")]).optional(),
   certificateUrls: z.array(z.union([z.string().url(), z.string().startsWith("/objects/"), z.literal("")])).optional(),
-  role: z.enum(["owner", "clerk", "compliance", "tenant", "contractor"]).optional(),
+  role: z.enum(["owner", "clerk", "compliance", "contractor"]).optional(), // Tenants managed via Contacts
 });
 
 export const updateUserRoleSchema = z.object({
-  role: z.enum(["owner", "clerk", "compliance", "tenant", "contractor"]),
+  role: z.enum(["owner", "clerk", "compliance", "contractor"]), // Tenants managed via Contacts
 });
 
 export const updateUserStatusSchema = z.object({

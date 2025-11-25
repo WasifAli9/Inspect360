@@ -242,8 +242,8 @@ export default function Team() {
       return;
     }
     
-    // Validate role
-    const validRoles = ["owner", "clerk", "compliance", "tenant", "contractor"];
+    // Validate role (tenant is not allowed - tenants are managed in Contacts)
+    const validRoles = ["owner", "clerk", "compliance", "contractor"];
     if (!validRoles.includes(role)) {
       toast({
         variant: "destructive",
@@ -361,8 +361,8 @@ export default function Team() {
         return "Inventory Clerk";
       case "compliance":
         return "Compliance Officer";
-      case "tenant":
-        return "Tenant";
+      case "contractor":
+        return "Contractor";
       default:
         return role.charAt(0).toUpperCase() + role.slice(1);
     }
@@ -498,7 +498,6 @@ export default function Team() {
                 <SelectItem value="owner">Owner/Operator</SelectItem>
                 <SelectItem value="clerk">Inventory Clerk</SelectItem>
                 <SelectItem value="compliance">Compliance Officer</SelectItem>
-                <SelectItem value="tenant">Tenant</SelectItem>
                 <SelectItem value="contractor">Contractor</SelectItem>
               </SelectContent>
             </Select>
@@ -786,6 +785,7 @@ export default function Team() {
                     <SelectItem value="owner">Owner/Operator</SelectItem>
                     <SelectItem value="clerk">Inventory Clerk</SelectItem>
                     <SelectItem value="compliance">Compliance Officer</SelectItem>
+                    <SelectItem value="contractor">Contractor</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
