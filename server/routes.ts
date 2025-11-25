@@ -12408,6 +12408,228 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     }
   });
 
+  // ==================== FEEDBACK SYSTEM ROUTES ====================
+
+  // User: Submit feedback
+  app.post("/api/feedback", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const { title, description, priority, category } = req.body;
+      
+      if (!title || !description) {
+        return res.status(400).json({ message: "Title and description are required" });
+      }
+
+      let organizationName = null;
+      if (user.organizationId) {
+        const org = await storage.getOrganization(user.organizationId);
+        organizationName = org?.name;
+      }
+
+      const feedback = await storage.createFeedback({
+        title,
+        description,
+        priority: priority || "medium",
+        category: category || "feature",
+        userId: user.id,
+        userEmail: user.email,
+        userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username,
+        organizationId: user.organizationId || null,
+        organizationName,
+      });
+
+      // Send notification emails to central team
+      try {
+        const teamConfig = await storage.getCentralTeamConfig();
+        const activeEmails = teamConfig.filter(c => c.isActive).map(c => c.notificationEmail);
+        
+        if (activeEmails.length > 0) {
+          const { sendEmail } = await import("./email");
+          const priorityLabel = priority === "high" ? "HIGH" : priority === "medium" ? "Medium" : "Low";
+          const categoryLabel = category === "bug" ? "Bug Report" : category === "improvement" ? "Improvement" : "Feature Request";
+          
+          for (const email of activeEmails) {
+            await sendEmail({
+              to: email,
+              subject: `[${priorityLabel}] New ${categoryLabel}: ${title}`,
+              html: `
+                <h2>New Feedback Submission</h2>
+                <p><strong>Title:</strong> ${title}</p>
+                <p><strong>Category:</strong> ${categoryLabel}</p>
+                <p><strong>Priority:</strong> ${priorityLabel}</p>
+                <p><strong>From:</strong> ${feedback.userName} (${feedback.userEmail})</p>
+                <p><strong>Organization:</strong> ${organizationName || 'N/A'}</p>
+                <hr />
+                <p><strong>Description:</strong></p>
+                <p>${description}</p>
+                <hr />
+                <p><small>View all feedback in the Eco-Admin panel.</small></p>
+              `,
+            });
+          }
+        }
+      } catch (emailError) {
+        console.error("Error sending feedback notification emails:", emailError);
+      }
+
+      res.json(feedback);
+    } catch (error: any) {
+      console.error("Error submitting feedback:", error);
+      res.status(500).json({ message: "Failed to submit feedback" });
+    }
+  });
+
+  // User: Get own feedback submissions
+  app.get("/api/feedback/my", isAuthenticated, async (req: any, res) => {
+    try {
+      const feedback = await storage.getFeedbackByUser(req.user.id);
+      res.json(feedback);
+    } catch (error: any) {
+      console.error("Error fetching user feedback:", error);
+      res.status(500).json({ message: "Failed to fetch feedback" });
+    }
+  });
+
+  // Admin: Get all feedback
+  app.get("/api/admin/feedback", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { status, category, priority } = req.query;
+      const filters: { status?: string; category?: string; priority?: string } = {};
+      
+      if (status && status !== "all") filters.status = status as string;
+      if (category && category !== "all") filters.category = category as string;
+      if (priority && priority !== "all") filters.priority = priority as string;
+
+      const feedback = await storage.getAllFeedback(filters);
+      res.json(feedback);
+    } catch (error: any) {
+      console.error("Error fetching all feedback:", error);
+      res.status(500).json({ message: "Failed to fetch feedback" });
+    }
+  });
+
+  // Admin: Get single feedback
+  app.get("/api/admin/feedback/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const feedback = await storage.getFeedbackById(req.params.id);
+      if (!feedback) {
+        return res.status(404).json({ message: "Feedback not found" });
+      }
+      res.json(feedback);
+    } catch (error: any) {
+      console.error("Error fetching feedback:", error);
+      res.status(500).json({ message: "Failed to fetch feedback" });
+    }
+  });
+
+  // Admin: Update feedback status/assignment
+  app.patch("/api/admin/feedback/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { status, assignedTo, assignedDepartment, resolutionNotes } = req.body;
+      const updates: any = {};
+      
+      if (status) updates.status = status;
+      if (assignedTo !== undefined) updates.assignedTo = assignedTo;
+      if (assignedDepartment !== undefined) updates.assignedDepartment = assignedDepartment;
+      if (resolutionNotes !== undefined) updates.resolutionNotes = resolutionNotes;
+
+      const feedback = await storage.updateFeedback(req.params.id, updates);
+      res.json(feedback);
+    } catch (error: any) {
+      console.error("Error updating feedback:", error);
+      res.status(500).json({ message: "Failed to update feedback" });
+    }
+  });
+
+  // Admin: Get central team config
+  app.get("/api/admin/feedback-team", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const team = await storage.getCentralTeamConfig();
+      res.json(team);
+    } catch (error: any) {
+      console.error("Error fetching feedback team:", error);
+      res.status(500).json({ message: "Failed to fetch team" });
+    }
+  });
+
+  // Admin: Add central team email
+  app.post("/api/admin/feedback-team", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const config = await storage.addCentralTeamEmail(email);
+      res.json(config);
+    } catch (error: any) {
+      console.error("Error adding team email:", error);
+      res.status(500).json({ message: "Failed to add team email" });
+    }
+  });
+
+  // Admin: Update central team email status
+  app.patch("/api/admin/feedback-team/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { isActive } = req.body;
+      const config = await storage.updateCentralTeamEmail(req.params.id, isActive);
+      res.json(config);
+    } catch (error: any) {
+      console.error("Error updating team email:", error);
+      res.status(500).json({ message: "Failed to update team email" });
+    }
+  });
+
+  // Admin: Remove central team email
+  app.delete("/api/admin/feedback-team/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.removeCentralTeamEmail(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error removing team email:", error);
+      res.status(500).json({ message: "Failed to remove team email" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
