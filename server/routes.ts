@@ -209,6 +209,221 @@ function getOpenAI(): OpenAI {
   return openai;
 }
 
+/**
+ * Background process to analyze all inspection entries with photos using AI.
+ * Updates progress on the inspection record as each entry is processed.
+ */
+async function processInspectionAIAnalysis(
+  inspectionId: string,
+  entriesWithPhotos: any[],
+  inspection: any,
+  organization: any,
+  organizationId: string
+): Promise<void> {
+  console.log(`[FullInspectAI] Starting background analysis for inspection ${inspectionId} with ${entriesWithPhotos.length} entries`);
+  
+  const objectStorageService = new ObjectStorageService();
+  
+  // Get template settings for AI configuration
+  let aiMaxWords: number = 150;
+  let aiInstruction: string = "";
+  
+  if (inspection.templateId) {
+    const template = await storage.getInspectionTemplate(inspection.templateId);
+    if (template) {
+      aiMaxWords = template.aiMaxWords ?? organization.defaultAiMaxWords ?? 150;
+      aiInstruction = template.aiInstruction || organization.defaultAiInstruction || "";
+    }
+  } else {
+    aiMaxWords = organization.defaultAiMaxWords ?? 150;
+    aiInstruction = organization.defaultAiInstruction || "";
+  }
+  
+  let processedCount = 0;
+  let totalCreditsUsed = 0;
+  
+  for (const entry of entriesWithPhotos) {
+    try {
+      console.log(`[FullInspectAI] Processing entry ${processedCount + 1}/${entriesWithPhotos.length}: ${entry.fieldKey}`);
+      
+      // Convert photos to base64 data URLs
+      const photoUrls: string[] = [];
+      for (const photo of entry.photos) {
+        try {
+          if (photo.startsWith("http")) {
+            photoUrls.push(photo);
+            continue;
+          }
+          
+          const photoPath = photo.startsWith('/objects/') ? photo : `/objects/${photo}`;
+          const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
+          const fileBuffer = await fs.readFile(objectFile.name);
+          
+          let contentType = detectImageMimeType(fileBuffer);
+          if (!contentType || !contentType.startsWith('image/')) {
+            contentType = 'image/jpeg';
+          }
+          
+          const base64Data = fileBuffer.toString('base64');
+          const dataUrl = `data:${contentType};base64,${base64Data}`;
+          photoUrls.push(dataUrl);
+        } catch (photoError: any) {
+          console.error(`[FullInspectAI] Error loading photo ${photo}:`, photoError.message);
+          // Skip this photo but continue with others
+        }
+      }
+      
+      if (photoUrls.length === 0) {
+        console.log(`[FullInspectAI] No valid photos for entry ${entry.fieldKey}, skipping`);
+        processedCount++;
+        continue;
+      }
+      
+      // Build the field label from sectionRef and fieldKey
+      const fieldLabel = `${entry.sectionRef}${entry.itemRef ? ` - ${entry.itemRef}` : ''} - ${entry.fieldKey}`;
+      
+      // Build prompt
+      let promptText: string;
+      if (aiInstruction) {
+        promptText = `${aiInstruction}
+
+Focus SPECIFICALLY on: "${fieldLabel}"
+
+I have ${photoUrls.length} image(s) to analyze. Provide your assessment for "${fieldLabel}".
+
+IMPORTANT FORMATTING RULES:
+- Keep your response under ${aiMaxWords} words
+- Write in plain text only - do NOT use asterisks (*), hash symbols (#), bullet points, or numbered lists
+- Do NOT use any markdown formatting
+- Do NOT include emojis
+- Write in professional, flowing paragraphs`;
+      } else {
+        promptText = `You are analyzing a property inspection photo. Focus SPECIFICALLY on: "${fieldLabel}"
+
+IMPORTANT: The photo may show an entire room or area, but you must focus your analysis ONLY on "${fieldLabel}". Ignore other elements in the photo that are not directly related to this inspection point.
+
+I have ${photoUrls.length} image(s). Provide a concise inspection report for "${fieldLabel}" covering:
+- Overall condition assessment
+- Any visible damage, defects, or wear
+- Cleanliness and maintenance issues
+- Notable features or observations
+- Recommendations (if any)
+
+IMPORTANT FORMATTING RULES:
+- Keep your response under ${aiMaxWords} words
+- Write in plain text only - do NOT use asterisks (*), hash symbols (#), bullet points, or numbered lists
+- Do NOT use any markdown formatting
+- Do NOT include emojis
+- Write in professional, flowing paragraphs
+
+Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not comment on items outside the scope of "${fieldLabel}". This will be used in a professional property inspection report.`;
+      }
+      
+      // Build content array
+      const content: any[] = [{ type: "text", text: promptText }];
+      photoUrls.forEach(url => {
+        content.push({ type: "image_url", image_url: url });
+      });
+      
+      // Call OpenAI Vision API
+      const response = await getOpenAI().responses.create({
+        model: "gpt-5",
+        input: [{ role: "user", content: normalizeApiContent(content) }],
+        max_output_tokens: 10000,
+      });
+      
+      // Extract analysis text from response
+      let analysis: string | null = null;
+      
+      if (response.output_text) {
+        analysis = response.output_text;
+      } else if (response.output && response.output.length > 0) {
+        for (const outputItem of response.output) {
+          if ((outputItem as any).content && Array.isArray((outputItem as any).content)) {
+            for (const contentItem of (outputItem as any).content) {
+              if (contentItem.type === 'output_text' && contentItem.text) {
+                analysis = contentItem.text;
+                break;
+              }
+              if (contentItem.type === 'text' && contentItem.text) {
+                analysis = contentItem.text;
+                break;
+              }
+            }
+            if (analysis) break;
+          }
+        }
+      }
+      
+      if (!analysis || analysis.trim().length === 0) {
+        console.error(`[FullInspectAI] Empty analysis for entry ${entry.fieldKey}`);
+        processedCount++;
+        await storage.updateInspection(inspectionId, {
+          aiAnalysisProgress: processedCount
+        } as any);
+        continue;
+      }
+      
+      // Strip forbidden characters
+      analysis = analysis
+        .replace(/\*+/g, '')
+        .replace(/#+/g, '')
+        .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      
+      // Update entry note - append if existing notes
+      const existingNote = entry.note || "";
+      const aiPrefix = "[AI Analysis]\n";
+      const newNote = existingNote 
+        ? `${existingNote}\n\n${aiPrefix}${analysis}`
+        : `${aiPrefix}${analysis}`;
+      
+      await storage.updateInspectionEntry(entry.id, { note: newNote });
+      
+      // Deduct credit
+      await storage.updateOrganizationCredits(
+        organization.id,
+        (organization.creditsRemaining ?? 0) - 1 - totalCreditsUsed
+      );
+      totalCreditsUsed++;
+      
+      await storage.createCreditTransaction({
+        organizationId: organization.id,
+        amount: -1,
+        type: "inspection",
+        description: `InspectAI full report analysis: ${fieldLabel}`,
+      });
+      
+      processedCount++;
+      
+      // Update progress
+      await storage.updateInspection(inspectionId, {
+        aiAnalysisProgress: processedCount
+      } as any);
+      
+      console.log(`[FullInspectAI] Completed entry ${processedCount}/${entriesWithPhotos.length}: ${entry.fieldKey}`);
+      
+    } catch (entryError: any) {
+      console.error(`[FullInspectAI] Error processing entry ${entry.fieldKey}:`, entryError.message);
+      // Continue with next entry rather than failing completely
+      processedCount++;
+      await storage.updateInspection(inspectionId, {
+        aiAnalysisProgress: processedCount
+      } as any);
+    }
+  }
+  
+  // Mark as completed
+  await storage.updateInspection(inspectionId, {
+    aiAnalysisStatus: "completed",
+    aiAnalysisProgress: entriesWithPhotos.length,
+    aiAnalysisError: null
+  } as any);
+  
+  console.log(`[FullInspectAI] Completed analysis for inspection ${inspectionId}. Processed ${processedCount} entries, used ${totalCreditsUsed} credits.`);
+}
+
 // Helper function to get the base URL from request, respecting proxy headers
 function getBaseUrl(req: any): string {
   // 1. Check environment variable first
@@ -2701,6 +2916,135 @@ Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not
         : "Failed to analyze field. Please try again.";
       
       res.status(500).json({ message: userMessage });
+    }
+  });
+
+  // Full inspection AI analysis - analyzes all fields with photos in background
+  app.post("/api/ai/analyze-inspection/:inspectionId", isAuthenticated, async (req: any, res) => {
+    try {
+      const { inspectionId } = req.params;
+      
+      // Get user and verify organization membership
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Verify the inspection exists and belongs to user's organization
+      const inspection = await storage.getInspection(inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      // Check ownership via property OR block
+      let ownerOrgId: string | null = null;
+      if (inspection.propertyId) {
+        const property = await storage.getProperty(inspection.propertyId);
+        if (!property) {
+          return res.status(404).json({ message: "Property not found" });
+        }
+        ownerOrgId = property.organizationId;
+      } else if (inspection.blockId) {
+        const block = await storage.getBlock(inspection.blockId);
+        if (!block) {
+          return res.status(404).json({ message: "Block not found" });
+        }
+        ownerOrgId = block.organizationId;
+      } else {
+        return res.status(400).json({ message: "Inspection has no property or block assigned" });
+      }
+
+      if (ownerOrgId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Check if already processing
+      if (inspection.aiAnalysisStatus === "processing") {
+        return res.status(409).json({ 
+          message: "AI analysis is already in progress for this inspection",
+          status: "processing",
+          progress: inspection.aiAnalysisProgress || 0,
+          totalFields: inspection.aiAnalysisTotalFields || 0
+        });
+      }
+
+      // Get all inspection entries with photos
+      const entries = await storage.getInspectionEntriesByInspection(inspectionId);
+      const entriesWithPhotos = entries.filter((e: any) => e.photos && e.photos.length > 0);
+      
+      if (entriesWithPhotos.length === 0) {
+        return res.status(400).json({ message: "No photos found in inspection entries to analyze" });
+      }
+
+      // Get organization for credits check
+      const organization = await storage.getOrganization(user.organizationId);
+      if (!organization || (organization.creditsRemaining ?? 0) < entriesWithPhotos.length) {
+        return res.status(402).json({ 
+          message: `Insufficient credits. You need ${entriesWithPhotos.length} credits but have ${organization?.creditsRemaining ?? 0}` 
+        });
+      }
+
+      // Update inspection status to processing
+      await storage.updateInspection(inspectionId, {
+        aiAnalysisStatus: "processing",
+        aiAnalysisProgress: 0,
+        aiAnalysisTotalFields: entriesWithPhotos.length,
+        aiAnalysisError: null
+      } as any);
+
+      // Start background processing (fire and forget)
+      processInspectionAIAnalysis(
+        inspectionId,
+        entriesWithPhotos,
+        inspection,
+        organization,
+        user.organizationId
+      ).catch((error) => {
+        console.error("[FullInspectAI] Background processing failed:", error);
+        // Update status to failed
+        storage.updateInspection(inspectionId, {
+          aiAnalysisStatus: "failed",
+          aiAnalysisError: error.message || "Unknown error occurred"
+        } as any).catch(console.error);
+      });
+
+      // Return immediately with job started message
+      res.json({ 
+        message: "AI analysis started in background. You can continue working and check back later.",
+        status: "processing",
+        totalFields: entriesWithPhotos.length
+      });
+
+    } catch (error: any) {
+      console.error("[FullInspectAI] Error starting analysis:", error);
+      res.status(500).json({ message: error.message || "Failed to start AI analysis" });
+    }
+  });
+
+  // Get AI analysis status for an inspection
+  app.get("/api/ai/analyze-inspection/:inspectionId/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const { inspectionId } = req.params;
+      
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const inspection = await storage.getInspection(inspectionId);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      res.json({
+        status: inspection.aiAnalysisStatus || "idle",
+        progress: inspection.aiAnalysisProgress || 0,
+        totalFields: inspection.aiAnalysisTotalFields || 0,
+        error: inspection.aiAnalysisError || null
+      });
+    } catch (error: any) {
+      console.error("[FullInspectAI] Error getting status:", error);
+      res.status(500).json({ message: "Failed to get analysis status" });
     }
   });
 
