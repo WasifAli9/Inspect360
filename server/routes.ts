@@ -2969,7 +2969,7 @@ Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not
       }
 
       // Get all inspection entries with photos
-      const entries = await storage.getInspectionEntriesByInspection(inspectionId);
+      const entries = await storage.getInspectionEntries(inspectionId);
       const entriesWithPhotos = entries.filter((e: any) => e.photos && e.photos.length > 0);
       
       if (entriesWithPhotos.length === 0) {
