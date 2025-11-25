@@ -2864,15 +2864,21 @@ Be thorough, specific, and objective about the ${fieldLabel}. Do not comment on 
                   });
                 });
 
-                const prompt = `Compare check-in vs check-out condition. Analyze damage, wear, cleanliness. Provide:
-1. Brief damage assessment (2-3 sentences)
-2. Estimated repair/cleaning cost in GBP (number only, or 0 if minimal)
-3. Recommended action (repair/clean/replace/acceptable)
+                const prompt = `You are a professional property inspector comparing check-in and check-out photos. Provide a detailed 100-word analysis.
 
-Format: 
-DAMAGE: [assessment]
-COST: [number]
-ACTION: [recommendation]`;
+INSTRUCTIONS:
+1. Compare the condition between check-in (before tenant) and check-out (after tenant) photos
+2. Identify any damage, excessive wear, staining, or cleanliness issues
+3. Distinguish between fair wear and tear vs tenant-caused damage
+4. Estimate repair/replacement costs in GBP
+
+RESPONSE FORMAT (exactly as shown):
+SUMMARY: [Write exactly 100 words describing the condition change, damage found, and whether it appears to be fair wear and tear or tenant damage. Be specific about locations and types of damage observed.]
+SEVERITY: [low/medium/high]
+DAMAGE: [Brief 1-2 sentence description of main damage]
+COST: [number in GBP, 0 if no damage]
+ACTION: [acceptable/clean/repair/replace]
+LIABILITY: [tenant/landlord/shared - based on fair wear assessment]`;
 
                 imageContent.unshift({
                   type: "text",
@@ -2886,15 +2892,28 @@ ACTION: [recommendation]`;
                 const visionResponse = await openai.responses.create({
                   model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
                   input: [{ role: "user", content: normalizeApiContent(imageContent) }],
-                  max_output_tokens: 500,
+                  max_output_tokens: 800,
                 });
 
                 const analysis = visionResponse.output_text || visionResponse.output?.[0]?.content?.[0]?.text || "";
+                
+                // Parse structured response
                 const costMatch = analysis.match(/COST:\s*£?(\d+)/i) || analysis.match(/COST:\s*(\d+)/i);
+                const severityMatch = analysis.match(/SEVERITY:\s*(low|medium|high)/i);
+                const actionMatch = analysis.match(/ACTION:\s*(acceptable|clean|repair|replace)/i);
+                const liabilityMatch = analysis.match(/LIABILITY:\s*(tenant|landlord|shared)/i);
+                const summaryMatch = analysis.match(/SUMMARY:\s*(.+?)(?=\n(?:SEVERITY|DAMAGE|COST|ACTION|LIABILITY):|$)/is);
+                const damageMatch = analysis.match(/DAMAGE:\s*(.+?)(?=\n(?:COST|ACTION|LIABILITY):|$)/is);
+                
                 estimatedCost = costMatch ? parseInt(costMatch[1]) : 0;
 
                 aiComparison = {
-                  summary: analysis.replace(/\*\*/g, ''),
+                  summary: summaryMatch ? summaryMatch[1].trim() : analysis.replace(/\*\*/g, ''),
+                  differences: summaryMatch ? summaryMatch[1].trim() : analysis.replace(/\*\*/g, ''),
+                  damage: damageMatch ? damageMatch[1].trim() : null,
+                  severity: severityMatch ? severityMatch[1].toLowerCase() : "medium",
+                  action: actionMatch ? actionMatch[1].toLowerCase() : "review",
+                  suggestedLiability: liabilityMatch ? liabilityMatch[1].toLowerCase() : "tenant",
                   checkInPhotos,
                   checkOutPhotos,
                   estimatedCost
@@ -3083,23 +3102,26 @@ ACTION: [recommendation]`;
                   });
                 });
 
-                // Call OpenAI Vision API
-                const prompt = `You are an expert building inspector analyzing property conditions for a Build-to-Rent operation.
+                // Call OpenAI Vision API with enhanced 100-word analysis prompt
+                const prompt = `You are a professional property inspector comparing check-in and check-out photos for a Build-to-Rent operation.
 
-Compare the check-in photos (baseline) with the check-out photos (current condition) for:
-Section: ${checkOutEntry.sectionRef}
-Field: ${checkOutEntry.fieldKey}
+Location: ${checkOutEntry.sectionRef} - ${checkOutEntry.fieldKey}
 
-Provide a detailed analysis in JSON format:
+INSTRUCTIONS:
+1. Compare the condition between check-in (before tenant) and check-out (after tenant) photos
+2. Identify any damage, excessive wear, staining, or cleanliness issues
+3. Distinguish between fair wear and tear vs tenant-caused damage
+4. Estimate repair/replacement costs in GBP
+
+Provide analysis in EXACT JSON format (no markdown):
 {
-  "differences": "Describe visible differences between check-in and check-out",
-  "damage": "List any damage, wear, or deterioration observed",
+  "differences": "Write exactly 100 words describing condition changes, damage found, and whether it appears to be fair wear and tear or tenant damage. Be specific about locations and types of damage observed.",
+  "damage": "Brief 1-2 sentence summary of main damage or issues",
   "severity": "low|medium|high",
-  "repair_description": "What repairs are needed",
+  "repair_description": "What specific repairs are needed and recommended approach",
+  "suggested_liability": "tenant|landlord|shared",
   "estimated_cost_range": {"min": number, "max": number}
-}
-
-Be objective and specific. Focus on actionable repairs.`;
+}`;
 
                 const response = await getOpenAI().responses.create({
                   model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
@@ -3112,21 +3134,28 @@ Be objective and specific. Focus on actionable repairs.`;
                       ])
                     }
                   ],
-                  max_output_tokens: 600,
+                  max_output_tokens: 800,
                 });
 
                 let aiResponse = response.output_text || response.output?.[0]?.content?.[0]?.text || "{}";
                 
-                // Strip markdown asterisks from the response
-                aiResponse = aiResponse.replace(/\*\*/g, '');
+                // Strip markdown code blocks and asterisks from the response
+                aiResponse = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').replace(/\*\*/g, '').trim();
                 
                 try {
                   aiComparison = JSON.parse(aiResponse);
                   // Use mid-point of cost range as estimate
                   estimatedCost = ((aiComparison.estimated_cost_range?.min || 0) + 
                                    (aiComparison.estimated_cost_range?.max || 0)) / 2;
+                  // Add photos to the comparison object
+                  aiComparison.checkInPhotos = checkInEntry?.photos || [];
+                  aiComparison.checkOutPhotos = checkOutEntry.photos || [];
                 } catch {
-                  aiComparison = { summary: aiResponse };
+                  aiComparison = { 
+                    summary: aiResponse,
+                    checkInPhotos: checkInEntry?.photos || [],
+                    checkOutPhotos: checkOutEntry.photos || []
+                  };
                 }
 
               } catch (error) {
@@ -3363,11 +3392,78 @@ Be objective and specific. Focus on actionable repairs.`;
     }
   });
 
-  // Add comparison report comment
+  // Update comparison report item (operator only)
+  app.patch("/api/comparison-report-items/:id", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Get item and verify access through report
+      const items = await storage.getComparisonReportItems(req.body.comparisonReportId);
+      const item = items.find((i: any) => i.id === id);
+      
+      if (!item) {
+        return res.status(404).json({ message: "Comparison report item not found" });
+      }
+
+      const report = await storage.getComparisonReport(item.comparisonReportId);
+      if (!report || report.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Validate allowed fields
+      const allowedFields = ["status", "liabilityDecision", "estimatedCost", "depreciation", "finalCost", "operatorNotes"];
+      const updates: any = {};
+      
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updates[field] = req.body[field];
+        }
+      }
+
+      // Validate status if provided
+      if (updates.status) {
+        const validStatuses = ["pending", "reviewed", "disputed", "resolved", "accepted", "rejected"];
+        if (!validStatuses.includes(updates.status)) {
+          return res.status(400).json({ message: "Invalid status value" });
+        }
+      }
+
+      // Validate liability decision if provided
+      if (updates.liabilityDecision) {
+        const validLiability = ["tenant", "landlord", "shared", "waived"];
+        if (!validLiability.includes(updates.liabilityDecision)) {
+          return res.status(400).json({ message: "Invalid liability decision value" });
+        }
+      }
+
+      const updatedItem = await storage.updateComparisonReportItem(id, updates);
+
+      // Recalculate total cost for the report if costs changed
+      if (updates.finalCost !== undefined) {
+        const allItems = await storage.getComparisonReportItems(report.id);
+        const totalCost = allItems.reduce((sum: number, i: any) => {
+          return sum + parseFloat(i.finalCost || "0");
+        }, 0);
+        await storage.updateComparisonReport(report.id, { totalEstimatedCost: totalCost.toFixed(2) });
+      }
+
+      res.json(updatedItem);
+    } catch (error) {
+      console.error("Error updating comparison report item:", error);
+      res.status(500).json({ message: "Failed to update comparison report item" });
+    }
+  });
+
+  // Add comparison report comment (with internal flag support for operators)
   app.post("/api/comparison-reports/:id/comments", isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { content } = req.body;
+      const { content, isInternal } = req.body;
       const user = await storage.getUser(req.user.id);
       
       if (!user?.organizationId) {
@@ -3388,11 +3484,17 @@ Be objective and specific. Focus on actionable repairs.`;
         return res.status(403).json({ message: "Access denied" });
       }
 
+      const isOperator = user.role === "owner" || user.role === "clerk";
+      const authorName = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
+
       const comment = await storage.createComparisonComment({
         comparisonReportId: id,
         userId: user.id,
+        authorName,
+        authorRole: isOperator ? "operator" : "tenant",
         content: content.trim(),
-        isInternal: user.role !== "tenant", // Tenant comments are visible, operator comments can be internal
+        // Operators can choose internal or public; tenants are always public
+        isInternal: isOperator ? (isInternal === true) : false,
       });
 
       res.json(comment);

@@ -8,6 +8,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   FileText, 
   ArrowLeft, 
@@ -19,7 +28,14 @@ import {
   Image as ImageIcon,
   AlertCircle,
   Check,
-  User
+  User,
+  Send,
+  Save,
+  Lock,
+  Eye,
+  EyeOff,
+  Settings,
+  CheckCircle
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -44,13 +60,17 @@ interface ComparisonReport {
 
 interface ComparisonReportItem {
   id: string;
+  comparisonReportId: string;
   sectionRef: string;
   fieldKey: string;
   itemRef: string | null;
   aiComparisonJson: any;
+  aiSummary: string | null;
   estimatedCost: string;
   depreciation: string;
   finalCost: string;
+  liabilityDecision: string;
+  status: string;
   checkInEntryId: string | null;
   checkOutEntryId: string;
   checkInPhotos?: string[];
@@ -60,18 +80,43 @@ interface ComparisonReportItem {
 interface Comment {
   id: string;
   userId: string;
+  authorName: string;
+  authorRole: string;
   content: string;
   isInternal: boolean;
   createdAt: string;
 }
 
-const statusConfig = {
-  draft: { label: "Draft", color: "bg-gray-500" },
-  under_review: { label: "Under Review", color: "bg-blue-500" },
-  awaiting_signatures: { label: "Awaiting Signatures", color: "bg-amber-500" },
-  signed: { label: "Signed", color: "bg-green-500" },
-  filed: { label: "Filed", color: "bg-slate-600" },
+const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  draft: { label: "Draft", variant: "secondary" },
+  under_review: { label: "Under Review", variant: "default" },
+  awaiting_signatures: { label: "Awaiting Signatures", variant: "destructive" },
+  signed: { label: "Signed", variant: "outline" },
+  filed: { label: "Filed", variant: "secondary" },
 };
+
+const itemStatusOptions = [
+  { value: "pending", label: "Pending Review" },
+  { value: "reviewed", label: "Reviewed" },
+  { value: "disputed", label: "Disputed" },
+  { value: "resolved", label: "Resolved" },
+  { value: "accepted", label: "Accepted" },
+  { value: "rejected", label: "Rejected" },
+];
+
+const liabilityOptions = [
+  { value: "tenant", label: "Tenant Liable" },
+  { value: "landlord", label: "Landlord Responsible" },
+  { value: "shared", label: "Shared Responsibility" },
+  { value: "waived", label: "Waived" },
+];
+
+const reportStatusOptions = [
+  { value: "draft", label: "Draft" },
+  { value: "under_review", label: "Under Review" },
+  { value: "awaiting_signatures", label: "Awaiting Signatures" },
+  { value: "filed", label: "Filed" },
+];
 
 export default function ComparisonReportDetail() {
   const { id } = useParams();
@@ -79,27 +124,24 @@ export default function ComparisonReportDetail() {
   const { user } = useAuth();
   const locale = useLocale();
   const [commentText, setCommentText] = useState("");
+  const [isInternalComment, setIsInternalComment] = useState(false);
   const [signatureName, setSignatureName] = useState("");
+  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
 
   const { data: report, isLoading } = useQuery<ComparisonReport>({
     queryKey: ["/api/comparison-reports", id],
     enabled: !!id,
     select: (data) => {
-      // Parse AI analysis to extract photos if available
       const items = data.items.map(item => {
         const aiAnalysis = item.aiComparisonJson || {};
-        const checkInPhotos = aiAnalysis.checkInPhotos || [];
-        const checkOutPhotos = aiAnalysis.checkOutPhotos || [];
         return {
           ...item,
-          checkInPhotos,
-          checkOutPhotos,
+          checkInPhotos: aiAnalysis.checkInPhotos || [],
+          checkOutPhotos: aiAnalysis.checkOutPhotos || [],
         };
       });
-      return {
-        ...data,
-        items,
-      };
+      return { ...data, items };
     },
   });
 
@@ -108,25 +150,54 @@ export default function ComparisonReportDetail() {
     enabled: !!id,
   });
 
+  const updateReportMutation = useMutation({
+    mutationFn: async (updates: any) => {
+      const response = await apiRequest("PATCH", `/api/comparison-reports/${id}`, updates);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/comparison-reports", id] });
+      toast({ title: "Report Updated", description: "Report status has been updated." });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update report." });
+    },
+  });
+
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ itemId, updates }: { itemId: string; updates: any }) => {
+      const response = await apiRequest("PATCH", `/api/comparison-report-items/${itemId}`, {
+        ...updates,
+        comparisonReportId: id,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/comparison-reports", id] });
+      setEditingItem(null);
+      setItemEdits({});
+      toast({ title: "Item Updated", description: "Item has been updated successfully." });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update item." });
+    },
+  });
+
   const addCommentMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const response = await apiRequest("POST", `/api/comparison-reports/${id}/comments`, { content });
+    mutationFn: async ({ content, isInternal }: { content: string; isInternal: boolean }) => {
+      const response = await apiRequest("POST", `/api/comparison-reports/${id}/comments`, { 
+        content,
+        isInternal 
+      });
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/comparison-reports", id, "comments"] });
       setCommentText("");
-      toast({
-        title: "Comment Added",
-        description: "Your comment has been posted successfully.",
-      });
+      toast({ title: "Comment Added", description: isInternalComment ? "Internal note added." : "Message sent to tenant." });
     },
     onError: () => {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to add comment.",
-      });
+      toast({ variant: "destructive", title: "Error", description: "Failed to add comment." });
     },
   });
 
@@ -138,19 +209,34 @@ export default function ComparisonReportDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/comparison-reports", id] });
       setSignatureName("");
-      toast({
-        title: "Report Signed",
-        description: "Your electronic signature has been recorded.",
-      });
+      toast({ title: "Report Signed", description: "Your electronic signature has been recorded." });
     },
     onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message || "Failed to sign report.",
-      });
+      toast({ variant: "destructive", title: "Error", description: error.message || "Failed to sign report." });
     },
   });
+
+  const handleEditItem = (item: ComparisonReportItem) => {
+    setEditingItem(item.id);
+    setItemEdits({
+      status: item.status || "pending",
+      liabilityDecision: item.liabilityDecision || "tenant",
+      estimatedCost: item.estimatedCost || "0",
+      depreciation: item.depreciation || "0",
+      finalCost: item.finalCost || "0",
+    });
+  };
+
+  const handleSaveItem = (itemId: string) => {
+    updateItemMutation.mutate({ itemId, updates: itemEdits });
+  };
+
+  const recalculateFinalCost = () => {
+    const estimated = parseFloat(itemEdits.estimatedCost || "0");
+    const depreciation = parseFloat(itemEdits.depreciation || "0");
+    const finalCost = Math.max(0, estimated - depreciation).toFixed(2);
+    setItemEdits({ ...itemEdits, finalCost });
+  };
 
   if (isLoading) {
     return (
@@ -171,12 +257,10 @@ export default function ComparisonReportDetail() {
             <h3 className="text-xl font-semibold mb-2">Report Not Found</h3>
             <p className="text-muted-foreground mb-4">The comparison report you're looking for doesn't exist.</p>
             <Link href="/comparisons">
-              <a>
-                <Button variant="outline">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Reports
-                </Button>
-              </a>
+              <Button variant="outline">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back to Reports
+              </Button>
             </Link>
           </CardContent>
         </Card>
@@ -184,46 +268,62 @@ export default function ComparisonReportDetail() {
     );
   }
 
-  const statusInfo = statusConfig[report.status as keyof typeof statusConfig];
-  const totalCost = parseFloat(report.totalEstimatedCost);
+  const statusInfo = statusConfig[report.status] || statusConfig.draft;
+  const totalCost = parseFloat(report.totalEstimatedCost || "0");
   const isOperator = user?.role === "owner" || user?.role === "clerk";
-  const isTenant = user?.role === "tenant";
-  const canSign = (isOperator && !report.operatorSignature) || (isTenant && !report.tenantSignature);
+  const canSign = isOperator && !report.operatorSignature && 
+    (report.status === "awaiting_signatures" || report.status === "under_review");
+  const canEdit = isOperator && report.status !== "signed" && report.status !== "filed";
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-6" data-testid="page-comparison-detail">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="space-y-1">
           <Link href="/comparisons">
-            <a>
-              <Button variant="ghost" size="sm" data-testid="button-back">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Reports
-              </Button>
-            </a>
+            <Button variant="ghost" size="sm" data-testid="button-back">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Reports
+            </Button>
           </Link>
-          <h1 className="text-4xl font-bold flex items-center gap-3">
-            <FileText className="w-10 h-10 text-primary" />
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <FileText className="w-8 h-8 text-primary" />
             Comparison Report
           </h1>
           <p className="text-muted-foreground">
             Generated on {format(new Date(report.createdAt), "MMMM d, yyyy 'at' h:mm a")}
           </p>
         </div>
-        <Badge className={`${statusInfo.color} text-white text-lg px-4 py-2`}>
-          {statusInfo.label}
-        </Badge>
+        <div className="flex items-center gap-3">
+          {canEdit && (
+            <Select
+              value={report.status}
+              onValueChange={(value) => updateReportMutation.mutate({ status: value })}
+            >
+              <SelectTrigger className="w-48" data-testid="select-report-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {reportStatusOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Badge variant={statusInfo.variant} className="text-lg px-4 py-2">
+            {statusInfo.label}
+          </Badge>
+        </div>
       </div>
 
-      {/* Summary Card */}
       <Card>
         <CardHeader>
           <CardTitle>Cost Summary</CardTitle>
           <CardDescription>Total estimated tenant liability after depreciation</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-4xl font-bold text-primary">
+          <div className="text-4xl font-bold text-primary" data-testid="text-total-cost">
             {locale.formatCurrency(totalCost, false)}
           </div>
           <p className="text-sm text-muted-foreground mt-2">
@@ -232,23 +332,29 @@ export default function ComparisonReportDetail() {
         </CardContent>
       </Card>
 
-      {/* Items Breakdown */}
       <Card>
         <CardHeader>
-          <CardTitle>Item-by-Item Analysis</CardTitle>
-          <CardDescription>Detailed comparison of each marked item</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            Item-by-Item Analysis
+          </CardTitle>
+          <CardDescription>
+            {canEdit ? "Click 'Edit' on any item to adjust liability, status, or costs" : "Detailed comparison of each marked item"}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {report.items.map((item, index) => {
             const aiAnalysis = item.aiComparisonJson || {};
-            const estimatedCost = parseFloat(item.estimatedCost);
-            const depreciation = parseFloat(item.depreciation);
-            const finalCost = parseFloat(item.finalCost);
+            const isEditing = editingItem === item.id;
+            const estimatedCost = isEditing ? parseFloat(itemEdits.estimatedCost || "0") : parseFloat(item.estimatedCost || "0");
+            const depreciation = isEditing ? parseFloat(itemEdits.depreciation || "0") : parseFloat(item.depreciation || "0");
+            const finalCost = isEditing ? parseFloat(itemEdits.finalCost || "0") : parseFloat(item.finalCost || "0");
+            const currentStatus = isEditing ? itemEdits.status : (item.status || "pending");
+            const currentLiability = isEditing ? itemEdits.liabilityDecision : (item.liabilityDecision || "tenant");
 
             return (
-              <div key={item.id} className="space-y-4 pb-6 border-b last:border-b-0">
-                {/* Item Header */}
-                <div className="flex items-start justify-between">
+              <div key={item.id} className="space-y-4 pb-6 border-b last:border-b-0" data-testid={`item-${item.id}`}>
+                <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
                     <h3 className="text-lg font-semibold">
                       {index + 1}. {item.sectionRef} - {item.fieldKey}
@@ -257,22 +363,99 @@ export default function ComparisonReportDetail() {
                       <p className="text-sm text-muted-foreground">{item.itemRef}</p>
                     )}
                   </div>
-                  {aiAnalysis.severity && (
-                    <Badge 
-                      variant={
-                        aiAnalysis.severity === "high" ? "destructive" : 
-                        aiAnalysis.severity === "medium" ? "default" : 
-                        "secondary"
-                      }
-                    >
-                      {aiAnalysis.severity} severity
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!isEditing ? (
+                      <>
+                        <Badge variant={currentStatus === "reviewed" ? "default" : currentStatus === "disputed" ? "destructive" : "secondary"}>
+                          {itemStatusOptions.find(o => o.value === currentStatus)?.label || currentStatus}
+                        </Badge>
+                        <Badge variant="outline">
+                          {liabilityOptions.find(o => o.value === currentLiability)?.label || currentLiability}
+                        </Badge>
+                        {canEdit && (
+                          <Button variant="outline" size="sm" onClick={() => handleEditItem(item)} data-testid={`button-edit-item-${item.id}`}>
+                            <Pen className="w-4 h-4 mr-1" />
+                            Edit
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => setEditingItem(null)}>
+                          Cancel
+                        </Button>
+                        <Button size="sm" onClick={() => handleSaveItem(item.id)} disabled={updateItemMutation.isPending} data-testid={`button-save-item-${item.id}`}>
+                          <Save className="w-4 h-4 mr-1" />
+                          Save
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* Images Side-by-Side */}
+                {isEditing && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
+                    <div className="space-y-2">
+                      <Label>Item Status</Label>
+                      <Select
+                        value={itemEdits.status}
+                        onValueChange={(value) => setItemEdits({ ...itemEdits, status: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {itemStatusOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Liability Decision</Label>
+                      <Select
+                        value={itemEdits.liabilityDecision}
+                        onValueChange={(value) => setItemEdits({ ...itemEdits, liabilityDecision: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {liabilityOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Estimated Cost</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={itemEdits.estimatedCost}
+                        onChange={(e) => setItemEdits({ ...itemEdits, estimatedCost: e.target.value })}
+                        onBlur={recalculateFinalCost}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Depreciation</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={itemEdits.depreciation}
+                        onChange={(e) => setItemEdits({ ...itemEdits, depreciation: e.target.value })}
+                        onBlur={recalculateFinalCost}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {((item.checkInPhotos && item.checkInPhotos.length > 0) || (item.checkOutPhotos && item.checkOutPhotos.length > 0)) && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <h4 className="text-sm font-medium text-muted-foreground">Check-In Photos</h4>
                       <div className="grid grid-cols-2 gap-2">
@@ -314,38 +497,26 @@ export default function ComparisonReportDetail() {
                   </div>
                 )}
 
-                {/* AI Analysis */}
-                {aiAnalysis.differences && (
+                {(item.aiSummary || aiAnalysis.differences) && (
                   <div className="bg-muted p-4 rounded-lg space-y-2">
                     <h4 className="font-medium text-sm flex items-center gap-2">
                       <ImageIcon className="w-4 h-4" />
-                      Visual Differences
+                      AI Analysis Summary
                     </h4>
-                    <p className="text-sm">{aiAnalysis.differences}</p>
+                    <p className="text-sm">{item.aiSummary || aiAnalysis.differences}</p>
                   </div>
                 )}
 
                 {aiAnalysis.damage && (
                   <div className="bg-destructive/10 p-4 rounded-lg space-y-2">
-                    <h4 className="font-medium text-sm flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 text-destructive" />
+                    <h4 className="font-medium text-sm flex items-center gap-2 text-destructive">
+                      <AlertCircle className="w-4 h-4" />
                       Damage Assessment
                     </h4>
                     <p className="text-sm">{aiAnalysis.damage}</p>
                   </div>
                 )}
 
-                {aiAnalysis.repair_description && (
-                  <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg space-y-2">
-                    <h4 className="font-medium text-sm flex items-center gap-2">
-                      <Calculator className="w-4 h-4" />
-                      Recommended Repairs
-                    </h4>
-                    <p className="text-sm">{aiAnalysis.repair_description}</p>
-                  </div>
-                )}
-
-                {/* Cost Breakdown */}
                 <div className="grid grid-cols-3 gap-4 pt-2">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -359,7 +530,7 @@ export default function ComparisonReportDetail() {
                       <TrendingDown className="w-4 h-4" />
                       Depreciation
                     </div>
-                    <div className="text-lg font-semibold text-green-600">
+                    <div className="text-lg font-semibold text-green-600 dark:text-green-400">
                       -{locale.formatCurrency(depreciation, false)}
                     </div>
                   </div>
@@ -379,7 +550,6 @@ export default function ComparisonReportDetail() {
         </CardContent>
       </Card>
 
-      {/* Comments Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -391,7 +561,6 @@ export default function ComparisonReportDetail() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Comments List */}
           <div className="space-y-3 max-h-96 overflow-y-auto">
             {comments.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
@@ -404,15 +573,27 @@ export default function ComparisonReportDetail() {
                   className={`p-4 rounded-lg ${
                     comment.isInternal 
                       ? "bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800" 
-                      : "bg-muted"
+                      : comment.authorRole === "tenant"
+                        ? "bg-primary/10 ml-8"
+                        : "bg-muted mr-8"
                   }`}
+                  data-testid={`comment-${comment.id}`}
                 >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-start justify-between mb-2 gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <User className="w-4 h-4" />
                       <span className="text-sm font-medium">
-                        {comment.isInternal ? "Internal Note" : "Comment"}
+                        {comment.authorName || (comment.authorRole === "tenant" ? "Tenant" : "Operator")}
                       </span>
+                      <Badge variant="outline" className="text-xs">
+                        {comment.authorRole === "tenant" ? "Tenant" : "Operator"}
+                      </Badge>
+                      {comment.isInternal && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <Lock className="w-3 h-3" />
+                          Internal
+                        </Badge>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(comment.createdAt), "MMM d, h:mm a")}
@@ -426,28 +607,52 @@ export default function ComparisonReportDetail() {
 
           <Separator />
 
-          {/* Add Comment Form */}
-          <div className="space-y-3">
+          {isOperator && (
+            <div className="flex items-center gap-4 pb-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="internal-comment"
+                  checked={isInternalComment}
+                  onCheckedChange={setIsInternalComment}
+                  data-testid="switch-internal-comment"
+                />
+                <Label htmlFor="internal-comment" className="flex items-center gap-2 cursor-pointer">
+                  {isInternalComment ? (
+                    <>
+                      <EyeOff className="w-4 h-4" />
+                      Internal Note (hidden from tenant)
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-4 h-4" />
+                      Public Message (visible to tenant)
+                    </>
+                  )}
+                </Label>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
             <Textarea
-              placeholder="Add a comment or internal note..."
+              placeholder={isInternalComment ? "Add internal note..." : "Type your message to tenant..."}
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
-              rows={3}
+              rows={2}
+              className="flex-1"
               data-testid="input-comment"
             />
             <Button
-              onClick={() => addCommentMutation.mutate(commentText)}
+              onClick={() => addCommentMutation.mutate({ content: commentText, isInternal: isInternalComment })}
               disabled={!commentText.trim() || addCommentMutation.isPending}
-              data-testid="button-add-comment"
+              data-testid="button-send-message"
             >
-              <MessageSquare className="w-4 h-4 mr-2" />
-              {addCommentMutation.isPending ? "Adding..." : "Add Comment"}
+              <Send className="w-4 h-4" />
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Signature Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -459,8 +664,7 @@ export default function ComparisonReportDetail() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Operator Signature */}
-          <div className="flex items-center justify-between p-4 border rounded-lg">
+          <div className="flex items-center justify-between p-4 border rounded-lg gap-4 flex-wrap">
             <div className="space-y-1">
               <div className="font-medium flex items-center gap-2">
                 <User className="w-4 h-4" />
@@ -469,7 +673,7 @@ export default function ComparisonReportDetail() {
               {report.operatorSignature ? (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-green-600" />
+                    <CheckCircle className="w-4 h-4 text-green-600" />
                     <span className="text-sm">Signed: {report.operatorSignature}</span>
                   </div>
                   {report.operatorSignedAt && (
@@ -482,15 +686,14 @@ export default function ComparisonReportDetail() {
                 <p className="text-sm text-muted-foreground">Pending signature</p>
               )}
             </div>
-            {isOperator && !report.operatorSignature && (
-              <Badge variant="outline" className="text-amber-600 border-amber-600">
-                Action Required
+            {!report.operatorSignature && (
+              <Badge variant={canSign ? "destructive" : "outline"}>
+                {canSign ? "Action Required" : "Pending"}
               </Badge>
             )}
           </div>
 
-          {/* Tenant Signature */}
-          <div className="flex items-center justify-between p-4 border rounded-lg">
+          <div className="flex items-center justify-between p-4 border rounded-lg gap-4 flex-wrap">
             <div className="space-y-1">
               <div className="font-medium flex items-center gap-2">
                 <User className="w-4 h-4" />
@@ -499,7 +702,7 @@ export default function ComparisonReportDetail() {
               {report.tenantSignature ? (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-green-600" />
+                    <CheckCircle className="w-4 h-4 text-green-600" />
                     <span className="text-sm">Signed: {report.tenantSignature}</span>
                   </div>
                   {report.tenantSignedAt && (
@@ -509,20 +712,14 @@ export default function ComparisonReportDetail() {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Pending signature</p>
+                <p className="text-sm text-muted-foreground">Awaiting tenant signature</p>
               )}
             </div>
-            {isTenant && !report.tenantSignature && (
-              <Badge variant="outline" className="text-amber-600 border-amber-600">
-                Action Required
-              </Badge>
-            )}
           </div>
 
-          {/* Sign Form */}
           {canSign && (
             <div className="space-y-3 p-4 bg-muted rounded-lg">
-              <label className="text-sm font-medium">Type your full name to sign</label>
+              <Label>Type your full name to sign</Label>
               <Input
                 placeholder="Your full name"
                 value={signatureName}
@@ -536,11 +733,29 @@ export default function ComparisonReportDetail() {
                 data-testid="button-sign"
               >
                 <Pen className="w-4 h-4 mr-2" />
-                {signMutation.isPending ? "Signing..." : "Sign Report"}
+                {signMutation.isPending ? "Signing..." : "Sign Report as Operator"}
               </Button>
               <p className="text-xs text-muted-foreground">
-                By signing, you acknowledge that you have reviewed and agree to the contents of this report.
+                By signing, you confirm the accuracy of this comparison report. This is a legally binding electronic signature.
               </p>
+            </div>
+          )}
+
+          {report.operatorSignature && !report.tenantSignature && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-950 rounded-lg">
+              <p className="text-sm">
+                You have signed this report. Waiting for tenant signature. The tenant can access this report through their portal.
+              </p>
+            </div>
+          )}
+
+          {report.operatorSignature && report.tenantSignature && (
+            <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg flex items-center gap-3">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+              <div>
+                <p className="font-medium text-green-800 dark:text-green-200">Report Fully Signed</p>
+                <p className="text-sm text-green-700 dark:text-green-300">Both parties have signed this comparison report.</p>
+              </div>
             </div>
           )}
         </CardContent>
