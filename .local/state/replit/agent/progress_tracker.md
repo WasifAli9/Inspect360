@@ -15,10 +15,11 @@
 [x] 10. Mark import as completed
 
 ## Database Status
-- **Type**: Replit PostgreSQL (Neon)
+- **Type**: Replit Local PostgreSQL
 - **Status**: ✅ Provisioned and connected
-- **Schema**: ✅ Synced successfully
+- **Schema**: ✅ Synced successfully (via npm run db:push)
 - **Storage**: DatabaseStorage (not in-memory)
+- **Environment Variables**: DATABASE_URL, PGHOST, PGUSER, PGPASSWORD, PGDATABASE, PGPORT
 
 ## Integration Status
 - ✅ Database: Configured and working
