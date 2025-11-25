@@ -68,6 +68,12 @@ export function AppSidebar() {
       roles: ["owner", "clerk"],
     },
     {
+      title: "Comparisons",
+      url: "/comparisons",
+      icon: GitCompare,
+      roles: ["owner", "clerk", "tenant"],
+    },
+    {
       title: "Compliance",
       url: "/compliance",
       icon: FileText,
@@ -90,12 +96,6 @@ export function AppSidebar() {
       url: "/reports",
       icon: FileBarChart,
       roles: ["owner", "compliance"],
-    },
-    {
-      title: "Comparisons",
-      url: "/comparisons",
-      icon: GitCompare,
-      roles: ["owner", "clerk", "tenant"],
     },
     {
       title: "Asset Inventory",
