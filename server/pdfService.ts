@@ -190,12 +190,13 @@ export async function generateInspectionPDF(
 
     const pdf = await page.pdf({
       format: "A4",
+      landscape: true,
       printBackground: true,
       margin: {
-        top: "20mm",
-        right: "15mm",
-        bottom: "20mm",
-        left: "15mm",
+        top: "15mm",
+        right: "12mm",
+        bottom: "15mm",
+        left: "12mm",
       },
     });
 
@@ -263,18 +264,22 @@ function generateInspectionHTML(
   const formattedDate = inspectionDate ? format(new Date(inspectionDate), "PPP") : "Not specified";
   
   const companyName = branding?.brandingName || "Inspect360";
-  const logoHtml = branding?.logoUrl 
-    ? `<img src="${sanitizeUrl(branding.logoUrl)}" alt="${escapeHtml(companyName)}" style="max-height: 80px; max-width: 200px; object-fit: contain;" />`
-    : `<span>${escapeHtml(companyName)}</span>`;
+  const hasLogo = !!branding?.logoUrl;
+  const logoHtml = hasLogo
+    ? `<img src="${sanitizeUrl(branding.logoUrl)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+    : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
   
-  const contactInfoHtml = (branding?.brandingEmail || branding?.brandingPhone || branding?.brandingWebsite) 
-    ? `<div style="margin-top: 16px; font-size: 12px; color: #666; text-align: center;">
-        ${branding.brandingEmail ? `<span>${escapeHtml(branding.brandingEmail)}</span>` : ''}
-        ${branding.brandingEmail && branding.brandingPhone ? ' | ' : ''}
-        ${branding.brandingPhone ? `<span>${escapeHtml(branding.brandingPhone)}</span>` : ''}
-        ${(branding.brandingEmail || branding.brandingPhone) && branding.brandingWebsite ? ' | ' : ''}
-        ${branding.brandingWebsite ? `<span>${escapeHtml(branding.brandingWebsite)}</span>` : ''}
-      </div>`
+  const companyNameHtml = hasLogo 
+    ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+    : '';
+  
+  const contactParts: string[] = [];
+  if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+  if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+  if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+  
+  const contactInfoHtml = contactParts.length > 0
+    ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
     : '';
 
   // Build entries map
@@ -412,6 +417,7 @@ function generateInspectionHTML(
       padding: 0;
     }
 
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -422,71 +428,157 @@ function generateInspectionHTML(
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
 
-    .cover-logo {
-      font-size: 72px;
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+
+    .cover-page::after {
+      content: '';
+      position: absolute;
+      bottom: -30%;
+      left: -10%;
+      width: 40%;
+      height: 150%;
+      background: rgba(255, 255, 255, 0.02);
+      transform: rotate(-10deg);
+    }
+
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .cover-logo-container {
+      margin-bottom: 40px;
+    }
+
+    .cover-logo-img {
+      max-height: 120px;
+      max-width: 320px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+
+    .cover-logo-text {
+      font-size: 64px;
       font-weight: 800;
-      margin-bottom: 24px;
       letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .cover-company-name {
+      font-size: 28px;
+      font-weight: 600;
+      margin-top: 16px;
+      opacity: 0.95;
+      letter-spacing: 1px;
+    }
+
+    .cover-divider {
+      width: 120px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 32px 0;
+      border-radius: 2px;
     }
 
     .cover-title {
-      font-size: 48px;
+      font-size: 42px;
       font-weight: 700;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
     }
 
     .cover-property {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 400;
-      margin-bottom: 48px;
+      margin-bottom: 32px;
       opacity: 0.95;
+      max-width: 80%;
     }
 
     .cover-details {
-      font-size: 18px;
+      display: flex;
+      gap: 32px;
+      font-size: 16px;
       opacity: 0.9;
-      margin-top: 24px;
     }
 
+    .cover-detail-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cover-contact {
+      position: absolute;
+      bottom: 40px;
+      font-size: 14px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+
+    /* Header for content pages */
     .header {
       background: white;
-      padding: 32px 0;
+      padding: 24px 0;
       border-bottom: 3px solid #00D5CC;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .header-title {
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 800;
       color: #00D5CC;
-      margin-bottom: 8px;
     }
 
     .header-subtitle {
-      font-size: 24px;
+      font-size: 20px;
       color: #3B7A8C;
       font-weight: 600;
     }
 
+    /* Info grid - Landscape optimized for 3 columns */
     .info-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      margin-bottom: 32px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
       page-break-inside: avoid;
     }
 
     .info-item {
       background: #f9fafb;
-      padding: 16px;
+      padding: 14px 16px;
       border-radius: 8px;
       border-left: 4px solid #00D5CC;
     }
 
+    .info-item.full-width {
+      grid-column: 1 / -1;
+    }
+
     .info-label {
-      font-size: 13px;
+      font-size: 11px;
       color: #666;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -495,19 +587,53 @@ function generateInspectionHTML(
     }
 
     .info-value {
-      font-size: 16px;
+      font-size: 15px;
       color: #1a1a1a;
       font-weight: 500;
     }
 
     .status-badge {
       display: inline-block;
-      padding: 6px 16px;
-      border-radius: 20px;
-      font-size: 14px;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 13px;
       font-weight: 600;
       background: #dcfce7;
       color: #166534;
+    }
+
+    /* Section styles - Landscape optimized */
+    .section {
+      margin-bottom: 28px;
+      page-break-inside: avoid;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #00D5CC;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #00D5CC;
+    }
+
+    /* Photo grid - Landscape optimized for more columns */
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .photo-item {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .photo-item img {
+      width: 100%;
+      height: 140px;
+      object-fit: cover;
     }
 
     @media print {
@@ -521,24 +647,39 @@ function generateInspectionHTML(
   <div class="container">
     <!-- Cover Page -->
     <div class="cover-page">
-      <div class="cover-logo">${logoHtml}</div>
-      ${contactInfoHtml}
-      <div class="cover-title">Inspection Report</div>
-      <div class="cover-property">${escapeHtml(propertyName)}</div>
-      <div class="cover-details">
-        <div>${escapeHtml(formattedDate)}</div>
-        <div style="margin-top: 8px;">${escapeHtml(inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " "))}</div>
+      <div class="cover-content">
+        <div class="cover-logo-container">
+          ${logoHtml}
+          ${companyNameHtml}
+        </div>
+        <div class="cover-divider"></div>
+        <div class="cover-title">Inspection Report</div>
+        <div class="cover-property">${escapeHtml(propertyName)}</div>
+        <div class="cover-details">
+          <div class="cover-detail-item">
+            <span>${escapeHtml(formattedDate)}</span>
+          </div>
+          <div class="cover-detail-item">
+            <span>${escapeHtml(inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " "))}</span>
+          </div>
+        </div>
       </div>
+      ${contactInfoHtml}
     </div>
 
     <!-- Main Content -->
     <div style="padding: 0;">
       <div class="header">
-        <div class="header-title">Inspection Report</div>
-        <div class="header-subtitle">${escapeHtml(propertyName)}</div>
+        <div>
+          <div class="header-title">Inspection Report</div>
+          <div class="header-subtitle">${escapeHtml(propertyName)}</div>
+        </div>
+        <div style="text-align: right; color: #666; font-size: 13px;">
+          <div>${escapeHtml(formattedDate)}</div>
+        </div>
       </div>
 
-      <!-- Property Information -->
+      <!-- Property Information - 3 column grid for landscape -->
       <div class="info-grid">
         <div class="info-item">
           <div class="info-label">Property Address</div>
@@ -549,6 +690,12 @@ function generateInspectionHTML(
           <div class="info-value">${escapeHtml(inspection.type.charAt(0).toUpperCase() + inspection.type.slice(1).replace(/_/g, " "))}</div>
         </div>
         <div class="info-item">
+          <div class="info-label">Status</div>
+          <div class="info-value">
+            <span class="status-badge">${escapeHtml(inspection.status.toUpperCase())}</span>
+          </div>
+        </div>
+        <div class="info-item">
           <div class="info-label">Inspector</div>
           <div class="info-value">${escapeHtml(inspectorName)}</div>
         </div>
@@ -557,13 +704,11 @@ function generateInspectionHTML(
           <div class="info-value">${escapeHtml(formattedDate)}</div>
         </div>
         <div class="info-item">
-          <div class="info-label">Status</div>
-          <div class="info-value">
-            <span class="status-badge">${escapeHtml(inspection.status.toUpperCase())}</span>
-          </div>
+          <div class="info-label">Report Generated</div>
+          <div class="info-value">${format(new Date(), "PPP")}</div>
         </div>
         ${inspection.notes ? `
-          <div class="info-item" style="grid-column: 1 / -1;">
+          <div class="info-item full-width">
             <div class="info-label">General Notes</div>
             <div class="info-value">${escapeHtml(inspection.notes)}</div>
           </div>

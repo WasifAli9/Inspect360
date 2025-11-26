@@ -11370,13 +11370,34 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
   // ==================== REPORTS ====================
 
+  // Branding info type for reports
+  interface ReportBrandingInfo {
+    logoUrl?: string | null;
+    brandingName?: string | null;
+    brandingEmail?: string | null;
+    brandingPhone?: string | null;
+    brandingWebsite?: string | null;
+  }
+
+  // Sanitize URL for use in HTML attributes
+  function sanitizeReportUrl(url: string): string {
+    if (typeof url !== 'string' || !url.trim()) return '';
+    const trimmed = url.trim();
+    const lower = trimmed.toLowerCase();
+    const safeProtocols = ['https://', 'http://'];
+    const isSafeProtocol = safeProtocols.some(protocol => lower.startsWith(protocol));
+    if (!isSafeProtocol) return '';
+    return trimmed.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#039;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   // Helper function to generate Inspections Report HTML
   function generateInspectionsReportHTML(
     inspections: any[],
     properties: any[],
     blocks: any[],
     users: any[],
-    filters: any
+    filters: any,
+    branding?: ReportBrandingInfo
   ): string {
     const escapeHtml = (str: string) => {
       if (!str) return '';
@@ -11415,6 +11436,23 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     if (filters.dateFrom) filterSummary.push(`From: ${formatDate(filters.dateFrom)}`);
     if (filters.dateTo) filterSummary.push(`To: ${formatDate(filters.dateTo)}`);
 
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+
     const tableRows = inspections.map((inspection) => {
       const property = properties.find(p => p.id === inspection.propertyId);
       const block = blocks.find(b => b.id === property?.blockId);
@@ -11425,12 +11463,12 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
       return `
         <tr style="border-bottom: 1px solid #e5e7eb;">
-          <td style="padding: 12px 8px;">${formatDate(inspection.scheduledDate || inspection.createdAt)}</td>
-          <td style="padding: 12px 8px; font-weight: 500;">${escapeHtml(property?.name || "Unknown")}</td>
-          <td style="padding: 12px 8px;">${escapeHtml(block?.name || "N/A")}</td>
-          <td style="padding: 12px 8px; text-transform: capitalize;">${escapeHtml(inspection.type?.replace(/-/g, " ") || "N/A")}</td>
-          <td style="padding: 12px 8px;">${escapeHtml(inspectorName)}</td>
-          <td style="padding: 12px 8px;">${getStatusBadge(inspection.status)}</td>
+          <td style="padding: 10px 12px;">${formatDate(inspection.scheduledDate || inspection.createdAt)}</td>
+          <td style="padding: 10px 12px; font-weight: 500;">${escapeHtml(property?.name || "Unknown")}</td>
+          <td style="padding: 10px 12px;">${escapeHtml(block?.name || "N/A")}</td>
+          <td style="padding: 10px 12px; text-transform: capitalize;">${escapeHtml(inspection.type?.replace(/-/g, " ") || "N/A")}</td>
+          <td style="padding: 10px 12px;">${escapeHtml(inspectorName)}</td>
+          <td style="padding: 10px 12px;">${getStatusBadge(inspection.status)}</td>
         </tr>
       `;
     }).join("");
@@ -11444,10 +11482,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
+      line-height: 1.5;
       color: #333;
       background: white;
     }
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -11458,28 +11497,105 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
-    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
-    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
-    .cover-date { font-size: 18px; opacity: 0.9; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
-    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #00D5CC; }
-    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
-    .stat-value { font-size: 32px; font-weight: 700; color: #00D5CC; }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-date { font-size: 16px; opacity: 0.9; margin-top: 16px; }
+    .cover-filters { margin-top: 16px; font-size: 14px; opacity: 0.85; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #00D5CC;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #00D5CC; }
+    .page-date { font-size: 13px; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #f9fafb; padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #00D5CC; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; }
   </style>
 </head>
 <body>
   <div class="cover-page">
-    <div class="cover-logo">INSPECT360</div>
-    <div class="cover-title">Inspections Report</div>
-    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
-    ${filterSummary.length > 0 ? `<div style="margin-top: 24px; font-size: 16px;">Filters: ${escapeHtml(filterSummary.join(" • "))}</div>` : ""}
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Inspections Report</div>
+      <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+      ${filterSummary.length > 0 ? `<div class="cover-filters">Filters: ${escapeHtml(filterSummary.join(" | "))}</div>` : ""}
+    </div>
+    ${contactInfoHtml}
   </div>
 
-  <div style="padding: 40px;">
-    <h1 style="font-size: 32px; font-weight: 800; color: #00D5CC; margin-bottom: 32px;">Inspections Summary</h1>
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Inspections Summary</div>
+      <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+    </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -11500,7 +11616,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       </div>
     </div>
 
-    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Inspection Records</h2>
+    <h2 class="section-title">Inspection Records</h2>
     
     ${inspections.length > 0 ? `
       <table>
@@ -11519,7 +11635,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         </tbody>
       </table>
     ` : `
-      <div style="text-align: center; padding: 48px; color: #999;">
+      <div style="text-align: center; padding: 40px; color: #999;">
         No inspections found matching the selected filters
       </div>
     `}
@@ -11533,7 +11649,8 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   function generateBlocksReportHTML(
     blocks: any[],
     properties: any[],
-    tenantAssignments: any[]
+    tenantAssignments: any[],
+    branding?: ReportBrandingInfo
   ): string {
     const escapeHtml = (str: string) => {
       if (!str) return '';
@@ -11544,6 +11661,23 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
     };
+
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
 
     // Calculate block statistics
     const blocksWithStats = blocks.map(block => {
@@ -11590,15 +11724,15 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       const colors = getOccupancyColor(block.occupancyRate);
       return `
         <tr style="border-bottom: 1px solid #e5e7eb;">
-          <td style="padding: 12px 8px; font-weight: 500;">${escapeHtml(block.name)}</td>
-          <td style="padding: 12px 8px;">
+          <td style="padding: 10px 12px; font-weight: 500;">${escapeHtml(block.name)}</td>
+          <td style="padding: 10px 12px;">
             <div>${escapeHtml(block.address || "N/A")}</div>
-            ${block.postcode ? `<div style="color: #666; font-size: 13px;">${escapeHtml(block.postcode)}</div>` : ""}
+            ${block.postcode ? `<div style="color: #666; font-size: 12px;">${escapeHtml(block.postcode)}</div>` : ""}
           </td>
-          <td style="padding: 12px 8px; text-align: center;">${block.totalUnits}</td>
-          <td style="padding: 12px 8px; text-align: center;">${block.occupiedUnits}</td>
-          <td style="padding: 12px 8px; text-align: center;">${block.vacantUnits}</td>
-          <td style="padding: 12px 8px; text-align: center;">
+          <td style="padding: 10px 12px; text-align: center;">${block.totalUnits}</td>
+          <td style="padding: 10px 12px; text-align: center;">${block.occupiedUnits}</td>
+          <td style="padding: 10px 12px; text-align: center;">${block.vacantUnits}</td>
+          <td style="padding: 10px 12px; text-align: center;">
             <span style="background: ${colors.bg}; color: ${colors.color}; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">
               ${block.occupancyRate}%
             </span>
@@ -11616,10 +11750,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
+      line-height: 1.5;
       color: #333;
       background: white;
     }
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -11630,27 +11765,103 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
-    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
-    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
-    .cover-date { font-size: 18px; opacity: 0.9; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
-    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #3B7A8C; }
-    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
-    .stat-value { font-size: 32px; font-weight: 700; color: #3B7A8C; }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-date { font-size: 16px; opacity: 0.9; margin-top: 16px; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #3B7A8C;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #3B7A8C; }
+    .page-date { font-size: 13px; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th { background: #f9fafb; padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #3B7A8C; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #3B7A8C; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; }
   </style>
 </head>
 <body>
   <div class="cover-page">
-    <div class="cover-logo">INSPECT360</div>
-    <div class="cover-title">Blocks Report</div>
-    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Blocks Report</div>
+      <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    </div>
+    ${contactInfoHtml}
   </div>
 
-  <div style="padding: 40px;">
-    <h1 style="font-size: 32px; font-weight: 800; color: #3B7A8C; margin-bottom: 32px;">Blocks Overview</h1>
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Blocks Overview</div>
+      <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+    </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -11671,7 +11882,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       </div>
     </div>
 
-    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Block Details</h2>
+    <h2 class="section-title">Block Details</h2>
     
     ${blocksWithStats.length > 0 ? `
       <table>
@@ -11690,7 +11901,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         </tbody>
       </table>
     ` : `
-      <div style="text-align: center; padding: 48px; color: #999;">
+      <div style="text-align: center; padding: 40px; color: #999;">
         No blocks found
       </div>
     `}
@@ -11712,7 +11923,17 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       const properties = await storage.getPropertiesByOrganization(user.organizationId);
       const tenantAssignments = await storage.getTenantAssignmentsByOrganization(user.organizationId);
 
-      const html = generateBlocksReportHTML(blocks, properties, tenantAssignments);
+      // Fetch organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
+      const html = generateBlocksReportHTML(blocks, properties, tenantAssignments, branding);
 
       let browser;
       try {
@@ -11725,12 +11946,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
         const pdf = await page.pdf({
           format: "A4",
+          landscape: true,
           printBackground: true,
           margin: {
-            top: "20mm",
-            right: "15mm",
-            bottom: "20mm",
-            left: "15mm",
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
           },
         });
 
@@ -11806,8 +12028,18 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       const blocks = await storage.getBlocksByOrganization(user.organizationId);
       const users = await storage.getUsersByOrganization(user.organizationId);
 
+      // Fetch organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
       // Generate HTML for PDF
-      const html = generateInspectionsReportHTML(inspections, properties, blocks, users, req.body);
+      const html = generateInspectionsReportHTML(inspections, properties, blocks, users, req.body, branding);
 
       // Generate PDF using Puppeteer
       let browser;
@@ -11821,12 +12053,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
         const pdf = await page.pdf({
           format: "A4",
+          landscape: true,
           printBackground: true,
           margin: {
-            top: "20mm",
-            right: "15mm",
-            bottom: "20mm",
-            left: "15mm",
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
           },
         });
 
@@ -12540,7 +12773,34 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   });
 
   // HTML generation function for Compliance Report
-  function generateComplianceReportHTML(complianceDocuments: any[], properties: any[], blocks: any[]) {
+  function generateComplianceReportHTML(complianceDocuments: any[], properties: any[], blocks: any[], branding?: ReportBrandingInfo) {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+
     const enrichedDocuments = complianceDocuments.map(doc => {
       const property = properties.find(p => p.id === doc.propertyId);
       const block = property ? blocks.find(b => b.id === property.blockId) : 
@@ -12578,28 +12838,28 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
     const tableRows = enrichedDocuments.map(doc => `
       <tr>
-        <td>${doc.documentType}</td>
-        <td>
-          <span style="padding: 4px 12px; border-radius: 4px; background: #f3f4f6; color: #374151; font-size: 12px;">
+        <td style="padding: 10px 12px;">${escapeHtml(doc.documentType)}</td>
+        <td style="padding: 10px 12px;">
+          <span style="padding: 3px 10px; border-radius: 4px; background: #f3f4f6; color: #374151; font-size: 11px;">
             ${doc.blockId && !doc.propertyId ? 'Block-Level' : 'Property-Level'}
           </span>
         </td>
-        <td>${doc.block ? doc.block.name : '-'}</td>
-        <td>${doc.property ? doc.property.name : '-'}</td>
-        <td>
+        <td style="padding: 10px 12px;">${doc.block ? escapeHtml(doc.block.name) : '-'}</td>
+        <td style="padding: 10px 12px;">${doc.property ? escapeHtml(doc.property.name) : '-'}</td>
+        <td style="padding: 10px 12px;">
           ${doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No expiry'}
-          ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry >= 0 ? `<br><span style="font-size: 11px; color: #6b7280;">${doc.daysUntilExpiry} days left</span>` : ''}
-          ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry < 0 ? `<br><span style="font-size: 11px; color: #ef4444;">${Math.abs(doc.daysUntilExpiry)} days overdue</span>` : ''}
+          ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry >= 0 ? `<br><span style="font-size: 10px; color: #6b7280;">${doc.daysUntilExpiry} days left</span>` : ''}
+          ${doc.daysUntilExpiry !== null && doc.daysUntilExpiry < 0 ? `<br><span style="font-size: 10px; color: #ef4444;">${Math.abs(doc.daysUntilExpiry)} days overdue</span>` : ''}
         </td>
-        <td style="text-align: center;">
-          <span style="padding: 4px 12px; border-radius: 4px; background: ${
+        <td style="padding: 10px 12px; text-align: center;">
+          <span style="padding: 3px 10px; border-radius: 4px; background: ${
             doc.status === 'expired' ? '#ef4444' :
             doc.status === 'expiring-soon' ? '#f59e0b' : '#00D5CC'
-          }; color: white; font-size: 12px;">
+          }; color: white; font-size: 11px;">
             ${doc.status === 'expired' ? 'Expired' : doc.status === 'expiring-soon' ? 'Expiring Soon' : 'Current'}
           </span>
         </td>
-        <td>${doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+        <td style="padding: 10px 12px;">${doc.createdAt ? new Date(doc.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
       </tr>
     `).join('');
 
@@ -12612,10 +12872,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
+      line-height: 1.5;
       color: #333;
       background: white;
     }
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -12626,30 +12887,105 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
-    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
-    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
-    .cover-date { font-size: 18px; opacity: 0.9; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-    td { padding: 12px 8px; border-bottom: 1px solid #e5e7eb; }
-    tr:hover { background: #f9fafb; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
-    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #00D5CC; }
-    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
-    .stat-value { font-size: 32px; font-weight: 700; color: #00D5CC; }
-    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-date { font-size: 16px; opacity: 0.9; margin-top: 16px; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #00D5CC;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #00D5CC; }
+    .page-date { font-size: 13px; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+    th { background: #f9fafb; padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { border-bottom: 1px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #00D5CC; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-align: center; }
   </style>
 </head>
 <body>
   <div class="cover-page">
-    <div class="cover-logo">INSPECT360</div>
-    <div class="cover-title">Compliance Report</div>
-    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Compliance Report</div>
+      <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    </div>
+    ${contactInfoHtml}
   </div>
 
-  <div style="padding: 40px;">
-    <h1 style="font-size: 32px; font-weight: 800; color: #00D5CC; margin-bottom: 32px;">Compliance Summary</h1>
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Compliance Summary</div>
+      <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+    </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -12670,7 +13006,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       </div>
     </div>
 
-    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Compliance Records</h2>
+    <h2 class="section-title">Compliance Records</h2>
     
     ${complianceDocuments.length > 0 ? `
       <table>
@@ -12690,13 +13026,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         </tbody>
       </table>
     ` : `
-      <div style="text-align: center; padding: 48px; color: #999;">
+      <div style="text-align: center; padding: 40px; color: #999;">
         No compliance documents found
       </div>
     `}
 
     <div class="footer">
-      <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+      <p>Report generated by ${escapeHtml(companyName)}</p>
     </div>
   </div>
 </body>
@@ -12759,7 +13095,17 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         );
       }
 
-      const html = generateComplianceReportHTML(complianceDocuments, properties, blocks);
+      // Fetch organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
+      const html = generateComplianceReportHTML(complianceDocuments, properties, blocks, branding);
 
       let browser;
       try {
@@ -12772,12 +13118,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
         const pdf = await page.pdf({
           format: "A4",
+          landscape: true,
           printBackground: true,
           margin: {
-            top: "20mm",
-            right: "15mm",
-            bottom: "20mm",
-            left: "15mm",
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
           },
         });
 
