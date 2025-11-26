@@ -1410,31 +1410,19 @@ function WorkOrderForm({
   onSubmit: (data: any) => void;
   isSubmitting: boolean;
 }) {
+  const locale = useLocale();
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedContractorId, setSelectedContractorId] = useState<string>("");
   const [slaDue, setSlaDue] = useState<string>("");
   const [costEstimate, setCostEstimate] = useState<string>("");
-
-  // Auto-suggest team based on maintenance request category
-  useEffect(() => {
-    if (maintenanceRequest.category && teams.length > 0) {
-      // Find team that has this category assigned
-      const suggestedTeam = teams.find((team: any) => 
-        team.categories?.includes(maintenanceRequest.category)
-      );
-      if (suggestedTeam) {
-        setSelectedTeamId(suggestedTeam.id);
-      }
-    }
-  }, [maintenanceRequest.category, teams]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     onSubmit({
       maintenanceRequestId: maintenanceRequest.id,
-      teamId: selectedTeamId || undefined,
-      contractorId: selectedContractorId || undefined,
+      teamId: selectedTeamId && selectedTeamId !== "none" ? selectedTeamId : undefined,
+      contractorId: selectedContractorId && selectedContractorId !== "none" ? selectedContractorId : undefined,
       slaDue: slaDue ? new Date(slaDue).toISOString() : undefined,
       costEstimate: costEstimate ? Math.round(parseFloat(costEstimate) * 100) : undefined,
       status: "assigned",
@@ -1446,9 +1434,6 @@ function WorkOrderForm({
       <div className="space-y-2">
         <label className="text-sm font-medium" htmlFor="team">
           Assign to Team
-          {maintenanceRequest.category && selectedTeamId && (
-            <span className="ml-2 text-xs text-muted-foreground">(Auto-suggested based on category)</span>
-          )}
         </label>
         <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
           <SelectTrigger id="team" data-testid="select-team">
