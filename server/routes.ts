@@ -12077,7 +12077,34 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   });
 
   // HTML generation function for Properties Report
-  function generatePropertiesReportHTML(properties: any[], blocks: any[], inspections: any[], tenantAssignments: any[], maintenanceRequests: any[]) {
+  function generatePropertiesReportHTML(properties: any[], blocks: any[], inspections: any[], tenantAssignments: any[], maintenanceRequests: any[], branding?: ReportBrandingInfo) {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+
     const propertiesWithStats = properties.map(property => {
       const propertyInspections = inspections.filter(i => i.propertyId === property.id);
       const latestInspection = propertyInspections.sort((a, b) => 
@@ -12117,18 +12144,18 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
     const tableRows = propertiesWithStats.map(property => `
       <tr>
-        <td>${property.block?.name || "N/A"}</td>
-        <td>${property.name || "N/A"}</td>
-        <td>${property.address || ""}</td>
-        <td style="text-align: center;">
-          <span style="padding: 4px 12px; border-radius: 4px; background: ${property.isOccupied ? '#00D5CC' : '#e5e7eb'}; color: ${property.isOccupied ? 'white' : '#374151'}; font-size: 12px;">
+        <td style="padding: 10px 12px;">${escapeHtml(property.block?.name || "N/A")}</td>
+        <td style="padding: 10px 12px;">${escapeHtml(property.name || "N/A")}</td>
+        <td style="padding: 10px 12px;">${escapeHtml(property.address || "")}</td>
+        <td style="padding: 10px 12px; text-align: center;">
+          <span style="padding: 3px 10px; border-radius: 4px; background: ${property.isOccupied ? '#00D5CC' : '#e5e7eb'}; color: ${property.isOccupied ? 'white' : '#374151'}; font-size: 11px;">
             ${property.isOccupied ? 'Occupied' : 'Vacant'}
           </span>
         </td>
-        <td>${property.tenant ? `${property.tenant.tenantFirstName} ${property.tenant.tenantLastName}` : '-'}</td>
-        <td style="text-align: center;">${property.totalInspections}</td>
-        <td style="text-align: center;">${property.openMaintenanceCount}</td>
-        <td>${property.lastInspection ? new Date(property.lastInspection.scheduledDate || property.lastInspection.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never'}</td>
+        <td style="padding: 10px 12px;">${property.tenant ? escapeHtml(`${property.tenant.tenantFirstName} ${property.tenant.tenantLastName}`) : '-'}</td>
+        <td style="padding: 10px 12px; text-align: center;">${property.totalInspections}</td>
+        <td style="padding: 10px 12px; text-align: center;">${property.openMaintenanceCount}</td>
+        <td style="padding: 10px 12px;">${property.lastInspection ? new Date(property.lastInspection.scheduledDate || property.lastInspection.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never'}</td>
       </tr>
     `).join('');
 
@@ -12141,10 +12168,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
+      line-height: 1.5;
       color: #333;
       background: white;
     }
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -12155,30 +12183,105 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
-    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
-    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
-    .cover-date { font-size: 18px; opacity: 0.9; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-    td { padding: 12px 8px; border-bottom: 1px solid #e5e7eb; }
-    tr:hover { background: #f9fafb; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
-    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #00D5CC; }
-    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
-    .stat-value { font-size: 32px; font-weight: 700; color: #00D5CC; }
-    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-date { font-size: 16px; opacity: 0.9; margin-top: 16px; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #00D5CC;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #00D5CC; }
+    .page-date { font-size: 13px; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+    th { background: #f9fafb; padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { border-bottom: 1px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #00D5CC; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-align: center; }
   </style>
 </head>
 <body>
   <div class="cover-page">
-    <div class="cover-logo">INSPECT360</div>
-    <div class="cover-title">Properties Report</div>
-    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Properties Report</div>
+      <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    </div>
+    ${contactInfoHtml}
   </div>
 
-  <div style="padding: 40px;">
-    <h1 style="font-size: 32px; font-weight: 800; color: #00D5CC; margin-bottom: 32px;">Properties Summary</h1>
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Properties Summary</div>
+      <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+    </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -12199,7 +12302,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       </div>
     </div>
 
-    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Property Records</h2>
+    <h2 class="section-title">Property Records</h2>
     
     ${properties.length > 0 ? `
       <table>
@@ -12220,13 +12323,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         </tbody>
       </table>
     ` : `
-      <div style="text-align: center; padding: 48px; color: #999;">
+      <div style="text-align: center; padding: 40px; color: #999;">
         No properties found
       </div>
     `}
 
     <div class="footer">
-      <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+      <p>Report generated by ${escapeHtml(companyName)}</p>
     </div>
   </div>
 </body>
@@ -12277,7 +12380,17 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         );
       }
 
-      const html = generatePropertiesReportHTML(properties, blocks, inspections, tenantAssignments, maintenanceRequests);
+      // Fetch organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
+      const html = generatePropertiesReportHTML(properties, blocks, inspections, tenantAssignments, maintenanceRequests, branding);
 
       let browser;
       try {
@@ -12290,12 +12403,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
         const pdf = await page.pdf({
           format: "A4",
+          landscape: true,
           printBackground: true,
           margin: {
-            top: "20mm",
-            right: "15mm",
-            bottom: "20mm",
-            left: "15mm",
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
           },
         });
 
@@ -12313,7 +12427,34 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   });
 
   // HTML generation function for Tenants Report
-  function generateTenantsReportHTML(tenantAssignments: any[], properties: any[], blocks: any[]) {
+  function generateTenantsReportHTML(tenantAssignments: any[], properties: any[], blocks: any[], branding?: ReportBrandingInfo) {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+
     const enrichedTenants = tenantAssignments.map(tenant => {
       const property = properties.find(p => p.id === tenant.propertyId);
       const block = property ? blocks.find(b => b.id === property.blockId) : null;
@@ -12339,15 +12480,15 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
     const tableRows = enrichedTenants.map(tenant => `
       <tr>
-        <td>${tenant.tenantFirstName} ${tenant.tenantLastName}</td>
-        <td>${tenant.tenantEmail || 'N/A'}</td>
-        <td>${tenant.block?.name || 'N/A'}</td>
-        <td>${tenant.property?.unitNumber || 'N/A'}</td>
-        <td>${tenant.leaseStartDate ? new Date(tenant.leaseStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
-        <td>${tenant.leaseEndDate ? new Date(tenant.leaseEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}${tenant.daysUntilExpiry !== null && tenant.daysUntilExpiry >= 0 ? ` (${tenant.daysUntilExpiry} days)` : ''}</td>
-        <td style="text-align: right;">${tenant.monthlyRent > 0 ? '£' + tenant.monthlyRent.toLocaleString() : '-'}</td>
-        <td style="text-align: center;">
-          <span style="padding: 4px 12px; border-radius: 4px; background: ${tenant.status === 'active' ? '#00D5CC' : '#e5e7eb'}; color: ${tenant.status === 'active' ? 'white' : '#374151'}; font-size: 12px;">
+        <td style="padding: 10px 12px;">${escapeHtml(`${tenant.tenantFirstName} ${tenant.tenantLastName}`)}</td>
+        <td style="padding: 10px 12px;">${escapeHtml(tenant.tenantEmail || 'N/A')}</td>
+        <td style="padding: 10px 12px;">${escapeHtml(tenant.block?.name || 'N/A')}</td>
+        <td style="padding: 10px 12px;">${escapeHtml(tenant.property?.unitNumber || 'N/A')}</td>
+        <td style="padding: 10px 12px;">${tenant.leaseStartDate ? new Date(tenant.leaseStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+        <td style="padding: 10px 12px;">${tenant.leaseEndDate ? new Date(tenant.leaseEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}${tenant.daysUntilExpiry !== null && tenant.daysUntilExpiry >= 0 ? ` (${tenant.daysUntilExpiry} days)` : ''}</td>
+        <td style="padding: 10px 12px; text-align: right;">${tenant.monthlyRent > 0 ? '£' + tenant.monthlyRent.toLocaleString() : '-'}</td>
+        <td style="padding: 10px 12px; text-align: center;">
+          <span style="padding: 3px 10px; border-radius: 4px; background: ${tenant.status === 'active' ? '#00D5CC' : '#e5e7eb'}; color: ${tenant.status === 'active' ? 'white' : '#374151'}; font-size: 11px;">
             ${tenant.status === 'active' ? 'Active' : 'Inactive'}
           </span>
         </td>
@@ -12363,10 +12504,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
+      line-height: 1.5;
       color: #333;
       background: white;
     }
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -12377,30 +12519,105 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
-    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
-    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
-    .cover-date { font-size: 18px; opacity: 0.9; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-    td { padding: 12px 8px; border-bottom: 1px solid #e5e7eb; }
-    tr:hover { background: #f9fafb; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
-    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #00D5CC; }
-    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
-    .stat-value { font-size: 32px; font-weight: 700; color: #00D5CC; }
-    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-date { font-size: 16px; opacity: 0.9; margin-top: 16px; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #00D5CC;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #00D5CC; }
+    .page-date { font-size: 13px; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+    th { background: #f9fafb; padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { border-bottom: 1px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #00D5CC; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-align: center; }
   </style>
 </head>
 <body>
   <div class="cover-page">
-    <div class="cover-logo">INSPECT360</div>
-    <div class="cover-title">Tenants Report</div>
-    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Tenants Report</div>
+      <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    </div>
+    ${contactInfoHtml}
   </div>
 
-  <div style="padding: 40px;">
-    <h1 style="font-size: 32px; font-weight: 800; color: #00D5CC; margin-bottom: 32px;">Tenants Summary</h1>
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Tenants Summary</div>
+      <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+    </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -12421,7 +12638,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       </div>
     </div>
 
-    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Tenant Records</h2>
+    <h2 class="section-title">Tenant Records</h2>
     
     ${tenantAssignments.length > 0 ? `
       <table>
@@ -12442,13 +12659,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         </tbody>
       </table>
     ` : `
-      <div style="text-align: center; padding: 48px; color: #999;">
+      <div style="text-align: center; padding: 40px; color: #999;">
         No tenants found
       </div>
     `}
 
     <div class="footer">
-      <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+      <p>Report generated by ${escapeHtml(companyName)}</p>
     </div>
   </div>
 </body>
@@ -12509,7 +12726,17 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         );
       }
 
-      const html = generateTenantsReportHTML(tenantAssignments, properties, blocks);
+      // Fetch organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
+      const html = generateTenantsReportHTML(tenantAssignments, properties, blocks, branding);
 
       let browser;
       try {
@@ -12522,12 +12749,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
         const pdf = await page.pdf({
           format: "A4",
+          landscape: true,
           printBackground: true,
           margin: {
-            top: "20mm",
-            right: "15mm",
-            bottom: "20mm",
-            left: "15mm",
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
           },
         });
 
@@ -12545,7 +12773,34 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   });
 
   // HTML generation function for Inventory Report
-  function generateInventoryReportHTML(assetInventory: any[], properties: any[], blocks: any[]) {
+  function generateInventoryReportHTML(assetInventory: any[], properties: any[], blocks: any[], branding?: ReportBrandingInfo) {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+
     const enrichedInventory = assetInventory.map(asset => {
       const property = properties.find(p => p.id === asset.propertyId);
       const block = property ? blocks.find(b => b.id === property.blockId) : 
@@ -12567,28 +12822,28 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
     const tableRows = enrichedInventory.map(asset => `
       <tr>
-        <td>${asset.name}</td>
-        <td>
-          <span style="padding: 4px 12px; border-radius: 4px; background: #f3f4f6; color: #374151; font-size: 12px;">
-            ${asset.category || 'Uncategorized'}
+        <td style="padding: 10px 12px;">${escapeHtml(asset.name || '')}</td>
+        <td style="padding: 10px 12px;">
+          <span style="padding: 3px 10px; border-radius: 4px; background: #f3f4f6; color: #374151; font-size: 11px;">
+            ${escapeHtml(asset.category || 'Uncategorized')}
           </span>
         </td>
-        <td>${asset.location || 'N/A'}</td>
-        <td>${asset.block ? asset.block.name : '-'}</td>
-        <td>${asset.property ? asset.property.name : '-'}</td>
-        <td style="text-align: center;">
-          <span style="padding: 4px 12px; border-radius: 4px; background: ${
+        <td style="padding: 10px 12px;">${escapeHtml(asset.location || 'N/A')}</td>
+        <td style="padding: 10px 12px;">${asset.block ? escapeHtml(asset.block.name) : '-'}</td>
+        <td style="padding: 10px 12px;">${asset.property ? escapeHtml(asset.property.name) : '-'}</td>
+        <td style="padding: 10px 12px; text-align: center;">
+          <span style="padding: 3px 10px; border-radius: 4px; background: ${
             asset.condition === 'excellent' || asset.condition === 'good' ? '#00D5CC' :
             asset.condition === 'fair' ? '#e5e7eb' : '#ef4444'
           }; color: ${
             asset.condition === 'excellent' || asset.condition === 'good' ? 'white' :
             asset.condition === 'fair' ? '#374151' : 'white'
-          }; font-size: 12px;">
-            ${asset.condition || 'Unknown'}
+          }; font-size: 11px;">
+            ${escapeHtml(asset.condition || 'Unknown')}
           </span>
         </td>
-        <td style="font-family: monospace; font-size: 12px;">${asset.serialNumber || '-'}</td>
-        <td>${asset.createdAt ? new Date(asset.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+        <td style="padding: 10px 12px; font-family: monospace; font-size: 11px;">${escapeHtml(asset.serialNumber || '-')}</td>
+        <td style="padding: 10px 12px;">${asset.createdAt ? new Date(asset.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
       </tr>
     `).join('');
 
@@ -12601,10 +12856,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
+      line-height: 1.5;
       color: #333;
       background: white;
     }
+    /* Cover Page - Landscape optimized */
     .cover-page {
       height: 100vh;
       display: flex;
@@ -12615,30 +12871,105 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
       color: white;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
     }
-    .cover-logo { font-size: 72px; font-weight: 800; margin-bottom: 24px; }
-    .cover-title { font-size: 48px; font-weight: 700; margin-bottom: 16px; }
-    .cover-date { font-size: 18px; opacity: 0.9; }
-    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th { background: #f9fafb; padding: 12px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
-    td { padding: 12px 8px; border-bottom: 1px solid #e5e7eb; }
-    tr:hover { background: #f9fafb; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 32px 0; }
-    .stat-card { background: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #00D5CC; }
-    .stat-label { font-size: 13px; color: #666; text-transform: uppercase; margin-bottom: 8px; }
-    .stat-value { font-size: 32px; font-weight: 700; color: #00D5CC; }
-    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center; }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-date { font-size: 16px; opacity: 0.9; margin-top: 16px; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #00D5CC;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #00D5CC; }
+    .page-date { font-size: 13px; color: #666; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+    th { background: #f9fafb; padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { border-bottom: 1px solid #e5e7eb; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #00D5CC; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-align: center; }
   </style>
 </head>
 <body>
   <div class="cover-page">
-    <div class="cover-logo">INSPECT360</div>
-    <div class="cover-title">Inventory Report</div>
-    <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Inventory Report</div>
+      <div class="cover-date">Generated on ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</div>
+    </div>
+    ${contactInfoHtml}
   </div>
 
-  <div style="padding: 40px;">
-    <h1 style="font-size: 32px; font-weight: 800; color: #00D5CC; margin-bottom: 32px;">Inventory Summary</h1>
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Inventory Summary</div>
+      <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+    </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -12659,7 +12990,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       </div>
     </div>
 
-    <h2 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-top: 48px; margin-bottom: 16px;">Asset Records</h2>
+    <h2 class="section-title">Asset Records</h2>
     
     ${assetInventory.length > 0 ? `
       <table>
@@ -12680,13 +13011,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         </tbody>
       </table>
     ` : `
-      <div style="text-align: center; padding: 48px; color: #999;">
+      <div style="text-align: center; padding: 40px; color: #999;">
         No inventory items found
       </div>
     `}
 
     <div class="footer">
-      <p>© ${new Date().getFullYear()} Inspect360. All rights reserved.</p>
+      <p>Report generated by ${escapeHtml(companyName)}</p>
     </div>
   </div>
 </body>
@@ -12737,7 +13068,17 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         );
       }
 
-      const html = generateInventoryReportHTML(assetInventory, properties, blocks);
+      // Fetch organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
+      const html = generateInventoryReportHTML(assetInventory, properties, blocks, branding);
 
       let browser;
       try {
@@ -12750,12 +13091,13 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
         const pdf = await page.pdf({
           format: "A4",
+          landscape: true,
           printBackground: true,
           margin: {
-            top: "20mm",
-            right: "15mm",
-            bottom: "20mm",
-            left: "15mm",
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
           },
         });
 
