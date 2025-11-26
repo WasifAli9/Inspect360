@@ -42,6 +42,7 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 - **Tenant Portal**: Dedicated PWA-first portal with separate authentication, a home dashboard, an AI preventative maintenance chatbot, and maintenance request tracking.
 - **First-Time User Onboarding**: Beautiful swipeable 5-screen onboarding experience for new users with Inspect360 branding, feature highlights, and smooth Embla carousel transitions. Only appears on first login; completion is persisted to the database.
 - **Feedback & Feature Request System**: Complete user feedback system with dialog-based submission form (title, description, priority, category), user feedback history page ("My Feedback" in sidebar), and comprehensive Eco-Admin management panel with status counts, multi-criteria filtering (status/category/priority), status updates with resolution notes, and automatic email notifications to the central team on new submissions.
+- **White-Labeling System**: Complete organization branding customization with logo upload (stored in Google Cloud Storage), company name, contact details (email, phone, website, address). Branding appears in sidebar navigation, PDF inspection reports (cover page with logo and contact info), and throughout portals. Configured during onboarding with a dedicated "Customize Your Brand" step, and editable anytime via Settings > Company Branding tab. URL sanitization ensures security in PDF generation.
 
 ## External Dependencies
 - **PostgreSQL (Neon)**: Primary database.
