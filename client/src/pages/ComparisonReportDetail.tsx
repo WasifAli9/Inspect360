@@ -35,7 +35,9 @@ import {
   Eye,
   EyeOff,
   Settings,
-  CheckCircle
+  CheckCircle,
+  Download,
+  Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -127,6 +129,47 @@ export default function ComparisonReportDetail() {
   const [signatureName, setSignatureName] = useState("");
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [itemEdits, setItemEdits] = useState<Record<string, any>>({});
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  // Download comparison report as PDF
+  const handleDownloadPdf = async () => {
+    if (!id) return;
+    
+    setIsDownloadingPdf(true);
+    try {
+      const response = await fetch(`/api/comparison-reports/${id}/pdf`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `comparison-report-${id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "PDF Downloaded",
+        description: "Your comparison report has been downloaded successfully.",
+      });
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: "Failed to download the comparison report PDF. Please try again.",
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
 
   const { data: report, isLoading } = useQuery<ComparisonReport>({
     queryKey: ["/api/comparison-reports", id],
@@ -293,6 +336,19 @@ export default function ComparisonReportDetail() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={handleDownloadPdf}
+            disabled={isDownloadingPdf}
+            data-testid="button-download-pdf"
+          >
+            {isDownloadingPdf ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            {isDownloadingPdf ? "Generating..." : "Download PDF"}
+          </Button>
           {canEdit && (
             <Select
               value={report.status}

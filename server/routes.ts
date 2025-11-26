@@ -4186,6 +4186,504 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     }
   });
 
+  // Generate Comparison Report PDF with branding
+  app.get("/api/comparison-reports/:id/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const report = await storage.getComparisonReport(id);
+      if (!report) {
+        return res.status(404).json({ message: "Comparison report not found" });
+      }
+
+      // Verify organization ownership
+      if (report.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Get report items
+      const items = await storage.getComparisonReportItems(id);
+      
+      // Get property and tenant info
+      const property = await storage.getProperty(report.propertyId);
+      const block = property?.blockId ? await storage.getBlock(property.blockId) : null;
+      
+      // Get check-in and check-out inspections
+      const checkInInspection = await storage.getInspection(report.checkInInspectionId);
+      const checkOutInspection = await storage.getInspection(report.checkOutInspectionId);
+      
+      // Get comments for the report
+      const comments = await storage.getComparisonComments(id);
+      
+      // Get organization branding
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding: ReportBrandingInfo = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingWebsite: organization.brandingWebsite,
+      } : {};
+
+      // Generate HTML for the comparison report
+      const html = generateComparisonReportHTML(
+        report,
+        items,
+        property,
+        block,
+        checkInInspection,
+        checkOutInspection,
+        comments.filter((c: any) => !c.isInternal), // Only public comments in PDF
+        branding
+      );
+
+      let browser;
+      try {
+        browser = await launchPuppeteerBrowser();
+
+        const page = await browser.newPage();
+        await page.setContent(html, {
+          waitUntil: "networkidle0",
+        });
+
+        const pdf = await page.pdf({
+          format: "A4",
+          landscape: true,
+          printBackground: true,
+          margin: {
+            top: "15mm",
+            right: "12mm",
+            bottom: "15mm",
+            left: "12mm",
+          },
+        });
+
+        res.contentType("application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="comparison-report-${id}.pdf"`);
+        res.send(Buffer.from(pdf));
+      } finally {
+        if (browser) {
+          await browser.close();
+        }
+      }
+    } catch (error) {
+      console.error("Error generating comparison report PDF:", error);
+      res.status(500).json({ message: "Failed to generate comparison report PDF" });
+    }
+  });
+
+  // HTML generation function for Comparison Report
+  function generateComparisonReportHTML(
+    report: any,
+    items: any[],
+    property: any,
+    block: any,
+    checkInInspection: any,
+    checkOutInspection: any,
+    comments: any[],
+    branding?: ReportBrandingInfo
+  ) {
+    const escapeHtml = (str: string) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    };
+
+    // Branding for cover page
+    const companyName = branding?.brandingName || "Inspect360";
+    const hasLogo = !!branding?.logoUrl;
+    const logoHtml = hasLogo
+      ? `<img src="${sanitizeReportUrl(branding.logoUrl!)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+      : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
+    const companyNameHtml = hasLogo 
+      ? `<div class="cover-company-name">${escapeHtml(companyName)}</div>` 
+      : '';
+    const contactParts: string[] = [];
+    if (branding?.brandingEmail) contactParts.push(escapeHtml(branding.brandingEmail));
+    if (branding?.brandingPhone) contactParts.push(escapeHtml(branding.brandingPhone));
+    if (branding?.brandingWebsite) contactParts.push(escapeHtml(branding.brandingWebsite));
+    const contactInfoHtml = contactParts.length > 0
+      ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
+
+    // Status badge color
+    const statusColors: Record<string, { bg: string; color: string }> = {
+      draft: { bg: '#e5e7eb', color: '#374151' },
+      under_review: { bg: '#00D5CC', color: 'white' },
+      awaiting_signatures: { bg: '#f59e0b', color: 'white' },
+      signed: { bg: '#10b981', color: 'white' },
+      filed: { bg: '#6b7280', color: 'white' },
+    };
+    const statusStyle = statusColors[report.status] || statusColors.draft;
+    const statusLabel = report.status.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+
+    // Calculate totals
+    const totalEstimated = items.reduce((sum, item) => sum + parseFloat(item.estimatedCost || '0'), 0);
+    const totalDepreciation = items.reduce((sum, item) => sum + parseFloat(item.depreciation || '0'), 0);
+    const totalFinal = items.reduce((sum, item) => sum + parseFloat(item.finalCost || '0'), 0);
+    const tenantLiableCount = items.filter(i => i.liabilityDecision === 'tenant').length;
+    const landlordLiableCount = items.filter(i => i.liabilityDecision === 'landlord').length;
+    const sharedCount = items.filter(i => i.liabilityDecision === 'shared').length;
+    const waivedCount = items.filter(i => i.liabilityDecision === 'waived').length;
+
+    // Liability badge colors
+    const liabilityColors: Record<string, { bg: string; color: string }> = {
+      tenant: { bg: '#ef4444', color: 'white' },
+      landlord: { bg: '#3b82f6', color: 'white' },
+      shared: { bg: '#f59e0b', color: 'white' },
+      waived: { bg: '#6b7280', color: 'white' },
+    };
+
+    // Generate item rows
+    const itemRows = items.map((item, index) => {
+      const aiAnalysis = item.aiComparisonJson || {};
+      const liability = liabilityColors[item.liabilityDecision] || liabilityColors.tenant;
+      const liabilityLabel = item.liabilityDecision ? 
+        item.liabilityDecision.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : 
+        'Pending';
+      
+      const checkInPhotos = aiAnalysis.checkInPhotos || [];
+      const checkOutPhotos = aiAnalysis.checkOutPhotos || [];
+      
+      return `
+        <div class="item-card" style="page-break-inside: avoid; margin-bottom: 20px;">
+          <div class="item-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f9fafb; border-radius: 8px 8px 0 0; border: 1px solid #e5e7eb; border-bottom: none;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-weight: 700; color: #00D5CC; font-size: 14px;">#${index + 1}</span>
+              <span style="font-weight: 600; font-size: 14px;">${escapeHtml(item.itemRef || item.fieldKey || 'Item')}</span>
+            </div>
+            <span style="padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; background: ${liability.bg}; color: ${liability.color};">
+              ${liabilityLabel}
+            </span>
+          </div>
+          <div style="padding: 16px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+            ${item.aiSummary ? `
+              <div style="margin-bottom: 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 4px; font-weight: 600;">AI Analysis</div>
+                <div style="font-size: 13px; color: #374151; line-height: 1.5;">${escapeHtml(item.aiSummary)}</div>
+              </div>
+            ` : ''}
+            
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px;">
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 8px; font-weight: 600;">Check-In Photos</div>
+                ${checkInPhotos.length > 0 ? `
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    ${checkInPhotos.slice(0, 3).map((photo: string) => `
+                      <img src="${sanitizeReportUrl(photo)}" style="width: 80px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" />
+                    `).join('')}
+                    ${checkInPhotos.length > 3 ? `<span style="font-size: 12px; color: #666; align-self: center;">+${checkInPhotos.length - 3} more</span>` : ''}
+                  </div>
+                ` : '<span style="font-size: 12px; color: #999;">No photos</span>'}
+              </div>
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 8px; font-weight: 600;">Check-Out Photos</div>
+                ${checkOutPhotos.length > 0 ? `
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    ${checkOutPhotos.slice(0, 3).map((photo: string) => `
+                      <img src="${sanitizeReportUrl(photo)}" style="width: 80px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb;" />
+                    `).join('')}
+                    ${checkOutPhotos.length > 3 ? `<span style="font-size: 12px; color: #666; align-self: center;">+${checkOutPhotos.length - 3} more</span>` : ''}
+                  </div>
+                ` : '<span style="font-size: 12px; color: #999;">No photos</span>'}
+              </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 2px;">Estimated Cost</div>
+                <div style="font-size: 16px; font-weight: 700; color: #374151;">£${parseFloat(item.estimatedCost || '0').toFixed(2)}</div>
+              </div>
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 2px;">Depreciation</div>
+                <div style="font-size: 16px; font-weight: 700; color: #f59e0b;">-£${parseFloat(item.depreciation || '0').toFixed(2)}</div>
+              </div>
+              <div>
+                <div style="font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 2px;">Final Cost</div>
+                <div style="font-size: 16px; font-weight: 700; color: #00D5CC;">£${parseFloat(item.finalCost || '0').toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Generate comments section
+    const commentsHtml = comments.length > 0 ? `
+      <div style="page-break-before: always;">
+        <h2 style="font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px; border-bottom: 2px solid #00D5CC; padding-bottom: 8px;">Discussion Thread</h2>
+        ${comments.map(comment => `
+          <div style="padding: 12px; margin-bottom: 12px; background: #f9fafb; border-radius: 8px; border-left: 3px solid #00D5CC;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-weight: 600; font-size: 13px;">${escapeHtml(comment.authorName)}</span>
+              <span style="font-size: 11px; color: #666;">${format(new Date(comment.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
+            </div>
+            <div style="font-size: 13px; color: #374151; line-height: 1.5;">${escapeHtml(comment.content)}</div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    // Signature section
+    const signatureHtml = `
+      <div style="page-break-before: always;">
+        <h2 style="font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px; border-bottom: 2px solid #00D5CC; padding-bottom: 8px;">Electronic Signatures</h2>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px;">
+          <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 12px; font-size: 14px;">Operator Signature</div>
+            ${report.operatorSignature ? `
+              <div style="padding: 16px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
+                <div style="font-size: 18px; font-weight: 700; color: #166534; font-style: italic; margin-bottom: 8px;">${escapeHtml(report.operatorSignature)}</div>
+                <div style="font-size: 11px; color: #166534;">
+                  Signed on ${report.operatorSignedAt ? format(new Date(report.operatorSignedAt), "MMMM d, yyyy 'at' h:mm a") : 'N/A'}
+                </div>
+              </div>
+            ` : `
+              <div style="padding: 16px; background: #fef2f2; border-radius: 6px; border: 1px solid #fecaca; text-align: center;">
+                <span style="color: #dc2626; font-size: 13px;">Pending Signature</span>
+              </div>
+            `}
+          </div>
+          <div style="padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <div style="font-weight: 600; margin-bottom: 12px; font-size: 14px;">Tenant Signature</div>
+            ${report.tenantSignature ? `
+              <div style="padding: 16px; background: #f0fdf4; border-radius: 6px; border: 1px solid #bbf7d0;">
+                <div style="font-size: 18px; font-weight: 700; color: #166534; font-style: italic; margin-bottom: 8px;">${escapeHtml(report.tenantSignature)}</div>
+                <div style="font-size: 11px; color: #166534;">
+                  Signed on ${report.tenantSignedAt ? format(new Date(report.tenantSignedAt), "MMMM d, yyyy 'at' h:mm a") : 'N/A'}
+                </div>
+              </div>
+            ` : `
+              <div style="padding: 16px; background: #fef2f2; border-radius: 6px; border: 1px solid #fecaca; text-align: center;">
+                <span style="color: #dc2626; font-size: 13px;">Pending Signature</span>
+              </div>
+            `}
+          </div>
+        </div>
+        <div style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 11px; color: #666; text-align: center;">
+          Electronic signatures on this document are legally binding under the Electronic Signatures in Global and National Commerce Act (E-SIGN Act).
+        </div>
+      </div>
+    `;
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.5;
+      color: #333;
+      background: white;
+    }
+    /* Cover Page - Landscape optimized */
+    .cover-page {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      background: linear-gradient(135deg, #00D5CC 0%, #3B7A8C 100%);
+      color: white;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -20%;
+      width: 60%;
+      height: 200%;
+      background: rgba(255, 255, 255, 0.03);
+      transform: rotate(15deg);
+    }
+    .cover-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .cover-logo-container { margin-bottom: 32px; }
+    .cover-logo-img {
+      max-height: 100px;
+      max-width: 280px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+    }
+    .cover-logo-text {
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -2px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .cover-company-name {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 12px;
+      opacity: 0.95;
+    }
+    .cover-divider {
+      width: 100px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.5);
+      margin: 28px 0;
+      border-radius: 2px;
+    }
+    .cover-title { font-size: 38px; font-weight: 700; margin-bottom: 12px; }
+    .cover-subtitle { font-size: 18px; opacity: 0.9; margin-bottom: 8px; }
+    .cover-date { font-size: 14px; opacity: 0.8; margin-top: 16px; }
+    .cover-contact {
+      position: absolute;
+      bottom: 32px;
+      font-size: 13px;
+      opacity: 0.8;
+      z-index: 1;
+    }
+    /* Content area - Landscape optimized */
+    .content { padding: 28px 36px; }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #00D5CC;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .page-title { font-size: 26px; font-weight: 800; color: #00D5CC; }
+    .page-date { font-size: 13px; color: #666; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0; }
+    .stat-card { background: #f9fafb; padding: 16px; border-radius: 8px; border-left: 4px solid #00D5CC; }
+    .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #00D5CC; }
+    .section-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 32px; margin-bottom: 14px; border-bottom: 2px solid #00D5CC; padding-bottom: 8px; }
+    .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
+    .info-card { padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .info-label { font-size: 11px; color: #666; text-transform: uppercase; margin-bottom: 4px; font-weight: 600; }
+    .info-value { font-size: 14px; font-weight: 600; color: #1a1a1a; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    <div class="cover-content">
+      <div class="cover-logo-container">
+        ${logoHtml}
+        ${companyNameHtml}
+      </div>
+      <div class="cover-divider"></div>
+      <div class="cover-title">Comparison Report</div>
+      <div class="cover-subtitle">${escapeHtml(property?.name || property?.unitNumber || 'Property')}</div>
+      <div class="cover-subtitle">${escapeHtml(block?.name || '')}</div>
+      <div class="cover-date">Generated on ${format(new Date(report.createdAt), "MMMM d, yyyy 'at' h:mm a")}</div>
+    </div>
+    ${contactInfoHtml}
+  </div>
+
+  <div class="content">
+    <div class="page-header">
+      <div class="page-title">Check-In vs Check-Out Comparison</div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; background: ${statusStyle.bg}; color: ${statusStyle.color};">
+          ${statusLabel}
+        </span>
+        <div class="page-date">${format(new Date(), "MMMM d, yyyy")}</div>
+      </div>
+    </div>
+
+    <!-- Property & Inspection Info -->
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="info-label">Property</div>
+        <div class="info-value">${escapeHtml(property?.name || property?.unitNumber || 'N/A')}</div>
+        <div style="font-size: 12px; color: #666; margin-top: 4px;">${escapeHtml(property?.address || '')}</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">Check-In Inspection</div>
+        <div class="info-value">${checkInInspection?.inspectionDate ? format(new Date(checkInInspection.inspectionDate), "MMM d, yyyy") : 'N/A'}</div>
+        <div style="font-size: 12px; color: #666; margin-top: 4px;">Type: ${escapeHtml(checkInInspection?.type || 'Check-In')}</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">Check-Out Inspection</div>
+        <div class="info-value">${checkOutInspection?.inspectionDate ? format(new Date(checkOutInspection.inspectionDate), "MMM d, yyyy") : 'N/A'}</div>
+        <div style="font-size: 12px; color: #666; margin-top: 4px;">Type: ${escapeHtml(checkOutInspection?.type || 'Check-Out')}</div>
+      </div>
+    </div>
+
+    <!-- Cost Summary -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Items</div>
+        <div class="stat-value">${items.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Estimated Cost</div>
+        <div class="stat-value">£${totalEstimated.toFixed(2)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Depreciation</div>
+        <div class="stat-value" style="color: #f59e0b;">-£${totalDepreciation.toFixed(2)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Final Amount</div>
+        <div class="stat-value">£${totalFinal.toFixed(2)}</div>
+      </div>
+    </div>
+
+    <!-- Liability Breakdown -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;">
+      <div style="padding: 12px; background: #fef2f2; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #dc2626;">${tenantLiableCount}</div>
+        <div style="font-size: 11px; color: #dc2626; text-transform: uppercase;">Tenant Liable</div>
+      </div>
+      <div style="padding: 12px; background: #eff6ff; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #2563eb;">${landlordLiableCount}</div>
+        <div style="font-size: 11px; color: #2563eb; text-transform: uppercase;">Landlord</div>
+      </div>
+      <div style="padding: 12px; background: #fefce8; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #ca8a04;">${sharedCount}</div>
+        <div style="font-size: 11px; color: #ca8a04; text-transform: uppercase;">Shared</div>
+      </div>
+      <div style="padding: 12px; background: #f3f4f6; border-radius: 6px; text-align: center;">
+        <div style="font-size: 24px; font-weight: 700; color: #6b7280;">${waivedCount}</div>
+        <div style="font-size: 11px; color: #6b7280; text-transform: uppercase;">Waived</div>
+      </div>
+    </div>
+
+    <!-- Item-by-Item Comparison -->
+    <h2 class="section-title">Item-by-Item Comparison</h2>
+    ${items.length > 0 ? itemRows : '<div style="text-align: center; padding: 40px; color: #999;">No items in this comparison report</div>'}
+
+    ${commentsHtml}
+    
+    ${signatureHtml}
+
+    <div class="footer">
+      <p>Report generated by ${escapeHtml(companyName)}</p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
   // ==================== COMPLIANCE ROUTES ====================
   
   app.post("/api/compliance", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
