@@ -19,13 +19,50 @@ export default function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      await apiRequest("POST", "/api/forgot-password", { email });
-      toast({
-        title: "Reset code sent",
-        description: "Check your email for the 6-digit reset code",
+      const response = await fetch("/api/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+        credentials: "include",
       });
-      // Redirect to reset password page with email
-      navigate(`/reset-password?email=${encodeURIComponent(email)}`);
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Handle 404 - email not found
+        if (response.status === 404) {
+          toast({
+            title: "Email not found",
+            description: "This email is not registered. Please sign up to create an account.",
+            variant: "destructive",
+          });
+          return;
+        }
+        // Other errors
+        toast({
+          title: "Error",
+          description: data.message || "Failed to send reset email",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Check if email was sent successfully
+      if (data?.emailSent === true) {
+        toast({
+          title: "Reset code sent",
+          description: "Check your email for the 6-digit reset code",
+        });
+        // Redirect to reset password page with email only if email was sent successfully
+        navigate(`/reset-password?email=${encodeURIComponent(email)}`);
+      } else {
+        // Email sending failed
+        toast({
+          title: "Error",
+          description: data.message || "Failed to send reset email",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -85,7 +122,7 @@ export default function ForgotPassword() {
                   Send reset instructions
                 </Button>
 
-                <div className="text-center">
+                <div className="text-center space-y-2">
                   <button
                     type="button"
                     className="text-sm text-primary hover:underline transition-all"
@@ -94,6 +131,17 @@ export default function ForgotPassword() {
                   >
                     Already have a reset code?
                   </button>
+                  <div>
+                    <span className="text-sm text-muted-foreground">Don't have an account? </span>
+                    <button
+                      type="button"
+                      className="text-sm text-primary hover:underline transition-all"
+                      onClick={() => navigate("/auth")}
+                      data-testid="button-signup"
+                    >
+                      Sign up
+                    </button>
+                  </div>
                 </div>
               </form>
             </CardContent>

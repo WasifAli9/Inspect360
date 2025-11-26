@@ -376,9 +376,11 @@ export async function setupAuth(app: Express) {
       const normalizedEmail = email.toLowerCase().trim();
       const user = await storage.getUserByEmail(normalizedEmail);
       if (!user) {
-        // Don't reveal if email exists
-        return res.json({ 
-          message: "If that email exists, a password reset link has been sent" 
+        // Email not found - tell user to sign up
+        return res.status(404).json({ 
+          message: "Email not found. Please sign up to create an account.",
+          emailSent: false,
+          emailNotFound: true
         });
       }
 
@@ -389,6 +391,7 @@ export async function setupAuth(app: Express) {
       await storage.setResetToken(user.id, resetToken, expiry);
 
       // Send password reset email
+      let emailSent = false;
       try {
         const { sendPasswordResetEmail } = await import('./resend');
         const displayName = user.firstName 
@@ -399,13 +402,20 @@ export async function setupAuth(app: Express) {
           displayName,
           resetToken
         );
+        emailSent = true;
       } catch (emailError) {
         console.error('Failed to send password reset email:', emailError);
-        // Don't fail the request if email fails - token is still set
+        // If email fails, still return success but indicate email wasn't sent
+        return res.status(500).json({ 
+          message: "Failed to send reset email. Please try again later.",
+          emailSent: false
+        });
       }
       
+      // Return success with email sent indicator
       res.json({ 
-        message: "If that email exists, a password reset link has been sent"
+        message: "Password reset code has been sent to your email",
+        emailSent: true
       });
     } catch (error) {
       console.error("Forgot password error:", error);
