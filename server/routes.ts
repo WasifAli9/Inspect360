@@ -2153,6 +2153,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         inspector = await storage.getUser(inspection.inspectorId);
       }
 
+      // Fetch organization branding for white-label PDF
+      const organization = await storage.getOrganization(user.organizationId);
+      const branding = organization ? {
+        logoUrl: organization.logoUrl,
+        brandingName: organization.brandingName,
+        brandingEmail: organization.brandingEmail,
+        brandingPhone: organization.brandingPhone,
+        brandingAddress: organization.brandingAddress,
+        brandingWebsite: organization.brandingWebsite,
+      } : undefined;
+
       // Build full inspection object with relations
       const fullInspection = {
         ...inspection,
@@ -2168,8 +2179,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const host = req.get('host');
       const baseUrl = `${protocol}://${host}`;
 
-      // Generate PDF
-      const pdfBuffer = await generateInspectionPDF(fullInspection as any, entries, baseUrl);
+      // Generate PDF with branding
+      const pdfBuffer = await generateInspectionPDF(fullInspection as any, entries, baseUrl, branding);
 
       // Set headers for PDF download
       const propertyName = property?.name || "inspection";

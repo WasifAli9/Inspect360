@@ -32,11 +32,21 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { Link, useLocation } from "wouter";
-import logoUrl from "@assets/Inspect360 Logo_1761302629835.png";
+import { useQuery } from "@tanstack/react-query";
+import type { Organization } from "@shared/schema";
+import defaultLogoUrl from "@assets/Inspect360 Logo_1761302629835.png";
 
 export function AppSidebar() {
   const { user } = useAuth();
   const [location] = useLocation();
+
+  const { data: organization } = useQuery<Organization>({
+    queryKey: ["/api/organizations", user?.organizationId],
+    enabled: !!user?.organizationId,
+  });
+
+  const logoSrc = organization?.logoUrl || defaultLogoUrl;
+  const companyName = organization?.brandingName || organization?.name || "Inspect360";
 
   const mainMenuItems = [
     {
@@ -152,7 +162,12 @@ export function AppSidebar() {
     <Sidebar data-testid="sidebar-main">
       <SidebarHeader className="p-4 border-b">
         <div className="flex items-center gap-2">
-          <img src={logoUrl} alt="Inspect360" className="h-8" />
+          <img 
+            src={logoSrc} 
+            alt={companyName} 
+            className="h-8 max-w-[180px] object-contain" 
+            data-testid="img-sidebar-logo"
+          />
         </div>
       </SidebarHeader>
       <SidebarContent>

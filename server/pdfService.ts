@@ -140,12 +140,22 @@ interface InspectionEntry {
   markedForReview?: boolean;
 }
 
+interface BrandingInfo {
+  logoUrl?: string | null;
+  brandingName?: string | null;
+  brandingEmail?: string | null;
+  brandingPhone?: string | null;
+  brandingAddress?: string | null;
+  brandingWebsite?: string | null;
+}
+
 export async function generateInspectionPDF(
   inspection: Inspection,
   entries: InspectionEntry[],
-  baseUrl: string
+  baseUrl: string,
+  branding?: BrandingInfo
 ): Promise<Buffer> {
-  const html = generateInspectionHTML(inspection, entries, baseUrl);
+  const html = generateInspectionHTML(inspection, entries, baseUrl, branding);
 
   let browser;
   try {
@@ -237,7 +247,8 @@ function renderFieldValue(value: any, field: TemplateField): string {
 function generateInspectionHTML(
   inspection: Inspection,
   entries: InspectionEntry[],
-  baseUrl: string
+  baseUrl: string,
+  branding?: BrandingInfo
 ): string {
   const templateStructure = inspection.templateSnapshotJson as { sections: TemplateSection[] } | null;
   const sections = templateStructure?.sections || [];
@@ -250,6 +261,21 @@ function generateInspectionHTML(
     : "Unknown Inspector";
   const inspectionDate = inspection.completedDate || inspection.scheduledDate || inspection.startedAt;
   const formattedDate = inspectionDate ? format(new Date(inspectionDate), "PPP") : "Not specified";
+  
+  const companyName = branding?.brandingName || "Inspect360";
+  const logoHtml = branding?.logoUrl 
+    ? `<img src="${sanitizeUrl(branding.logoUrl)}" alt="${escapeHtml(companyName)}" style="max-height: 80px; max-width: 200px; object-fit: contain;" />`
+    : `<span>${escapeHtml(companyName)}</span>`;
+  
+  const contactInfoHtml = (branding?.brandingEmail || branding?.brandingPhone || branding?.brandingWebsite) 
+    ? `<div style="margin-top: 16px; font-size: 12px; color: #666; text-align: center;">
+        ${branding.brandingEmail ? `<span>${escapeHtml(branding.brandingEmail)}</span>` : ''}
+        ${branding.brandingEmail && branding.brandingPhone ? ' | ' : ''}
+        ${branding.brandingPhone ? `<span>${escapeHtml(branding.brandingPhone)}</span>` : ''}
+        ${(branding.brandingEmail || branding.brandingPhone) && branding.brandingWebsite ? ' | ' : ''}
+        ${branding.brandingWebsite ? `<span>${escapeHtml(branding.brandingWebsite)}</span>` : ''}
+      </div>`
+    : '';
 
   // Build entries map
   const entriesMap = new Map<string, InspectionEntry>();
@@ -495,7 +521,8 @@ function generateInspectionHTML(
   <div class="container">
     <!-- Cover Page -->
     <div class="cover-page">
-      <div class="cover-logo">INSPECT360</div>
+      <div class="cover-logo">${logoHtml}</div>
+      ${contactInfoHtml}
       <div class="cover-title">Inspection Report</div>
       <div class="cover-property">${escapeHtml(propertyName)}</div>
       <div class="cover-details">
