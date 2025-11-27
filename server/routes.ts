@@ -8673,6 +8673,23 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     }
   });
 
+  // Generate upload URL for branding/logo uploads (used by Settings page)
+  app.post("/api/upload/generate-upload-url", isAuthenticated, async (req, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const relativePath = await objectStorageService.getObjectEntityUploadURL();
+      
+      // Convert relative path to absolute URL
+      const baseUrl = getBaseUrl(req);
+      const uploadUrl = `${baseUrl}${relativePath}`;
+      
+      res.json({ uploadUrl });
+    } catch (error: any) {
+      console.error("Error generating upload URL:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
   // Direct upload endpoint for local storage (returns upload URL that points to upload-file)
   // Supports both POST (multer) and PUT (raw body) for compatibility with Uppy AwsS3 plugin
   app.post("/api/objects/upload-direct", isAuthenticated, upload.single('file'), async (req: any, res: any) => {

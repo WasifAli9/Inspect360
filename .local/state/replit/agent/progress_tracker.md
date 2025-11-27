@@ -33,6 +33,7 @@
 ## Bug Fixes Applied
 - [x] Fixed comparison report OpenAI initialization - changed from raw `openai` variable to `getOpenAI()` function call
 - [x] Set up OpenAI AI Integration with proper environment variables
+- [x] Fixed company logo upload - added missing `/api/upload/generate-upload-url` endpoint (was causing "Upload failed" error in Settings page)
 
 ## Notes
 - Application successfully running on port 5000
