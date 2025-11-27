@@ -441,11 +441,18 @@
 
   /* Ensure Uppy modal has correct z-index and doesn't block parent dialog */
   .uppy-Dashboard--modal {
-    z-index: 10001 !important;
+    z-index: 99999 !important;
+    position: fixed !important;
   }
 
   .uppy-Dashboard--modal .uppy-Dashboard-overlay {
-    z-index: 10000 !important;
+    z-index: 99998 !important;
+    position: fixed !important;
+  }
+
+  /* Ensure Uppy modal container is rendered at root level */
+  body > .uppy-Dashboard--modal {
+    z-index: 99999 !important;
   }
 
   /* Fix Google Maps Autocomplete dropdown z-index to appear above dialogs */

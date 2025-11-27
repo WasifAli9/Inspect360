@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import Uppy from "@uppy/core";
 import { DashboardModal } from "@uppy/react";
@@ -21,6 +22,8 @@ interface ObjectUploaderProps {
   onComplete?: (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>
   ) => void;
+  onModalOpen?: () => void;
+  onModalClose?: () => void;
   buttonClassName?: string;
   children: ReactNode;
 }
@@ -30,6 +33,8 @@ export function ObjectUploader({
   maxFileSize = 10485760, // 10MB default
   onGetUploadParameters,
   onComplete,
+  onModalOpen,
+  onModalClose,
   buttonClassName,
   children,
 }: ObjectUploaderProps) {
@@ -109,8 +114,13 @@ export function ObjectUploader({
       
       onComplete?.(result);
       
+      // Close modal after successful upload
       if (result.successful && result.successful.length > 0) {
-        setShowModal(false);
+        // Use setTimeout to ensure the upload completes before closing
+        setTimeout(() => {
+          setShowModal(false);
+          onModalClose?.();
+        }, 100);
       }
     };
 
@@ -122,32 +132,65 @@ export function ObjectUploader({
     };
   }, [uppy, onComplete]);
 
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (showModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showModal]);
+
+  const handleButtonClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setShowModal(true);
+    onModalOpen?.();
+  };
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    onModalClose?.();
+  };
+
+  const modalContent = showModal ? (
+    <DashboardModal
+      uppy={uppy}
+      open={showModal}
+      onRequestClose={handleModalClose}
+      proudlyDisplayPoweredByUppy={false}
+      plugins={['Webcam']}
+      note=""
+      closeModalOnClickOutside={false}
+      closeAfterFinish={false}
+      animateOpenClose={true}
+      browserBackButtonClose={false}
+      locale={{
+        strings: {
+          dropHint: '',
+          dropPasteImportBoth: '%{browseFiles} or use camera',
+          dropPasteBoth: '%{browseFiles} or use camera',
+          dropPasteFiles: '%{browseFiles} or use camera',
+          dropPasteFolders: '%{browseFiles} or use camera',
+          dropPasteImportFiles: '%{browseFiles} or use camera',
+          dropPasteImportFolders: '%{browseFiles} or use camera',
+          browseFiles: 'choose files',
+        }
+      }}
+    />
+  ) : null;
+
   return (
     <div>
-      <Button type="button" onClick={() => setShowModal(true)} className={buttonClassName} data-testid="button-upload">
+      <Button type="button" onClick={handleButtonClick} className={buttonClassName} data-testid="button-upload">
         {children}
       </Button>
 
-      <DashboardModal
-        uppy={uppy}
-        open={showModal}
-        onRequestClose={() => setShowModal(false)}
-        proudlyDisplayPoweredByUppy={false}
-        plugins={['Webcam']}
-        note=""
-        locale={{
-          strings: {
-            dropHint: '',
-            dropPasteImportBoth: '%{browseFiles} or use camera',
-            dropPasteBoth: '%{browseFiles} or use camera',
-            dropPasteFiles: '%{browseFiles} or use camera',
-            dropPasteFolders: '%{browseFiles} or use camera',
-            dropPasteImportFiles: '%{browseFiles} or use camera',
-            dropPasteImportFolders: '%{browseFiles} or use camera',
-            browseFiles: 'choose files',
-          }
-        }}
-      />
+      {/* Render modal in a portal at document.body level to avoid carousel overflow issues */}
+      {typeof document !== 'undefined' && modalContent && createPortal(modalContent, document.body)}
     </div>
   );
 }

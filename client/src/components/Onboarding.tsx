@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import useEmblaCarousel from "embla-carousel-react";
+import { useLocation } from "wouter";
 import { 
   Building2, 
   ClipboardCheck, 
@@ -116,10 +117,12 @@ const slides: OnboardingSlide[] = [
 ];
 
 export function Onboarding({ onComplete }: OnboardingProps) {
+  const [, navigate] = useLocation();
   const [emblaRef, emblaApi] = useEmblaCarousel({ loop: false });
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [brandingName, setBrandingName] = useState("");
@@ -131,6 +134,29 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const { data: user } = useQuery<User>({
     queryKey: ["/api/auth/user"],
   });
+
+  const { data: organization } = useQuery<Organization>({
+    queryKey: ["/api/organizations", user?.organizationId],
+    enabled: !!user?.organizationId,
+  });
+
+  // Track if we've already auto-populated to prevent overwriting user edits
+  const hasAutoPopulated = useRef(false);
+
+  // Auto-populate company name and email from registration when component mounts
+  useEffect(() => {
+    if (user && organization && !hasAutoPopulated.current) {
+      // Auto-populate company name from organization name (which comes from username during registration)
+      if (organization.name) {
+        setBrandingName(organization.name);
+      }
+      // Auto-populate email from user email
+      if (user.email) {
+        setBrandingEmail(user.email);
+      }
+      hasAutoPopulated.current = true;
+    }
+  }, [user, organization]);
 
   const updateBrandingMutation = useMutation({
     mutationFn: async () => {
@@ -161,20 +187,22 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       onComplete();
+      // Navigate to dashboard after onboarding completes
+      navigate("/dashboard");
     }
   });
 
   const scrollPrev = useCallback(() => {
-    if (emblaApi) emblaApi.scrollPrev();
-  }, [emblaApi]);
+    if (emblaApi && !isUploadModalOpen) emblaApi.scrollPrev();
+  }, [emblaApi, isUploadModalOpen]);
 
   const scrollNext = useCallback(() => {
-    if (emblaApi) emblaApi.scrollNext();
-  }, [emblaApi]);
+    if (emblaApi && !isUploadModalOpen) emblaApi.scrollNext();
+  }, [emblaApi, isUploadModalOpen]);
 
   const scrollTo = useCallback((index: number) => {
-    if (emblaApi) emblaApi.scrollTo(index);
-  }, [emblaApi]);
+    if (emblaApi && !isUploadModalOpen) emblaApi.scrollTo(index);
+  }, [emblaApi, isUploadModalOpen]);
 
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
@@ -225,6 +253,15 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         setLogoUrl(fileUrl);
       }
     }
+    setIsUploadModalOpen(false);
+  };
+
+  const handleUploadModalOpen = () => {
+    setIsUploadModalOpen(true);
+  };
+
+  const handleUploadModalClose = () => {
+    setIsUploadModalOpen(false);
   };
 
   const removeLogo = () => {
@@ -277,16 +314,20 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                   </Button>
                 </div>
               ) : (
-                <ObjectUploader
-                  maxNumberOfFiles={1}
-                  maxFileSize={5242880}
-                  onGetUploadParameters={getUploadParameters}
-                  onComplete={handleUploadComplete}
-                  buttonClassName="h-32 w-32 border-2 border-dashed border-border rounded-md flex flex-col items-center justify-center gap-2 bg-muted/50"
-                >
-                  <Upload className="w-8 h-8 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Upload Logo</span>
-                </ObjectUploader>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <ObjectUploader
+                    maxNumberOfFiles={1}
+                    maxFileSize={5242880}
+                    onGetUploadParameters={getUploadParameters}
+                    onComplete={handleUploadComplete}
+                    onModalOpen={handleUploadModalOpen}
+                    onModalClose={handleUploadModalClose}
+                    buttonClassName="h-32 w-32 border-2 border-dashed border-border rounded-md flex flex-col items-center justify-center gap-2 bg-muted/50"
+                  >
+                    <Upload className="w-8 h-8 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Upload Logo</span>
+                  </ObjectUploader>
+                </div>
               )}
               <p className="text-xs text-muted-foreground text-center">
                 Your logo will appear on reports, portals, and communications
