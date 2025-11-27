@@ -8,7 +8,7 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Create a PostgreSQL connection pool for local Replit PostgreSQL
+// Create a PostgreSQL connection pool
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
 });

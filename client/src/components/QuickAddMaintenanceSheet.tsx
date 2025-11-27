@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { offlineQueue, useOnlineStatus } from "@/lib/offlineQueue";
-import { extractFileUrlFromUploadResponse } from "@/lib/utils";
 import type { QuickAddMaintenance } from "@shared/schema";
 import { quickAddMaintenanceSchema } from "@shared/schema";
 import {
@@ -34,13 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Loader2, Camera, X, Image as ImageIcon } from "lucide-react";
-import Uppy from "@uppy/core";
-import { Dashboard } from "@uppy/react";
-import AwsS3 from "@uppy/aws-s3";
-import Webcam from "@uppy/webcam";
-import "@uppy/core/css/style.min.css";
-import "@uppy/dashboard/css/style.min.css";
-import "@uppy/webcam/css/style.min.css";
+// Removed Uppy - using simple file input instead
 
 interface QuickAddMaintenanceSheetProps {
   open: boolean;
@@ -70,96 +63,97 @@ export function QuickAddMaintenanceSheet({
   const isOnline = useOnlineStatus();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoUrls, setPhotoUrls] = useState<string[]>(initialPhotos);
-  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setPhotoUrls(initialPhotos);
   }, [initialPhotos, open]);
 
-  const [uppy] = useState(() => {
-    const uppyInstance = new Uppy({
-      restrictions: {
-        maxNumberOfFiles: 5,
-        maxFileSize: 10485760,
-        allowedFileTypes: ['image/*'],
-      },
-      autoProceed: false,
-    })
-      .use(Webcam, {
-        modes: ['picture'],
-        facingMode: 'environment',
-      } as any)
-      .use(AwsS3, {
-        shouldUseMultipart: false,
-        async getUploadParameters(file: any) {
-          const response = await fetch('/api/objects/upload', {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    const uploadPromises: Promise<string>[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      
+      // Validate file
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: "Invalid file type",
+          description: `${file.name} is not an image file`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: `${file.name} exceeds 10MB limit`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      const uploadPromise = (async () => {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const response = await fetch('/api/objects/upload-file', {
             method: 'POST',
             credentials: 'include',
+            body: formData,
           });
-          const { uploadURL } = await response.json();
-          uppyInstance.setFileMeta(file.id, { originalUploadURL: uploadURL });
-          return {
-            method: 'PUT',
-            url: uploadURL,
-          };
-        },
-      });
-    return uppyInstance;
-  });
 
-  useEffect(() => {
-    const handleUploadSuccess = (file: any, response: any) => {
-      const fileUrl = extractFileUrlFromUploadResponse(file, response);
-      if (fileUrl) {
-        file.meta = file.meta || {};
-        file.meta.extractedFileUrl = fileUrl;
-      }
-    };
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Upload failed: ${response.status} ${errorText.substring(0, 100)}`);
+          }
 
-    const handleComplete = async (result: any) => {
-      if (result.successful && result.successful.length > 0) {
-        const newUrls: string[] = [];
-        for (const file of result.successful) {
-          let uploadURL = file.meta?.extractedFileUrl || file.uploadURL;
-          if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
-            try {
-              const urlObj = new URL(uploadURL);
-              uploadURL = urlObj.pathname;
-            } catch (e) {
-              console.error('[MaintenanceSheet] Invalid upload URL:', uploadURL);
-              continue;
-            }
+          const data = await response.json();
+          const photoUrl = data.url || data.path;
+          
+          if (!photoUrl) {
+            throw new Error('Upload response missing URL');
           }
-          if (uploadURL && uploadURL.startsWith('/objects/')) {
-            try {
-              const absoluteUrl = `${window.location.origin}${uploadURL}`;
-              const aclResponse = await fetch('/api/objects/set-acl', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ photoUrl: absoluteUrl }),
-              });
-              const { objectPath } = await aclResponse.json();
-              newUrls.push(objectPath || uploadURL);
-            } catch (error) {
-              newUrls.push(uploadURL);
-            }
-          }
+
+          return photoUrl;
+        } catch (error: any) {
+          console.error('[QuickAddMaintenanceSheet] Upload error:', error);
+          toast({
+            title: "Upload Failed",
+            description: `Failed to upload ${file.name}: ${error.message}`,
+            variant: "destructive",
+          });
+          throw error;
         }
-        setPhotoUrls(prev => [...prev, ...newUrls]);
-        setShowPhotoUpload(false);
-        uppy.cancelAll();
+      })();
+
+      uploadPromises.push(uploadPromise);
+    }
+
+    try {
+      const uploadedUrls = await Promise.all(uploadPromises);
+      setPhotoUrls(prev => [...prev, ...uploadedUrls]);
+      toast({
+        title: "Upload Successful",
+        description: `${uploadedUrls.length} photo(s) uploaded successfully`,
+      });
+    } catch (error) {
+      // Individual errors already handled above
+    } finally {
+      setIsUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    };
-
-    uppy.on("upload-success", handleUploadSuccess);
-    uppy.on("complete", handleComplete);
-
-    return () => {
-      uppy.off("upload-success", handleUploadSuccess);
-      uppy.off("complete", handleComplete);
-    };
-  }, [uppy]);
+    }
+  };
 
   const removePhoto = (index: number) => {
     setPhotoUrls(prev => prev.filter((_, i) => i !== index));
@@ -219,10 +213,12 @@ export function QuickAddMaintenanceSheet({
     }
   }, [open, inspectionId, inspectionEntryId, defaultPropertyId, form]);
 
-  // Update propertyId when blockProperties change
-  if (blockProperties.length === 1 && !form.getValues("propertyId")) {
-    form.setValue("propertyId", blockProperties[0].id);
-  }
+  // Update propertyId when blockProperties change (inside useEffect to prevent infinite loops)
+  useEffect(() => {
+    if (blockProperties.length === 1 && !form.getValues("propertyId")) {
+      form.setValue("propertyId", blockProperties[0].id);
+    }
+  }, [blockProperties, form]);
 
   const createMaintenanceMutation = useMutation({
     mutationFn: async (data: QuickAddMaintenance) => {
@@ -400,41 +396,41 @@ export function QuickAddMaintenanceSheet({
                 </div>
               )}
               
-              {showPhotoUpload ? (
-                <div className="border rounded-md p-2">
-                  <Dashboard
-                    uppy={uppy}
-                    plugins={['Webcam']}
-                    hideUploadButton={false}
-                    height={250}
-                    proudlyDisplayPoweredByUppy={false}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowPhotoUpload(false)}
-                    className="mt-2 w-full"
-                    data-testid="button-cancel-photo-upload"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
+              <div className="space-y-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                  className="hidden"
+                  id="photo-upload-input"
+                />
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setShowPhotoUpload(true)}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
                   className="w-full"
                   data-testid="button-add-photo"
                 >
-                  <Camera className="w-4 h-4 mr-2" />
-                  {photoUrls.length > 0 ? "Add More Photos" : "Add Photos"}
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-4 h-4 mr-2" />
+                      {photoUrls.length > 0 ? "Add More Photos" : "Add Photos"}
+                    </>
+                  )}
                 </Button>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Capture or upload photos of the maintenance issue
-              </p>
+                <p className="text-xs text-muted-foreground">
+                  Upload photos of the maintenance issue (max 10MB per file, up to 5 files)
+                </p>
+              </div>
             </div>
 
             <div className="flex gap-2 pt-4">

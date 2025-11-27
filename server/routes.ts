@@ -3680,6 +3680,73 @@ LIABILITY: [tenant/landlord/shared]`;
                 const checkInPhotos = checkInEntry?.photos || [];
                 const checkOutPhotos = checkOutEntry.photos || [];
 
+                // Helper function to convert photo URL to base64 data URL if needed
+                const convertPhotoToDataUrl = async (photo: string): Promise<string | null> => {
+                  try {
+                    // If already a full HTTP URL, validate and use it directly
+                    if (photo.startsWith("http://") || photo.startsWith("https://")) {
+                      // Validate URL format
+                      try {
+                        new URL(photo);
+                        return photo;
+                      } catch {
+                        console.warn(`[ComparisonReport] Invalid HTTP URL format: ${photo.substring(0, 50)}...`);
+                        return null;
+                      }
+                    }
+                    
+                    // If already a data URL, validate format
+                    if (photo.startsWith("data:")) {
+                      // Basic validation: should have format data:image/...;base64,...
+                      if (photo.match(/^data:image\/[^;]+;base64,/)) {
+                        // Check if data URL is not too large (OpenAI has limits)
+                        if (photo.length > 20 * 1024 * 1024) { // 20MB limit
+                          console.warn(`[ComparisonReport] Data URL too large (${Math.round(photo.length / 1024)}KB), skipping`);
+                          return null;
+                        }
+                        return photo;
+                      } else {
+                        console.warn(`[ComparisonReport] Invalid data URL format: ${photo.substring(0, 50)}...`);
+                        return null;
+                      }
+                    }
+                    
+                    // Convert relative path to base64 data URL
+                    const objectStorageService = new ObjectStorageService();
+                    const photoPath = photo.startsWith('/objects/') ? photo : `/objects/${photo}`;
+                    const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
+                    const fileBuffer = await fs.readFile(objectFile.name);
+                    
+                    // Check file size (OpenAI has limits on data URLs)
+                    const maxSize = 20 * 1024 * 1024; // 20MB
+                    if (fileBuffer.length > maxSize) {
+                      console.warn(`[ComparisonReport] Photo too large (${Math.round(fileBuffer.length / 1024)}KB), skipping: ${photoPath}`);
+                      return null;
+                    }
+                    
+                    // Detect MIME type from buffer
+                    let contentType = detectImageMimeType(fileBuffer);
+                    if (!contentType || !contentType.startsWith('image/')) {
+                      contentType = 'image/jpeg';
+                    }
+                    
+                    // Convert to base64 data URL
+                    const base64Data = fileBuffer.toString('base64');
+                    const dataUrl = `data:${contentType};base64,${base64Data}`;
+                    
+                    // Validate the resulting data URL
+                    if (!dataUrl.match(/^data:image\/[^;]+;base64,/)) {
+                      console.error(`[ComparisonReport] Failed to create valid data URL for: ${photoPath}`);
+                      return null;
+                    }
+                    
+                    return dataUrl;
+                  } catch (error: any) {
+                    console.error(`[ComparisonReport] Error converting photo ${photo} to data URL:`, error.message);
+                    return null;
+                  }
+                };
+
                 // Prepare image content for Vision API
                 const imageContent: any[] = [];
                 
@@ -3689,12 +3756,24 @@ LIABILITY: [tenant/landlord/shared]`;
                     type: "text",
                     text: "CHECK-IN PHOTOS (baseline condition):"
                   });
-                  checkInPhotos.slice(0, 2).forEach((url) => {
-                    imageContent.push({
-                      type: "image_url",
-                      image_url: { url }
-                    });
-                  });
+                  const checkInPhotoUrls = await Promise.all(
+                    checkInPhotos.slice(0, 2).map(convertPhotoToDataUrl)
+                  );
+                  for (const photoUrl of checkInPhotoUrls) {
+                    if (photoUrl && typeof photoUrl === 'string' && photoUrl.length > 0) {
+                      // Validate URL format before adding
+                      if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://') || 
+                          photoUrl.match(/^data:image\/[^;]+;base64,/)) {
+                        // Pass URL as string directly (matching pattern used elsewhere in codebase)
+                        imageContent.push({
+                          type: "image_url",
+                          image_url: photoUrl
+                        });
+                      } else {
+                        console.warn(`[ComparisonReport] Skipping invalid check-in photo URL format: ${photoUrl.substring(0, 50)}...`);
+                      }
+                    }
+                  }
                 }
 
                 // Add check-out photos
@@ -3702,15 +3781,33 @@ LIABILITY: [tenant/landlord/shared]`;
                   type: "text",
                   text: "CHECK-OUT PHOTOS (current condition):"
                 });
-                checkOutPhotos.slice(0, 2).forEach((url) => {
-                  imageContent.push({
-                    type: "image_url",
-                    image_url: { url }
-                  });
-                });
+                  const checkOutPhotoUrls = await Promise.all(
+                    checkOutPhotos.slice(0, 2).map(convertPhotoToDataUrl)
+                  );
+                  for (const photoUrl of checkOutPhotoUrls) {
+                    if (photoUrl && typeof photoUrl === 'string' && photoUrl.length > 0) {
+                      // Validate URL format before adding
+                      if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://') || 
+                          photoUrl.match(/^data:image\/[^;]+;base64,/)) {
+                        // Pass URL as string directly (matching pattern used elsewhere in codebase)
+                        imageContent.push({
+                          type: "image_url",
+                          image_url: photoUrl
+                        });
+                      } else {
+                        console.warn(`[ComparisonReport] Skipping invalid check-out photo URL format: ${photoUrl.substring(0, 50)}...`);
+                      }
+                    }
+                  }
 
-                // Call OpenAI Vision API with enhanced 100-word analysis prompt
-                const prompt = `You are a professional BTR property inspector. Location: ${checkOutEntry.sectionRef} - ${checkOutEntry.fieldKey}
+                // Check if we have any valid images before making API call
+                const hasValidImages = imageContent.some(item => item.type === "image_url");
+                if (!hasValidImages) {
+                  console.warn(`[ComparisonReport] No valid images found for entry ${checkOutEntry.fieldKey}, skipping AI analysis`);
+                  aiComparison = { summary: "No valid images available for comparison" };
+                } else {
+                  // Define prompt before using it
+                  const prompt = `You are a professional BTR property inspector. Location: ${checkOutEntry.sectionRef} - ${checkOutEntry.fieldKey}
 
 CRITICAL: The "differences" field must contain EXACTLY 100 words. Count them. This is mandatory for legal documentation.
 
@@ -3730,19 +3827,64 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   "estimated_cost_range": {"min": 0, "max": 0}
 }`;
 
-                const response = await getOpenAI().responses.create({
-                  model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-                  input: [
-                    {
-                      role: "user",
-                      content: normalizeApiContent([
-                        { type: "text", text: prompt },
-                        ...imageContent
-                      ])
+                  // Log image content for debugging (without full data URLs)
+                  const imageCount = imageContent.filter(item => item.type === "image_url").length;
+                  console.log(`[ComparisonReport] Sending ${imageCount} images for AI analysis on entry ${checkOutEntry.fieldKey}`);
+                  
+                  // Build content array with text and images
+                  const content = [
+                    { type: "text", text: prompt },
+                    ...imageContent
+                  ];
+                  
+                  // Log content structure for debugging (without full URLs)
+                  console.log(`[ComparisonReport] Content structure:`, content.map((c, idx) => ({
+                    index: idx,
+                    type: c.type,
+                    hasImageUrl: !!c.image_url,
+                    urlType: typeof c.image_url,
+                    urlPreview: c.image_url ? (typeof c.image_url === 'string' ? c.image_url.substring(0, 50) + '...' : 'object') : 'none'
+                  })));
+                  
+                  // Validate all image URLs before sending
+                  const normalizedContent = normalizeApiContent(content);
+                  
+                  // Double-check all image URLs are valid strings after normalization
+                  for (let i = 0; i < normalizedContent.length; i++) {
+                    const item = normalizedContent[i];
+                    if (item.type === "input_image") {
+                      const url = item.image_url;
+                      if (typeof url !== 'string') {
+                        console.error(`[ComparisonReport] Invalid image_url type at index ${i}: ${typeof url}, expected string. Item:`, JSON.stringify(item).substring(0, 200));
+                        throw new Error(`[ComparisonReport] Invalid image_url type at index ${i}: ${typeof url}, expected string`);
+                      }
+                      if (!url || url.length === 0) {
+                        console.error(`[ComparisonReport] Empty image_url at index ${i}`);
+                        throw new Error(`[ComparisonReport] Empty image_url at index ${i}`);
+                      }
+                      // Validate URL format
+                      const isValidHttp = url.startsWith('http://') || url.startsWith('https://');
+                      const isValidDataUrl = url.match(/^data:image\/[^;]+;base64,/);
+                      if (!isValidHttp && !isValidDataUrl) {
+                        console.error(`[ComparisonReport] Invalid image_url format at index ${i}: ${url.substring(0, 100)}...`);
+                        throw new Error(`[ComparisonReport] Invalid image_url format at index ${i}: expected http/https URL or data URL`);
+                      }
+                      // Log valid URL (truncated)
+                      console.log(`[ComparisonReport] Valid image URL at index ${i}: ${url.substring(0, 50)}... (${url.length} chars)`);
                     }
-                  ],
-                  max_output_tokens: 800,
-                });
+                  }
+                  
+                  // Call OpenAI Vision API
+                  const response = await getOpenAI().responses.create({
+                    model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+                    input: [
+                      {
+                        role: "user",
+                        content: normalizedContent
+                      }
+                    ],
+                    max_output_tokens: 800,
+                  });
 
                 let aiResponse = response.output_text || (response.output?.[0] as any)?.content?.[0]?.text || "{}";
                 
@@ -3764,7 +3906,7 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
                     checkOutPhotos: checkOutEntry.photos || []
                   };
                 }
-
+                }
               } catch (error) {
                 console.error("Error in AI comparison:", error);
                 aiComparison = { error: "Failed to analyze images" };
@@ -8580,20 +8722,57 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
   });
 
   // Handle PUT requests (for Uppy AwsS3 plugin - raw body, not multer)
-  app.put("/api/objects/upload-direct", isAuthenticated, async (req: any, res: any) => {
+  // IMPORTANT: This endpoint must ALWAYS return JSON on errors to prevent HTML parsing errors in Uppy
+  app.put("/api/objects/upload-direct", async (req: any, res: any) => {
+    console.log('[upload-direct] PUT request received:', {
+      method: req.method,
+      url: req.url,
+      path: req.path,
+      authenticated: req.isAuthenticated(),
+      hasBody: !!req.body,
+      contentType: req.headers['content-type'],
+    });
+    
+    // Set JSON content type IMMEDIATELY to prevent any HTML responses
+    res.set('Content-Type', 'application/json');
+    
+    // Check authentication first and return JSON if not authenticated
+    if (!req.isAuthenticated()) {
+      console.error('[upload-direct] Unauthenticated PUT request');
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    // Set content type early to prevent HTML responses
+    // For successful uploads, return empty body (S3-compatible)
+    // For errors, return JSON
+    
+    let responseSent = false;
+    const sendError = (status: number, message: string) => {
+      if (!responseSent) {
+        responseSent = true;
+        res.set('Content-Type', 'application/json');
+        console.error(`[upload-direct] Error ${status}: ${message}`);
+        res.status(status).json({ error: message });
+      }
+    };
+
     try {
       const objectId = req.query.objectId || randomUUID();
       const objectStorageService = new ObjectStorageService();
 
       // For PUT requests, read raw body
       const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      
+      req.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      
       req.on('end', async () => {
         try {
           const fileBuffer = Buffer.concat(chunks);
           
           if (fileBuffer.length === 0) {
-            return res.status(400).json({ error: "No file uploaded" });
+            return sendError(400, "No file uploaded");
           }
 
           // Get content type from headers
@@ -8623,26 +8802,55 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
               });
             } catch (error) {
               console.warn("Failed to set ACL:", error);
+              // Don't fail the upload if ACL setting fails
             }
           }
 
-          res.status(200).json({ 
-            url: normalizedPath,
-            uploadURL: normalizedPath
-          });
-        } catch (error) {
-          console.error("Error in upload-direct PUT:", error);
-          res.status(500).json({ error: "Internal server error" });
+          if (!responseSent) {
+            responseSent = true;
+            // Uppy AwsS3 plugin expects S3-compatible response
+            // Return empty body with just ETag header (S3 standard)
+            // The extractFileUrlFromUploadResponse utility will use the upload URL from metadata
+            // Remove Content-Type header for empty body (S3 doesn't send it)
+            res.removeHeader('Content-Type');
+            res.status(200).end();
+          }
+        } catch (error: any) {
+          console.error("Error in upload-direct PUT (end handler):", error);
+          sendError(500, error.message || "Internal server error");
         }
       });
-    } catch (error) {
-      console.error("Error in upload-direct PUT:", error);
-      res.status(500).json({ error: "Internal server error" });
+      
+      req.on('error', (error: any) => {
+        console.error("Error reading request body in upload-direct PUT:", error);
+        sendError(500, "Error reading file data");
+      });
+      
+      // Set timeout to prevent hanging requests
+      req.setTimeout(300000, () => { // 5 minutes
+        if (!responseSent) {
+          sendError(408, "Request timeout");
+        }
+      });
+    } catch (error: any) {
+      console.error("Error in upload-direct PUT (outer catch):", error);
+      sendError(500, error.message || "Internal server error");
     }
+  });
+
+  // Catch-all for any other PUT requests to /api/objects/* that don't match
+  // This ensures we return JSON instead of HTML if the route doesn't match
+  app.put("/api/objects/*", (req: any, res: any) => {
+    console.error('[upload-direct] PUT request to unmatched route:', req.path);
+    res.set('Content-Type', 'application/json');
+    res.status(404).json({ error: "Upload endpoint not found" });
   });
 
   // File upload endpoint using multer
   app.post("/api/objects/upload-file", isAuthenticated, upload.single('file'), async (req: any, res) => {
+    // Always set JSON content type to prevent HTML responses
+    res.set('Content-Type', 'application/json');
+    
     try {
       const objectId = req.query.objectId || randomUUID();
       const objectStorageService = new ObjectStorageService();
@@ -8675,9 +8883,11 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         path: normalizedPath,
         objectId: objectId
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error uploading file:", error);
-      res.status(500).json({ error: "Failed to upload file" });
+      // Ensure we always return JSON, even on errors
+      res.set('Content-Type', 'application/json');
+      res.status(500).json({ error: error.message || "Failed to upload file" });
     }
   });
 
