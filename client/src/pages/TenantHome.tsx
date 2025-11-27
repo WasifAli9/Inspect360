@@ -3,13 +3,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Home, FileText, MessageSquare, Calendar, DollarSign, MapPin, FileCheck } from "lucide-react";
+import { Building2, Home, FileText, MessageSquare, Calendar, DollarSign, MapPin, FileCheck, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
 import { useLocale } from "@/contexts/LocaleContext";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function TenantHome() {
   const [, navigate] = useLocation();
   const locale = useLocale();
+  const { logoutMutation } = useAuth();
 
   const { data: tenancyData, isLoading } = useQuery<any>({
     queryKey: ["/api/tenant/tenancy"],
@@ -57,6 +59,15 @@ export default function TenantHome() {
             Manage your property and maintenance requests
           </p>
         </div>
+        <Button
+          variant="outline"
+          onClick={() => logoutMutation.mutate()}
+          disabled={logoutMutation.isPending}
+          data-testid="button-logout"
+        >
+          <LogOut className="h-4 w-4 mr-2" />
+          {logoutMutation.isPending ? "Logging out..." : "Logout"}
+        </Button>
       </div>
 
       {/* Quick Actions */}

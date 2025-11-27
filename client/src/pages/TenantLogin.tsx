@@ -45,13 +45,14 @@ export default function TenantLogin() {
       // Await response to ensure session is set
       const result = await res.json();
 
-      // Verify user data exists
-      if (!result?.user) {
+      // Verify user data exists - handle both { user: {...} } and direct user object
+      const userData = result.user || result;
+      if (!userData || !userData.id) {
         throw new Error("Invalid response from server");
       }
 
       // Set the user data in the cache directly (like staff login)
-      queryClient.setQueryData(["/api/auth/user"], result.user);
+      queryClient.setQueryData(["/api/auth/user"], userData);
 
       // Refetch to ensure session is fully established before navigation
       await queryClient.refetchQueries({ queryKey: ["/api/auth/user"], exact: true, type: "active" });
@@ -61,8 +62,11 @@ export default function TenantLogin() {
         description: "You've successfully logged in.",
       });
 
-      // Navigate only after auth state is fully updated
-      navigate("/tenant/home");
+      // Small delay to ensure React state updates before navigation
+      setTimeout(() => {
+        // Navigate to tenant home - use window.location for reliable redirect
+        window.location.href = "/tenant/home";
+      }, 100);
     } catch (error: any) {
       toast({
         title: "Login Failed",

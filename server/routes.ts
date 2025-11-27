@@ -651,7 +651,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Exclude password from response for security
-      const { password, ...userWithoutPassword } = user;
+      const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+      
+      // Return user object directly (not wrapped in { user: ... })
+      // This matches what the frontend expects
       res.json({ ...userWithoutPassword, organization });
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -11956,33 +11959,77 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
       // Normalize email for case-insensitive lookup
       // This looks up the user in the same 'users' table where they were created
       const normalizedEmail = email.toLowerCase().trim();
+      console.log(`[Tenant Login] Attempting login for email: ${normalizedEmail}`);
+      
       const user = await storage.getUserByEmail(normalizedEmail);
       
-      if (!user || user.role !== "tenant") {
+      if (!user) {
+        console.log(`[Tenant Login] User not found for email: ${normalizedEmail}`);
         return res.status(401).json({ message: "Invalid credentials or not a tenant account" });
+      }
+      
+      console.log(`[Tenant Login] User found: ${user.id}, role: ${user.role}, isActive: ${user.isActive}, hasPassword: ${!!user.password}`);
+      
+      if (user.role !== "tenant") {
+        console.log(`[Tenant Login] User role is '${user.role}', expected 'tenant'`);
+        return res.status(401).json({ message: "Invalid credentials or not a tenant account" });
+      }
+
+      // Check if user has a password set
+      if (!user.password) {
+        console.warn(`[Tenant Login] User ${user.id} (${user.email}) has no password set`);
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       // Verify password - this is the same password that was set during tenant creation
       const isValid = await comparePasswords(password, user.password);
+      
       if (!isValid) {
+        console.log(`[Tenant Login] Password mismatch for user: ${user.email}`);
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
       if (!user.isActive) {
+        console.log(`[Tenant Login] User account is inactive: ${user.email}`);
         return res.status(403).json({ message: "Account is deactivated. Please contact property management." });
       }
 
-      req.login(user, (err) => {
+      console.log(`[Tenant Login] Authentication successful for user: ${user.email}`);
+      
+      req.login(user, async (err) => {
         if (err) {
-          console.error("Login error:", err);
+          console.error("[Tenant Login] Session creation error:", err);
           return res.status(500).json({ message: "Login failed" });
         }
-        // Sanitize user object - remove all sensitive fields
-        const { password: _, resetToken, resetTokenExpiry, ...sanitizedUser } = user;
-        res.json({ user: sanitizedUser });
+        
+        // Explicitly save the session before responding (like regular login)
+        req.session.save(async (saveErr) => {
+          if (saveErr) {
+            console.error("[Tenant Login] Session save failed:", saveErr);
+            return res.status(500).json({ message: "Login failed" });
+          }
+          
+          // Sanitize user object - remove all sensitive fields
+          const { password: _, resetToken, resetTokenExpiry, ...sanitizedUser } = user;
+          console.log(`[Tenant Login] Session created and saved successfully for user: ${user.email}`);
+          
+          // Return user object in same format as /api/auth/user endpoint
+          // Include organization if available
+          try {
+            let organization = null;
+            if (user.organizationId) {
+              organization = await storage.getOrganization(user.organizationId);
+            }
+            res.json({ ...sanitizedUser, organization });
+          } catch (orgError) {
+            // If organization fetch fails, still return user without it
+            console.warn("[Tenant Login] Failed to fetch organization:", orgError);
+            res.json(sanitizedUser);
+          }
+        });
       });
     } catch (error) {
-      console.error("Tenant login error:", error);
+      console.error("[Tenant Login] Unexpected error:", error);
       res.status(500).json({ message: "Login failed" });
     }
   });

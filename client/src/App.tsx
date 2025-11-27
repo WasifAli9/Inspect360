@@ -127,8 +127,9 @@ function AppContent() {
               <Route path="/tenant/home" component={TenantHome} />
               <Route path="/tenant/maintenance" component={TenantMaintenance} />
               <Route path="/tenant/requests" component={TenantRequests} />
-              <Route path="/tenant/comparison-reports/:id" component={TenantComparisonReportDetail} />
+              <Route path=" /tenant/comparison-reports/:id" component={TenantComparisonReportDetail} />
               <Route path="/tenant/comparison-reports" component={TenantComparisonReports} />
+              <Route path="/dashboard" component={TenantHome} />
               <Route component={NotFound} />
             </Switch>
           </main>

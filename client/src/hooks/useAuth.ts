@@ -35,7 +35,9 @@ export function useAuth() {
         throw new Error(`Auth check failed: ${res.statusText}`);
       }
       
-      return await res.json();
+      const userData = await res.json();
+      // Handle both { user: {...} } and direct user object responses
+      return userData.user || userData;
     },
     retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
