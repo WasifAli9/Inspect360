@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -67,7 +67,46 @@ import { useState, useEffect } from "react";
 function AppContent() {
   // Always call hooks at the top level
   const { isAuthenticated, user, logoutMutation, isLoading } = useAuth();
+  const [location, setLocation] = useLocation();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // List of public routes that don't require authentication
+  const publicRoutes = [
+    "/",
+    "/auth",
+    "/forgot-password",
+    "/reset-password",
+    "/admin/login",
+    "/admin/dashboard",
+    "/admin/team",
+    "/admin/knowledge-base",
+    "/admin/eco-admin",
+    "/tenant/login",
+  ];
+
+  // Check if current route is a protected route
+  const isProtectedRoute = !publicRoutes.some(route => {
+    if (route === "/") {
+      return location === "/";
+    }
+    return location.startsWith(route);
+  });
+
+  // Redirect unauthorized users trying to access protected routes
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated && isProtectedRoute) {
+      setLocation("/auth");
+    }
+  }, [isLoading, isAuthenticated, isProtectedRoute, location, setLocation]);
+
+  // If unauthorized and trying to access protected route, show loading while redirecting
+  if (!isLoading && !isAuthenticated && isProtectedRoute) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
   
   // Check if user needs to see onboarding (first-time login)
   useEffect(() => {
