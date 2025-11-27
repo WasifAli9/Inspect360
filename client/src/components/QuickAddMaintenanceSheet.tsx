@@ -66,8 +66,15 @@ export function QuickAddMaintenanceSheet({
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Use ref to track previous initialPhotos to avoid unnecessary updates
+  const prevInitialPhotosRef = useRef<string[]>(initialPhotos);
+  
   useEffect(() => {
-    setPhotoUrls(initialPhotos);
+    // Only update if initialPhotos actually changed (deep comparison)
+    if (JSON.stringify(prevInitialPhotosRef.current) !== JSON.stringify(initialPhotos)) {
+      setPhotoUrls(initialPhotos);
+      prevInitialPhotosRef.current = initialPhotos;
+    }
   }, [initialPhotos, open]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,14 +218,16 @@ export function QuickAddMaintenanceSheet({
       });
       prevEntryIdRef.current = inspectionEntryId;
     }
-  }, [open, inspectionId, inspectionEntryId, defaultPropertyId, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, inspectionId, inspectionEntryId, defaultPropertyId]);
 
   // Update propertyId when blockProperties change (inside useEffect to prevent infinite loops)
   useEffect(() => {
     if (blockProperties.length === 1 && !form.getValues("propertyId")) {
       form.setValue("propertyId", blockProperties[0].id);
     }
-  }, [blockProperties, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blockProperties]);
 
   const createMaintenanceMutation = useMutation({
     mutationFn: async (data: QuickAddMaintenance) => {

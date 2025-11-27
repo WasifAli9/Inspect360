@@ -332,42 +332,35 @@ export function FieldWidget({
       }
       
       if (uploadUrl) {
+        // Add photo immediately - don't wait for ACL setting
         // uploadUrl is already normalized to a relative path starting with /objects/
-        // Convert to absolute URL for ACL call
-        const absolutePhotoUrl = `${window.location.origin}${uploadUrl}`;
+        handlePhotoAdd(uploadUrl);
         
-        // Set ACL to public so OpenAI can access the photo
-        try {
-          const aclResponse = await fetch("/api/objects/set-acl", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ photoUrl: absolutePhotoUrl }),
-          });
-          
-          if (!aclResponse.ok) {
+        // Set ACL to public in the background (non-blocking)
+        // This allows OpenAI to access the photo for AI analysis
+        const absolutePhotoUrl = `${window.location.origin}${uploadUrl}`;
+        fetch("/api/objects/set-acl", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ photoUrl: absolutePhotoUrl }),
+        })
+        .then(async (aclResponse) => {
+          if (aclResponse.ok) {
+            const { objectPath } = await aclResponse.json();
+            // If objectPath is different, we could update it, but usually it's the same
+            if (objectPath && objectPath !== uploadUrl) {
+              console.log('[FieldWidget] ACL set, objectPath:', objectPath);
+            }
+          } else {
             const errorData = await aclResponse.json().catch(() => ({ error: "Unknown error" }));
-            throw new Error(errorData.error || `ACL setting failed with status ${aclResponse.status}`);
+            console.warn('[FieldWidget] ACL setting failed (non-blocking):', errorData.error || `Status ${aclResponse.status}`);
           }
-          
-          const { objectPath } = await aclResponse.json();
-          
-          if (!objectPath) {
-            throw new Error("No object path returned from ACL setting");
-          }
-          
-          // Use the object path (which is now publicly accessible)
-          handlePhotoAdd(objectPath);
-        } catch (err: any) {
-          console.error("Error setting photo ACL:", err);
-          toast({
-            title: "Upload Error",
-            description: err.message || "Failed to make photo accessible for AI analysis. Please try again.",
-            variant: "destructive",
-          });
-          // Do NOT add the photo to the list if ACL setting failed
-          // This prevents non-public photos from breaking the AI analysis pipeline
-        }
+        })
+        .catch((err) => {
+          // Log but don't block - photo is already added
+          console.warn('[FieldWidget] Error setting photo ACL (non-blocking):', err);
+        });
       } else {
         // Enhanced debugging - log the full structure to help diagnose
         console.error('[FieldWidget] No upload URL found in response. Debug info:', {

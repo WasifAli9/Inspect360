@@ -8855,6 +8855,32 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     }
   });
 
+  // Set ACL endpoint - must be BEFORE the catch-all route
+  app.put("/api/objects/set-acl", isAuthenticated, async (req: any, res) => {
+    if (!req.body.photoUrl) {
+      return res.status(400).json({ error: "photoUrl is required" });
+    }
+
+    const userId = req.user?.claims?.sub;
+
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(
+        req.body.photoUrl,
+        {
+          owner: userId,
+          visibility: "public",
+        },
+      );
+
+      res.status(200).json({ objectPath });
+    } catch (error: any) {
+      console.error("Error setting object ACL:", error);
+      const errorMessage = error?.message || "Internal server error";
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // Catch-all for any other PUT requests to /api/objects/* that don't match
   // This ensures we return JSON instead of HTML if the route doesn't match
   app.put("/api/objects/*", (req: any, res: any) => {
@@ -8957,30 +8983,6 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
     const objectStorageService = new ObjectStorageService();
     const normalizedPath = objectStorageService.normalizeObjectEntityPath(photoUrl);
     res.json({ normalizedPath });
-  });
-
-  app.put("/api/objects/set-acl", isAuthenticated, async (req: any, res) => {
-    if (!req.body.photoUrl) {
-      return res.status(400).json({ error: "photoUrl is required" });
-    }
-
-    const userId = req.user?.claims?.sub;
-
-    try {
-      const objectStorageService = new ObjectStorageService();
-      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(
-        req.body.photoUrl,
-        {
-          owner: userId,
-          visibility: "public",
-        },
-      );
-
-      res.status(200).json({ objectPath });
-    } catch (error) {
-      console.error("Error setting object ACL:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
   });
 
   // Fix existing photos - make them public
