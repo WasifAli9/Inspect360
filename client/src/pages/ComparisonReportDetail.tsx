@@ -22,7 +22,6 @@ import {
   ArrowLeft, 
   MessageSquare, 
   Pen, 
-  DollarSign, 
   TrendingDown, 
   Calculator,
   Image as ImageIcon,
@@ -626,7 +625,7 @@ export default function ComparisonReportDetail() {
                 <div className="grid grid-cols-3 gap-4 pt-2">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <DollarSign className="w-4 h-4" />
+                      <span className="w-4 h-4 flex items-center justify-center font-semibold">£</span>
                       Estimated Cost
                     </div>
                     <div className="text-lg font-semibold">{locale.formatCurrency(estimatedCost, false)}</div>

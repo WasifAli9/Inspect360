@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Home, FileText, MessageSquare, Calendar, DollarSign, MapPin, FileCheck, LogOut } from "lucide-react";
+import { Building2, Home, FileText, MessageSquare, Calendar, MapPin, FileCheck, LogOut } from "lucide-react";
 import { useLocation } from "wouter";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -208,7 +208,7 @@ export default function TenantHome() {
               {tenancy.monthlyRent && (
                 <div>
                   <div className="text-sm text-muted-foreground flex items-center gap-2">
-                    <DollarSign className="h-4 w-4" />
+                    <span className="h-4 w-4 flex items-center justify-center font-semibold">£</span>
                     Monthly Rent
                   </div>
                   <div className="font-semibold" data-testid="text-monthly-rent">

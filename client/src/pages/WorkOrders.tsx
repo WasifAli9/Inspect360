@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, DollarSign, User, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Calendar, User, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 
@@ -159,7 +159,7 @@ export default function WorkOrders() {
 
                   {(workOrder.costEstimate || workOrder.costActual) && (
                     <div className="flex items-center gap-2 text-sm">
-                      <DollarSign className="h-4 w-4 text-muted-foreground" />
+                      <span className="h-4 w-4 text-muted-foreground flex items-center justify-center font-semibold">£</span>
                       <div>
                         <p className="font-medium">Cost</p>
                         <p className="text-muted-foreground">

@@ -280,7 +280,7 @@ export function QuickAddMaintenanceSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto max-w-3xl mx-auto">
         <SheetHeader>
           <SheetTitle>Log Maintenance Issue</SheetTitle>
           <SheetDescription>

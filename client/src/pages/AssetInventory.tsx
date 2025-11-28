@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { extractFileUrlFromUploadResponse } from "@/lib/utils";
 import { useLocale } from "@/contexts/LocaleContext";
-import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, DollarSign, FileText, MapPin, Tag as TagIcon, ArrowLeft } from "lucide-react";
+import { Package, Plus, Edit2, Trash2, Building2, Home, Calendar, Wrench, Search, FileText, MapPin, Tag as TagIcon, ArrowLeft } from "lucide-react";
 import type { AssetInventory, Property, Block } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -1015,7 +1015,7 @@ export default function AssetInventory() {
 
                   {asset.purchasePrice && (
                     <div className="flex items-center gap-2 text-muted-foreground">
-                      <DollarSign className="w-4 h-4 shrink-0" />
+                      <span className="w-4 h-4 shrink-0 flex items-center justify-center font-semibold">£</span>
                       <span>Purchase: {locale.formatCurrency(parseFloat(asset.purchasePrice.toString()), false)}</span>
                     </div>
                   )}

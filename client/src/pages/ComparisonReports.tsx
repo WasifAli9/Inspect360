@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileText, ArrowRight, User, Building2, Calendar, DollarSign, Plus } from "lucide-react";
+import { FileText, ArrowRight, User, Building2, Calendar, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -287,9 +287,9 @@ export default function ComparisonReports() {
 
                       {/* Cost */}
                       <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-muted-foreground" />
+                        <span className="w-4 h-4 text-muted-foreground flex items-center justify-center font-semibold">£</span>
                         <span className="text-lg font-semibold">
-                          ${totalCost.toFixed(2)}
+                          £{totalCost.toFixed(2)}
                         </span>
                         <span className="text-sm text-muted-foreground">estimated tenant liability</span>
                       </div>

@@ -13,7 +13,6 @@ import {
   Mail,
   Phone,
   Calendar,
-  DollarSign,
   Edit,
   Trash2,
   User,
@@ -226,7 +225,7 @@ export default function PropertyTenants() {
 
           {(monthlyRent !== null || depositAmount !== null) && (
             <div className="flex items-start gap-2 text-sm">
-              <DollarSign className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <span className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5 flex items-center justify-center font-semibold">£</span>
               <div className="space-y-1">
                 {monthlyRent !== null && (
                   <div>
@@ -332,7 +331,7 @@ export default function PropertyTenants() {
         <Card data-testid="card-monthly-revenue">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <span className="h-4 w-4 text-muted-foreground flex items-center justify-center font-semibold">£</span>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">

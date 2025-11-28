@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Building2, Calendar, AlertCircle, ChevronRight, DollarSign, Pen } from "lucide-react";
+import { FileText, Building2, Calendar, AlertCircle, ChevronRight, Pen } from "lucide-react";
 import { format } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 
@@ -121,7 +121,7 @@ export default function TenantComparisonReports() {
                           {format(new Date(report.createdAt), "MMMM d, yyyy")}
                         </div>
                         <div className="flex items-center gap-2">
-                          <DollarSign className="h-4 w-4" />
+                          <span className="h-4 w-4 flex items-center justify-center font-semibold">£</span>
                           Total Liability: <span className="font-semibold text-foreground">{locale.formatCurrency(totalCost, false)}</span>
                         </div>
                       </div>

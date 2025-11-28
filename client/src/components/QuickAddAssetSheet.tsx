@@ -163,15 +163,26 @@ export function QuickAddAssetSheet({
   };
 
   const getUploadParameters = async () => {
-    const response = await apiRequest("POST", "/api/upload/get-upload-url", {
+    const response = await apiRequest("POST", "/api/objects/upload", {
       contentType: "image/jpeg",
     });
-    return response.json();
+    const data = await response.json();
+    
+    // Ensure URL is absolute
+    let uploadURL = data.uploadURL;
+    if (uploadURL && uploadURL.startsWith('/')) {
+      uploadURL = `${window.location.origin}${uploadURL}`;
+    }
+    
+    return {
+      method: "PUT",
+      url: uploadURL,
+    };
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto max-w-3xl mx-auto">
         <SheetHeader>
           <SheetTitle>Quick Add Asset</SheetTitle>
           <SheetDescription>
@@ -335,17 +346,11 @@ export function QuickAddAssetSheet({
                       });
                     }
                   }}
-                  buttonClassName="w-full"
+                  buttonVariant="ghost"
+                  buttonClassName="w-full gap-2 border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground bg-transparent hover:bg-transparent"
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="w-full gap-2 border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground"
-                    data-testid="button-add-photo"
-                  >
-                    <Camera className="h-4 w-4" />
-                    {photos.length === 0 ? "Add Photo" : "Add More Photos"}
-                  </Button>
+                  <Camera className="h-4 w-4" />
+                  {photos.length === 0 ? "Add Photo" : "Add More Photos"}
                 </ObjectUploader>
               ) : (
                 <Button

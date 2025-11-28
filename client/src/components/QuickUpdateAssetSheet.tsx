@@ -195,7 +195,7 @@ export function QuickUpdateAssetSheet({
 
   return (
     <Sheet open={open} onOpenChange={handleClose}>
-      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+      <SheetContent side="bottom" className="h-[85vh] overflow-y-auto max-w-3xl mx-auto">
         <SheetHeader>
           <SheetTitle>Quick Update Asset</SheetTitle>
           <SheetDescription>

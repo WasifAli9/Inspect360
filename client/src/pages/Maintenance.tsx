@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Wrench, Upload, Sparkles, Loader2, X, Check, ChevronsUpDown, Pencil, Clipboard, Calendar, DollarSign, User as UserIcon, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Plus, Wrench, Upload, Sparkles, Loader2, X, Check, ChevronsUpDown, Pencil, Clipboard, Calendar, User as UserIcon, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format, formatDistanceToNow } from "date-fns";
@@ -602,7 +602,7 @@ export default function Maintenance() {
   // Work order helper functions
   const formatCurrency = (amount?: number | null) => {
     if (!amount) return "N/A";
-    return `$${(amount / 100).toFixed(2)}`;
+    return `£${(amount / 100).toFixed(2)}`;
   };
 
   const getWorkOrderStatusIcon = (status: string) => {
@@ -1322,7 +1322,7 @@ export default function Maintenance() {
 
                       {(workOrder.costEstimate || workOrder.costActual) && (
                         <div className="flex items-center gap-2 text-sm">
-                          <DollarSign className="h-4 w-4 text-muted-foreground" />
+                          <span className="h-4 w-4 text-muted-foreground flex items-center justify-center font-semibold">£</span>
                           <div>
                             <p className="font-medium">Cost</p>
                             <p className="text-muted-foreground">

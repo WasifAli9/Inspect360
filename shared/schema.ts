@@ -1478,6 +1478,7 @@ export const createTeamMemberSchema = z.object({
 export const updateTeamMemberSchema = z.object({
   firstName: z.string().min(1).max(255).optional(),
   lastName: z.string().min(1).max(255).optional(),
+  email: z.string().email().optional(),
   phone: z.string().max(50).optional(),
   address: z.object({
     street: z.string().optional(),

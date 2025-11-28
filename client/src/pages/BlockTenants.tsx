@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { TagFilter } from "@/components/TagFilter";
 import type { Tag } from "@shared/schema";
-import { ArrowLeft, Users, Home, DollarSign, Percent, Mail, Phone, Building2, Calendar, MessageSquare, Search, Tag as TagIcon } from "lucide-react";
+import { ArrowLeft, Users, Home, Percent, Mail, Phone, Building2, Calendar, MessageSquare, Search, Tag as TagIcon } from "lucide-react";
 import { format } from "date-fns";
 import { BroadcastDialog } from "@/components/BroadcastDialog";
 import { useLocale } from "@/contexts/LocaleContext";
@@ -256,7 +256,7 @@ export default function BlockTenants() {
         <Card data-testid="card-total-rent">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Monthly Rent</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <span className="h-4 w-4 text-muted-foreground flex items-center justify-center font-semibold">£</span>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -395,7 +395,7 @@ export default function BlockTenants() {
                           )}
                           {tenant.assignment.monthlyRent && (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <DollarSign className="h-4 w-4 shrink-0" />
+                              <span className="h-4 w-4 shrink-0 flex items-center justify-center font-semibold">£</span>
                               <span>Rent: {locale.formatCurrency(parseFloat(tenant.assignment.monthlyRent), false)}/month</span>
                             </div>
                           )}

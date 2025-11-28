@@ -11,6 +11,7 @@ import "@uppy/webcam/css/style.min.css";
 import type { UploadResult } from "@uppy/core";
 import { Button } from "@/components/ui/button";
 import { extractFileUrlFromUploadResponse } from "@/lib/utils";
+import type { ButtonProps } from "@/components/ui/button";
 
 interface ObjectUploaderProps {
   maxNumberOfFiles?: number;
@@ -25,6 +26,7 @@ interface ObjectUploaderProps {
   onModalOpen?: () => void;
   onModalClose?: () => void;
   buttonClassName?: string;
+  buttonVariant?: ButtonProps["variant"];
   children: ReactNode;
 }
 
@@ -36,6 +38,7 @@ export function ObjectUploader({
   onModalOpen,
   onModalClose,
   buttonClassName,
+  buttonVariant,
   children,
 }: ObjectUploaderProps) {
   const [showModal, setShowModal] = useState(false);
@@ -185,7 +188,13 @@ export function ObjectUploader({
 
   return (
     <div>
-      <Button type="button" onClick={handleButtonClick} className={buttonClassName} data-testid="button-upload">
+      <Button 
+        type="button" 
+        onClick={handleButtonClick} 
+        className={buttonClassName} 
+        variant={buttonVariant}
+        data-testid="button-upload"
+      >
         {children}
       </Button>
 

@@ -41,6 +41,15 @@ import { useLocale } from "@/contexts/LocaleContext";
 import { PhoneInput } from "@/components/PhoneInput";
 
 const formSchema = z.object({
+  firstName: z.string().optional().refine((val) => !val || val.trim().length > 0, {
+    message: "First name cannot be empty",
+  }),
+  lastName: z.string().optional().refine((val) => !val || val.trim().length > 0, {
+    message: "Last name cannot be empty",
+  }),
+  email: z.string().optional().refine((val) => !val || z.string().email().safeParse(val).success, {
+    message: "Invalid email address",
+  }),
   leaseStartDate: z.string().optional(),
   leaseEndDate: z.string().optional(),
   monthlyRent: z.string().optional(),
@@ -139,6 +148,9 @@ export default function EditTenantDialog({
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      firstName: "",
+      lastName: "",
+      email: "",
       leaseStartDate: "",
       leaseEndDate: "",
       monthlyRent: "",
@@ -162,6 +174,9 @@ export default function EditTenantDialog({
         : "";
 
       form.reset({
+        firstName: tenant.firstName || "",
+        lastName: tenant.lastName || "",
+        email: tenant.email || "",
         leaseStartDate,
         leaseEndDate,
         monthlyRent: tenant.assignment.monthlyRent || "",
@@ -178,7 +193,36 @@ export default function EditTenantDialog({
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      // Build payload - send dates as ISO strings, let server handle transformation
+      // First, update the user (firstName, lastName, email)
+      const userUpdatePayload: any = {};
+      if (data.firstName && data.firstName.trim() !== '') {
+        userUpdatePayload.firstName = data.firstName.trim();
+      }
+      if (data.lastName && data.lastName.trim() !== '') {
+        userUpdatePayload.lastName = data.lastName.trim();
+      }
+      if (data.email && data.email.trim() !== '') {
+        const normalizedEmail = data.email.trim().toLowerCase();
+        // Only update email if it's different from current
+        if (normalizedEmail !== tenant.email.toLowerCase()) {
+          userUpdatePayload.email = normalizedEmail;
+        }
+      }
+
+      // Update user if there are changes
+      if (Object.keys(userUpdatePayload).length > 0) {
+        try {
+          await apiRequest("PUT", `/api/users/${tenant.id}`, userUpdatePayload);
+        } catch (error: any) {
+          // If email update fails due to uniqueness, show specific error
+          if (error.message?.includes('email') || error.message?.includes('Email')) {
+            throw new Error("Email is already in use by another user");
+          }
+          throw error;
+        }
+      }
+
+      // Build assignment payload - send dates as ISO strings, let server handle transformation
       const payload: any = {
         isActive: data.isActive,
         hasPortalAccess: data.hasPortalAccess,
@@ -405,6 +449,69 @@ export default function EditTenantDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {/* Tenant Information Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Tenant Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="firstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name *</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="First name"
+                          data-testid="input-tenant-first-name"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="lastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Last Name *</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="Last name"
+                          data-testid="input-tenant-last-name"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email *</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        {...field}
+                        placeholder="email@example.com"
+                        data-testid="input-tenant-email"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <Separator />
+
             {/* Lease Details Section */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold">Lease Details</h3>
