@@ -33,8 +33,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, Package } from "lucide-react";
+import { Loader2, Search, Package, Camera, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ObjectUploader } from "@/components/ObjectUploader";
 
 interface QuickUpdateAssetSheetProps {
   open: boolean;
@@ -59,6 +60,7 @@ export function QuickUpdateAssetSheet({
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
   const [selectedAsset, setSelectedAsset] = useState<AssetInventory | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photos, setPhotos] = useState<string[]>([]);
 
   // Build query params for filtering assets
   const queryParams = new URLSearchParams();
@@ -71,6 +73,18 @@ export function QuickUpdateAssetSheet({
   const { data: assets = [], isLoading: isLoadingAssets } = useQuery<AssetInventory[]>({
     queryKey: [assetUrl],
     enabled: open && (!!propertyId || !!blockId),
+  });
+
+  const form = useForm<QuickUpdateAsset>({
+    resolver: zodResolver(quickUpdateAssetSchema),
+    defaultValues: {
+      condition: undefined,
+      cleanliness: undefined,
+      location: "",
+      notes: "",
+      inspectionId: inspectionId || undefined,
+      inspectionEntryId: inspectionEntryId || undefined,
+    },
   });
 
   // Update selectedAsset when selectedAssetId changes
@@ -89,21 +103,13 @@ export function QuickUpdateAssetSheet({
           inspectionId: inspectionId || undefined,
           inspectionEntryId: inspectionEntryId || undefined,
         });
+        // Initialize photos from existing asset
+        setPhotos(asset.photos || []);
       }
+    } else {
+      setPhotos([]);
     }
-  }, [selectedAssetId, assets, inspectionId, inspectionEntryId]);
-
-  const form = useForm<QuickUpdateAsset>({
-    resolver: zodResolver(quickUpdateAssetSchema),
-    defaultValues: {
-      condition: undefined,
-      cleanliness: undefined,
-      location: "",
-      notes: "",
-      inspectionId: inspectionId || undefined,
-      inspectionEntryId: inspectionEntryId || undefined,
-    },
-  });
+  }, [selectedAssetId, assets, inspectionId, inspectionEntryId, form]);
 
   const updateAssetMutation = useMutation({
     mutationFn: async (data: QuickUpdateAsset & { assetId: string }) => {
@@ -152,12 +158,18 @@ export function QuickUpdateAssetSheet({
     setIsSubmitting(true);
 
     try {
+      // Include photos in the update payload
+      const payload = {
+        ...data,
+        photos: photos.length > 0 ? photos : undefined,
+      };
+
       if (isOnline) {
         // Online: submit directly
-        await updateAssetMutation.mutateAsync({ ...data, assetId: selectedAssetId });
+        await updateAssetMutation.mutateAsync({ ...payload, assetId: selectedAssetId });
       } else {
         // Offline: queue for later sync
-        offlineQueue.enqueueAssetUpdate(selectedAssetId, data);
+        offlineQueue.enqueueAssetUpdate(selectedAssetId, payload);
         toast({
           title: "Update Queued",
           description: "Asset update will be synced when you're back online",
@@ -172,8 +184,39 @@ export function QuickUpdateAssetSheet({
   const handleClose = () => {
     setSelectedAssetId("");
     setSelectedAsset(null);
+    setPhotos([]);
     form.reset();
     onOpenChange(false);
+  };
+
+  const handlePhotoUploaded = (photoUrl: string) => {
+    setPhotos((prev) => [...prev, photoUrl]);
+    toast({
+      title: "Photo Added",
+      description: "Photo has been uploaded successfully",
+    });
+  };
+
+  const handleRemovePhoto = (photoUrl: string) => {
+    setPhotos((prev) => prev.filter((p) => p !== photoUrl));
+  };
+
+  const getUploadParameters = async () => {
+    const response = await apiRequest("POST", "/api/objects/upload", {
+      contentType: "image/jpeg",
+    });
+    const data = await response.json();
+    
+    // Ensure URL is absolute
+    let uploadURL = data.uploadURL;
+    if (uploadURL && uploadURL.startsWith('/')) {
+      uploadURL = `${window.location.origin}${uploadURL}`;
+    }
+    
+    return {
+      method: "PUT",
+      url: uploadURL,
+    };
   };
 
   const getConditionBadgeVariant = (condition: string) => {
@@ -286,6 +329,22 @@ export function QuickUpdateAssetSheet({
                     <p className="text-sm">{selectedAsset.description}</p>
                   </div>
                 )}
+                {selectedAsset.photos && selectedAsset.photos.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Current Photos</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {selectedAsset.photos.map((photoUrl, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={photoUrl}
+                            alt={`Asset photo ${index + 1}`}
+                            className="w-full h-20 object-cover rounded border"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -386,6 +445,79 @@ export function QuickUpdateAssetSheet({
                     </FormItem>
                   )}
                 />
+
+                <div className="space-y-3">
+                  <FormLabel>Update Photos</FormLabel>
+                  
+                  {photos.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {photos.map((photoUrl, index) => (
+                        <Card key={index} className="overflow-hidden">
+                          <CardContent className="p-0">
+                            <div className="relative group">
+                              <img
+                                src={photoUrl}
+                                alt={`Asset photo ${index + 1}`}
+                                className="w-full h-32 object-cover"
+                                data-testid={`img-asset-photo-${index}`}
+                              />
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => handleRemovePhoto(photoUrl)}
+                                type="button"
+                                data-testid={`button-remove-photo-${index}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {isOnline ? (
+                    <ObjectUploader
+                      maxNumberOfFiles={5}
+                      maxFileSize={10485760}
+                      onGetUploadParameters={getUploadParameters}
+                      onComplete={(result) => {
+                        if (result.successful && result.successful.length > 0) {
+                          result.successful.forEach((file: any) => {
+                            const photoUrl = file.uploadURL || file.meta?.extractedFileUrl;
+                            if (photoUrl) {
+                              handlePhotoUploaded(photoUrl);
+                            }
+                          });
+                        }
+                      }}
+                      buttonVariant="ghost"
+                      buttonClassName="w-full gap-2 border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground bg-transparent hover:bg-transparent"
+                    >
+                      <Camera className="h-4 w-4" />
+                      {photos.length === 0 ? "Add Photo" : "Add More Photos"}
+                    </ObjectUploader>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-full gap-2 border border-dashed border-muted-foreground/40 text-muted-foreground"
+                      disabled
+                      data-testid="button-add-photo-disabled"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Photos unavailable offline
+                    </Button>
+                  )}
+                  
+                  <p className="text-xs text-muted-foreground">
+                    {photos.length === 0 
+                      ? "Take or upload photos of the asset (max 5 photos)"
+                      : `${photos.length} photo(s) added. You can add up to 5 photos total.`}
+                  </p>
+                </div>
 
                 <div className="flex gap-2 pt-4">
                   <Button
