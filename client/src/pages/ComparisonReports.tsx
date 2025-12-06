@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileText, ArrowRight, User, Building2, Calendar, Plus } from "lucide-react";
+import { FileText, ArrowRight, User, Building2, Calendar, Plus, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -65,6 +65,7 @@ export default function ComparisonReports() {
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
   const [selectedCheckInId, setSelectedCheckInId] = useState("");
   const [selectedCheckOutId, setSelectedCheckOutId] = useState("");
+  const [isReportComplete, setIsReportComplete] = useState(false);
 
   const handleDialogOpenChange = (open: boolean) => {
     setIsDialogOpen(open);
@@ -114,12 +115,10 @@ export default function ComparisonReports() {
       setSelectedPropertyId("");
       setSelectedCheckInId("");
       setSelectedCheckOutId("");
-      toast({
-        title: "Success",
-        description: "Comparison report generated successfully. AI analysis is processing...",
-      });
+      setIsReportComplete(true);
     },
     onError: (error: any) => {
+      setIsReportComplete(false);
       toast({
         variant: "destructive",
         title: "Error",
@@ -379,6 +378,53 @@ export default function ComparisonReports() {
         </Dialog>
 
       </div>
+
+      {/* Loading Dialog for Report Generation */}
+      <Dialog 
+        open={generateReportMutation.isPending || isReportComplete} 
+        onOpenChange={(open) => {
+          if (!open && !generateReportMutation.isPending) {
+            setIsReportComplete(false);
+          }
+        }}
+      >
+        <DialogContent 
+          className="max-w-md" 
+          onInteractOutside={(e) => {
+            if (generateReportMutation.isPending) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <DialogHeader>
+            {generateReportMutation.isPending ? (
+              <>
+                <DialogTitle className="flex items-center gap-3">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  Generating Report
+                </DialogTitle>
+                <DialogDescription className="pt-2">
+                  Please wait while your report is in progress...
+                </DialogDescription>
+              </>
+            ) : (
+              <>
+                <DialogTitle>Report Generated</DialogTitle>
+                <DialogDescription className="pt-2">
+                  Your comparison report has been generated successfully. AI analysis is processing...
+                </DialogDescription>
+              </>
+            )}
+          </DialogHeader>
+          {!generateReportMutation.isPending && (
+            <div className="flex justify-end pt-4">
+              <Button onClick={() => setIsReportComplete(false)}>
+                OK
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {isLoading ? (
         <div className="grid gap-4">

@@ -13,6 +13,7 @@ import {
   BreadcrumbItem,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
+import { ActionRequiredBanner } from "@/components/ActionRequiredBanner";
 
 export default function TenantHome() {
   const [, navigate] = useLocation();
@@ -21,6 +22,22 @@ export default function TenantHome() {
 
   const { data: tenancyData, isLoading } = useQuery<any>({
     queryKey: ["/api/tenant/tenancy"],
+  });
+
+  // Fetch comparison reports to check for action required
+  const { data: comparisonReports = [] } = useQuery<any[]>({
+    queryKey: ["/api/tenant/comparison-reports"],
+  });
+
+  // Check for reports that need signature (reports that are under review or awaiting signatures)
+  const reportsNeedingSignature = comparisonReports.filter((report) => {
+    // Show banner for reports that need tenant signature:
+    // - Status is "under_review" or "awaiting_signatures"
+    // - Tenant hasn't signed yet
+    return (
+      (report.status === "under_review" || report.status === "awaiting_signatures") &&
+      !report.tenantSignature
+    );
   });
 
   if (isLoading) {
@@ -82,6 +99,19 @@ export default function TenantHome() {
           {logoutMutation.isPending ? "Logging out..." : "Logout"}
         </Button>
       </div>
+
+      {/* Action Required Banners - Only for reports requiring signature */}
+      {reportsNeedingSignature.length > 0 && (
+        <div className="space-y-3">
+          {reportsNeedingSignature.map((report) => (
+            <ActionRequiredBanner
+              key={report.id}
+              reportId={report.id}
+              message="Please review this report and provide your signature at the bottom of the page."
+            />
+          ))}
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

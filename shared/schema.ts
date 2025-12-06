@@ -591,6 +591,28 @@ export const insertComplianceDocumentSchema = createInsertSchema(complianceDocum
 export type ComplianceDocument = typeof complianceDocuments.$inferSelect;
 export type InsertComplianceDocument = z.infer<typeof insertComplianceDocumentSchema>;
 
+// Custom Compliance Document Types (user-defined document types)
+export const complianceDocumentTypes = pgTable("compliance_document_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("compliance_document_types_organization_id_idx").on(table.organizationId),
+]);
+
+export const insertComplianceDocumentTypeSchema = createInsertSchema(complianceDocumentTypes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type ComplianceDocumentType = typeof complianceDocumentTypes.$inferSelect;
+export type InsertComplianceDocumentType = z.infer<typeof insertComplianceDocumentTypeSchema>;
+
 // Maintenance Requests (Internal tracking)
 export const maintenanceRequests = pgTable("maintenance_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -613,6 +635,7 @@ export const maintenanceRequests = pgTable("maintenance_requests", {
   fixfloStatus: varchar("fixflo_status"), // Last known Fixflo status
   fixfloContractorName: varchar("fixflo_contractor_name"), // Assigned contractor from Fixflo
   fixfloSyncedAt: timestamp("fixflo_synced_at"), // Last successful sync timestamp
+  dueDate: timestamp("due_date"), // Optional due date for the maintenance request
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

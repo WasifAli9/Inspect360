@@ -114,6 +114,7 @@ const createMaintenanceSchema = insertMaintenanceRequestSchema
     title: z.string().min(1, "Title is required"),
     propertyId: z.string().min(1, "Property is required"),
     priority: z.enum(["low", "medium", "high"]),
+    dueDate: z.string().optional().or(z.date().optional()),
   });
 
 export default function Maintenance() {
@@ -561,6 +562,7 @@ export default function Maintenance() {
       propertyId: request.propertyId,
       priority: request.priority as "low" | "medium" | "high",
       reportedBy: request.reportedBy || "",
+      dueDate: request.dueDate ? (typeof request.dueDate === 'string' ? request.dueDate : new Date(request.dueDate).toISOString()) : undefined,
     });
     setUploadedImages(request.photoUrls || []);
     setAiSuggestions(request.aiSuggestedFixes || "");
@@ -712,6 +714,30 @@ export default function Maintenance() {
                           </FormItem>
                         )}
                       />
+                      <FormField
+                        control={form.control}
+                        name="dueDate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Due Date (Optional)</FormLabel>
+                            <FormControl>
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-muted-foreground" />
+                                <Input
+                                  type="date"
+                                  value={field.value ? (typeof field.value === 'string' ? field.value.split('T')[0] : new Date(field.value).toISOString().split('T')[0]) : ""}
+                                  onChange={(e) => {
+                                    const dateValue = e.target.value;
+                                    field.onChange(dateValue ? new Date(dateValue).toISOString() : null);
+                                  }}
+                                  data-testid="input-due-date"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                       <Button type="submit" className="w-full" data-testid="button-next-upload">
                         Next: Upload Photos <Upload className="w-4 h-4 ml-2" />
                       </Button>
@@ -824,6 +850,30 @@ export default function Maintenance() {
                             <SelectItem value="high">High</SelectItem>
                           </SelectContent>
                         </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Due Date (Optional)</FormLabel>
+                        <FormControl>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-muted-foreground" />
+                            <Input
+                              type="date"
+                              value={field.value ? (typeof field.value === 'string' ? field.value.split('T')[0] : new Date(field.value).toISOString().split('T')[0]) : ""}
+                              onChange={(e) => {
+                                const dateValue = e.target.value;
+                                field.onChange(dateValue ? new Date(dateValue).toISOString() : null);
+                              }}
+                              data-testid="input-due-date"
+                            />
+                          </div>
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

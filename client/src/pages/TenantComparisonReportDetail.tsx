@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import SignatureCanvas from "react-signature-canvas";
+import { Trash2 } from "lucide-react";
 import { 
   FileText, 
   ArrowLeft, 
@@ -111,7 +112,8 @@ export default function TenantComparisonReportDetail() {
   const { toast } = useToast();
   const locale = useLocale();
   const [commentText, setCommentText] = useState("");
-  const [signatureName, setSignatureName] = useState("");
+  const [signatureData, setSignatureData] = useState<string | null>(null);
+  const signaturePadRef = useRef<SignatureCanvas>(null);
 
   const { data: report, isLoading } = useQuery<ComparisonReport>({
     queryKey: ["/api/tenant/comparison-reports", id],
@@ -163,7 +165,10 @@ export default function TenantComparisonReportDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenant/comparison-reports", id] });
-      setSignatureName("");
+      setSignatureData(null);
+      if (signaturePadRef.current) {
+        signaturePadRef.current.clear();
+      }
       toast({
         title: "Report Signed",
         description: "Your electronic signature has been recorded.",
@@ -578,8 +583,19 @@ export default function TenantComparisonReportDetail() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-600" />
-                    <span className="text-sm">Signed: {report.tenantSignature}</span>
+                    <span className="text-sm">Signed</span>
                   </div>
+                  {report.tenantSignature.startsWith('data:image/') ? (
+                    <div className="mt-2">
+                      <img 
+                        src={report.tenantSignature} 
+                        alt="Your signature" 
+                        className="h-16 object-contain border rounded bg-background"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">{report.tenantSignature}</span>
+                  )}
                   {report.tenantSignedAt && (
                     <p className="text-xs text-muted-foreground">
                       {format(new Date(report.tenantSignedAt), "MMM d, yyyy 'at' h:mm a")}
@@ -601,16 +617,99 @@ export default function TenantComparisonReportDetail() {
 
           {canSign && (
             <div className="space-y-3 p-4 bg-muted rounded-lg">
-              <label className="text-sm font-medium">Type your full name to sign</label>
-              <Input
-                placeholder="Your full name"
-                value={signatureName}
-                onChange={(e) => setSignatureName(e.target.value)}
-                data-testid="input-signature"
-              />
+              <label className="text-sm font-medium">Draw your signature</label>
+              {signatureData ? (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
+                      <img 
+                        src={signatureData} 
+                        alt="Your signature" 
+                        className="w-full h-40 object-contain border rounded bg-background"
+                        data-testid="img-signature"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSignatureData(null);
+                          if (signaturePadRef.current) {
+                            signaturePadRef.current.clear();
+                          }
+                        }}
+                        data-testid="button-clear-signature"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Clear Signature
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="space-y-3">
+                      <div className="border-2 border-dashed rounded bg-background">
+                        <SignatureCanvas
+                          ref={signaturePadRef}
+                          canvasProps={{
+                            className: "w-full h-40 cursor-crosshair",
+                            "data-testid": "canvas-signature"
+                          }}
+                          backgroundColor="rgb(255, 255, 255)"
+                          penColor="rgb(0, 0, 0)"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (signaturePadRef.current) {
+                              signaturePadRef.current.clear();
+                            }
+                          }}
+                          data-testid="button-clear-canvas"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Clear
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
+                              const data = signaturePadRef.current.toDataURL();
+                              setSignatureData(data);
+                            } else {
+                              toast({
+                                variant: "destructive",
+                                title: "Signature Required",
+                                description: "Please draw your signature before saving.",
+                              });
+                            }
+                          }}
+                          data-testid="button-save-signature"
+                        >
+                          Save Signature
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
               <Button
-                onClick={() => signMutation.mutate(signatureName)}
-                disabled={!signatureName.trim() || signMutation.isPending}
+                onClick={() => {
+                  if (!signatureData) {
+                    toast({
+                      variant: "destructive",
+                      title: "Signature Required",
+                      description: "Please draw your signature before signing the report.",
+                    });
+                    return;
+                  }
+                  signMutation.mutate(signatureData);
+                }}
+                disabled={!signatureData || signMutation.isPending}
                 className="w-full"
                 data-testid="button-sign"
               >

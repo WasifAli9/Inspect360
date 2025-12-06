@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Save, CheckCircle2, AlertCircle, Wifi, WifiOff, Cloud, Sparkles, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -77,6 +79,13 @@ export default function InspectionCapture() {
     photos?: string[];
   }>({});
 
+  // Copy from previous check-in state
+  const [copyImages, setCopyImages] = useState(false);
+  const [copyNotes, setCopyNotes] = useState(false);
+  // Track what was copied so we can remove it when unchecked
+  const [copiedImageKeys, setCopiedImageKeys] = useState<Set<string>>(new Set());
+  const [copiedNoteKeys, setCopiedNoteKeys] = useState<Set<string>>(new Set());
+
   // Fetch inspection with template snapshot
   const { data: inspection, isLoading } = useQuery<Inspection>({
     queryKey: ["/api/inspections", id],
@@ -92,6 +101,16 @@ export default function InspectionCapture() {
   const { data: existingEntries = [] } = useQuery<any[]>({
     queryKey: [`/api/inspections/${id}/entries`],
     enabled: !!id,
+  });
+
+  // Fetch most recent check-in inspection for check-out inspections
+  const { data: checkInData, error: checkInError } = useQuery<{
+    inspection: Inspection;
+    entries: any[];
+  } | null>({
+    queryKey: [`/api/properties/${inspection?.propertyId}/most-recent-checkin`],
+    enabled: !!inspection?.propertyId && inspection?.type === "check_out",
+    retry: false,
   });
 
   // AI Analysis status polling
@@ -141,68 +160,32 @@ export default function InspectionCapture() {
 
   // Load existing entries into state on mount and auto-populate property address
   useEffect(() => {
-    if (existingEntries.length > 0) {
+    if (existingEntries) {
       const entriesMap: Record<string, InspectionEntry> = {};
       existingEntries.forEach((entry: any) => {
         const key = `${entry.sectionRef}-${entry.fieldKey}`;
-        entriesMap[key] = entry;
+        entriesMap[key] = {
+          id: entry.id,
+          sectionRef: entry.sectionRef,
+          fieldKey: entry.fieldKey,
+          fieldType: entry.fieldType,
+          valueJson: entry.valueJson,
+          note: entry.note || undefined,
+          photos: entry.photos || [],
+          maintenanceFlag: entry.maintenanceFlag,
+          markedForReview: entry.markedForReview,
+        };
       });
-      setEntries(entriesMap);
+      console.log('[InspectionCapture] Updating entries state:', Object.keys(entriesMap).length, 'entries');
+      console.log('[InspectionCapture] Sample entry keys:', Object.keys(entriesMap).slice(0, 5));
+      // Merge with existing entries to preserve any local changes, but prioritize server data
+      setEntries(prev => ({ ...prev, ...entriesMap }));
     }
   }, [existingEntries]);
 
-  // Update pending count periodically
-  useEffect(() => {
-    const updateCount = () => {
-      setPendingCount(offlineQueue.getPendingCount());
-    };
-    updateCount();
-    const interval = setInterval(updateCount, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Auto-sync when coming online
-  useEffect(() => {
-    if (isOnline && pendingCount > 0 && !isSyncing) {
-      handleSync();
-    }
-  }, [isOnline]);
-
-  const handleSync = async () => {
-    if (isSyncing || pendingCount === 0) return;
-    
-    setIsSyncing(true);
-    try {
-      const result = await offlineQueue.syncAll(apiRequest);
-      if (result.success > 0) {
-        toast({
-          title: "Sync Complete",
-          description: `${result.success} ${result.success === 1 ? 'entry' : 'entries'} synced successfully`,
-        });
-        queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
-      }
-      if (result.failed > 0) {
-        toast({
-          variant: "destructive",
-          title: "Sync Issues",
-          description: `${result.failed} ${result.failed === 1 ? 'entry' : 'entries'} failed to sync`,
-        });
-      }
-      setPendingCount(offlineQueue.getPendingCount());
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Sync Failed",
-        description: "Unable to sync offline entries",
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   // Parse template structure from snapshot and migrate old templates
   const rawTemplateStructure = inspection?.templateSnapshotJson as { sections: TemplateSection[] } | null;
-  
+
   // Migrate old templates: ensure all fields have both id and key
   const templateStructure = rawTemplateStructure ? {
     sections: rawTemplateStructure.sections.map(section => ({
@@ -214,36 +197,8 @@ export default function InspectionCapture() {
       })),
     })),
   } : null;
-  
+
   const sections = templateStructure?.sections || [];
-  const currentSection = sections[currentSectionIndex];
-
-  // Auto-start inspection on first visit
-  useEffect(() => {
-    if (inspection && inspection.status === "scheduled" && !inspection.startedAt) {
-      // Update status to in_progress
-      fetch(`/api/inspections/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "in_progress",
-          startedAt: new Date().toISOString(),
-        }),
-      }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
-      });
-    }
-  }, [inspection, id]);
-
-  // Calculate progress - count entries with values OR photos
-  const totalFields = sections.reduce((acc, section) => acc + section.fields.length, 0);
-  const completedFields = Object.values(entries).filter(entry => {
-    // Count as complete if has valueJson OR photos
-    const hasValue = entry.valueJson !== null && entry.valueJson !== undefined;
-    const hasPhotos = entry.photos && entry.photos.length > 0;
-    return hasValue || hasPhotos;
-  }).length;
-  const progress = totalFields > 0 ? (completedFields / totalFields) * 100 : 0;
 
   // Update entry mutation
   const updateEntry = useMutation({
@@ -277,32 +232,257 @@ export default function InspectionCapture() {
     },
   });
 
+  // Server-side copy mutation
+  const copyFromCheckIn = useMutation({
+    mutationFn: async (data: { copyImages: boolean; copyNotes: boolean }) => {
+      const response = await apiRequest("POST", `/api/inspections/${id}/copy-from-checkin`, data);
+      return response.json();
+    },
+    onSuccess: async (data) => {
+      console.log('[Copy] Server response:', data);
+      
+      if (data.modifiedImageKeys?.length) {
+        setCopiedImageKeys(prev => {
+          const next = new Set(prev);
+          data.modifiedImageKeys.forEach((k: string) => next.add(k));
+          return next;
+        });
+      }
+      if (data.modifiedNoteKeys?.length) {
+        setCopiedNoteKeys(prev => {
+          const next = new Set(prev);
+          data.modifiedNoteKeys.forEach((k: string) => next.add(k));
+          return next;
+        });
+      }
+
+      // Invalidate and refetch entries to get updated data
+      queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
+      
+      // Wait a bit for the server to finish processing, then refetch
+      setTimeout(async () => {
+        const result = await queryClient.refetchQueries({ 
+          queryKey: [`/api/inspections/${id}/entries`] 
+        });
+        console.log('[Copy] Refetched entries result:', result);
+      }, 500);
+
+      toast({
+        title: "Data copied",
+        description: "Successfully copied data from previous check-in",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Copy failed",
+        description: error.message
+      });
+    }
+  });
+
+  // Copy images from check-in when checkbox is checked
+  useEffect(() => {
+    if (!checkInData || !checkInData.entries || !inspection || inspection.type !== "check_out") {
+      return;
+    }
+
+    if (copyImages) {
+      // Trigger server-side copy
+      copyFromCheckIn.mutate({ copyImages: true, copyNotes: false });
+    } else {
+      // If unchecked, remove copied images locally
+      if (copiedImageKeys.size > 0) {
+        setEntries((currentEntries) => {
+          const updatedEntries = { ...currentEntries };
+          const entriesToSave: InspectionEntry[] = [];
+
+          // Collect all check-in photos for robust removal
+          const allCheckInPhotos = new Set(checkInData.entries.flatMap((e: any) => e.photos || []));
+
+          copiedImageKeys.forEach((key) => {
+            const existingEntry = updatedEntries[key];
+            if (existingEntry && existingEntry.photos) {
+              // Remove photos that exist in check-in
+              const newPhotos = existingEntry.photos.filter((photo: string) => !allCheckInPhotos.has(photo));
+
+              if (newPhotos.length !== existingEntry.photos.length) {
+                const newEntry: InspectionEntry = {
+                  ...existingEntry,
+                  photos: newPhotos,
+                };
+                updatedEntries[key] = newEntry;
+                entriesToSave.push(newEntry);
+              }
+            }
+          });
+
+          // Save updated entries
+          entriesToSave.forEach((entry) => {
+            updateEntry.mutate(entry);
+          });
+
+          setCopiedImageKeys(new Set());
+          return updatedEntries;
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyImages]);
+
+  // Copy notes from check-in when checkbox is checked
+  useEffect(() => {
+    if (!checkInData || !checkInData.entries || !inspection || inspection.type !== "check_out") {
+      return;
+    }
+
+    if (copyNotes) {
+      // Trigger server-side copy
+      copyFromCheckIn.mutate({ copyImages: false, copyNotes: true });
+    } else {
+      // If unchecked, remove copied notes
+      if (copiedNoteKeys.size > 0) {
+        setEntries((currentEntries) => {
+          const updatedEntries = { ...currentEntries };
+          const entriesToSave: InspectionEntry[] = [];
+
+          // Collect all check-in notes
+          const allCheckInNotes = new Set(checkInData.entries.map((e: any) => e.note).filter(Boolean));
+
+          copiedNoteKeys.forEach((key) => {
+            const existingEntry = updatedEntries[key];
+            if (existingEntry && existingEntry.note) {
+              // Clear note if it matches any check-in note
+              if (allCheckInNotes.has(existingEntry.note)) {
+                const newEntry: InspectionEntry = {
+                  ...existingEntry,
+                  note: undefined,
+                };
+                updatedEntries[key] = newEntry;
+                entriesToSave.push(newEntry);
+              }
+            }
+          });
+
+          // Save updated entries
+          entriesToSave.forEach((entry) => {
+            updateEntry.mutate(entry);
+          });
+
+          setCopiedNoteKeys(new Set());
+          return updatedEntries;
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [copyNotes]);
+
+  // Update pending count periodically
+  useEffect(() => {
+    const updateCount = () => {
+      setPendingCount(offlineQueue.getPendingCount());
+    };
+    updateCount();
+    const interval = setInterval(updateCount, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-sync when coming online
+  useEffect(() => {
+    if (isOnline && pendingCount > 0 && !isSyncing) {
+      handleSync();
+    }
+  }, [isOnline]);
+
+  const handleSync = async () => {
+    if (isSyncing || pendingCount === 0) return;
+
+    setIsSyncing(true);
+    try {
+      const result = await offlineQueue.syncAll(apiRequest);
+      if (result.success > 0) {
+        toast({
+          title: "Sync Complete",
+          description: `${result.success} ${result.success === 1 ? 'entry' : 'entries'} synced successfully`,
+        });
+        queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
+      }
+      if (result.failed > 0) {
+        toast({
+          variant: "destructive",
+          title: "Sync Issues",
+          description: `${result.failed} ${result.failed === 1 ? 'entry' : 'entries'} failed to sync`,
+        });
+      }
+      setPendingCount(offlineQueue.getPendingCount());
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Sync Failed",
+        description: "Unable to sync offline entries",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const currentSection = sections[currentSectionIndex];
+
+  // Auto-start inspection on first visit
+  useEffect(() => {
+    if (inspection && inspection.status === "scheduled" && !inspection.startedAt) {
+      // Update status to in_progress
+      fetch(`/api/inspections/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "in_progress",
+          startedAt: new Date().toISOString(),
+        }),
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
+      });
+    }
+  }, [inspection, id]);
+
+  // Calculate progress - count entries with values OR photos
+  const totalFields = sections.reduce((acc, section) => acc + section.fields.length, 0);
+  const completedFields = Object.values(entries).filter(entry => {
+    // Count as complete if has valueJson OR photos
+    const hasValue = entry.valueJson !== null && entry.valueJson !== undefined;
+    const hasPhotos = entry.photos && entry.photos.length > 0;
+    return hasValue || hasPhotos;
+  }).length;
+  const progress = totalFields > 0 ? (completedFields / totalFields) * 100 : 0;
+
+
+
   // Auto-populate property address when property is loaded and template is available
   useEffect(() => {
     if (!property?.address || !templateStructure || !sections.length || !id) return;
-    
+
     // Check if entry already exists in existingEntries (from server)
     const hasExistingEntry = existingEntries.some((entry: any) => {
       const labelLower = entry.fieldKey?.toLowerCase() || "";
       return labelLower.includes("property_address") || labelLower.includes("property_address");
     });
-    
+
     if (hasExistingEntry) return; // Don't overwrite existing entries
-    
+
     // Find the property address field in the General Information section
-    const generalInfoSection = sections.find(section => 
-      section.title.toLowerCase().includes("general") || 
+    const generalInfoSection = sections.find(section =>
+      section.title.toLowerCase().includes("general") ||
       section.id?.toLowerCase().includes("general")
     );
-    
+
     if (!generalInfoSection) return;
-    
+
     // Find property address field by label or common field IDs
     const addressField = generalInfoSection.fields.find(field => {
       const labelLower = field.label?.toLowerCase() || "";
       const fieldIdLower = field.id?.toLowerCase() || "";
       const fieldKeyLower = field.key?.toLowerCase() || "";
-      
+
       return (
         labelLower.includes("property address") ||
         (labelLower.includes("address") && labelLower.includes("property")) ||
@@ -310,12 +490,12 @@ export default function InspectionCapture() {
         fieldKeyLower.includes("property_address")
       );
     });
-    
+
     if (!addressField) return;
-    
+
     const entryKey = `${generalInfoSection.id}-${addressField.id}`;
     const existingEntry = entries[entryKey];
-    
+
     // Only auto-populate if the field is empty
     if (!existingEntry || !existingEntry.valueJson) {
       // Create entry directly (similar to handleFieldChange but without currentSection dependency)
@@ -355,7 +535,7 @@ export default function InspectionCapture() {
     if (!field) return;
 
     const entryKey = `${currentSection.id}-${fieldKey}`;
-    
+
     // Only save if there's a value or note/photos
     // But for progress calculation, only count as complete if value exists
     if (value === null || value === undefined) {
@@ -376,7 +556,7 @@ export default function InspectionCapture() {
         note,
         photos,
       });
-      
+
       // Update local state optimistically
       setEntries(prev => ({
         ...prev,
@@ -389,9 +569,9 @@ export default function InspectionCapture() {
           photos,
         }
       }));
-      
+
       setPendingCount(offlineQueue.getPendingCount());
-      
+
       toast({
         title: "Saved Offline",
         description: "Entry will sync when connection is restored",
@@ -424,7 +604,7 @@ export default function InspectionCapture() {
   const handleMarkedForReviewChange = async (fieldKey: string, marked: boolean) => {
     const entryKey = `${currentSection.id}-${fieldKey}`;
     const entry = entries[entryKey];
-    
+
     // Update local state optimistically
     setEntries(prev => ({
       ...prev,
@@ -569,7 +749,7 @@ export default function InspectionCapture() {
         </div>
         <div className="flex items-center gap-4">
           {/* Online/Offline status */}
-          <Badge 
+          <Badge
             variant={isOnline ? "default" : "secondary"}
             data-testid="badge-online-status"
             className="gap-2"
@@ -577,7 +757,7 @@ export default function InspectionCapture() {
             {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
             {isOnline ? "Online" : "Offline"}
           </Badge>
-          
+
           {/* Pending sync count */}
           {pendingCount > 0 && (
             <Badge variant="outline" data-testid="badge-pending-sync">
@@ -585,7 +765,7 @@ export default function InspectionCapture() {
               {pendingCount} pending
             </Badge>
           )}
-          
+
           {/* Manual sync button */}
           {isOnline && pendingCount > 0 && (
             <Button
@@ -598,11 +778,11 @@ export default function InspectionCapture() {
               {isSyncing ? "Syncing..." : "Sync Now"}
             </Button>
           )}
-          
+
           <Badge variant="secondary" data-testid="badge-progress">
             {completedFields} / {totalFields} fields
           </Badge>
-          
+
           {/* AI Analysis Button */}
           {aiAnalysisStatus?.status === "processing" ? (
             <Button variant="outline" disabled data-testid="button-ai-analyzing">
@@ -626,7 +806,7 @@ export default function InspectionCapture() {
               {startAIAnalysis.isPending ? "Starting..." : "Analyse Report Using AI"}
             </Button>
           )}
-          
+
           <Button
             onClick={() => completeInspection.mutate()}
             disabled={completeInspection.isPending}
@@ -637,6 +817,60 @@ export default function InspectionCapture() {
           </Button>
         </div>
       </div>
+
+      {/* Copy from Previous Check-In (only for check-out inspections) - Show at top for visibility */}
+      {inspection?.type === "check_out" && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              <div className="font-medium text-sm">Copy from Previous Check-In</div>
+              {checkInData ? (
+                <>
+                  <div className="text-xs text-muted-foreground mb-3">
+                    Copy data from the most recent check-in inspection ({checkInData.inspection.scheduledDate ? new Date(checkInData.inspection.scheduledDate).toLocaleDateString() : 'N/A'})
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="copy-images"
+                        checked={copyImages}
+                        onCheckedChange={(checked) => setCopyImages(checked === true)}
+                      />
+                      <Label htmlFor="copy-images" className="text-sm font-normal cursor-pointer">
+                        Copy Images
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="copy-notes"
+                        checked={copyNotes}
+                        onCheckedChange={(checked) => setCopyNotes(checked === true)}
+                      />
+                      <Label htmlFor="copy-notes" className="text-sm font-normal cursor-pointer">
+                        Copy Notes
+                      </Label>
+                    </div>
+                  </div>
+                  {(copyImages || copyNotes) && (
+                    <div className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-2">
+                      <CheckCircle2 className="w-3 h-3" />
+                      {copyImages && copyNotes
+                        ? "Images and notes copied from check-in inspection"
+                        : copyImages
+                          ? "Images copied from check-in inspection"
+                          : "Notes copied from check-in inspection"}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  No previous check-in inspection found for this property.
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* AI Analysis Progress */}
       {aiAnalysisStatus?.status === "processing" && (
@@ -652,10 +886,10 @@ export default function InspectionCapture() {
                   {aiAnalysisStatus.progress} / {aiAnalysisStatus.totalFields} fields
                 </span>
               </div>
-              <Progress 
-                value={(aiAnalysisStatus.progress / aiAnalysisStatus.totalFields) * 100} 
+              <Progress
+                value={(aiAnalysisStatus.progress / aiAnalysisStatus.totalFields) * 100}
                 className="h-2"
-                data-testid="progress-ai-analysis" 
+                data-testid="progress-ai-analysis"
               />
               <p className="text-xs text-muted-foreground">
                 You can continue working while the AI analyzes your inspection photos in the background.

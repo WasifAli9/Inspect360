@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +13,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon, Building2, Upload, X } from "lucide-react";
-import { insertInspectionCategorySchema, type InspectionCategory, type Organization, type User } from "@shared/schema";
+import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon, Building2, Upload, X, FileText } from "lucide-react";
+import { insertInspectionCategorySchema, insertComplianceDocumentTypeSchema, type InspectionCategory, type ComplianceDocumentType, type Organization, type User } from "@shared/schema";
 import { z } from "zod";
 import Team from "./Team";
 import FixfloIntegrationSettings from "@/components/FixfloIntegrationSettings";
@@ -250,7 +251,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="branding" className="w-full">
-          <TabsList className="grid w-full max-w-4xl grid-cols-5 mb-8">
+          <TabsList className="grid w-full max-w-4xl grid-cols-6 mb-8">
             <TabsTrigger value="branding" className="gap-2" data-testid="tab-company-branding">
               <Building2 className="w-4 h-4" />
               Company Branding
@@ -258,6 +259,10 @@ export default function Settings() {
             <TabsTrigger value="categories" className="gap-2" data-testid="tab-inspection-categories">
               <Tags className="w-4 h-4" />
               Inspection Categories
+            </TabsTrigger>
+            <TabsTrigger value="document-types" className="gap-2" data-testid="tab-document-types">
+              <FileText className="w-4 h-4" />
+              Document Types
             </TabsTrigger>
             <TabsTrigger value="teams" className="gap-2" data-testid="tab-teams">
               <UsersIcon className="w-4 h-4" />
@@ -631,6 +636,10 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="document-types" className="space-y-6">
+            <ComplianceDocumentTypesPanel />
+          </TabsContent>
+
           <TabsContent value="teams">
             <SettingsTeamsPanel />
           </TabsContent>
@@ -645,5 +654,343 @@ export default function Settings() {
         </Tabs>
       </div>
     </div>
+  );
+}
+
+// Compliance Document Types Management Panel
+function ComplianceDocumentTypesPanel() {
+  const { toast } = useToast();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [editingType, setEditingType] = useState<ComplianceDocumentType | null>(null);
+
+  const { data: user } = useQuery<User>({
+    queryKey: ["/api/auth/user"],
+  });
+
+  const { data: documentTypes = [], isLoading } = useQuery<ComplianceDocumentType[]>({
+    queryKey: ["/api/compliance/document-types"],
+    enabled: !!user?.organizationId,
+  });
+
+  const createForm = useForm({
+    resolver: zodResolver(insertComplianceDocumentTypeSchema.omit({ organizationId: true })),
+    defaultValues: {
+      name: "",
+      description: "",
+      sortOrder: 0,
+      isActive: true,
+    },
+  });
+
+  const editForm = useForm({
+    resolver: zodResolver(insertComplianceDocumentTypeSchema.partial().omit({ organizationId: true })),
+    defaultValues: {
+      name: "",
+      description: "",
+      sortOrder: 0,
+      isActive: true,
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      if (!user?.organizationId) throw new Error("User must belong to an organization");
+      const response = await apiRequest("POST", "/api/compliance/document-types", {
+        ...data,
+        organizationId: user.organizationId,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/document-types"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance"] });
+      toast({ title: "Document type created successfully" });
+      setIsCreateDialogOpen(false);
+      createForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create document type",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest("PATCH", `/api/compliance/document-types/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/document-types"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance"] });
+      toast({ title: "Document type updated successfully" });
+      setEditingType(null);
+      editForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update document type",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/compliance/document-types/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/document-types"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance"] });
+      toast({ title: "Document type deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete document type",
+        description: error.message || "Please try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onCreateSubmit = (data: any) => {
+    createMutation.mutate(data);
+  };
+
+  const onEditSubmit = (data: any) => {
+    if (editingType) {
+      updateMutation.mutate({ id: editingType.id, data });
+    }
+  };
+
+  const handleEdit = (type: ComplianceDocumentType) => {
+    setEditingType(type);
+    editForm.reset({
+      name: type.name,
+      description: type.description || "",
+      sortOrder: type.sortOrder || 0,
+      isActive: type.isActive,
+    });
+  };
+
+  return (
+    <Card className="border-2 rounded-2xl bg-card/80 backdrop-blur-xl shadow-lg">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-2xl">Compliance Document Types</CardTitle>
+            <CardDescription className="mt-2">
+              Manage custom document types for compliance documents. These will appear in the document type dropdown when uploading compliance documents.
+            </CardDescription>
+          </div>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2" data-testid="button-create-document-type">
+                <Plus className="w-4 h-4" />
+                Add Document Type
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Document Type</DialogTitle>
+                <DialogDescription>
+                  Add a new custom document type for compliance documents
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...createForm}>
+                <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
+                  <FormField
+                    control={createForm.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Document Type Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Asbestos Certificate, Legionella Certificate" {...field} data-testid="input-document-type-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={createForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Brief description of this document type" {...field} value={field.value ?? ""} data-testid="input-document-type-description" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={createForm.control}
+                    name="sortOrder"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sort Order</FormLabel>
+                        <FormControl>
+                          <Input type="number" {...field} value={field.value ?? 0} data-testid="input-document-type-sort-order" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button type="submit" disabled={createMutation.isPending} data-testid="button-create-document-type-submit">
+                      {createMutation.isPending ? "Creating..." : "Create Document Type"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-center py-12 text-muted-foreground">Loading...</div>
+        ) : documentTypes.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
+            <p className="text-muted-foreground">No custom document types yet.</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Create your first custom document type to get started.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {documentTypes.map((type) => (
+              <Card key={type.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{type.name}</h3>
+                        {!type.isActive && (
+                          <Badge variant="secondary">Inactive</Badge>
+                        )}
+                      </div>
+                      {type.description && (
+                        <p className="text-sm text-muted-foreground mt-1">{type.description}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Sort Order: {type.sortOrder || 0}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Dialog open={editingType?.id === type.id} onOpenChange={(open) => !open && setEditingType(null)}>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(type)}
+                            data-testid={`button-edit-document-type-${type.id}`}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Edit Document Type</DialogTitle>
+                            <DialogDescription>
+                              Update the document type details
+                            </DialogDescription>
+                          </DialogHeader>
+                          <Form {...editForm}>
+                            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+                              <FormField
+                                control={editForm.control}
+                                name="name"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Document Type Name</FormLabel>
+                                    <FormControl>
+                                      <Input {...field} data-testid="input-edit-document-type-name" />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={editForm.control}
+                                name="description"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Description (Optional)</FormLabel>
+                                    <FormControl>
+                                      <Textarea {...field} value={field.value ?? ""} data-testid="input-edit-document-type-description" />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={editForm.control}
+                                name="sortOrder"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Sort Order</FormLabel>
+                                    <FormControl>
+                                      <Input type="number" {...field} value={field.value ?? 0} data-testid="input-edit-document-type-sort-order" />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={editForm.control}
+                                name="isActive"
+                                render={({ field }) => (
+                                  <FormItem className="flex items-center gap-2">
+                                    <FormControl>
+                                      <input
+                                        type="checkbox"
+                                        checked={field.value ?? true}
+                                        onChange={(e) => field.onChange(e.target.checked)}
+                                        className="rounded"
+                                        data-testid="checkbox-edit-document-type-active"
+                                      />
+                                    </FormControl>
+                                    <FormLabel>Active</FormLabel>
+                                  </FormItem>
+                                )}
+                              />
+                              <DialogFooter>
+                                <Button type="submit" disabled={updateMutation.isPending} data-testid="button-update-document-type">
+                                  {updateMutation.isPending ? "Updating..." : "Update Document Type"}
+                                </Button>
+                              </DialogFooter>
+                            </form>
+                          </Form>
+                        </DialogContent>
+                      </Dialog>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (confirm("Are you sure you want to delete this document type?")) {
+                            deleteMutation.mutate(type.id);
+                          }
+                        }}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`button-delete-document-type-${type.id}`}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

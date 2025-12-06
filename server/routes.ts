@@ -84,6 +84,46 @@ function detectFileMimeType(buffer: Buffer): string {
 }
 
 /**
+ * Map check-out sectionRef to corresponding check-in sectionRef
+ * This handles the naming difference between check-in and check-out templates
+ * e.g., "section_checkout_general_info" -> "section_checkin_general_info"
+ * or "section_checkout_entry_hallway" -> "section_checkin_entry_hallway"
+ */
+function mapCheckOutToCheckInSectionRef(checkOutSectionRef: string): string {
+  if (!checkOutSectionRef) return "";
+
+  const normalized = checkOutSectionRef.toLowerCase().trim();
+
+  // Replace "checkout" with "checkin" in the sectionRef
+  // This handles patterns like: section_checkout_* -> section_checkin_*
+  if (normalized.includes("checkout")) {
+    return normalized.replace(/checkout/g, "checkin");
+  }
+
+  // If it doesn't match the pattern, return as-is (might be a custom section)
+  return normalized;
+}
+
+/**
+ * Map check-in sectionRef to corresponding check-out sectionRef
+ * This handles the reverse mapping
+ * e.g., "section_checkin_general_info" -> "section_checkout_general_info"
+ */
+function mapCheckInToCheckOutSectionRef(checkInSectionRef: string): string {
+  if (!checkInSectionRef) return "";
+
+  const normalized = checkInSectionRef.toLowerCase().trim();
+
+  // Replace "checkin" with "checkout" in the sectionRef
+  if (normalized.includes("checkin")) {
+    return normalized.replace(/checkin/g, "checkout");
+  }
+
+  // If it doesn't match the pattern, return as-is (might be a custom section)
+  return normalized;
+}
+
+/**
  * Normalize sectionRef for matching between check-in and check-out inspections
  * Handles variations like "Entry Hallway" vs "Entry / Hallway" vs "Entry/Hallway"
  * Also handles "Bedroom" vs "Bedrooms/Bedroom 1" by extracting the base section name
@@ -96,6 +136,9 @@ function normalizeSectionRef(sectionRef: string): string {
 
   // Normalize common separators: "/", " / ", " /", "/ " to a single space
   normalized = normalized.replace(/\s*\/\s*/g, " ");
+
+  // Replace underscores and hyphens with spaces
+  normalized = normalized.replace(/[_\-]/g, " ");
 
   // Normalize multiple spaces to single space
   normalized = normalized.replace(/\s+/g, " ");
@@ -120,7 +163,8 @@ function normalizeSectionRef(sectionRef: string): string {
  */
 function normalizeFieldKey(fieldKey: string): string {
   if (!fieldKey) return "";
-  return fieldKey.toLowerCase().trim();
+  // Lowercase, trim, and replace underscores/hyphens with spaces to allow matching "Floor Condition" with "floor_condition"
+  return fieldKey.toLowerCase().trim().replace(/[_\-]/g, " ").replace(/\s+/g, " ");
 }
 
 /**
@@ -135,9 +179,9 @@ function mapCheckOutToCheckInFieldKey(checkOutFieldKey: string): string {
   // This handles the pattern: field_checkout_* -> field_checkin_*
   const normalized = checkOutFieldKey.toLowerCase().trim();
 
-  // Direct replacement pattern
-  if (normalized.includes("field_checkout_")) {
-    return normalized.replace("field_checkout_", "field_checkin_");
+  // Direct replacement pattern - replace all occurrences
+  if (normalized.includes("checkout")) {
+    return normalized.replace(/checkout/g, "checkin");
   }
 
   // If it doesn't match the pattern, return as-is (might be a custom field)
@@ -154,9 +198,9 @@ function mapCheckInToCheckOutFieldKey(checkInFieldKey: string): string {
 
   const normalized = checkInFieldKey.toLowerCase().trim();
 
-  // Direct replacement pattern
-  if (normalized.includes("field_checkin_")) {
-    return normalized.replace("field_checkin_", "field_checkout_");
+  // Direct replacement pattern - replace all occurrences
+  if (normalized.includes("checkin")) {
+    return normalized.replace(/checkin/g, "checkout");
   }
 
   // If it doesn't match the pattern, return as-is (might be a custom field)
@@ -167,34 +211,61 @@ function mapCheckInToCheckOutFieldKey(checkInFieldKey: string): string {
  * Check if two field keys match, considering the check-in/check-out mapping
  */
 function fieldKeysMatch(checkInFieldKey: string, checkOutFieldKey: string): boolean {
-  if (!checkInFieldKey || !checkOutFieldKey) return false;
+  if (!checkInFieldKey || !checkOutFieldKey) {
+    console.log(`[fieldKeysMatch] Missing keys: checkIn=${checkInFieldKey}, checkOut=${checkOutFieldKey}`);
+    return false;
+  }
 
   const normalizedCheckIn = normalizeFieldKey(checkInFieldKey);
   const normalizedCheckOut = normalizeFieldKey(checkOutFieldKey);
 
   // Direct match after normalization
-  if (normalizedCheckIn === normalizedCheckOut) return true;
+  if (normalizedCheckIn === normalizedCheckOut) {
+    console.log(`[fieldKeysMatch] Direct match: ${normalizedCheckIn}`);
+    return true;
+  }
 
   // Try mapping check-out to check-in and compare
   const mappedCheckOut = mapCheckOutToCheckInFieldKey(checkOutFieldKey);
-  if (normalizedCheckIn === mappedCheckOut) return true;
+  const normalizedMappedCheckOut = normalizeFieldKey(mappedCheckOut);
+  if (normalizedCheckIn === normalizedMappedCheckOut) {
+    console.log(`[fieldKeysMatch] Matched via checkout->checkin mapping: ${checkOutFieldKey} -> ${mappedCheckOut} -> ${normalizedMappedCheckOut} === ${normalizedCheckIn}`);
+    return true;
+  }
 
   // Try mapping check-in to check-out and compare
   const mappedCheckIn = mapCheckInToCheckOutFieldKey(checkInFieldKey);
-  if (normalizedCheckOut === mappedCheckIn) return true;
+  const normalizedMappedCheckIn = normalizeFieldKey(mappedCheckIn);
+  if (normalizedCheckOut === normalizedMappedCheckIn) {
+    console.log(`[fieldKeysMatch] Matched via checkin->checkout mapping: ${checkInFieldKey} -> ${mappedCheckIn} -> ${normalizedMappedCheckIn} === ${normalizedCheckOut}`);
+    return true;
+  }
 
+  console.log(`[fieldKeysMatch] No match: checkIn="${checkInFieldKey}" (normalized: "${normalizedCheckIn}") vs checkOut="${checkOutFieldKey}" (normalized: "${normalizedCheckOut}")`);
+  console.log(`[fieldKeysMatch] Mapped checkout->checkin: "${mappedCheckOut}" (normalized: "${normalizedMappedCheckOut}")`);
+  console.log(`[fieldKeysMatch] Mapped checkin->checkout: "${mappedCheckIn}" (normalized: "${normalizedMappedCheckIn}")`);
   return false;
 }
 
 /**
- * Check if two sectionRefs match after normalization
+ * Check if two sectionRefs match after normalization and checkin/checkout mapping
  */
 function sectionRefsMatch(ref1: string, ref2: string): boolean {
+  if (!ref1 || !ref2) return false;
+
   const normalized1 = normalizeSectionRef(ref1);
   const normalized2 = normalizeSectionRef(ref2);
 
   // Exact match after normalization
   if (normalized1 === normalized2) return true;
+
+  // Try mapping check-out to check-in and compare
+  const mappedRef2 = mapCheckOutToCheckInSectionRef(ref2);
+  if (normalized1 === normalizeSectionRef(mappedRef2)) return true;
+
+  // Try mapping check-in to check-out and compare
+  const mappedRef1 = mapCheckInToCheckOutSectionRef(ref1);
+  if (normalized2 === normalizeSectionRef(mappedRef1)) return true;
 
   // Also try matching the last part of hierarchical paths
   // e.g., "bedrooms/bedroom 1" should match "bedroom 1"
@@ -400,31 +471,31 @@ async function launchPuppeteerBrowser() {
  */
 function cleanMarkdownText(text: string): string {
   if (!text) return text;
-  
+
   // Remove markdown bold (**text** or __text__)
   let cleaned = text.replace(/\*\*(.*?)\*\*/g, '$1');
   cleaned = cleaned.replace(/__(.*?)__/g, '$1');
-  
+
   // Remove markdown italic (*text* or _text_)
   cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
   cleaned = cleaned.replace(/_(.*?)_/g, '$1');
-  
+
   // Remove markdown headers (# Header)
   cleaned = cleaned.replace(/^#{1,6}\s+(.*)$/gm, '$1');
-  
+
   // Remove markdown code blocks (```code```)
   cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
-  
+
   // Remove inline code (`code`)
   cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
-  
+
   // Remove markdown links [text](url) -> text
   cleaned = cleaned.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
-  
+
   // Clean up extra whitespace
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   cleaned = cleaned.trim();
-  
+
   return cleaned;
 }
 
@@ -1606,7 +1677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
 
         const propertyIds = assignments.map((a) => a.propertyId);
-        
+
         if (propertyIds.length === 0) {
           return res.json([]);
         }
@@ -2295,6 +2366,300 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch inspections" });
     }
   });
+  // Copy data from previous check-in inspection
+  app.post("/api/inspections/:id/copy-from-checkin", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { copyImages, copyNotes } = req.body;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+
+      // Get current inspection
+      const inspection = await storage.getInspection(id);
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
+      }
+
+      // Verify access
+      if (inspection.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!inspection.propertyId) {
+        return res.status(400).json({ message: "Inspection must be associated with a property" });
+      }
+
+      // Get most recent check-in
+      const checkInInspection = await storage.getMostRecentCheckInInspection(inspection.propertyId);
+      if (!checkInInspection) {
+        return res.status(404).json({ message: "No previous check-in inspection found" });
+      }
+
+      // Get entries
+      const checkInEntries = await storage.getInspectionEntries(checkInInspection.id);
+      const currentEntries = await storage.getInspectionEntries(id);
+
+      console.log(`[Copy] ===== Starting Copy Operation =====`);
+      console.log(`[Copy] Check-in inspection ID: ${checkInInspection.id}`);
+      console.log(`[Copy] Check-out inspection ID: ${id}`);
+      console.log(`[Copy] Check-in entries count: ${checkInEntries.length}`);
+      console.log(`[Copy] Current checkout entries count: ${currentEntries.length}`);
+      console.log(`[Copy] Check-in entries:`, checkInEntries.map(e => ({ sectionRef: e.sectionRef, fieldKey: e.fieldKey, photos: e.photos?.length || 0, hasNote: !!e.note })));
+
+      // Parse template structure
+      let sections: any[] = [];
+      if (inspection.templateSnapshotJson) {
+        const templateStructure = typeof inspection.templateSnapshotJson === 'string'
+          ? JSON.parse(inspection.templateSnapshotJson)
+          : inspection.templateSnapshotJson;
+        sections = templateStructure?.sections || [];
+      } else if (inspection.templateId) {
+        const template = await storage.getInspectionTemplate(inspection.templateId);
+        if (template && template.structureJson) {
+          const structure = typeof template.structureJson === 'string'
+            ? JSON.parse(template.structureJson as string)
+            : template.structureJson;
+          sections = (structure as any).sections || [];
+        }
+      }
+
+      console.log(`[Copy] Template sections found: ${sections.length}`);
+      console.log(`[Copy] Template sections:`, sections.map(s => ({ id: s.id, title: s.title, fields: s.fields.map((f: any) => f.id || f.key) })));
+
+      const modifiedImageKeys: string[] = [];
+      const modifiedNoteKeys: string[] = [];
+      let processedCount = 0;
+      let matchedCount = 0;
+      let copiedCount = 0;
+
+      // Helper to find matching section/field
+      const findMatch = (checkInEntry: any) => {
+        console.log(`[Copy] Finding match for: sectionRef=${checkInEntry.sectionRef}, fieldKey=${checkInEntry.fieldKey}`);
+        
+        // Try exact match first (with checkin/checkout mapping)
+        let matchingSection = sections.find((s: any) => {
+          const matches = sectionRefsMatch(s.id, checkInEntry.sectionRef);
+          if (matches) {
+            console.log(`[Copy] Section matched: ${s.id} with ${checkInEntry.sectionRef}`);
+          }
+          return matches;
+        });
+        
+        let matchingField = null;
+        if (matchingSection) {
+          console.log(`[Copy] Checking ${matchingSection.fields.length} fields in section ${matchingSection.id}`);
+          matchingField = matchingSection.fields.find((f: any) => {
+            const fieldId = f.id || f.key;
+            // Note: fieldKeysMatch expects (checkInFieldKey, checkOutFieldKey)
+            // checkInEntry.fieldKey is from check-in, fieldId is from checkout template
+            const matches = fieldKeysMatch(checkInEntry.fieldKey, fieldId);
+            if (matches) {
+              console.log(`[Copy] Field matched: ${fieldId} with ${checkInEntry.fieldKey}`);
+            } else {
+              console.log(`[Copy] Field did not match: ${fieldId} vs ${checkInEntry.fieldKey}`);
+            }
+            return matches;
+          });
+        }
+
+        if (matchingSection && matchingField) {
+          return { matchingSection, matchingField };
+        }
+
+        // Try matching by section title/id with checkin/checkout mapping
+        if (!matchingSection || !matchingField) {
+          console.log(`[Copy] Trying fuzzy section match...`);
+          matchingSection = sections.find((s: any) => {
+            const matches = sectionRefsMatch(s.title || s.id, checkInEntry.sectionRef);
+            if (matches) {
+              console.log(`[Copy] Fuzzy section matched: ${s.title || s.id} with ${checkInEntry.sectionRef}`);
+            }
+            return matches;
+          });
+
+          if (matchingSection) {
+            console.log(`[Copy] Checking ${matchingSection.fields.length} fields in fuzzy-matched section`);
+            matchingField = matchingSection.fields.find((f: any) => {
+              const fieldId = f.id || f.key;
+              const matches = fieldKeysMatch(checkInEntry.fieldKey, fieldId) ||
+                (f.label && fieldKeysMatch(checkInEntry.fieldKey, f.label));
+              if (matches) {
+                console.log(`[Copy] Fuzzy field matched: ${fieldId} or label "${f.label}" with ${checkInEntry.fieldKey}`);
+              }
+              return matches;
+            });
+          }
+        }
+        
+        if (!matchingField && matchingSection) {
+          console.log(`[Copy] No field match found. Available fields:`, matchingSection.fields.map((f: any) => f.id || f.key));
+        }
+        
+        return { matchingSection, matchingField };
+      };
+
+      for (const checkInEntry of checkInEntries) {
+        processedCount++;
+        
+        // Extract photos from either photos column or valueJson
+        let checkInPhotos = checkInEntry.photos || [];
+        if ((!checkInPhotos || checkInPhotos.length === 0) && checkInEntry.valueJson) {
+          let valueJson = null;
+          try {
+            valueJson = typeof checkInEntry.valueJson === 'string'
+              ? JSON.parse(checkInEntry.valueJson)
+              : checkInEntry.valueJson;
+          } catch (e) {
+            // valueJson might be a plain string (not JSON), which is fine - just can't extract photos from it
+          }
+
+          if (valueJson && Array.isArray(valueJson.photos)) {
+            checkInPhotos = valueJson.photos;
+          } else if (valueJson && valueJson.photo) {
+            checkInPhotos = [valueJson.photo];
+          }
+        }
+
+        // Extract note from either note column or valueJson
+        let checkInNote = checkInEntry.note;
+        if (!checkInNote && checkInEntry.valueJson) {
+          let valueJson = null;
+          try {
+            valueJson = typeof checkInEntry.valueJson === 'string'
+              ? JSON.parse(checkInEntry.valueJson)
+              : checkInEntry.valueJson;
+          } catch (e) {
+            // valueJson might be a plain string
+          }
+
+          if (valueJson && valueJson.note) {
+            checkInNote = valueJson.note;
+          }
+        }
+
+        // Check if we have data to copy
+        const hasPhotos = checkInPhotos.length > 0;
+        const hasNote = !!checkInNote && checkInNote.trim().length > 0;
+
+        console.log(`[Copy] Entry ${processedCount}/${checkInEntries.length}: sectionRef=${checkInEntry.sectionRef}, fieldKey=${checkInEntry.fieldKey}, hasPhotos=${hasPhotos}, hasNote=${hasNote}`);
+
+        // Skip if no data to copy and user didn't request it
+        if (!hasPhotos && !hasNote) {
+          console.log(`[Copy] Skipping entry ${processedCount}: no photos or notes to copy`);
+          continue;
+        }
+        if (hasPhotos && !copyImages && !hasNote) {
+          console.log(`[Copy] Skipping entry ${processedCount}: has photos but copyImages=false and no notes`);
+          continue;
+        }
+        if (hasNote && !copyNotes && !hasPhotos) {
+          console.log(`[Copy] Skipping entry ${processedCount}: has note but copyNotes=false and no photos`);
+          continue;
+        }
+
+        const { matchingSection, matchingField } = findMatch(checkInEntry);
+
+        console.log(`[Copy] Match result for entry ${processedCount}: section=${matchingSection?.id || 'none'}, field=${matchingField?.id || 'none'}`);
+
+        if (matchingSection && matchingField) {
+          matchedCount++;
+          const key = `${matchingSection.id}-${matchingField.id}`;
+
+          // Find existing entry or create new one
+          let existingEntry = currentEntries.find(e =>
+            e.sectionRef === matchingSection.id && e.fieldKey === matchingField.id
+          );
+          
+          console.log(`[Copy] Processing match ${matchedCount}: key=${key}, existingEntry=${!!existingEntry}`);
+
+          let photos = existingEntry?.photos || [];
+          let note = existingEntry?.note;
+          let changed = false;
+          let imagesCopied = false;
+          let notesCopied = false;
+
+          // Copy photos - merge with existing photos, avoiding duplicates
+          if (copyImages && hasPhotos) {
+            const newPhotos = checkInPhotos.filter((p: string) => !photos.includes(p));
+            if (newPhotos.length > 0) {
+              photos = [...photos, ...newPhotos];
+              changed = true;
+              imagesCopied = true;
+              console.log(`[Copy] ✓ Copied ${newPhotos.length} photos to ${key} (total: ${photos.length})`);
+            } else {
+              console.log(`[Copy] No new photos to copy to ${key} (all ${checkInPhotos.length} already exist)`);
+            }
+          }
+
+          // Copy notes - replace if empty, or append if not empty
+          if (copyNotes && hasNote) {
+            if (!note || note.trim().length === 0) {
+              // No existing note, copy the check-in note
+              note = checkInNote;
+              changed = true;
+              notesCopied = true;
+              console.log(`[Copy] ✓ Copied note to ${key}`);
+            } else {
+              // Existing note found, append check-in note
+              note = `${note}\n\n--- Copied from Check-In ---\n${checkInNote}`;
+              changed = true;
+              notesCopied = true;
+              console.log(`[Copy] ✓ Appended note to ${key} (existing note was present)`);
+            }
+          }
+
+          if (changed) {
+            copiedCount++;
+            if (existingEntry) {
+              await storage.updateInspectionEntry(existingEntry.id, {
+                photos,
+                note
+              });
+              console.log(`[Copy] ✓ Updated existing entry ${existingEntry.id} for ${key}`);
+            } else {
+              const newEntry = await storage.createInspectionEntry({
+                inspectionId: id,
+                sectionRef: matchingSection.id,
+                fieldKey: matchingField.id,
+                fieldType: matchingField.type || checkInEntry.fieldType || 'text',
+                photos,
+                note,
+                valueJson: null
+              });
+              console.log(`[Copy] ✓ Created new entry ${newEntry.id} for ${key}`);
+            }
+
+            if (imagesCopied) modifiedImageKeys.push(key);
+            if (notesCopied) modifiedNoteKeys.push(key);
+          } else {
+            console.log(`[Copy] No changes needed for ${key}`);
+          }
+        } else {
+          console.log(`[Copy] ✗ No match found for entry ${processedCount}: sectionRef=${checkInEntry.sectionRef}, fieldKey=${checkInEntry.fieldKey}`);
+        }
+      }
+
+      console.log(`[Copy] ===== Copy Summary =====`);
+      console.log(`[Copy] Total check-in entries processed: ${processedCount}`);
+      console.log(`[Copy] Entries matched: ${matchedCount}`);
+      console.log(`[Copy] Entries copied: ${copiedCount}`);
+      console.log(`[Copy] Image keys modified: ${modifiedImageKeys.length}`);
+      console.log(`[Copy] Note keys modified: ${modifiedNoteKeys.length}`);
+      console.log(`[Copy] Modified image keys:`, modifiedImageKeys);
+      console.log(`[Copy] Modified note keys:`, modifiedNoteKeys);
+      console.log(`[Copy] ========================`);
+      
+      res.json({ success: true, modifiedImageKeys, modifiedNoteKeys });
+    } catch (error) {
+      console.error("Error copying data:", error);
+      res.status(500).json({ message: "Failed to copy data" });
+    }
+  });
+
 
   app.get("/api/inspections/:id", isAuthenticated, async (req: any, res) => {
     try {
@@ -3690,7 +4055,7 @@ Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not
               propertyName: property.name,
             },
           });
-          
+
           // Send real-time notification via WebSocket
           sendNotificationToUser(activeTenant.id, {
             id: notification.id,
@@ -3989,7 +4354,7 @@ LIABILITY: [tenant/landlord/shared]`;
               propertyName: property.name,
             },
           });
-          
+
           // Send real-time notification via WebSocket
           sendNotificationToUser(activeTenant.id, {
             id: notification.id,
@@ -5334,7 +5699,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       let signatureName: string;
       if (signature.startsWith('data:image/')) {
         // It's a signature image - use user's full name
-        signatureName = user.firstName && user.lastName 
+        signatureName = user.firstName && user.lastName
           ? `${user.firstName} ${user.lastName}`.trim()
           : user.email || user.username || 'Operator';
       } else {
@@ -5430,7 +5795,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           .select({ propertyId: tenantAssignments.propertyId })
           .from(tenantAssignments)
           .where(eq(tenantAssignments.tenantId, user.id));
-        
+
         const tenantPropertyIds = assignments.map(a => a.propertyId);
         if (!tenantPropertyIds.includes(report.propertyId)) {
           return res.status(403).json({ message: "Access denied" });
@@ -5470,7 +5835,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       const protocol = req.protocol;
       const host = req.get('host');
       const baseUrl = `${protocol}://${host}`;
-      
+
       console.log('[PDF Generation] Using baseUrl:', baseUrl, 'for', items.length, 'items');
 
       // Generate HTML for the comparison report (photos will be converted to absolute URLs in HTML generation)
@@ -5733,20 +6098,20 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     // Sanitize and convert URLs for PDF generation (same logic as inspection report)
     const sanitizeReportUrl = (url: string): string => {
       if (!url || typeof url !== 'string') return '';
-      
+
       const trimmed = url.trim();
       const lower = trimmed.toLowerCase();
-      
+
       // Handle relative URLs (convert to absolute using baseUrl) - same as inspection report
       if (trimmed.startsWith('/') && baseUrl) {
         const absoluteUrl = `${baseUrl}${trimmed}`;
         return escapeHtml(absoluteUrl);
       }
-      
+
       // Allow only safe protocols via whitelist
       const safeProtocols = ['https://', 'http://'];
       const isSafeProtocol = safeProtocols.some(protocol => lower.startsWith(protocol));
-      
+
       if (!isSafeProtocol) {
         // For data URLs, only allow safe image types (NO SVG - can contain XSS)
         const safeDataImages = [
@@ -5756,16 +6121,16 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           'data:image/gif',
           'data:image/webp',
         ];
-        
+
         const isSafeDataUrl = safeDataImages.some(prefix => lower.startsWith(prefix));
-        
+
         if (!isSafeDataUrl) {
           // Reject all other protocols/schemes (javascript:, data:image/svg+xml, vbscript:, etc.)
           console.warn(`Blocked potentially unsafe URL: ${url.substring(0, 50)}...`);
           return '';
         }
       }
-      
+
       // Return escaped URL (escape special chars for HTML attribute safety)
       return escapeHtml(trimmed);
     };
@@ -5850,13 +6215,13 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
                 ${checkInPhotos.length > 0 ? `
                   <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     ${checkInPhotos.map((photo: string) => {
-                      const sanitizedUrl = sanitizeReportUrl(photo);
-                      if (!sanitizedUrl) {
-                        console.warn(`[PDF] Skipping invalid check-in photo URL: ${photo.substring(0, 50)}...`);
-                        return '';
-                      }
-                      return `<img src="${sanitizedUrl}" alt="Check-in photo" style="max-width: 150px; max-height: 120px; width: auto; height: auto; object-fit: contain; border-radius: 4px; border: 1px solid #e5e7eb; background: #f9fafb;" />`;
-                    }).filter((html: string) => html !== '').join('')}
+        const sanitizedUrl = sanitizeReportUrl(photo);
+        if (!sanitizedUrl) {
+          console.warn(`[PDF] Skipping invalid check-in photo URL: ${photo.substring(0, 50)}...`);
+          return '';
+        }
+        return `<img src="${sanitizedUrl}" alt="Check-in photo" style="max-width: 150px; max-height: 120px; width: auto; height: auto; object-fit: contain; border-radius: 4px; border: 1px solid #e5e7eb; background: #f9fafb;" />`;
+      }).filter((html: string) => html !== '').join('')}
                   </div>
                 ` : '<span style="font-size: 12px; color: #999;">No photos</span>'}
               </div>
@@ -5865,13 +6230,13 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
                 ${checkOutPhotos.length > 0 ? `
                   <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     ${checkOutPhotos.map((photo: string) => {
-                      const sanitizedUrl = sanitizeReportUrl(photo);
-                      if (!sanitizedUrl) {
-                        console.warn(`[PDF] Skipping invalid check-out photo URL: ${photo.substring(0, 50)}...`);
-                        return '';
-                      }
-                      return `<img src="${sanitizedUrl}" alt="Check-out photo" style="max-width: 150px; max-height: 120px; width: auto; height: auto; object-fit: contain; border-radius: 4px; border: 1px solid #e5e7eb; background: #f9fafb;" />`;
-                    }).filter((html: string) => html !== '').join('')}
+        const sanitizedUrl = sanitizeReportUrl(photo);
+        if (!sanitizedUrl) {
+          console.warn(`[PDF] Skipping invalid check-out photo URL: ${photo.substring(0, 50)}...`);
+          return '';
+        }
+        return `<img src="${sanitizedUrl}" alt="Check-out photo" style="max-width: 150px; max-height: 120px; width: auto; height: auto; object-fit: contain; border-radius: 4px; border: 1px solid #e5e7eb; background: #f9fafb;" />`;
+      }).filter((html: string) => html !== '').join('')}
                   </div>
                 ` : '<span style="font-size: 12px; color: #999;">No photos</span>'}
               </div>
@@ -5928,7 +6293,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           </div>
         `;
       }
-      
+
       const trimmedSig = signature.trim();
       if (trimmedSig.startsWith('data:image/')) {
         // For data URLs, use single quotes in the src attribute to avoid issues with double quotes in the data URL
@@ -6530,9 +6895,9 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         const isLocalhost = imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1');
         const isInternalPath = imageUrl.startsWith('/objects/') || (!imageUrl.startsWith('http') && imageUrl.includes('/objects/'));
         const isLocalhostHttp = imageUrl.startsWith('http://localhost') || imageUrl.startsWith('https://localhost');
-        
+
         const needsConversion = isLocalhost || isInternalPath || isLocalhostHttp;
-        
+
         console.log("[Maintenance Analyze Image] URL check:", {
           imageUrl,
           isLocalhost,
@@ -6540,7 +6905,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           isLocalhostHttp,
           needsConversion
         });
-        
+
         if (needsConversion) {
           console.log("[Maintenance Analyze Image] Detected localhost/internal URL, converting to base64:", imageUrl);
           try {
@@ -6559,7 +6924,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
                 }
               }
             }
-            
+
             if (!photoPath.startsWith('/objects/')) {
               if (!photoPath.startsWith('/')) {
                 photoPath = `/objects/${photoPath}`;
@@ -6567,22 +6932,22 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
                 photoPath = `/objects${photoPath}`;
               }
             }
-            
+
             console.log("[Maintenance Analyze Image] Loading file from path:", photoPath);
             const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
             const photoBuffer = await fs.readFile(objectFile.name);
-            
+
             console.log("[Maintenance Analyze Image] File loaded, size:", photoBuffer.length, "bytes");
-            
+
             let mimeType = detectImageMimeType(photoBuffer);
             if (!mimeType || !mimeType.startsWith('image/')) {
               console.warn(`[Maintenance Analyze Image] Invalid MIME type detected: ${mimeType}, defaulting to image/jpeg`);
               mimeType = 'image/jpeg';
             }
-            
+
             const base64Image = photoBuffer.toString('base64');
             imageUrlForAI = `data:${mimeType};base64,${base64Image}`;
-            
+
             console.log("[Maintenance Analyze Image] Successfully converted to base64 data URL, MIME type:", mimeType, "Size:", base64Image.length, "chars");
           } catch (error: any) {
             console.error("[Maintenance Analyze Image] Error converting image to base64, will proceed with text-only:", {
@@ -6600,7 +6965,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
 
       // Make AI call
       let aiCallSucceeded = false;
-      
+
       // Try with image first if available
       if (imageUrlForAI) {
         console.log("[Maintenance Analyze Image] Making AI call with image");
@@ -6624,11 +6989,11 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           });
 
           console.log("[Maintenance Analyze Image] Full OpenAI response with image:", JSON.stringify(analysisCompletion, null, 2));
-          
+
           const responseContent = analysisCompletion.choices?.[0]?.message?.content;
           const finishReason = analysisCompletion.choices?.[0]?.finish_reason;
           const usage = analysisCompletion.usage;
-          
+
           console.log("[Maintenance Analyze Image] Extracted content:", {
             hasChoices: !!analysisCompletion.choices,
             choicesLength: analysisCompletion.choices?.length,
@@ -6649,7 +7014,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           console.error("[Maintenance Analyze Image] Error with image analysis, will try text-only:", imageError?.message);
         }
       }
-      
+
       // If image analysis failed or no image, try text-only
       if (!aiCallSucceeded) {
         console.log("[Maintenance Analyze Image] Processing text-only message:", issueDescription);
@@ -6666,11 +7031,11 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         });
 
         console.log("[Maintenance Analyze Image] Full OpenAI response (text-only):", JSON.stringify(completion, null, 2));
-        
+
         const responseContent = completion.choices?.[0]?.message?.content;
         const finishReason = completion.choices?.[0]?.finish_reason;
         const usage = completion.usage;
-        
+
         console.log("[Maintenance Analyze Image] Extracted content (text-only):", {
           hasChoices: !!completion.choices,
           choicesLength: completion.choices?.length,
@@ -6717,7 +7082,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         code: error?.code,
         status: error?.status,
       });
-      
+
       let errorMessage = "Failed to analyze image";
       if (error?.code === 'invalid_image_url' || error?.message?.includes('downloading')) {
         errorMessage = "I'm having trouble accessing the image you uploaded. Please try uploading the image again or describe the issue in text.";
@@ -6728,7 +7093,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       res.status(500).json({ message: errorMessage });
     }
   });
@@ -9330,6 +9695,114 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     }
   });
 
+  // ==================== COMPLIANCE DOCUMENT TYPES ====================
+
+  // Get all document types for organization
+  app.get("/api/compliance/document-types", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const types = await storage.getComplianceDocumentTypes(user.organizationId);
+      res.json(types);
+    } catch (error) {
+      console.error("Error fetching compliance document types:", error);
+      res.status(500).json({ message: "Failed to fetch compliance document types" });
+    }
+  });
+
+  // Create new document type
+  app.post("/api/compliance/document-types", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { insertComplianceDocumentTypeSchema } = await import("@shared/schema");
+      const validation = insertComplianceDocumentTypeSchema.safeParse({
+        ...req.body,
+        organizationId: user.organizationId,
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({
+          message: "Invalid request data",
+          errors: validation.error.errors
+        });
+      }
+
+      const type = await storage.createComplianceDocumentType(validation.data);
+      res.json(type);
+    } catch (error) {
+      console.error("Error creating compliance document type:", error);
+      res.status(500).json({ message: "Failed to create compliance document type" });
+    }
+  });
+
+  // Update document type
+  app.patch("/api/compliance/document-types/:id", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { id } = req.params;
+      const existingTypes = await storage.getComplianceDocumentTypes(user.organizationId);
+      const type = existingTypes.find(t => t.id === id);
+
+      if (!type || type.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Document type not found" });
+      }
+
+      const { insertComplianceDocumentTypeSchema } = await import("@shared/schema");
+      const updateSchema = insertComplianceDocumentTypeSchema.partial().omit({
+        organizationId: true,
+      });
+
+      const validation = updateSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          message: "Invalid request data",
+          errors: validation.error.errors
+        });
+      }
+
+      const updated = await storage.updateComplianceDocumentType(id, validation.data);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating compliance document type:", error);
+      res.status(500).json({ message: "Failed to update compliance document type" });
+    }
+  });
+
+  // Delete document type
+  app.delete("/api/compliance/document-types/:id", isAuthenticated, requireRole("owner", "compliance"), async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { id } = req.params;
+      const existingTypes = await storage.getComplianceDocumentTypes(user.organizationId);
+      const type = existingTypes.find(t => t.id === id);
+
+      if (!type || type.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Document type not found" });
+      }
+
+      await storage.deleteComplianceDocumentType(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting compliance document type:", error);
+      res.status(500).json({ message: "Failed to delete compliance document type" });
+    }
+  });
+
   // Add tag to asset inventory
   app.post("/api/asset-inventory/:assetId/tags/:tagId", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
     try {
@@ -9834,6 +10307,40 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     } catch (error) {
       console.error("Error fetching inspection entries:", error);
       res.status(500).json({ message: "Failed to fetch inspection entries" });
+    }
+  });
+
+  // Get most recent check-in inspection for a property (for copying to check-out)
+  app.get("/api/properties/:propertyId/most-recent-checkin", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+
+      const { propertyId } = req.params;
+      const property = await storage.getProperty(propertyId);
+
+      if (!property || property.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Property not found" });
+      }
+
+      const checkInInspection = await storage.getMostRecentCheckInInspection(propertyId);
+
+      if (!checkInInspection) {
+        return res.json(null);
+      }
+
+      // Also fetch the entries for this check-in inspection
+      const entries = await storage.getInspectionEntries(checkInInspection.id);
+
+      res.json({
+        inspection: checkInInspection,
+        entries: entries,
+      });
+    } catch (error) {
+      console.error("Error fetching most recent check-in inspection:", error);
+      res.status(500).json({ message: "Failed to fetch check-in inspection" });
     }
   });
 
@@ -12382,9 +12889,9 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       // Allow update if:
       // 1. User is updating themselves, OR
       // 2. User is owner/clerk and target user is in same organization
-      const canUpdate = 
-        userId === targetUserId || 
-        (requester.role === "owner" || requester.role === "clerk") && 
+      const canUpdate =
+        userId === targetUserId ||
+        (requester.role === "owner" || requester.role === "clerk") &&
         targetUser.organizationId === requester.organizationId;
 
       if (!canUpdate) {
@@ -12412,13 +12919,13 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           return res.status(400).json({ message: "Email cannot be empty" });
         }
         const normalizedEmail = email.trim().toLowerCase();
-        
+
         // Check if email is already in use by another user
         const existingUser = await storage.getUserByEmail(normalizedEmail);
         if (existingUser && existingUser.id !== targetUserId) {
           return res.status(400).json({ message: "Email is already in use by another user" });
         }
-        
+
         updatePayload.email = normalizedEmail;
       }
 
@@ -12428,11 +12935,11 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
 
       console.log(`[PUT /api/users/:id] Updating user ${targetUserId} with payload:`, updatePayload);
       const updatedUser = await storage.updateUser(targetUserId, updatePayload);
-      console.log(`[PUT /api/users/:id] Updated user:`, { 
-        id: updatedUser.id, 
-        firstName: updatedUser.firstName, 
-        lastName: updatedUser.lastName, 
-        email: updatedUser.email 
+      console.log(`[PUT /api/users/:id] Updated user:`, {
+        id: updatedUser.id,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        email: updatedUser.email
       });
 
       // Don't return password
@@ -13578,9 +14085,9 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           const isLocalhost = imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1');
           const isInternalPath = imageUrl.startsWith('/objects/') || (!imageUrl.startsWith('http') && imageUrl.includes('/objects/'));
           const isLocalhostHttp = imageUrl.startsWith('http://localhost') || imageUrl.startsWith('https://localhost');
-          
+
           const needsConversion = isLocalhost || isInternalPath || isLocalhostHttp;
-          
+
           console.log("[Tenant Maintenance Chat] URL check:", {
             imageUrl,
             isLocalhost,
@@ -13588,13 +14095,13 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
             isLocalhostHttp,
             needsConversion
           });
-          
+
           // Always convert localhost URLs and internal paths to base64
           if (needsConversion) {
             console.log("[Tenant Maintenance Chat] Detected localhost/internal URL, converting to base64:", imageUrl);
             try {
               const objectStorageService = new ObjectStorageService();
-              
+
               // Extract path from URL if it's a full URL
               let photoPath = imageUrl;
               if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
@@ -13613,7 +14120,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
                   }
                 }
               }
-              
+
               // Ensure path starts with /objects/
               if (!photoPath.startsWith('/objects/')) {
                 // If it's just an object ID, prepend /objects/
@@ -13623,26 +14130,26 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
                   photoPath = `/objects${photoPath}`;
                 }
               }
-              
+
               console.log("[Tenant Maintenance Chat] Loading file from path:", photoPath);
               const objectFile = await objectStorageService.getObjectEntityFile(photoPath);
               const photoBuffer = await fs.readFile(objectFile.name);
-              
+
               console.log("[Tenant Maintenance Chat] File loaded, size:", photoBuffer.length, "bytes");
-              
+
               // Detect MIME type from buffer
               let mimeType = detectImageMimeType(photoBuffer);
-              
+
               // Ensure we have a valid image MIME type
               if (!mimeType || !mimeType.startsWith('image/')) {
                 console.warn(`[Tenant Maintenance Chat] Invalid MIME type detected: ${mimeType}, defaulting to image/jpeg`);
                 mimeType = 'image/jpeg';
               }
-              
+
               // Convert to base64 data URL
               const base64Image = photoBuffer.toString('base64');
               imageUrlForAI = `data:${mimeType};base64,${base64Image}`;
-              
+
               console.log("[Tenant Maintenance Chat] Successfully converted to base64 data URL, MIME type:", mimeType, "Size:", base64Image.length, "chars");
             } catch (error: any) {
               console.error("[Tenant Maintenance Chat] Error converting image to base64, will proceed with text-only:", {
@@ -13661,7 +14168,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
 
         // Make AI call with or without image
         let aiCallSucceeded = false;
-        
+
         // Try with image first if available
         if (imageUrlForAI) {
           console.log("[Tenant Maintenance Chat] Making AI call with image");
@@ -13685,11 +14192,11 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
             });
 
             console.log("[Tenant Maintenance Chat] Full OpenAI response with image:", JSON.stringify(analysisCompletion, null, 2));
-            
+
             const responseContent = analysisCompletion.choices?.[0]?.message?.content;
             const finishReason = analysisCompletion.choices?.[0]?.finish_reason;
             const usage = analysisCompletion.usage;
-            
+
             console.log("[Tenant Maintenance Chat] Extracted content:", {
               hasChoices: !!analysisCompletion.choices,
               choicesLength: analysisCompletion.choices?.length,
@@ -13717,7 +14224,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
             console.error("[Tenant Maintenance Chat] Error with image analysis, will try text-only:", imageError?.message);
           }
         }
-        
+
         // If image analysis failed or no image, try text-only
         if (!aiCallSucceeded) {
           // Text-only message - no image or image conversion failed
@@ -13735,11 +14242,11 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           });
 
           console.log("[Tenant Maintenance Chat] Full OpenAI response (text-only):", JSON.stringify(completion, null, 2));
-          
+
           const responseContent = completion.choices?.[0]?.message?.content;
           const finishReason = completion.choices?.[0]?.finish_reason;
           const usage = completion.usage;
-          
+
           console.log("[Tenant Maintenance Chat] Extracted content (text-only):", {
             hasChoices: !!completion.choices,
             choicesLength: completion.choices?.length,
@@ -13778,7 +14285,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
           imageUrl: imageUrl || 'none',
           hasMessage: !!message,
         });
-        
+
         // Provide more specific error messages based on error type
         if (error?.code === 'invalid_image_url' || error?.message?.includes('downloading')) {
           aiResponse = "I'm having trouble accessing the image you uploaded. Please try uploading the image again or describe the issue in text.";
@@ -13951,10 +14458,10 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         .select({ propertyId: tenantAssignments.propertyId })
         .from(tenantAssignments)
         .where(eq(tenantAssignments.tenantId, userId));
-      
+
       const tenantPropertyIds = assignments.map(a => a.propertyId);
       const tenantHasAccess = tenantPropertyIds.includes(report.propertyId);
-      
+
       if (!tenantHasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -14055,10 +14562,10 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         .select({ propertyId: tenantAssignments.propertyId })
         .from(tenantAssignments)
         .where(eq(tenantAssignments.tenantId, userId));
-      
+
       const tenantPropertyIds = assignments.map(a => a.propertyId);
       const tenantHasAccess = tenantPropertyIds.includes(report.propertyId);
-      
+
       if (!tenantHasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -14103,10 +14610,10 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         .select({ propertyId: tenantAssignments.propertyId })
         .from(tenantAssignments)
         .where(eq(tenantAssignments.tenantId, userId));
-      
+
       const tenantPropertyIds = assignments.map(a => a.propertyId);
       const tenantHasAccess = tenantPropertyIds.includes(report.propertyId);
-      
+
       if (!tenantHasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -14160,10 +14667,10 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         .select({ propertyId: tenantAssignments.propertyId })
         .from(tenantAssignments)
         .where(eq(tenantAssignments.tenantId, userId));
-      
+
       const tenantPropertyIds = assignments.map(a => a.propertyId);
       const tenantHasAccess = tenantPropertyIds.includes(report.propertyId);
-      
+
       if (!tenantHasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -14182,7 +14689,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       let signatureName: string;
       if (signature.startsWith('data:image/')) {
         // It's a signature image - use user's full name
-        signatureName = user.firstName && user.lastName 
+        signatureName = user.firstName && user.lastName
           ? `${user.firstName} ${user.lastName}`.trim()
           : user.email || user.username || 'Tenant';
       } else {
@@ -16558,7 +17065,7 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     try {
       const userId = req.user.id;
       const unreadOnly = req.query.unreadOnly === "true";
-      
+
       const notifications = await storage.getNotificationsByUser(userId, unreadOnly);
       res.json(notifications);
     } catch (error: any) {
@@ -16588,18 +17095,18 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       // Verify notification belongs to user
       const notifications = await storage.getNotificationsByUser(userId);
       const notification = notifications.find(n => n.id === notificationId);
-      
+
       if (!notification) {
         return res.status(404).json({ message: "Notification not found" });
       }
 
       const updated = await storage.markNotificationAsRead(notificationId);
-      
+
       // Update unread count via WebSocket
       const unreadCount = await storage.getUnreadNotificationCount(userId);
       const { updateUnreadCount } = await import("./websocket");
       updateUnreadCount(userId, unreadCount);
-      
+
       res.json(updated);
     } catch (error: any) {
       console.error("Error marking notification as read:", error);
@@ -16611,13 +17118,13 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
   app.patch("/api/notifications/read-all", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      
+
       await storage.markAllNotificationsAsRead(userId);
-      
+
       // Update unread count via WebSocket
       const { updateUnreadCount } = await import("./websocket");
       updateUnreadCount(userId, 0);
-      
+
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error marking all notifications as read:", error);
@@ -16626,10 +17133,10 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
   });
 
   const httpServer = createServer(app);
-  
+
   // Set up WebSocket server for real-time notifications
   const { setupWebSocketServer } = await import("./websocket");
   setupWebSocketServer(httpServer, storage);
-  
+
   return httpServer;
 }

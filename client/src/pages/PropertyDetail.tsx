@@ -104,7 +104,8 @@ interface MaintenanceRequest {
   assignedToName?: string;
 }
 
-const DOCUMENT_TYPES = [
+// Default document types (fallback if no custom types exist)
+const DEFAULT_DOCUMENT_TYPES = [
   "Fire Safety Certificate",
   "Building Insurance",
   "Electrical Safety Certificate",
@@ -143,6 +144,17 @@ export default function PropertyDetail() {
     },
     enabled: !!propertyId,
   });
+
+  // Fetch custom document types
+  const { data: customDocumentTypes = [] } = useQuery<any[]>({
+    queryKey: ['/api/compliance/document-types'],
+  });
+
+  // Combine default and custom document types
+  const allDocumentTypes = [
+    ...DEFAULT_DOCUMENT_TYPES,
+    ...customDocumentTypes.map(t => t.name).filter(name => !DEFAULT_DOCUMENT_TYPES.includes(name))
+  ].sort();
 
   const { data: stats } = useQuery<PropertyStats>({
     queryKey: ["/api/properties", propertyId, "stats"],
@@ -659,7 +671,7 @@ export default function PropertyDetail() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {DOCUMENT_TYPES.map((type) => (
+                              {allDocumentTypes.map((type) => (
                                 <SelectItem key={type} value={type}>
                                   {type}
                                 </SelectItem>

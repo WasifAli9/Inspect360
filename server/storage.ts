@@ -16,6 +16,7 @@ import {
   inspectionEntries,
   aiImageAnalyses,
   complianceDocuments,
+  complianceDocumentTypes,
   maintenanceRequests,
   comparisonReports,
   comparisonReportItems,
@@ -88,6 +89,8 @@ import {
   type InsertAiImageAnalysis,
   type ComplianceDocument,
   type InsertComplianceDocument,
+  type ComplianceDocumentType,
+  type InsertComplianceDocumentType,
   type MaintenanceRequest,
   type InsertMaintenanceRequest,
   type ComparisonReport,
@@ -168,7 +171,7 @@ import {
   type InsertNotification,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql, gte, lte, ne, isNull, or } from "drizzle-orm";
+import { eq, and, desc, asc, sql, gte, lte, ne, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 export interface IStorage {
@@ -185,7 +188,7 @@ export interface IStorage {
   updatePassword(id: string, hashedPassword: string): Promise<User>;
   setResetToken(id: string, token: string, expiry: Date): Promise<User>;
   clearResetToken(id: string): Promise<User>;
-  
+
   // Organization operations
   createOrganization(org: InsertOrganization): Promise<Organization>;
   getOrganization(id: string): Promise<Organization | undefined>;
@@ -194,56 +197,63 @@ export interface IStorage {
   updateOrganizationCredits(id: string, credits: number): Promise<Organization>;
   updateOrganizationStripe(id: string, customerId: string, status: string): Promise<Organization>;
   deductCredit(organizationId: string, amount: number, description: string): Promise<Organization>;
-  
+
   // Contact operations
   createContact(contact: InsertContact & { organizationId: string }): Promise<Contact>;
   getContactsByOrganization(organizationId: string): Promise<Contact[]>;
   getContact(id: string): Promise<Contact | undefined>;
   updateContact(id: string, updates: Partial<InsertContact>): Promise<Contact>;
   deleteContact(id: string): Promise<void>;
-  
+
   // Property operations
   createProperty(property: InsertProperty): Promise<Property>;
   getPropertiesByOrganization(organizationId: string): Promise<Property[]>;
   getPropertiesByBlock(blockId: string): Promise<Property[]>;
   getProperty(id: string): Promise<Property | undefined>;
   updateProperty(id: string, updates: Partial<InsertProperty>): Promise<Property>;
-  
+
   // Inspection operations (Inspections can be on blocks OR properties)
   createInspection(inspection: InsertInspection): Promise<Inspection>;
   getInspectionsByProperty(propertyId: string): Promise<Inspection[]>;
   getInspectionsByBlock(blockId: string): Promise<Inspection[]>;
+  getMostRecentCheckInInspection(propertyId: string): Promise<Inspection | undefined>;
   getInspectionsByInspector(inspectorId: string): Promise<any[]>; // Returns inspections with property/block
   getInspectionsByOrganization(organizationId: string): Promise<any[]>; // Returns inspections with property/block
   getInspection(id: string): Promise<Inspection | undefined>;
   updateInspectionStatus(id: string, status: string, completedDate?: Date): Promise<Inspection>;
   updateInspection(id: string, updates: Partial<InsertInspection>): Promise<Inspection>;
-  
+
   // Inspection Category operations
   createInspectionCategory(category: InsertInspectionCategory): Promise<InspectionCategory>;
   getInspectionCategories(organizationId: string): Promise<InspectionCategory[]>;
   getInspectionCategory(id: string): Promise<InspectionCategory | undefined>;
   updateInspectionCategory(id: string, updates: Partial<InsertInspectionCategory>): Promise<InspectionCategory>;
   deleteInspectionCategory(id: string): Promise<void>;
-  
+
   // Inspection Item operations
   createInspectionItem(item: InsertInspectionItem): Promise<InspectionItem>;
   getInspectionItems(inspectionId: string): Promise<InspectionItem[]>;
   updateInspectionItemAI(id: string, aiAnalysis: string): Promise<InspectionItem>;
-  
+
   // Compliance operations
   createComplianceDocument(doc: InsertComplianceDocument): Promise<ComplianceDocument>;
   getComplianceDocuments(organizationId: string): Promise<ComplianceDocument[]>;
   updateComplianceStatus(id: string, status: string): Promise<ComplianceDocument>;
   getExpiringCompliance(organizationId: string, daysAhead: number): Promise<ComplianceDocument[]>;
-  
+
+  // Compliance Document Types
+  createComplianceDocumentType(type: InsertComplianceDocumentType): Promise<ComplianceDocumentType>;
+  getComplianceDocumentTypes(organizationId: string): Promise<ComplianceDocumentType[]>;
+  updateComplianceDocumentType(id: string, updates: Partial<InsertComplianceDocumentType>): Promise<ComplianceDocumentType>;
+  deleteComplianceDocumentType(id: string): Promise<void>;
+
   // Maintenance operations
   createMaintenanceRequest(request: InsertMaintenanceRequest): Promise<MaintenanceRequest>;
   getMaintenanceRequestsByProperty(propertyId: string): Promise<MaintenanceRequest[]>;
   getMaintenanceByOrganization(organizationId: string): Promise<any[]>;
   updateMaintenanceStatus(id: string, status: string, assignedTo?: string): Promise<MaintenanceRequest>;
   updateMaintenanceRequest(id: string, updates: Partial<InsertMaintenanceRequest>): Promise<MaintenanceRequest>;
-  
+
   // Comparison Report operations
   createComparisonReport(report: InsertComparisonReport): Promise<ComparisonReport>;
   getComparisonReportsByProperty(propertyId: string): Promise<ComparisonReport[]>;
@@ -257,7 +267,7 @@ export interface IStorage {
   updateComparisonReportItem(id: string, updates: any): Promise<any>;
   createComparisonComment(comment: any): Promise<any>;
   getComparisonComments(reportId: string): Promise<any[]>;
-  
+
   // Credit Transaction operations
   createCreditTransaction(transaction: InsertCreditTransaction): Promise<CreditTransaction>;
   getCreditTransactions(organizationId: string): Promise<CreditTransaction[]>;
@@ -322,7 +332,7 @@ export interface IStorage {
   deleteBlock(id: string): Promise<void>;
   getTenantAssignmentsByBlock(blockId: string): Promise<any[]>;
   getBlockTenantStats(blockId: string): Promise<{ totalUnits: number; occupiedUnits: number; occupancyRate: number; totalMonthlyRent: number }>;
-  
+
   // Tenant Assignment operations
   createTenantAssignment(assignment: InsertTenantAssignment & { organizationId: string }): Promise<TenantAssignment>;
   getTenantAssignment(id: string): Promise<TenantAssignment | undefined>;
@@ -332,7 +342,7 @@ export interface IStorage {
   getTenantAssignmentsByProperty(propertyId: string, organizationId: string): Promise<any[]>;
   getTenantAssignmentTags(tenantAssignmentId: string, organizationId: string): Promise<any[]>;
   updateTenantAssignmentTags(tenantAssignmentId: string, tagIds: string[], organizationId: string): Promise<void>;
-  
+
   // Tenancy Attachment operations
   createTenancyAttachment(attachment: InsertTenancyAttachment & { organizationId: string }): Promise<TenancyAttachment>;
   getTenancyAttachment(id: string, organizationId: string): Promise<TenancyAttachment | undefined>;
@@ -375,12 +385,12 @@ export interface IStorage {
   getTeam(id: string): Promise<Team | undefined>;
   updateTeam(id: string, updates: Partial<InsertTeam>): Promise<Team>;
   deleteTeam(id: string): Promise<void>;
-  
+
   // Team Member operations
   addTeamMember(member: InsertTeamMember): Promise<TeamMember>;
   getTeamMembers(teamId: string): Promise<any[]>; // Returns with user/contact details
   removeTeamMember(id: string): Promise<void>;
-  
+
   // Team Category operations
   addTeamCategory(category: InsertTeamCategory): Promise<TeamCategory>;
   getTeamCategories(teamId: string): Promise<TeamCategory[]>;
@@ -455,32 +465,32 @@ export interface IStorage {
   getTag(id: string): Promise<Tag | undefined>;
   updateTag(id: string, updates: Partial<InsertTag>): Promise<Tag>;
   deleteTag(id: string): Promise<void>;
-  
+
   // Tag entity association operations
   addTagToBlock(blockId: string, tagId: string): Promise<void>;
   removeTagFromBlock(blockId: string, tagId: string): Promise<void>;
   getTagsForBlock(blockId: string): Promise<Tag[]>;
-  
+
   addTagToProperty(propertyId: string, tagId: string): Promise<void>;
   removeTagFromProperty(propertyId: string, tagId: string): Promise<void>;
   getTagsForProperty(propertyId: string): Promise<Tag[]>;
-  
+
   addTagToUser(userId: string, tagId: string): Promise<void>;
   removeTagFromUser(userId: string, tagId: string): Promise<void>;
   getTagsForUser(userId: string): Promise<Tag[]>;
-  
+
   addTagToComplianceDocument(complianceDocumentId: string, tagId: string): Promise<void>;
   removeTagFromComplianceDocument(complianceDocumentId: string, tagId: string): Promise<void>;
   getTagsForComplianceDocument(complianceDocumentId: string): Promise<Tag[]>;
-  
+
   addTagToAssetInventory(assetInventoryId: string, tagId: string): Promise<void>;
   removeTagFromAssetInventory(assetInventoryId: string, tagId: string): Promise<void>;
   getTagsForAssetInventory(assetInventoryId: string): Promise<Tag[]>;
-  
+
   addTagToMaintenanceRequest(maintenanceRequestId: string, tagId: string): Promise<void>;
   removeTagFromMaintenanceRequest(maintenanceRequestId: string, tagId: string): Promise<void>;
   getTagsForMaintenanceRequest(maintenanceRequestId: string): Promise<Tag[]>;
-  
+
   // Tag search operations
   searchByTags(organizationId: string, tagIds: string[]): Promise<{
     blocks: any[];
@@ -490,7 +500,7 @@ export interface IStorage {
     assetInventory: any[];
     maintenanceRequests: any[];
   }>;
-  
+
   // Dashboard preferences operations
   getDashboardPreferences(userId: string): Promise<any | undefined>;
   updateDashboardPreferences(userId: string, enabledPanels: string[]): Promise<any>;
@@ -510,8 +520,8 @@ export interface IStorage {
   getMessageTemplate(id: string): Promise<any | undefined>;
   updateMessageTemplate(id: string, updates: any): Promise<any>;
   deleteMessageTemplate(id: string): Promise<void>;
-  getBlockTenantsEmails(blockId: string, organizationId: string): Promise<{email: string; firstName?: string; lastName?: string;}[]>;
-  
+  getBlockTenantsEmails(blockId: string, organizationId: string): Promise<{ email: string; firstName?: string; lastName?: string; }[]>;
+
   // Fixflo Integration operations
   getFixfloConfig(organizationId: string): Promise<FixfloConfig | undefined>;
   upsertFixfloConfig(config: InsertFixfloConfig): Promise<FixfloConfig>;
@@ -554,13 +564,13 @@ export interface IStorage {
   getFeedbackByUser(userId: string): Promise<FeedbackSubmission[]>;
   getAllFeedback(filters?: { status?: string; category?: string; priority?: string; }): Promise<FeedbackSubmission[]>;
   updateFeedback(id: string, updates: UpdateFeedback): Promise<FeedbackSubmission>;
-  
+
   // Central team config operations
   getCentralTeamConfig(): Promise<CentralTeamConfig[]>;
   addCentralTeamEmail(email: string): Promise<CentralTeamConfig>;
   removeCentralTeamEmail(id: string): Promise<void>;
   updateCentralTeamEmail(id: string, isActive: boolean): Promise<CentralTeamConfig>;
-  
+
   // Notification operations
   createNotification(notification: InsertNotification): Promise<Notification>;
   getNotificationsByUser(userId: string, unreadOnly?: boolean): Promise<Notification[]>;
@@ -586,11 +596,11 @@ export class DatabaseStorage implements IStorage {
     const results = await db.select().from(users)
       .where(sql`LOWER(${users.email}) = LOWER(${email})`)
       .orderBy(users.createdAt);
-    
+
     if (results.length > 1) {
       console.warn(`[getUserByEmail] Multiple users found for normalized email ${email.toLowerCase()}: returning oldest (${results.length} total)`);
     }
-    
+
     return results[0];
   }
 
@@ -696,7 +706,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(organizations, eq(users.organizationId, organizations.id))
       .where(sql`LOWER(${users.email}) = LOWER(${email})`)
       .orderBy(users.createdAt);
-    
+
     // Filter out any null organizationIds and map to expected type
     return results
       .filter(r => r.organizationId !== null)
@@ -719,10 +729,10 @@ export class DatabaseStorage implements IStorage {
   async updateOrganizationStripe(id: string, customerId: string, status: string): Promise<Organization> {
     const [org] = await db
       .update(organizations)
-      .set({ 
-        stripeCustomerId: customerId, 
+      .set({
+        stripeCustomerId: customerId,
         subscriptionStatus: status as any,
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(organizations.id, id))
       .returning();
@@ -750,7 +760,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     const newCredits = currentCredits - amount;
-    
+
     await this.createCreditTransaction({
       organizationId,
       amount: -amount,
@@ -855,9 +865,9 @@ export class DatabaseStorage implements IStorage {
       // Count inspections due in next 30 days
       const inspectionsDue = propertyInspections.filter(insp => {
         const scheduledDate = new Date(insp.scheduledDate);
-        return scheduledDate >= now && 
-               scheduledDate <= thirtyDaysFromNow && 
-               insp.status !== 'completed';
+        return scheduledDate >= now &&
+          scheduledDate <= thirtyDaysFromNow &&
+          insp.status !== 'completed';
       }).length;
 
       // Count overdue inspections
@@ -926,6 +936,21 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(inspections.scheduledDate));
   }
 
+  async getMostRecentCheckInInspection(propertyId: string): Promise<Inspection | undefined> {
+    const results = await db
+      .select()
+      .from(inspections)
+      .where(
+        and(
+          eq(inspections.propertyId, propertyId),
+          eq(inspections.type, "check_in" as any)
+        )
+      )
+      .orderBy(desc(inspections.scheduledDate))
+      .limit(1);
+    return results[0];
+  }
+
   async getInspectionsByBlock(blockId: string): Promise<Inspection[]> {
     return await db
       .select()
@@ -948,7 +973,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(inspections.inspectorId, users.id))
       .where(eq(inspections.inspectorId, inspectorId))
       .orderBy(desc(inspections.scheduledDate));
-    
+
     // Flatten the structure to match frontend expectations
     return results.map(r => ({
       ...r.inspection,
@@ -971,7 +996,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(inspections.inspectorId, users.id))
       .where(eq(properties.organizationId, organizationId))
       .orderBy(desc(inspections.scheduledDate));
-    
+
     // Get all inspections for blocks in this organization
     const blockResults = await db
       .select({
@@ -984,7 +1009,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(users, eq(inspections.inspectorId, users.id))
       .where(eq(blocks.organizationId, organizationId))
       .orderBy(desc(inspections.scheduledDate));
-    
+
     // Combine and flatten the structure
     const combined = [
       ...propertyResults.map(r => ({
@@ -1000,7 +1025,7 @@ export class DatabaseStorage implements IStorage {
         clerk: r.clerk,
       })),
     ];
-    
+
     // Sort by scheduled date
     return combined.sort((a, b) => {
       const dateA = new Date(a.scheduledDate || 0).getTime();
@@ -1017,10 +1042,10 @@ export class DatabaseStorage implements IStorage {
   async updateInspectionStatus(id: string, status: string, completedDate?: Date): Promise<Inspection> {
     const [inspection] = await db
       .update(inspections)
-      .set({ 
-        status: status as any, 
+      .set({
+        status: status as any,
         completedDate: completedDate || new Date(),
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(inspections.id, id))
       .returning();
@@ -1033,11 +1058,11 @@ export class DatabaseStorage implements IStorage {
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(inspections.id, id))
       .returning();
-    
+
     if (!inspection) {
       throw new Error("Inspection not found");
     }
-    
+
     return inspection;
   }
 
@@ -1112,7 +1137,7 @@ export class DatabaseStorage implements IStorage {
   async getExpiringCompliance(organizationId: string, daysAhead: number): Promise<ComplianceDocument[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
-    
+
     return await db
       .select()
       .from(complianceDocuments)
@@ -1123,6 +1148,40 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(complianceDocuments.expiryDate);
+  }
+
+  // Compliance Document Types operations
+  async createComplianceDocumentType(typeData: InsertComplianceDocumentType): Promise<ComplianceDocumentType> {
+    const [type] = await db.insert(complianceDocumentTypes).values(typeData).returning();
+    return type;
+  }
+
+  async getComplianceDocumentTypes(organizationId: string): Promise<ComplianceDocumentType[]> {
+    return await db
+      .select()
+      .from(complianceDocumentTypes)
+      .where(
+        and(
+          eq(complianceDocumentTypes.organizationId, organizationId),
+          eq(complianceDocumentTypes.isActive, true)
+        )
+      )
+      .orderBy(asc(complianceDocumentTypes.sortOrder), asc(complianceDocumentTypes.name));
+  }
+
+  async updateComplianceDocumentType(id: string, updates: Partial<InsertComplianceDocumentType>): Promise<ComplianceDocumentType> {
+    const [type] = await db
+      .update(complianceDocumentTypes)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(complianceDocumentTypes.id, id))
+      .returning();
+    return type;
+  }
+
+  async deleteComplianceDocumentType(id: string): Promise<void> {
+    await db
+      .delete(complianceDocumentTypes)
+      .where(eq(complianceDocumentTypes.id, id));
   }
 
   // Maintenance operations
@@ -1142,7 +1201,7 @@ export class DatabaseStorage implements IStorage {
   async getMaintenanceByOrganization(organizationId: string): Promise<any[]> {
     const reporterAlias = alias(users, 'reporter');
     const assigneeAlias = alias(users, 'assignee');
-    
+
     return await db
       .select({
         id: maintenanceRequests.id,
@@ -1189,7 +1248,7 @@ export class DatabaseStorage implements IStorage {
     if (assignedTo !== undefined) {
       updateData.assignedTo = assignedTo;
     }
-    
+
     const [request] = await db
       .update(maintenanceRequests)
       .set(updateData)
@@ -1203,7 +1262,7 @@ export class DatabaseStorage implements IStorage {
       ...updates,
       updatedAt: new Date(),
     };
-    
+
     const [request] = await db
       .update(maintenanceRequests)
       .set(updateData)
@@ -1240,14 +1299,14 @@ export class DatabaseStorage implements IStorage {
       .select({ propertyId: tenantAssignments.propertyId })
       .from(tenantAssignments)
       .where(eq(tenantAssignments.tenantId, tenantId));
-    
+
     const propertyIds = assignments.map(a => a.propertyId);
-    
+
     // If tenant has no property assignments, return empty array
     if (propertyIds.length === 0) {
       return [];
     }
-    
+
     // Get all comparison reports for properties assigned to this tenant
     // Use sql template for IN clause since we have a dynamic array
     return await db
@@ -1269,7 +1328,7 @@ export class DatabaseStorage implements IStorage {
       ...updates,
       updatedAt: new Date(),
     };
-    
+
     const [report] = await db
       .update(comparisonReports)
       .set(updateData)
@@ -1283,12 +1342,12 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(comparisonReportItems)
       .where(eq(comparisonReportItems.comparisonReportId, id));
-    
+
     // Delete related comments
     await db
       .delete(comparisonComments)
       .where(eq(comparisonComments.comparisonReportId, id));
-    
+
     // Delete the report itself
     await db
       .delete(comparisonReports)
@@ -1329,7 +1388,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(comparisonComments.comparisonReportId, reportId))
       .orderBy(comparisonComments.createdAt);
   }
-  
+
   // Inspection Category operations
   async createInspectionCategory(categoryData: InsertInspectionCategory): Promise<InspectionCategory> {
     const [category] = await db.insert(inspectionCategories).values(categoryData).returning();
@@ -1392,13 +1451,13 @@ export class DatabaseStorage implements IStorage {
 
   async getBlocksWithStats(organizationId: string): Promise<any[]> {
     const allBlocks = await this.getBlocksByOrganization(organizationId);
-    
+
     if (allBlocks.length === 0) {
       return [];
     }
-    
+
     const blockIds = allBlocks.map(b => b.id);
-    
+
     // Batch fetch all properties for all blocks at once (properties ARE units)
     const allProperties = await db
       .select()
@@ -1407,7 +1466,7 @@ export class DatabaseStorage implements IStorage {
         eq(properties.organizationId, organizationId),
         sql`${properties.blockId} IN (${sql.join(blockIds.map(id => sql`${id}`), sql`, `)})`
       ));
-    
+
     // Group properties by block
     const propertiesByBlock = new Map<string, typeof allProperties>();
     allProperties.forEach(prop => {
@@ -1418,7 +1477,7 @@ export class DatabaseStorage implements IStorage {
         propertiesByBlock.get(prop.blockId)!.push(prop);
       }
     });
-    
+
     // Batch fetch all property-level inspections
     const propertyIds = allProperties.map(p => p.id);
     let propertyInspections: any[] = [];
@@ -1428,7 +1487,7 @@ export class DatabaseStorage implements IStorage {
         .from(inspections)
         .where(sql`${inspections.propertyId} IN (${sql.join(propertyIds.map(id => sql`${id}`), sql`, `)})`);
     }
-    
+
     // Batch fetch all block-level inspections
     let blockInspections: any[] = [];
     if (blockIds.length > 0) {
@@ -1437,7 +1496,7 @@ export class DatabaseStorage implements IStorage {
         .from(inspections)
         .where(sql`${inspections.blockId} IN (${sql.join(blockIds.map(id => sql`${id}`), sql`, `)})`);
     }
-    
+
     // Group inspections by property
     const inspectionsByProperty = new Map<string, typeof propertyInspections>();
     propertyInspections.forEach(inspection => {
@@ -1448,7 +1507,7 @@ export class DatabaseStorage implements IStorage {
         inspectionsByProperty.get(inspection.propertyId)!.push(inspection);
       }
     });
-    
+
     // Group inspections by block
     const inspectionsByBlock = new Map<string, typeof blockInspections>();
     blockInspections.forEach(inspection => {
@@ -1459,40 +1518,40 @@ export class DatabaseStorage implements IStorage {
         inspectionsByBlock.get(inspection.blockId)!.push(inspection);
       }
     });
-    
+
     // Calculate date ranges once
     const now = new Date();
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(now.getDate() + 30);
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(now.getDate() - 90);
-    
+
     // Build stats for each block
     const blocksWithStats = allBlocks.map(block => {
       const blockProperties = propertiesByBlock.get(block.id) || [];
       const totalProperties = blockProperties.length;
-      
+
       // Get all inspections for this block (both property-level and block-level)
-      const blockPropertyInspections = blockProperties.flatMap(prop => 
+      const blockPropertyInspections = blockProperties.flatMap(prop =>
         inspectionsByProperty.get(prop.id) || []
       );
       const directBlockInspections = inspectionsByBlock.get(block.id) || [];
       const allBlockInspections = [...blockPropertyInspections, ...directBlockInspections];
-      
+
       // Count inspections due in next 30 days
       const inspectionsDue = allBlockInspections.filter(insp => {
         const scheduledDate = new Date(insp.scheduledDate);
-        return scheduledDate >= now && 
-               scheduledDate <= thirtyDaysFromNow && 
-               insp.status !== 'completed';
+        return scheduledDate >= now &&
+          scheduledDate <= thirtyDaysFromNow &&
+          insp.status !== 'completed';
       }).length;
-      
+
       // Count overdue inspections
       const overdueInspections = allBlockInspections.filter(insp => {
         const scheduledDate = new Date(insp.scheduledDate);
         return scheduledDate < now && insp.status !== 'completed';
       }).length;
-      
+
       // Calculate compliance rate (properties with recent completed inspections)
       let complianceRate = 0;
       if (totalProperties > 0) {
@@ -1505,7 +1564,7 @@ export class DatabaseStorage implements IStorage {
         });
         complianceRate = Math.round((propertiesWithRecentInspections.size / totalProperties) * 100);
       }
-      
+
       return {
         ...block,
         stats: {
@@ -1516,7 +1575,7 @@ export class DatabaseStorage implements IStorage {
         },
       };
     });
-    
+
     return blocksWithStats;
   }
 
@@ -1544,13 +1603,13 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(properties)
       .where(eq(properties.blockId, blockId));
-    
+
     if (blockProperties.length === 0) {
       return [];
     }
 
     const propertyIds = blockProperties.map(p => p.id);
-    
+
     // Get all tenant assignments for properties in this block with user and property info
     const assignments = await db
       .select({
@@ -1698,7 +1757,7 @@ export class DatabaseStorage implements IStorage {
           eq(tenantAssignments.organizationId, organizationId)
         )
       );
-    
+
     return result;
   }
 
@@ -1713,14 +1772,14 @@ export class DatabaseStorage implements IStorage {
           eq(tenantAssignments.organizationId, organizationId)
         )
       );
-    
+
     if (assignment.length === 0) {
       throw new Error("Tenant assignment not found or access denied");
     }
-    
+
     // Delete existing tags
     await db.delete(tenantAssignmentTags).where(eq(tenantAssignmentTags.tenantAssignmentId, tenantAssignmentId));
-    
+
     // Insert new tags
     if (tagIds.length > 0) {
       await db.insert(tenantAssignmentTags).values(
@@ -1743,11 +1802,11 @@ export class DatabaseStorage implements IStorage {
           eq(tenantAssignments.organizationId, attachment.organizationId)
         )
       );
-    
+
     if (assignment.length === 0) {
       throw new Error("Tenant assignment not found or access denied");
     }
-    
+
     const [created] = await db.insert(tenancyAttachments).values(attachment).returning();
     return created;
   }
@@ -1773,7 +1832,7 @@ export class DatabaseStorage implements IStorage {
           eq(tenantAssignments.organizationId, organizationId)
         )
       );
-    
+
     return attachment;
   }
 
@@ -1815,16 +1874,16 @@ export class DatabaseStorage implements IStorage {
           eq(tenantAssignments.organizationId, organizationId)
         )
       );
-    
+
     if (attachment.length === 0) {
       throw new Error("Attachment not found or access denied");
     }
-    
+
     const fileUrl = attachment[0].fileUrl;
-    
+
     // Delete the database record
     await db.delete(tenancyAttachments).where(eq(tenancyAttachments.id, id));
-    
+
     // Return fileUrl so caller can delete the file from object storage
     return { fileUrl };
   }
@@ -1835,7 +1894,7 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(properties)
       .where(eq(properties.blockId, blockId));
-    
+
     const totalUnits = blockProperties.length;
 
     if (totalUnits === 0) {
@@ -1865,7 +1924,7 @@ export class DatabaseStorage implements IStorage {
 
     const occupiedUnits = activeAssignments.length;
     const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
-    
+
     // Calculate total monthly rent
     const totalMonthlyRent = activeAssignments.reduce((sum, assignment) => {
       return sum + (assignment.monthlyRent ? parseFloat(assignment.monthlyRent as string) : 0);
@@ -2049,7 +2108,7 @@ export class DatabaseStorage implements IStorage {
     if (completedAt !== undefined) {
       updateData.completedAt = completedAt;
     }
-    
+
     const [workOrder] = await db
       .update(workOrders)
       .set(updateData)
@@ -2063,7 +2122,7 @@ export class DatabaseStorage implements IStorage {
     if (variationNotes !== undefined) {
       updateData.variationNotes = variationNotes;
     }
-    
+
     const [workOrder] = await db
       .update(workOrders)
       .set(updateData)
@@ -2690,11 +2749,11 @@ export class DatabaseStorage implements IStorage {
 
   async updateDashboardPreferences(userId: string, enabledPanels: string[]): Promise<DashboardPreferences> {
     const existing = await this.getDashboardPreferences(userId);
-    
+
     if (existing) {
       const [updated] = await db
         .update(dashboardPreferences)
-        .set({ 
+        .set({
           enabledPanels: JSON.stringify(enabledPanels),
           updatedAt: new Date()
         })
@@ -2769,11 +2828,11 @@ export class DatabaseStorage implements IStorage {
     const [entry] = await db.insert(inspectionEntries).values(dataToInsert).returning();
     return entry;
   }
-  
+
   // Helper to extract photos from valueJson and sync to photos column
   private syncPhotosFromValueJson(data: Partial<InsertInspectionEntry>): Partial<InsertInspectionEntry> {
     const result = { ...data };
-    
+
     // If photos are directly provided, use them (highest priority)
     if (data.photos !== undefined) {
       result.photos = Array.isArray(data.photos) && data.photos.length > 0 ? data.photos : null;
@@ -2781,7 +2840,7 @@ export class DatabaseStorage implements IStorage {
       // Otherwise, try to extract photos from valueJson
       const valueJson = data.valueJson as any;
       let extractedPhotos: string[] | null = null;
-      
+
       if (Array.isArray(valueJson.photos)) {
         extractedPhotos = valueJson.photos;
       } else if (typeof valueJson.photo === 'string' && valueJson.photo) {
@@ -2793,13 +2852,13 @@ export class DatabaseStorage implements IStorage {
           extractedPhotos = valueJson;
         }
       }
-      
+
       // Only update photos column if we found photos in valueJson
       if (extractedPhotos !== null) {
         result.photos = extractedPhotos.length > 0 ? extractedPhotos : null;
       }
     }
-    
+
     return result;
   }
 
@@ -3038,7 +3097,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(messageTemplates).where(eq(messageTemplates.id, id));
   }
 
-  async getBlockTenantsEmails(blockId: string, organizationId: string): Promise<{email: string; firstName?: string; lastName?: string;}[]> {
+  async getBlockTenantsEmails(blockId: string, organizationId: string): Promise<{ email: string; firstName?: string; lastName?: string; }[]> {
     const tenantsData = await db
       .select({
         email: users.email,
@@ -3088,7 +3147,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ==================== SUBSCRIPTION SYSTEM OPERATIONS ====================
-  
+
   // Subscription Plan operations
   async getPlans(): Promise<Plan[]> {
     return await db.select().from(plans).orderBy(plans.monthlyPriceGbp);
@@ -3265,10 +3324,10 @@ export class DatabaseStorage implements IStorage {
   async cancelSubscription(id: string): Promise<Subscription> {
     const [subscription] = await db
       .update(subscriptions)
-      .set({ 
+      .set({
         cancelAtPeriodEnd: true,
         status: 'cancelled' as any,
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(subscriptions.id, id))
       .returning();
@@ -3324,9 +3383,9 @@ export class DatabaseStorage implements IStorage {
   async expireCreditBatch(id: string): Promise<CreditBatch> {
     const [batch] = await db
       .update(creditBatches)
-      .set({ 
+      .set({
         remainingQuantity: 0,
-        updatedAt: new Date() 
+        updatedAt: new Date()
       })
       .where(eq(creditBatches.id, id))
       .returning();
@@ -3364,7 +3423,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(creditLedger.organizationId, organizationId))
       .orderBy(desc(creditLedger.createdAt))
       .limit(limit);
-    
+
     return results;
   }
 
@@ -3433,7 +3492,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateFixfloHealthCheck(
-    organizationId: string, 
+    organizationId: string,
     updates: { lastHealthCheck: Date; healthCheckStatus: string; lastError: string | null; }
   ): Promise<void> {
     await db
@@ -3600,12 +3659,12 @@ export class DatabaseStorage implements IStorage {
       .insert(chatMessages)
       .values(messageData)
       .returning();
-    
+
     await db
       .update(chatConversations)
       .set({ updatedAt: new Date() })
       .where(eq(chatConversations.id, messageData.conversationId));
-    
+
     return message;
   }
 
@@ -3711,7 +3770,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllFeedback(filters?: { status?: string; category?: string; priority?: string; }): Promise<FeedbackSubmission[]> {
     let query = db.select().from(feedbackSubmissions);
-    
+
     const conditions = [];
     if (filters?.status) {
       conditions.push(eq(feedbackSubmissions.status, filters.status as any));
@@ -3722,11 +3781,11 @@ export class DatabaseStorage implements IStorage {
     if (filters?.priority) {
       conditions.push(eq(feedbackSubmissions.priority, filters.priority as any));
     }
-    
+
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as any;
     }
-    
+
     return await query.orderBy(desc(feedbackSubmissions.createdAt));
   }
 
@@ -3735,11 +3794,11 @@ export class DatabaseStorage implements IStorage {
       ...updates,
       updatedAt: new Date(),
     };
-    
+
     if (updates.status === 'completed' || updates.status === 'rejected') {
       updateData.resolvedAt = new Date();
     }
-    
+
     const [feedback] = await db
       .update(feedbackSubmissions)
       .set(updateData)
@@ -3790,11 +3849,11 @@ export class DatabaseStorage implements IStorage {
 
   async getNotificationsByUser(userId: string, unreadOnly: boolean = false): Promise<Notification[]> {
     const conditions = [eq(notifications.userId, userId)];
-    
+
     if (unreadOnly) {
       conditions.push(eq(notifications.isRead, false));
     }
-    
+
     return await db
       .select()
       .from(notifications)

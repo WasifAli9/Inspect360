@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -15,7 +16,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { FileText, Upload, AlertTriangle, ExternalLink, Calendar, ShieldAlert, Tag as TagIcon, X, Plus, Building2, Home, Check, CalendarIcon, Pencil } from "lucide-react";
+import { FileText, Upload, AlertTriangle, ExternalLink, Calendar, ShieldAlert, Tag as TagIcon, X, Plus, Building2, Home, Check, CalendarIcon, Pencil, Filter, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { format as formatDate, differenceInDays, isPast } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -26,7 +27,8 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-const DOCUMENT_TYPES = [
+// Default document types (fallback if no custom types exist)
+const DEFAULT_DOCUMENT_TYPES = [
   "Fire Safety Certificate",
   "Building Insurance",
   "Electrical Safety Certificate",
@@ -66,6 +68,16 @@ export default function Compliance() {
   const [isUploading, setIsUploading] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
   
+  // Filter and sort state
+  const [filterType, setFilterType] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterProperty, setFilterProperty] = useState<string>("all");
+  const [filterBlock, setFilterBlock] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"date" | "type" | "status" | "expiry">("expiry");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+  
   // Get URL parameters for property or block context
   const searchParams = useSearch();
   const urlParams = new URLSearchParams(searchParams);
@@ -100,6 +112,18 @@ export default function Compliance() {
     queryKey: ['/api/compliance', selectedDoc, 'tags'],
     enabled: !!selectedDoc,
   });
+
+  // Fetch custom document types
+  const { data: customDocumentTypes = [] } = useQuery<any[]>({
+    queryKey: ['/api/compliance/document-types'],
+    enabled: !!user?.organizationId && (user.role === "owner" || user.role === "compliance"),
+  });
+
+  // Combine default and custom document types
+  const allDocumentTypes = [
+    ...DEFAULT_DOCUMENT_TYPES,
+    ...customDocumentTypes.map(t => t.name).filter(name => !DEFAULT_DOCUMENT_TYPES.includes(name))
+  ].sort();
 
   const form = useForm<UploadFormValues>({
     resolver: zodResolver(uploadFormSchema),
@@ -354,11 +378,69 @@ export default function Compliance() {
     return block?.name || null;
   };
 
-  const expiredDocs = documents.filter(doc => 
+  // Get unique document types for filter
+  const documentTypes = Array.from(new Set(documents.map(doc => doc.documentType))).sort();
+
+  // Filter and sort documents
+  const filteredAndSortedDocs = documents.filter(doc => {
+    // Filter by type
+    if (filterType !== "all" && doc.documentType !== filterType) return false;
+    
+    // Filter by status
+    if (filterStatus !== "all") {
+      const isExpired = doc.expiryDate && isPast(new Date(doc.expiryDate.toString()));
+      if (filterStatus === "expired" && !isExpired) return false;
+      if (filterStatus === "current" && isExpired) return false;
+      if (filterStatus === "expiring" && (!doc.expiryDate || !expiringDocs.find(ed => ed.id === doc.id))) return false;
+    }
+    
+    // Filter by property
+    if (filterProperty !== "all" && doc.propertyId !== filterProperty) return false;
+    
+    // Filter by block
+    if (filterBlock !== "all" && doc.blockId !== filterBlock) return false;
+    
+    // Filter by search term
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesType = doc.documentType.toLowerCase().includes(searchLower);
+      const matchesProperty = getPropertyName(doc.propertyId)?.toLowerCase().includes(searchLower);
+      const matchesBlock = getBlockName(doc.blockId)?.toLowerCase().includes(searchLower);
+      if (!matchesType && !matchesProperty && !matchesBlock) return false;
+    }
+    
+    return true;
+  }).sort((a, b) => {
+    let comparison = 0;
+    
+    switch (sortBy) {
+      case "date":
+        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        break;
+      case "type":
+        comparison = a.documentType.localeCompare(b.documentType);
+        break;
+      case "status":
+        const aExpired = a.expiryDate && isPast(new Date(a.expiryDate.toString()));
+        const bExpired = b.expiryDate && isPast(new Date(b.expiryDate.toString()));
+        comparison = aExpired === bExpired ? 0 : (aExpired ? 1 : -1);
+        break;
+      case "expiry":
+        if (!a.expiryDate && !b.expiryDate) comparison = 0;
+        else if (!a.expiryDate) comparison = 1;
+        else if (!b.expiryDate) comparison = -1;
+        else comparison = new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+        break;
+    }
+    
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+
+  const expiredDocs = filteredAndSortedDocs.filter(doc => 
     doc.expiryDate && isPast(new Date(doc.expiryDate.toString()))
   );
 
-  const currentDocs = documents.filter(doc => 
+  const currentDocs = filteredAndSortedDocs.filter(doc => 
     !doc.expiryDate || !isPast(new Date(doc.expiryDate.toString()))
   );
 
@@ -438,7 +520,7 @@ export default function Compliance() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {DOCUMENT_TYPES.map((type) => (
+                          {allDocumentTypes.map((type) => (
                             <SelectItem key={type} value={type}>
                               {type}
                             </SelectItem>
@@ -723,6 +805,209 @@ export default function Compliance() {
         </Dialog>
       </div>
 
+      {/* Filter and Sort Controls */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        {/* Search Bar */}
+        <div className="flex-1 w-full sm:max-w-md">
+          <Input
+            placeholder="Search by type, property, or block..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full"
+          />
+        </div>
+        
+        {/* Add Filter Button */}
+        <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="gap-2">
+              <Filter className="w-4 h-4" />
+              Add Filter
+              {(filterType !== "all" || filterStatus !== "all" || filterProperty !== "all" || filterBlock !== "all" || sortBy !== "expiry" || sortOrder !== "asc") && (
+                <Badge variant="secondary" className="ml-1">
+                  {[
+                    filterType !== "all" ? 1 : 0,
+                    filterStatus !== "all" ? 1 : 0,
+                    filterProperty !== "all" ? 1 : 0,
+                    filterBlock !== "all" ? 1 : 0,
+                    sortBy !== "expiry" || sortOrder !== "asc" ? 1 : 0
+                  ].reduce((a, b) => a + b, 0)}
+                </Badge>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" align="end">
+            <div className="space-y-4">
+              <div className="font-medium">Filters & Sort</div>
+              
+              {/* Filter by Type */}
+              <div className="space-y-2">
+                <Label className="text-sm">Document Type</Label>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {documentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Filter by Status */}
+              <div className="space-y-2">
+                <Label className="text-sm">Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="current">Current</SelectItem>
+                    <SelectItem value="expiring">Expiring Soon</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Filter by Property */}
+              <div className="space-y-2">
+                <Label className="text-sm">Property</Label>
+                <Select value={filterProperty} onValueChange={setFilterProperty}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {properties.map((property) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Filter by Block */}
+              <div className="space-y-2">
+                <Label className="text-sm">Block</Label>
+                <Select value={filterBlock} onValueChange={setFilterBlock}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Blocks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block) => (
+                      <SelectItem key={block.id} value={block.id}>
+                        {block.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Sort */}
+              <div className="space-y-2">
+                <Label className="text-sm">Sort By</Label>
+                <div className="flex gap-2">
+                  <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date">Date</SelectItem>
+                      <SelectItem value="type">Type</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                      <SelectItem value="expiry">Expiry Date</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                    title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                  >
+                    {sortOrder === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Clear Filters */}
+              {(filterType !== "all" || filterStatus !== "all" || filterProperty !== "all" || filterBlock !== "all" || sortBy !== "expiry" || sortOrder !== "asc") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilterType("all");
+                    setFilterStatus("all");
+                    setFilterProperty("all");
+                    setFilterBlock("all");
+                    setSortBy("expiry");
+                    setSortOrder("asc");
+                  }}
+                  className="w-full"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All Filters
+                </Button>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+      
+      {/* Active Filters Display */}
+      {(filterType !== "all" || filterStatus !== "all" || filterProperty !== "all" || filterBlock !== "all") && (
+        <div className="flex flex-wrap gap-2 items-center">
+          {filterType !== "all" && (
+            <Badge variant="secondary" className="gap-1">
+              Type: {filterType}
+              <button
+                onClick={() => setFilterType("all")}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          )}
+          {filterStatus !== "all" && (
+            <Badge variant="secondary" className="gap-1">
+              Status: {filterStatus === "current" ? "Current" : filterStatus === "expiring" ? "Expiring Soon" : "Expired"}
+              <button
+                onClick={() => setFilterStatus("all")}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          )}
+          {filterProperty !== "all" && (
+            <Badge variant="secondary" className="gap-1">
+              Property: {getPropertyName(filterProperty) || filterProperty}
+              <button
+                onClick={() => setFilterProperty("all")}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          )}
+          {filterBlock !== "all" && (
+            <Badge variant="secondary" className="gap-1">
+              Block: {getBlockName(filterBlock) || filterBlock}
+              <button
+                onClick={() => setFilterBlock("all")}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </Badge>
+          )}
+        </div>
+      )}
+
       {expiringDocs.length > 0 && (
         <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
           <AlertTriangle className="h-4 w-4 text-yellow-600" />
@@ -837,7 +1122,7 @@ export default function Compliance() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {DOCUMENT_TYPES.map((type) => (
+                        {allDocumentTypes.map((type) => (
                           <SelectItem key={type} value={type} data-testid={`option-edit-type-${type}`}>
                             {type}
                           </SelectItem>
