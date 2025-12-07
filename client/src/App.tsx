@@ -62,7 +62,7 @@ import { UserProfileMenu } from "@/components/UserProfileMenu";
 import { AIChatbot } from "@/components/AIChatbot";
 import { LocaleProvider } from "@/contexts/LocaleContext";
 import { Onboarding } from "@/components/Onboarding";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { NotificationPopup } from "@/components/NotificationPopup";
 
@@ -95,13 +95,15 @@ function AppContent() {
   });
 
   // Redirect unauthorized users trying to access protected routes
-  useEffect(() => {
+  // Use useLayoutEffect + window.location.href for immediate hard redirect before paint
+  // This prevents any blank page from showing
+  useLayoutEffect(() => {
     if (!isLoading && !isAuthenticated && isProtectedRoute) {
       // Preserve the return URL so we can redirect back after login
       const returnUrl = encodeURIComponent(location);
-      setLocation(`/auth?returnUrl=${returnUrl}`);
+      window.location.href = `/auth?returnUrl=${returnUrl}`;
     }
-  }, [isLoading, isAuthenticated, isProtectedRoute, location, setLocation]);
+  }, [isLoading, isAuthenticated, isProtectedRoute, location]);
 
   // If unauthorized and trying to access protected route, show loading while redirecting
   if (!isLoading && !isAuthenticated && isProtectedRoute) {
