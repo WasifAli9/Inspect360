@@ -129,6 +129,7 @@ export default function InspectionReport() {
   // Fetch inspection data - refetch on mount to ensure fresh data
   const { data: inspection, isLoading: inspectionLoading, refetch: refetchInspection } = useQuery<Inspection>({
     queryKey: ["/api/inspections", id],
+    enabled: !!id && isAuthenticated && !authLoading, // Only fetch if authenticated
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     staleTime: 0, // Always consider data stale
@@ -141,7 +142,7 @@ export default function InspectionReport() {
   // Fetch all inspection entries - refetch on mount to ensure fresh data including new photos and AI notes
   const { data: entries = [], isLoading: entriesLoading, refetch: refetchEntries } = useQuery<any[]>({
     queryKey: [`/api/inspections/${id}/entries`],
-    enabled: !!id,
+    enabled: !!id && isAuthenticated && !authLoading, // Only fetch if authenticated
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     staleTime: 0, // Always consider data stale
@@ -151,9 +152,20 @@ export default function InspectionReport() {
     refetchIntervalInBackground: true, // Continue polling even when tab is in background
   });
 
+  // Redirect to login if not authenticated - use hard redirect to prevent blank page
+  // This must run FIRST before any other effects
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && id) {
+      const returnUrl = encodeURIComponent(`/inspections/${id}/report`);
+      window.location.href = `/auth?returnUrl=${returnUrl}`;
+      return; // Exit early to prevent other effects from running
+    }
+  }, [authLoading, isAuthenticated, id]);
+
   // Refetch entries when component mounts or when page becomes visible to ensure we have the latest data
   useEffect(() => {
-    if (id) {
+    // Only run if authenticated
+    if (id && isAuthenticated && !authLoading) {
       // Immediately invalidate and refetch to get latest data
       const refetchData = async () => {
         await queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
@@ -176,10 +188,13 @@ export default function InspectionReport() {
 
       return () => clearInterval(interval);
     }
-  }, [id, queryClient, refetchEntries, refetchInspection]);
+  }, [id, queryClient, refetchEntries, refetchInspection, isAuthenticated, authLoading]);
 
   // Also refetch when page becomes visible (user switches back to tab)
   useEffect(() => {
+    // Only run if authenticated
+    if (!isAuthenticated || authLoading) return;
+    
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && id) {
         queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
@@ -189,25 +204,19 @@ export default function InspectionReport() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [id, queryClient, refetchEntries]);
+  }, [id, queryClient, refetchEntries, isAuthenticated, authLoading]);
 
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      const returnUrl = encodeURIComponent(`/inspections/${id}/report`);
-      navigate(`/auth?returnUrl=${returnUrl}`);
-    }
-  }, [authLoading, isAuthenticated, id, navigate]);
 
   // Fetch user role for edit permissions
   const { data: currentUser } = useQuery<any>({
     queryKey: ["/api/auth/user"],
+    enabled: isAuthenticated && !authLoading, // Only fetch if authenticated
   });
 
   // Fetch maintenance requests linked to this inspection
   const { data: maintenanceRequests = [] } = useQuery<any[]>({
     queryKey: [`/api/maintenance?inspectionId=${id}`],
-    enabled: !!id,
+    enabled: !!id && isAuthenticated && !authLoading, // Only fetch if authenticated
   });
 
   // Create maintenance request mutation
