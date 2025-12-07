@@ -1,6 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -110,6 +110,15 @@ export default function InspectionReport() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  
+  // IMMEDIATE redirect using useLayoutEffect - runs synchronously before paint
+  // This prevents any blank page from showing
+  useLayoutEffect(() => {
+    if (!authLoading && !isAuthenticated && id) {
+      const returnUrl = encodeURIComponent(`/inspections/${id}/report`);
+      window.location.href = `/auth?returnUrl=${returnUrl}`;
+    }
+  }, [authLoading, isAuthenticated, id]);
   const [editMode, setEditMode] = useState(false);
   const [editedNotes, setEditedNotes] = useState<Record<string, string>>({});
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
@@ -641,7 +650,8 @@ export default function InspectionReport() {
     );
   }
 
-  // Don't render if not authenticated (redirect will happen via useEffect)
+  // If not authenticated, return null (redirect is handled by useLayoutEffect)
+  // This prevents any rendering while redirect happens
   if (!isAuthenticated) {
     return null;
   }
