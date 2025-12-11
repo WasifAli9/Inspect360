@@ -800,7 +800,7 @@ export function FieldWidget({
                 {localPhotos.map((photoUrl, index) => (
                   <Card key={index} className="overflow-hidden">
                     <CardContent className="p-0">
-                      <div className="relative group bg-muted">
+                      <div className="relative bg-muted">
                         <img
                           src={photoUrl}
                           alt={`${field.label} ${index + 1}`}
@@ -809,8 +809,12 @@ export function FieldWidget({
                         <Button
                           size="icon"
                           variant="destructive"
-                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handlePhotoRemove(photoUrl)}
+                          className="absolute top-2 right-2 z-10"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handlePhotoRemove(photoUrl);
+                          }}
                           data-testid={`button-remove-photo-${index}`}
                         >
                           <X className="w-4 h-4" />
