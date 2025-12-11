@@ -494,60 +494,60 @@ export default function Properties() {
                   </CardContent>
                 </Link>
                 <CardContent className="pt-0 border-t">
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 pt-4">
-                    <Link href={`/asset-inventory?propertyId=${property.id}`}>
+                  <div className="grid grid-cols-5 gap-1 pt-4">
+                    <Link href={`/asset-inventory?propertyId=${property.id}`} className="w-full">
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="flex flex-col h-auto py-2 px-3"
+                        className="flex flex-col h-auto py-2 px-1 w-full"
                         data-testid={`button-inventory-${property.id}`}
                       >
                         <Package className="h-4 w-4 mb-1" />
-                        <span className="text-xs">Inventory</span>
+                        <span className="text-xs truncate">Inventory</span>
                       </Button>
                     </Link>
-                    <Link href={`/inspections?propertyId=${property.id}&create=true`}>
+                    <Link href={`/inspections?propertyId=${property.id}&create=true`} className="w-full">
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="flex flex-col h-auto py-2 px-3"
+                        className="flex flex-col h-auto py-2 px-1 w-full"
                         data-testid={`button-inspect-${property.id}`}
                       >
                         <ClipboardCheck className="h-4 w-4 mb-1" />
-                        <span className="text-xs">Inspect</span>
+                        <span className="text-xs truncate">Inspect</span>
                       </Button>
                     </Link>
-                    <Link href={`/properties/${property.id}/tenants`}>
+                    <Link href={`/properties/${property.id}/tenants`} className="w-full">
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="flex flex-col h-auto py-2 px-3"
+                        className="flex flex-col h-auto py-2 px-1 w-full"
                         data-testid={`button-tenants-${property.id}`}
                       >
                         <Users className="h-4 w-4 mb-1" />
-                        <span className="text-xs">Tenants</span>
+                        <span className="text-xs truncate">Tenants</span>
                       </Button>
                     </Link>
-                    <Link href={`/compliance?propertyId=${property.id}`}>
+                    <Link href={`/compliance?propertyId=${property.id}`} className="w-full">
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="flex flex-col h-auto py-2 px-3"
+                        className="flex flex-col h-auto py-2 px-1 w-full"
                         data-testid={`button-compliance-${property.id}`}
                       >
                         <FileText className="h-4 w-4 mb-1" />
-                        <span className="text-xs">Compliance</span>
+                        <span className="text-xs truncate">Compliance</span>
                       </Button>
                     </Link>
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="flex flex-col h-auto py-2 px-3"
+                      className="flex flex-col h-auto py-2 px-1 w-full"
                       data-testid={`button-maintenance-${property.id}`}
                       onClick={() => setMaintenancePropertyId(property.id)}
                     >
                       <Wrench className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Maintenance</span>
+                      <span className="text-xs truncate">Maintenance</span>
                     </Button>
                   </div>
                 </CardContent>
