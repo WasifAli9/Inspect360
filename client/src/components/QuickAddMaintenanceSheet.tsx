@@ -199,13 +199,13 @@ export function QuickAddMaintenanceSheet({
     },
   });
 
-  // Track previous inspectionEntryId to detect actual context changes
-  const prevEntryIdRef = useRef<string | undefined>(undefined);
+  // Track if sheet was previously open
+  const wasOpenRef = useRef(false);
 
-  // Reset form only when the sheet opens OR when the inspection entry actually changes
+  // Reset form every time the sheet opens
   useEffect(() => {
-    const entryChanged = inspectionEntryId !== prevEntryIdRef.current;
-    if (open && entryChanged) {
+    if (open && !wasOpenRef.current) {
+      // Sheet just opened - reset form with current context
       form.reset({
         title: "",
         description: "",
@@ -214,12 +214,13 @@ export function QuickAddMaintenanceSheet({
         photoUrls: [],
         inspectionId: inspectionId || undefined,
         inspectionEntryId: inspectionEntryId || undefined,
-        source: "inspection",
+        source: inspectionId ? "inspection" : "manual",
       });
-      prevEntryIdRef.current = inspectionEntryId;
+      setPhotoUrls(initialPhotos);
     }
+    wasOpenRef.current = open;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, inspectionId, inspectionEntryId, defaultPropertyId]);
+  }, [open, defaultPropertyId]);
 
   // Update propertyId when blockProperties change (inside useEffect to prevent infinite loops)
   useEffect(() => {
@@ -381,65 +382,82 @@ export function QuickAddMaintenanceSheet({
               )}
             />
 
-            <div className="space-y-2">
-              <FormLabel>Photos</FormLabel>
-              {photoUrls.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {photoUrls.map((url, index) => (
-                    <div key={index} className="relative group">
-                      <img
-                        src={url}
-                        alt={`Maintenance photo ${index + 1}`}
-                        className="w-20 h-20 object-cover rounded-md border"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removePhoto(index)}
-                        className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1"
-                        data-testid={`button-remove-photo-${index}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="space-y-3">
+              <FormLabel>Photos (Optional)</FormLabel>
               
-              <div className="space-y-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFileUpload}
-                  disabled={isUploading}
-                  className="hidden"
-                  id="photo-upload-input"
-                />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileUpload}
+                disabled={isUploading}
+                className="hidden"
+                id="photo-upload-input"
+              />
+              
+              {photoUrls.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-4 gap-2">
+                    {photoUrls.map((url, index) => (
+                      <div key={index} className="relative aspect-square">
+                        <img
+                          src={url}
+                          alt={`Photo ${index + 1}`}
+                          className="w-full h-full object-cover rounded-md border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(index)}
+                          className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 shadow-sm"
+                          data-testid={`button-remove-photo-${index}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || photoUrls.length >= 5}
+                    data-testid="button-add-more-photos"
+                  >
+                    {isUploading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Camera className="w-4 h-4 mr-2" />
+                    )}
+                    {isUploading ? "Uploading..." : "Add More"}
+                  </Button>
+                </div>
+              ) : (
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
-                  className="w-full"
+                  className="w-full h-20 border-dashed"
                   data-testid="button-add-photo"
                 >
                   {isUploading ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                       Uploading...
                     </>
                   ) : (
-                    <>
-                      <Camera className="w-4 h-4 mr-2" />
-                      {photoUrls.length > 0 ? "Add More Photos" : "Add Photos"}
-                    </>
+                    <div className="flex flex-col items-center gap-1">
+                      <Camera className="w-5 h-5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Add Photos</span>
+                    </div>
                   )}
                 </Button>
-                <p className="text-xs text-muted-foreground">
-                  Upload photos of the maintenance issue (max 10MB per file, up to 5 files)
-                </p>
-              </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Max 10MB per file, up to 5 photos
+              </p>
             </div>
 
             <div className="flex gap-2 pt-4">
