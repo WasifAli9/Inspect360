@@ -1016,9 +1016,12 @@ export function FieldWidget({
               <SelectValue placeholder="Select condition" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="New">New</SelectItem>
               <SelectItem value="Excellent">Excellent</SelectItem>
               <SelectItem value="Good">Good</SelectItem>
+              <SelectItem value="Fair">Fair</SelectItem>
               <SelectItem value="Poor">Poor</SelectItem>
+              <SelectItem value="Missing">Missing</SelectItem>
             </SelectContent>
           </Select>
         </div>
