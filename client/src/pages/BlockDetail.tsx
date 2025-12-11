@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ComplianceCalendar from "@/components/ComplianceCalendar";
-import { ArrowLeft, Building2, MapPin, Users, CheckCircle2, Calendar, AlertTriangle, FileCheck } from "lucide-react";
+import ComplianceDocumentCalendar from "@/components/ComplianceDocumentCalendar";
+import { ArrowLeft, Building2, MapPin, Users, CheckCircle2, Calendar, AlertTriangle, FileCheck, ClipboardCheck } from "lucide-react";
 
 interface PropertyStats {
   totalUnits: number;
@@ -127,9 +128,13 @@ export default function BlockDetail() {
             <Building2 className="h-4 w-4 mr-2" />
             Properties ({properties.length})
           </TabsTrigger>
-          <TabsTrigger value="compliance" data-testid="tab-compliance">
+          <TabsTrigger value="inspection-schedule" data-testid="tab-inspection-schedule">
+            <ClipboardCheck className="h-4 w-4 mr-2" />
+            Inspection Schedule
+          </TabsTrigger>
+          <TabsTrigger value="compliance-schedule" data-testid="tab-compliance-schedule">
             <FileCheck className="h-4 w-4 mr-2" />
-            Compliance
+            Compliance Schedule
           </TabsTrigger>
         </TabsList>
 
@@ -225,13 +230,29 @@ export default function BlockDetail() {
           )}
         </TabsContent>
 
-        {/* Compliance Tab */}
-        <TabsContent value="compliance" className="space-y-6">
+        {/* Inspection Schedule Tab */}
+        <TabsContent value="inspection-schedule" className="space-y-6">
           <ComplianceCalendar 
             report={complianceReport} 
             isLoading={complianceReportLoading}
             entityType="block"
           />
+        </TabsContent>
+
+        {/* Compliance Schedule Tab */}
+        <TabsContent value="compliance-schedule" className="space-y-6">
+          <ComplianceDocumentCalendar 
+            documents={[]}
+            isLoading={false}
+            entityType="block"
+          />
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <FileCheck className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Compliance documents are managed at the property level</p>
+              <p className="text-sm text-muted-foreground mt-2">View individual properties to manage their compliance documents</p>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

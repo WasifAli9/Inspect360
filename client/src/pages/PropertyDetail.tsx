@@ -13,6 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import ComplianceCalendar from "@/components/ComplianceCalendar";
+import ComplianceDocumentCalendar from "@/components/ComplianceDocumentCalendar";
 import { insertComplianceDocumentSchema, type AssetInventory } from "@shared/schema";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -90,6 +91,8 @@ interface ComplianceDoc {
   documentType: string;
   expiryDate: string | null;
   status: string;
+  documentUrl?: string;
+  createdAt?: string;
 }
 
 interface MaintenanceRequest {
@@ -460,9 +463,13 @@ export default function PropertyDetail() {
             <Package className="h-4 w-4 mr-2" />
             Inventory
           </TabsTrigger>
-          <TabsTrigger value="compliance" data-testid="tab-compliance">
+          <TabsTrigger value="inspection-schedule" data-testid="tab-inspection-schedule">
+            <ClipboardCheck className="h-4 w-4 mr-2" />
+            Inspection Schedule
+          </TabsTrigger>
+          <TabsTrigger value="compliance-schedule" data-testid="tab-compliance-schedule">
             <FileCheck className="h-4 w-4 mr-2" />
-            Compliance
+            Compliance Schedule
           </TabsTrigger>
           <TabsTrigger value="maintenance" data-testid="tab-maintenance">
             <Wrench className="h-4 w-4 mr-2" />
@@ -633,12 +640,28 @@ export default function PropertyDetail() {
           )}
         </TabsContent>
 
-        {/* Compliance Tab */}
-        <TabsContent value="compliance" className="space-y-6">
-          {/* Annual Compliance Report */}
+        {/* Inspection Schedule Tab */}
+        <TabsContent value="inspection-schedule" className="space-y-6">
+          {/* Annual Inspection Compliance Report */}
           <ComplianceCalendar 
             report={complianceReport} 
             isLoading={complianceReportLoading}
+            entityType="property"
+          />
+        </TabsContent>
+
+        {/* Compliance Schedule Tab */}
+        <TabsContent value="compliance-schedule" className="space-y-6">
+          {/* Annual Compliance Document Calendar */}
+          <ComplianceDocumentCalendar 
+            documents={compliance.map(doc => ({
+              id: doc.id,
+              documentType: doc.documentType,
+              expiryDate: doc.expiryDate,
+              documentUrl: doc.documentUrl || '',
+              createdAt: doc.createdAt || new Date().toISOString(),
+            }))}
+            isLoading={propertyLoading}
             entityType="property"
           />
 

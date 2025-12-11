@@ -34,6 +34,7 @@ The platform is built on a robust web architecture with a PWA-first approach, em
 - **Offline Queue System**: LocalStorage-based offline sync for inspection entries, assets, and maintenance requests.
 - **AI-Powered Tenant Maintenance Requests**: Multi-step tenant portal with AI-powered fix suggestions and image upload.
 - **Compliance Document Upload System**: Robust system with multi-layer error handling, state management, user feedback, and calendar popover for expiry dates.
+- **Separate Inspection and Compliance Schedules**: "Inspection Schedule" tab shows annual inspection compliance calendar by template type. "Compliance Schedule" tab shows document expiry calendar with document management.
 - **Collaborative Comparison Reports**: End-to-end check-out inspection comparison with AI analysis, asset-based depreciation, and electronic signatures.
 - **Team-Based Work Order Management**: System for work order assignment, notifications, and analytics with contractor email support.
 - **AI Chatbot with Knowledge Base**: Features knowledge base management (uploading PDF, DOCX, TXT), a GPT-5 powered chatbot with conversation history, and knowledge base-enhanced responses.
