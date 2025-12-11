@@ -995,6 +995,142 @@ export default function InspectionReport() {
           </CardHeader>
         </Card>
 
+        {/* Glossary of Terms */}
+        <Card className="print-break-inside-avoid border-2" data-testid="glossary-of-terms">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-2xl font-bold">Glossary of Terms</CardTitle>
+            <CardDescription>For guidance, please find a glossary of terms used within this report</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Condition Column */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-lg border-b pb-2">Condition</h4>
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="font-bold">Very Poor:</span>{" "}
+                    <span className="text-muted-foreground">Extensively damaged/faulty. Examples: large stains; upholstery torn; very dirty.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Poor:</span>{" "}
+                    <span className="text-muted-foreground">Extensive signs of wear and tear. Examples: stains/marks/tears/chips.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Fair:</span>{" "}
+                    <span className="text-muted-foreground">Signs of age. Examples: frayed; small light stains/marks; discolouration.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Good:</span>{" "}
+                    <span className="text-muted-foreground">Signs of slight wear. Examples: generally lightly worn.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Excellent:</span>{" "}
+                    <span className="text-muted-foreground">Like new condition with minimal to no signs of wear.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">New:</span>{" "}
+                    <span className="text-muted-foreground">Still in wrapper or with new tags/labels attached. Recently purchased, installed or decorated.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Missing:</span>{" "}
+                    <span className="text-muted-foreground">Item is not present or cannot be located in the property.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cleanliness Column */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-lg border-b pb-2">Cleanliness</h4>
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="font-bold">Very Poor:</span>{" "}
+                    <span className="text-muted-foreground">Not cleaned. Requires cleaning to a good or excellent standard.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Poor:</span>{" "}
+                    <span className="text-muted-foreground">Item dusty or dirty. Requires further cleaning to either good or excellent standard.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Fair:</span>{" "}
+                    <span className="text-muted-foreground">Evidence of some cleaning, but signs of dust or marks.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Good:</span>{" "}
+                    <span className="text-muted-foreground">Item cleaned and free of loose dirt.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Excellent:</span>{" "}
+                    <span className="text-muted-foreground">Item immaculate, sparkling and dust free.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Photo Terms and Status Icons Row */}
+            <div className="grid md:grid-cols-2 gap-6 mt-6 pt-6 border-t">
+              {/* Photo Terms */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-lg border-b pb-2">Photo Terms</h4>
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="font-bold">Captured (external device):</span>{" "}
+                    <span className="text-muted-foreground">The date provided by the image file itself, usually set by the device that captured it.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Captured (via App):</span>{" "}
+                    <span className="text-muted-foreground">The date a photo was taken within the platform mobile App. This is a more reliable source than the above.</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Captured (certified by inspector):</span>{" "}
+                    <span className="text-muted-foreground">The date a photo was taken according to the inspector (defaulting to the inspection date).</span>
+                  </div>
+                  <div>
+                    <span className="font-bold">Added:</span>{" "}
+                    <span className="text-muted-foreground">The date on which the photo was added to the platform.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Icons */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-lg border-b pb-2">Status Icons</h4>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                    </span>
+                    <span className="text-muted-foreground">Disagreed by tenant</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                      <Wrench className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+                    </span>
+                    <span className="text-muted-foreground">Repair</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    </span>
+                    <span className="text-muted-foreground">Beyond fair wear and tear</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                      <GitCompare className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    </span>
+                    <span className="text-muted-foreground">Replace</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                      <X className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                    </span>
+                    <span className="text-muted-foreground">Missing</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Inspection Points */}
         {sections.length === 0 ? (
           <Card>
@@ -1110,7 +1246,7 @@ export default function InspectionReport() {
                                   size="sm"
                                   onClick={() => autoCreateComparisonMutation.mutate({
                                     inspectionId: id!,
-                                    fieldKey: field.id || field.key
+                                    fieldKey: field.id || field.key || field.label
                                   })}
                                   disabled={autoCreateComparisonMutation.isPending}
                                   data-testid={`button-comparison-${field.id || field.key}`}
