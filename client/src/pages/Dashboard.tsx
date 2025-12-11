@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { TagSearch } from "@/components/TagSearch";
+import ComplianceCalendar from "@/components/ComplianceCalendar";
+import ComplianceDocumentCalendar from "@/components/ComplianceDocumentCalendar";
 import { 
   BarChart, 
   Bar, 
@@ -132,7 +134,7 @@ interface DashboardStats {
 }
 
 // Widget visibility configuration
-type WidgetKey = "kpis" | "alerts" | "trends" | "upcoming" | "risk" | "portfolio";
+type WidgetKey = "kpis" | "alerts" | "trends" | "upcoming" | "risk" | "portfolio" | "inspectionSchedule" | "complianceSchedule";
 
 const defaultWidgets: Record<WidgetKey, boolean> = {
   kpis: true,
@@ -141,6 +143,8 @@ const defaultWidgets: Record<WidgetKey, boolean> = {
   upcoming: true,
   risk: true,
   portfolio: true,
+  inspectionSchedule: false,
+  complianceSchedule: false,
 };
 
 const widgetLabels: Record<WidgetKey, string> = {
@@ -150,6 +154,8 @@ const widgetLabels: Record<WidgetKey, string> = {
   upcoming: "Upcoming Due Items",
   risk: "Risk Summary",
   portfolio: "Portfolio Overview",
+  inspectionSchedule: "Inspection Schedule",
+  complianceSchedule: "Compliance Schedule",
 };
 
 export default function Dashboard() {
@@ -171,6 +177,14 @@ export default function Dashboard() {
     }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // Inspection Schedule widget filter state
+  const [inspectionScheduleBlockId, setInspectionScheduleBlockId] = useState<string>("");
+  const [inspectionSchedulePropertyId, setInspectionSchedulePropertyId] = useState<string>("");
+  
+  // Compliance Schedule widget filter state
+  const [complianceScheduleBlockId, setComplianceScheduleBlockId] = useState<string>("");
+  const [complianceSchedulePropertyId, setComplianceSchedulePropertyId] = useState<string>("");
 
   // Save widget preferences to localStorage
   useEffect(() => {
@@ -236,6 +250,50 @@ export default function Dashboard() {
     },
     enabled: isAuthenticated && !!user?.organizationId && user?.role === "owner",
   });
+
+  // Inspection Schedule compliance report query
+  const inspectionScheduleEntityType = inspectionSchedulePropertyId ? 'property' : (inspectionScheduleBlockId ? 'block' : null);
+  const inspectionScheduleEntityId = inspectionSchedulePropertyId || inspectionScheduleBlockId || null;
+  
+  const { data: inspectionComplianceReport, isLoading: inspectionComplianceLoading } = useQuery({
+    queryKey: ["/api/compliance-report", inspectionScheduleEntityType, inspectionScheduleEntityId],
+    queryFn: async () => {
+      if (!inspectionScheduleEntityType || !inspectionScheduleEntityId) return null;
+      const res = await fetch(`/api/compliance-report/${inspectionScheduleEntityType}/${inspectionScheduleEntityId}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: isAuthenticated && visibleWidgets.inspectionSchedule && !!inspectionScheduleEntityId,
+  });
+
+  // Compliance Schedule documents query
+  const complianceScheduleEntityType = complianceSchedulePropertyId ? 'property' : (complianceScheduleBlockId ? 'block' : null);
+  const complianceScheduleEntityId = complianceSchedulePropertyId || complianceScheduleBlockId || null;
+  
+  const { data: complianceDocuments = [], isLoading: complianceDocumentsLoading } = useQuery({
+    queryKey: ["/api/compliance-documents", complianceScheduleEntityType, complianceScheduleEntityId],
+    queryFn: async () => {
+      if (!complianceScheduleEntityType || !complianceScheduleEntityId) return [];
+      const endpoint = complianceScheduleEntityType === 'property' 
+        ? `/api/properties/${complianceScheduleEntityId}/compliance-documents`
+        : `/api/blocks/${complianceScheduleEntityId}/compliance-documents`;
+      const res = await fetch(endpoint);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isAuthenticated && visibleWidgets.complianceSchedule && !!complianceScheduleEntityId,
+  });
+
+  // Filter properties for schedule widgets based on selected block
+  const inspectionScheduleFilteredProperties = useMemo(() => {
+    if (!inspectionScheduleBlockId) return properties;
+    return properties.filter((p: any) => p.blockId === inspectionScheduleBlockId);
+  }, [properties, inspectionScheduleBlockId]);
+
+  const complianceScheduleFilteredProperties = useMemo(() => {
+    if (!complianceScheduleBlockId) return properties;
+    return properties.filter((p: any) => p.blockId === complianceScheduleBlockId);
+  }, [properties, complianceScheduleBlockId]);
 
   // Create lookup maps for property/block names
   const propertyMap = useMemo(() => {
@@ -955,6 +1013,128 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Inspection Schedule Widget */}
+      {visibleWidgets.inspectionSchedule && (
+        <Card data-testid="panel-inspection-schedule">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                <ClipboardCheck className="h-5 w-5 text-primary" />
+                Inspection Schedule
+              </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={inspectionScheduleBlockId}
+                  onValueChange={(value) => {
+                    setInspectionScheduleBlockId(value === "all" ? "" : value);
+                    setInspectionSchedulePropertyId("");
+                  }}
+                >
+                  <SelectTrigger className="w-[160px]" data-testid="select-inspection-block">
+                    <SelectValue placeholder="Select Block" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block: Block) => (
+                      <SelectItem key={block.id} value={block.id}>{block.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={inspectionSchedulePropertyId}
+                  onValueChange={(value) => setInspectionSchedulePropertyId(value === "all" ? "" : value)}
+                >
+                  <SelectTrigger className="w-[180px]" data-testid="select-inspection-property">
+                    <SelectValue placeholder="Select Property" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {inspectionScheduleFilteredProperties.map((property: Property) => (
+                      <SelectItem key={property.id} value={property.id}>{property.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!inspectionScheduleEntityId ? (
+              <div className="py-12 text-center">
+                <ClipboardCheck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">Select a block or property to view inspection schedule</p>
+              </div>
+            ) : (
+              <ComplianceCalendar 
+                report={inspectionComplianceReport} 
+                isLoading={inspectionComplianceLoading}
+                entityType={inspectionScheduleEntityType as 'property' | 'block'}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Compliance Schedule Widget */}
+      {visibleWidgets.complianceSchedule && (
+        <Card data-testid="panel-compliance-schedule">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Compliance Schedule
+              </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={complianceScheduleBlockId}
+                  onValueChange={(value) => {
+                    setComplianceScheduleBlockId(value === "all" ? "" : value);
+                    setComplianceSchedulePropertyId("");
+                  }}
+                >
+                  <SelectTrigger className="w-[160px]" data-testid="select-compliance-block">
+                    <SelectValue placeholder="Select Block" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block: Block) => (
+                      <SelectItem key={block.id} value={block.id}>{block.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={complianceSchedulePropertyId}
+                  onValueChange={(value) => setComplianceSchedulePropertyId(value === "all" ? "" : value)}
+                >
+                  <SelectTrigger className="w-[180px]" data-testid="select-compliance-property">
+                    <SelectValue placeholder="Select Property" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {complianceScheduleFilteredProperties.map((property: Property) => (
+                      <SelectItem key={property.id} value={property.id}>{property.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!complianceScheduleEntityId ? (
+              <div className="py-12 text-center">
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">Select a block or property to view compliance schedule</p>
+              </div>
+            ) : (
+              <ComplianceDocumentCalendar 
+                documents={complianceDocuments} 
+                isLoading={complianceDocumentsLoading}
+                entityType={complianceScheduleEntityType as 'property' | 'block'}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <TagSearch open={tagSearchOpen} onOpenChange={setTagSearchOpen} />
     </div>
