@@ -41,7 +41,11 @@ import {
   Wrench,
   GitCompare,
   ExternalLink,
-  Loader2
+  Loader2,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  Search
 } from "lucide-react";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -135,6 +139,34 @@ export default function InspectionReport() {
   });
   const [comparisonProgress, setComparisonProgress] = useState(0);
   const [comparisonStatusMessage, setComparisonStatusMessage] = useState("Initializing...");
+  const [expandedPhotos, setExpandedPhotos] = useState<Record<string, boolean>>({});
+
+  const togglePhotoExpansion = (key: string) => {
+    setExpandedPhotos(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const getConditionColor = (condition: string | null | undefined) => {
+    if (!condition) return 'bg-gray-400';
+    const lower = condition.toLowerCase();
+    if (lower === 'new' || lower === 'excellent') return 'bg-green-500';
+    if (lower === 'good') return 'bg-green-500';
+    if (lower === 'fair') return 'bg-yellow-500';
+    if (lower === 'poor') return 'bg-orange-500';
+    if (lower === 'very poor') return 'bg-red-500';
+    if (lower === 'missing') return 'bg-red-600';
+    return 'bg-gray-400';
+  };
+
+  const getCleanlinessColor = (cleanliness: string | null | undefined) => {
+    if (!cleanliness) return 'bg-gray-400';
+    const lower = cleanliness.toLowerCase();
+    if (lower === 'excellent') return 'bg-green-500';
+    if (lower === 'good') return 'bg-green-500';
+    if (lower === 'fair') return 'bg-yellow-500';
+    if (lower === 'poor') return 'bg-orange-500';
+    if (lower === 'very poor') return 'bg-red-500';
+    return 'bg-gray-400';
+  };
 
   // Fetch inspection data - refetch on mount to ensure fresh data
   const { data: inspection, isLoading: inspectionLoading, refetch: refetchInspection } = useQuery<Inspection>({
@@ -1131,201 +1163,224 @@ export default function InspectionReport() {
           </CardContent>
         </Card>
 
-        {/* Inspection Points */}
-        {sections.length === 0 ? (
-          <Card>
-            <CardContent className="pt-6 text-center text-muted-foreground">
-              No inspection template structure available
-            </CardContent>
-          </Card>
-        ) : (
-          sections.map((section) => {
-            const sectionEntries = entries.filter(e => e.sectionRef === section.id);
+        {/* Schedule of Cleanliness and Condition - Table Format */}
+        <Card className="print-break-inside-avoid border-2" data-testid="schedule-of-condition">
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Camera className="w-6 h-6 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold">Schedule of Cleanliness and Condition</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {sections.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No inspection template structure available</p>
+            ) : (
+              <div className="space-y-8">
+                {sections.map((section, sectionIdx) => {
+                  return (
+                    <div key={section.id} className="space-y-2" data-testid={`section-${section.id}`}>
+                      {/* Section Header */}
+                      <div className="border-b pb-2 mb-3">
+                        <h3 className="text-lg font-bold">{section.title}</h3>
+                        {section.description && (
+                          <p className="text-sm text-muted-foreground">{section.description}</p>
+                        )}
+                      </div>
 
-            return (
-              <Card key={section.id} className="print-break-inside-avoid border-2" data-testid={`section-${section.id}`}>
-                <CardHeader>
-                  <CardTitle className="text-2xl font-bold">{section.title}</CardTitle>
-                  {section.description && (
-                    <CardDescription>{section.description}</CardDescription>
-                  )}
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {section.fields.map((field) => {
-                    const entry = getEntryValue(section.id, field.id || field.key || field.label);
-                    const entryKey = `${section.id}-${field.id || field.key || field.label}`;
+                      {/* Table Header */}
+                      <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground border-b pb-2 px-2">
+                        <div className="col-span-3">Room/Space</div>
+                        <div className="col-span-4">Description</div>
+                        <div className="col-span-2 text-center">Condition</div>
+                        <div className="col-span-2 text-center">Cleanliness</div>
+                        <div className="col-span-1 text-center">Photos</div>
+                      </div>
 
-                    if (!entry && !editMode) return null; // Hide unfilled fields in view mode
+                      {/* Table Rows */}
+                      {section.fields.map((field, fieldIdx) => {
+                        const entry = getEntryValue(section.id, field.id || field.key || field.label);
+                        const entryKey = `${section.id}-${field.id || field.key || field.label}`;
+                        const photoKey = `photos-${entryKey}`;
+                        const isPhotoExpanded = expandedPhotos[photoKey];
 
-                    return (
-                      <div
-                        key={field.id || field.key || field.label}
-                        className="border rounded-lg p-4"
-                        data-testid={`field-${field.id || field.key}`}
-                      >
-                        <div className="space-y-3">
-                          {/* Field Label and Description */}
-                          <div>
-                            <h4 className="text-base font-bold">
-                              {field.label}
-                              {field.required && <span className="text-destructive ml-1">*</span>}
-                            </h4>
-                            {field.description && (
-                              <p className="text-sm text-muted-foreground mt-1">{field.description}</p>
-                            )}
-                          </div>
+                        if (!entry && !editMode) return null;
 
-                          {/* Field Value */}
-                          <div className="pl-4 border-l-2 border-primary/20">
-                            {renderFieldValue(entry?.valueJson, field)}
-                          </div>
+                        let condition: string | null = null;
+                        let cleanliness: string | null = null;
+                        let description = '';
 
-                          {/* Photos */}
-                          {entry?.photos && entry.photos.length > 0 && (
-                            <div className="space-y-2">
-                              <div className="text-sm font-bold">Photos</div>
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                {entry.photos.map((photo: string, idx: number) => {
-                                  // Ensure photo URL is correct
-                                  const photoUrl = photo.startsWith('/objects/') || photo.startsWith('http')
-                                    ? photo
-                                    : `/objects/${photo}`;
-                                  return (
-                                    <img
-                                      key={`${entry.id}-${idx}-${photo}`}
-                                      src={photoUrl}
-                                      alt={`${field.label} - Photo ${idx + 1}`}
-                                      className="w-full h-40 object-cover rounded-lg border"
-                                      data-testid={`photo-${field.id || field.key}-${idx}`}
-                                    />
-                                  );
-                                })}
+                        if (entry?.valueJson) {
+                          if (typeof entry.valueJson === 'object' && !Array.isArray(entry.valueJson)) {
+                            condition = entry.valueJson.condition || null;
+                            cleanliness = entry.valueJson.cleanliness || null;
+                            description = entry.valueJson.value || '';
+                          } else if (typeof entry.valueJson === 'string') {
+                            description = entry.valueJson;
+                          }
+                        }
+
+                        const photoCount = entry?.photos?.length || 0;
+                        const referencePrefix = `${sectionIdx + 1}.${fieldIdx + 1}`;
+
+                        return (
+                          <div key={field.id || field.key || field.label}>
+                            {/* Main Row */}
+                            <div 
+                              className="grid grid-cols-12 gap-2 py-2.5 border-b items-center text-sm px-2 hover:bg-muted/30"
+                              data-testid={`field-${field.id || field.key}`}
+                            >
+                              <div className="col-span-3 font-medium text-primary hover:underline cursor-pointer" onClick={() => photoCount > 0 && togglePhotoExpansion(photoKey)}>
+                                {field.label}
+                              </div>
+                              <div className="col-span-4 text-muted-foreground text-xs truncate">
+                                {description || entry?.note || '-'}
+                              </div>
+                              <div className="col-span-2 flex items-center justify-center gap-1">
+                                {condition ? (
+                                  <>
+                                    <span className={`w-2 h-2 rounded-full ${getConditionColor(condition)}`} />
+                                    <span className="text-xs">{condition}</span>
+                                  </>
+                                ) : <span className="text-muted-foreground text-xs">-</span>}
+                              </div>
+                              <div className="col-span-2 flex items-center justify-center gap-1">
+                                {cleanliness ? (
+                                  <>
+                                    <span className={`w-2 h-2 rounded-full ${getCleanlinessColor(cleanliness)}`} />
+                                    <span className="text-xs">{cleanliness}</span>
+                                  </>
+                                ) : <span className="text-muted-foreground text-xs">-</span>}
+                              </div>
+                              <div className="col-span-1 text-center">
+                                {photoCount > 0 ? (
+                                  <button
+                                    onClick={() => togglePhotoExpansion(photoKey)}
+                                    className="inline-flex items-center gap-0.5 text-primary hover:underline text-xs"
+                                    data-testid={`button-toggle-photos-${field.id || field.key}`}
+                                  >
+                                    <Camera className="w-3 h-3" />
+                                    <span>{photoCount} {photoCount === 1 ? 'photo' : 'photos'}</span>
+                                  </button>
+                                ) : <span className="text-muted-foreground text-xs">-</span>}
                               </div>
                             </div>
-                          )}
 
-                          {/* Notes */}
-                          <div className="space-y-2">
-                            <div className="text-sm font-bold">Notes</div>
-                            {editMode ? (
-                              <Textarea
-                                value={editedNotes[entryKey] || ""}
-                                onChange={(e) => setEditedNotes({ ...editedNotes, [entryKey]: e.target.value })}
-                                placeholder="Add inspection notes..."
-                                className="min-h-[80px]"
-                                data-testid={`textarea-note-${field.id || field.key}`}
-                              />
-                            ) : entry?.note ? (
-                              <div className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/50 p-3 rounded-lg">
-                                {entry.note}
-                              </div>
-                            ) : (
-                              <p className="text-sm text-muted-foreground italic">No notes</p>
-                            )}
-                          </div>
-
-                          {/* Action Buttons - Hidden in print and edit mode */}
-                          {!editMode && entry && (
-                            <div className="flex gap-2 flex-wrap no-print">
-                              {/* Raise Maintenance Request - only if property exists */}
-                              {inspection.propertyId && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenMaintenanceDialog(entry.id, field.label, section.title)}
-                                  data-testid={`button-maintenance-${field.id || field.key}`}
-                                >
-                                  <Wrench className="w-4 h-4 mr-2" />
-                                  Raise Maintenance Request
-                                </Button>
-                              )}
-                              {/* Add to Comparison - only on check-out inspections with photos and property */}
-                              {inspection.type === 'check_out' && entry.photos && entry.photos.length > 0 && inspection.propertyId && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => autoCreateComparisonMutation.mutate({
-                                    inspectionId: id!,
-                                    fieldKey: field.id || field.key || field.label
-                                  })}
-                                  disabled={autoCreateComparisonMutation.isPending}
-                                  data-testid={`button-comparison-${field.id || field.key}`}
-                                >
-                                  <GitCompare className="w-4 h-4 mr-2" />
-                                  {autoCreateComparisonMutation.isPending ? "Creating..." : "Add to Comparison"}
-                                </Button>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Maintenance Flag Indicator */}
-                          {entry?.maintenanceFlag && (
-                            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-500">
-                              <AlertTriangle className="w-4 h-4" />
-                              <span>Flagged for maintenance</span>
-                            </div>
-                          )}
-
-                          {/* Linked Maintenance Requests */}
-                          {entry && (() => {
-                            const linkedRequests = maintenanceRequests.filter(
-                              (req: any) => req.inspectionEntryId === entry.id
-                            );
-                            if (linkedRequests.length === 0) return null;
-
-                            return (
-                              <div className="space-y-2 mt-4 border-t pt-4">
-                                <div className="text-sm font-medium text-muted-foreground">
-                                  Related Maintenance Requests ({linkedRequests.length})
+                            {/* Expanded Photos Section */}
+                            {isPhotoExpanded && photoCount > 0 && (
+                              <div className="py-4 px-4 bg-muted/20 border-b">
+                                <div className="mb-4">
+                                  <h4 className="font-bold text-base flex items-center gap-2">
+                                    <Camera className="w-4 h-4 text-primary" />
+                                    {field.label} Photos
+                                  </h4>
+                                  {entry?.note && (
+                                    <p className="text-sm text-muted-foreground mt-1">{entry.note}</p>
+                                  )}
                                 </div>
-                                {linkedRequests.map((request: any) => (
-                                  <Card key={request.id} className="bg-muted/30">
-                                    <CardContent className="p-3">
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="flex-1">
-                                          <div className="font-medium text-sm">{request.title}</div>
-                                          {request.description && (
-                                            <div className="text-xs text-muted-foreground mt-1">
-                                              {request.description}
-                                            </div>
-                                          )}
-                                          <div className="flex items-center gap-2 mt-2">
-                                            <Badge variant={
-                                              request.status === 'open' ? 'default' :
-                                                request.status === 'in_progress' ? 'secondary' :
-                                                  request.status === 'resolved' ? 'outline' : 'default'
-                                            }>
-                                              {request.status}
-                                            </Badge>
-                                            <Badge variant="outline" className="text-xs">
-                                              {request.priority}
-                                            </Badge>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {entry.photos.map((photo: string, idx: number) => {
+                                    const photoUrl = photo.startsWith('/objects/') || photo.startsWith('http')
+                                      ? photo : `/objects/${photo}`;
+                                    const photoRef = `${referencePrefix}.${idx + 1}`;
+                                    const capturedDate = inspection?.completedDate 
+                                      ? format(new Date(inspection.completedDate), 'dd/MM/yyyy')
+                                      : format(new Date(), 'dd/MM/yyyy');
+
+                                    return (
+                                      <div key={`${entry.id}-${idx}`} className="space-y-2">
+                                        <div className="relative rounded-lg overflow-hidden border bg-background">
+                                          <img
+                                            src={photoUrl}
+                                            alt={`${field.label} - Photo ${idx + 1}`}
+                                            className="w-full h-40 object-contain bg-muted"
+                                            data-testid={`photo-${field.id || field.key}-${idx}`}
+                                          />
+                                          <button
+                                            className="absolute top-2 right-2 p-1.5 rounded-full bg-background/80 hover:bg-background shadow-sm"
+                                            onClick={() => window.open(photoUrl, '_blank')}
+                                          >
+                                            <Search className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                        <div className="text-xs space-y-0.5 text-muted-foreground bg-background rounded p-2 border">
+                                          <div className="flex justify-between">
+                                            <span>Provided by</span>
+                                            <span className="font-medium text-foreground">Inspector</span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span>Captured (Certified by inspector)</span>
+                                            <span className="font-medium text-foreground">{capturedDate}</span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span>Added</span>
+                                            <span className="font-medium text-foreground">{capturedDate}</span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span>Reference</span>
+                                            <span className="font-medium text-foreground">{photoRef}</span>
                                           </div>
                                         </div>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => navigate(`/maintenance`)}
-                                          data-testid={`link-maintenance-${request.id}`}
-                                        >
-                                          <ExternalLink className="w-4 h-4" />
-                                        </Button>
                                       </div>
-                                    </CardContent>
-                                  </Card>
-                                ))}
+                                    );
+                                  })}
+                                </div>
+
+                                {/* Action Buttons */}
+                                {!editMode && entry && (
+                                  <div className="flex gap-2 flex-wrap mt-4 pt-3 border-t no-print">
+                                    {inspection.propertyId && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleOpenMaintenanceDialog(entry.id, field.label, section.title)}
+                                      >
+                                        <Wrench className="w-4 h-4 mr-2" />
+                                        Raise Maintenance
+                                      </Button>
+                                    )}
+                                    {inspection.type === 'check_out' && inspection.propertyId && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => autoCreateComparisonMutation.mutate({
+                                          inspectionId: id!,
+                                          fieldKey: field.id || field.key || field.label
+                                        })}
+                                        disabled={autoCreateComparisonMutation.isPending}
+                                      >
+                                        <GitCompare className="w-4 h-4 mr-2" />
+                                        Compare
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
+                            )}
+
+                            {/* Edit Mode Notes */}
+                            {editMode && (
+                              <div className="py-2 px-4 bg-muted/10 border-b">
+                                <Textarea
+                                  value={editedNotes[entryKey] || ""}
+                                  onChange={(e) => setEditedNotes({ ...editedNotes, [entryKey]: e.target.value })}
+                                  placeholder={`Notes for ${field.label}...`}
+                                  className="min-h-[60px] text-sm"
+                                  data-testid={`textarea-note-${field.id || field.key}`}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Maintenance Request Dialog */}
