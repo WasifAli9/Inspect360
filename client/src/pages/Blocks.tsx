@@ -509,71 +509,71 @@ export default function Blocks() {
                 
                 {/* Quick Actions */}
                 <div className="h-px bg-border/30" />
-                <div className="grid grid-cols-3 xl:grid-cols-6 gap-1">
-                  <Link href={`/properties?blockId=${block.id}`}>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+                  <Link href={`/properties?blockId=${block.id}`} className="w-full">
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="flex flex-col h-auto py-2 px-3"
+                      className="flex flex-col h-auto py-2 px-1 w-full"
                       data-testid={`button-properties-${block.id}`}
                     >
                       <Home className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Properties</span>
+                      <span className="text-xs truncate">Properties</span>
                     </Button>
                   </Link>
-                  <Link href={`/asset-inventory?blockId=${block.id}`}>
+                  <Link href={`/asset-inventory?blockId=${block.id}`} className="w-full">
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="flex flex-col h-auto py-2 px-3"
+                      className="flex flex-col h-auto py-2 px-1 w-full"
                       data-testid={`button-inventory-${block.id}`}
                     >
                       <Package className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Inventory</span>
+                      <span className="text-xs truncate">Inventory</span>
                     </Button>
                   </Link>
-                  <Link href={`/inspections?blockId=${block.id}&create=true`}>
+                  <Link href={`/inspections?blockId=${block.id}&create=true`} className="w-full">
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="flex flex-col h-auto py-2 px-3"
+                      className="flex flex-col h-auto py-2 px-1 w-full"
                       data-testid={`button-inspect-${block.id}`}
                     >
                       <ClipboardCheck className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Inspect</span>
+                      <span className="text-xs truncate">Inspect</span>
                     </Button>
                   </Link>
-                  <Link href={`/blocks/${block.id}/tenants`}>
+                  <Link href={`/blocks/${block.id}/tenants`} className="w-full">
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="flex flex-col h-auto py-2 px-3"
+                      className="flex flex-col h-auto py-2 px-1 w-full"
                       data-testid={`button-tenants-${block.id}`}
                     >
                       <Users className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Tenants</span>
+                      <span className="text-xs truncate">Tenants</span>
                     </Button>
                   </Link>
-                  <Link href={`/compliance?blockId=${block.id}`}>
+                  <Link href={`/compliance?blockId=${block.id}`} className="w-full">
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="flex flex-col h-auto py-2 px-3"
+                      className="flex flex-col h-auto py-2 px-1 w-full"
                       data-testid={`button-compliance-${block.id}`}
                     >
                       <FileText className="h-4 w-4 mb-1" />
-                      <span className="text-xs">Compliance</span>
+                      <span className="text-xs truncate">Compliance</span>
                     </Button>
                   </Link>
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="flex flex-col h-auto py-2 px-3"
+                    className="flex flex-col h-auto py-2 px-1 w-full"
                     data-testid={`button-maintenance-${block.id}`}
                     onClick={() => setMaintenanceBlockId(block.id)}
                   >
                     <Wrench className="h-4 w-4 mb-1" />
-                    <span className="text-xs">Maintenance</span>
+                    <span className="text-xs truncate">Maintenance</span>
                   </Button>
                 </div>
               </CardContent>
