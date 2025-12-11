@@ -32,6 +32,8 @@ import {
   User,
   Upload,
   Pencil,
+  ImageIcon,
+  ExternalLink,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -360,7 +362,7 @@ export default function PropertyDetail() {
       </div>
 
       {/* Property Header */}
-      <div>
+      <div className="space-y-4">
         <div className="flex items-start justify-between">
           <div className="space-y-2">
             <h1 className="text-3xl font-bold flex items-center gap-3" data-testid="heading-property-name">
@@ -388,8 +390,45 @@ export default function PropertyDetail() {
             Edit Property
           </Button>
         </div>
+
+        {/* Property Image and Map Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Property Image Placeholder */}
+          <Card className="overflow-hidden">
+            <div className="aspect-video bg-muted flex items-center justify-center">
+              <div className="text-center text-muted-foreground">
+                <ImageIcon className="h-16 w-16 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Property Image</p>
+                <p className="text-xs">Coming Soon</p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Map Link */}
+          <Card className="overflow-hidden">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(property.address)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+              data-testid="link-map"
+            >
+              <div className="aspect-video bg-muted flex items-center justify-center hover-elevate cursor-pointer relative group">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-primary/10" />
+                <div className="text-center text-muted-foreground z-10">
+                  <MapPin className="h-16 w-16 mx-auto mb-2 text-primary opacity-70 group-hover:opacity-100 transition-opacity" />
+                  <p className="text-sm font-medium">View on Map</p>
+                  <p className="text-xs flex items-center justify-center gap-1 mt-1">
+                    Open in Google Maps <ExternalLink className="h-3 w-3" />
+                  </p>
+                </div>
+              </div>
+            </a>
+          </Card>
+        </div>
+
         {property.notes && (
-          <Card className="mt-4">
+          <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground">{property.notes}</p>
             </CardContent>
