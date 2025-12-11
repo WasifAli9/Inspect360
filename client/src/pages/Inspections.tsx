@@ -626,11 +626,11 @@ export default function Inspections() {
                   name="clerkId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Assign to Clerk (Optional)</FormLabel>
+                      <FormLabel>Assign to Inspector (Optional)</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-clerk">
-                            <SelectValue placeholder="Select clerk" />
+                            <SelectValue placeholder="Select team member" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
