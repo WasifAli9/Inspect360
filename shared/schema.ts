@@ -161,6 +161,11 @@ export const organizations = pgTable("organizations", {
   brandingAddress: text("branding_address"), // White-label: Address for reports
   brandingWebsite: varchar("branding_website"), // White-label: Company website
   financeEmail: varchar("finance_email"), // Finance department email for liability reports
+  autoRenewEnabled: boolean("auto_renew_enabled").default(false), // Auto-renew credits when low
+  autoRenewBundleId: varchar("auto_renew_bundle_id"), // Which bundle to auto-purchase
+  autoRenewThreshold: integer("auto_renew_threshold").default(10), // Trigger when credits drop below
+  autoRenewLastRunAt: timestamp("auto_renew_last_run_at"), // Last auto-renewal execution
+  autoRenewFailureCount: integer("auto_renew_failure_count").default(0), // Track consecutive failures
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

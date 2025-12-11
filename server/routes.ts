@@ -7340,6 +7340,85 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     }
   });
 
+  // Get auto-renew settings
+  app.get("/api/credits/auto-renew", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const org = await storage.getOrganization(user.organizationId);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      res.json({
+        enabled: org.autoRenewEnabled ?? false,
+        bundleId: org.autoRenewBundleId,
+        threshold: org.autoRenewThreshold ?? 10,
+        lastRunAt: org.autoRenewLastRunAt,
+        failureCount: org.autoRenewFailureCount ?? 0,
+      });
+    } catch (error) {
+      console.error("Error fetching auto-renew settings:", error);
+      res.status(500).json({ message: "Failed to fetch auto-renew settings" });
+    }
+  });
+
+  // Update auto-renew settings
+  app.put("/api/credits/auto-renew", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only owners can configure auto-renew
+      if (user.role !== "owner") {
+        return res.status(403).json({ message: "Only organization owners can configure auto-renew" });
+      }
+
+      const { enabled, bundleId, threshold } = req.body;
+
+      // Validate bundle exists if enabling
+      if (enabled && bundleId) {
+        const bundles = await storage.getCreditBundles();
+        const bundle = bundles.find(b => b.id === bundleId && b.isActive);
+        if (!bundle) {
+          return res.status(400).json({ message: "Invalid or inactive credit bundle" });
+        }
+      }
+
+      // Update organization auto-renew settings
+      await db.update(organizations)
+        .set({
+          autoRenewEnabled: enabled,
+          autoRenewBundleId: bundleId || null,
+          autoRenewThreshold: threshold ?? 10,
+          autoRenewFailureCount: enabled ? 0 : undefined, // Reset failure count when re-enabling
+          updatedAt: new Date(),
+        })
+        .where(eq(organizations.id, user.organizationId));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating auto-renew settings:", error);
+      res.status(500).json({ message: "Failed to update auto-renew settings" });
+    }
+  });
+
+  // Get available credit bundles for auto-renew
+  app.get("/api/credits/bundles", isAuthenticated, async (req: any, res) => {
+    try {
+      const bundles = await storage.getCreditBundles();
+      res.json(bundles.filter(b => b.isActive));
+    } catch (error) {
+      console.error("Error fetching credit bundles:", error);
+      res.status(500).json({ message: "Failed to fetch credit bundles" });
+    }
+  });
+
   // ==================== STRIPE ROUTES ====================
 
   app.post("/api/stripe/create-checkout", isAuthenticated, async (req: any, res) => {
