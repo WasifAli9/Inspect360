@@ -129,6 +129,8 @@ export default function Maintenance() {
   const [isAutoOpening, setIsAutoOpening] = useState(false);
   const [editingRequest, setEditingRequest] = useState<MaintenanceRequestWithDetails | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [filterProperty, setFilterProperty] = useState<string>("all");
+  const [filterBlock, setFilterBlock] = useState<string>("all");
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -168,6 +170,11 @@ export default function Maintenance() {
   // Fetch properties
   const { data: properties = [] } = useQuery<Property[]>({
     queryKey: ["/api/properties"],
+  });
+
+  // Fetch blocks
+  const { data: blocks = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/blocks"],
   });
 
   // Fetch organization clerks (for assignment)
@@ -591,10 +598,21 @@ export default function Maintenance() {
     return <Badge variant={config.variant} data-testid={`badge-status-${status}`}>{config.label}</Badge>;
   };
 
-  // Filter by status and tenant (if tenant user)
+  // Filter by status, property, block, and tenant (if tenant user)
   let filteredRequests = selectedStatus === "all" 
     ? requests 
     : requests.filter(r => r.status === selectedStatus);
+  
+  // Filter by property
+  if (filterProperty !== "all") {
+    filteredRequests = filteredRequests.filter(r => r.propertyId === filterProperty);
+  }
+  
+  // Filter by block (find properties in block first)
+  if (filterBlock !== "all") {
+    const blockPropertyIds = properties.filter(p => p.blockId === filterBlock).map(p => p.id);
+    filteredRequests = filteredRequests.filter(r => r.propertyId && blockPropertyIds.includes(r.propertyId));
+  }
   
   // Tenants should only see their own requests
   if (user?.role === "tenant") {
@@ -1070,22 +1088,73 @@ export default function Maintenance() {
 
         {/* REQUESTS TAB */}
         <TabsContent value="requests" className="space-y-6">
-          {/* Status Filter (hidden for tenants) */}
+          {/* Filters (hidden for tenants) */}
           {user?.role !== "tenant" && (
-        <div className="flex gap-2">
-          {["all", "open", "assigned", "in-progress", "completed"].map((status) => (
-            <Button
-              key={status}
-              variant={selectedStatus === status ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedStatus(status)}
-              data-testid={`button-filter-${status}`}
-            >
-              {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
-            </Button>
-          ))}
-        </div>
-      )}
+            <div className="flex flex-wrap gap-4 items-center">
+              {/* Status Filter Buttons */}
+              <div className="flex gap-2 flex-wrap">
+                {["all", "open", "assigned", "in-progress", "completed"].map((status) => (
+                  <Button
+                    key={status}
+                    variant={selectedStatus === status ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedStatus(status)}
+                    data-testid={`button-filter-${status}`}
+                  >
+                    {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Block Filter */}
+              <Select value={filterBlock} onValueChange={setFilterBlock}>
+                <SelectTrigger className="w-[180px]" data-testid="select-filter-block">
+                  <SelectValue placeholder="All Blocks" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Blocks</SelectItem>
+                  {blocks.map((block) => (
+                    <SelectItem key={block.id} value={block.id}>
+                      {block.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Property Filter */}
+              <Select value={filterProperty} onValueChange={setFilterProperty}>
+                <SelectTrigger className="w-[180px]" data-testid="select-filter-property">
+                  <SelectValue placeholder="All Properties" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Properties</SelectItem>
+                  {properties
+                    .filter(p => filterBlock === "all" || p.blockId === filterBlock)
+                    .map((property) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+
+              {/* Clear Filters */}
+              {(filterBlock !== "all" || filterProperty !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilterBlock("all");
+                    setFilterProperty("all");
+                  }}
+                  data-testid="button-clear-filters"
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  Clear
+                </Button>
+              )}
+            </div>
+          )}
 
       {/* Maintenance Requests List */}
       <div className="grid gap-4">

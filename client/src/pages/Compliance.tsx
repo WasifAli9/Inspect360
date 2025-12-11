@@ -66,6 +66,8 @@ export default function Compliance() {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+  const [propertySearchTerm, setPropertySearchTerm] = useState("");
   const { user, isLoading: authLoading } = useAuth();
   
   // Filter and sort state
@@ -150,49 +152,75 @@ export default function Compliance() {
       if (propertyIdFromUrl) {
         resetValues.propertyId = propertyIdFromUrl;
         resetValues.blockId = undefined;
+        setSelectedPropertyIds([propertyIdFromUrl]);
       } else if (blockIdFromUrl) {
         resetValues.blockId = blockIdFromUrl;
         resetValues.propertyId = undefined;
+        setSelectedPropertyIds([]);
       } else {
         resetValues.propertyId = undefined;
         resetValues.blockId = undefined;
+        setSelectedPropertyIds([]);
       }
       
       form.reset(resetValues as UploadFormValues);
-      setIsUploading(false); // Reset upload state when dialog opens
-    } else {
-      // Clean up when dialog closes to prevent stuck upload states
       setIsUploading(false);
+      setPropertySearchTerm("");
+    } else {
+      setIsUploading(false);
+      setSelectedPropertyIds([]);
+      setPropertySearchTerm("");
       form.clearErrors();
     }
   }, [open, propertyIdFromUrl, blockIdFromUrl, form]);
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: UploadFormValues) => {
+    mutationFn: async (data: UploadFormValues & { propertyIds?: string[] }) => {
       console.log('[Compliance] Sending upload request with data:', data);
       try {
-        const payload = {
+        const basePayload = {
           ...data,
           expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
         };
-        console.log('[Compliance] Upload payload:', payload);
-        const result = await apiRequest('POST', '/api/compliance', payload);
-        console.log('[Compliance] Upload successful:', result);
-        return result;
+        
+        const propertyIds = data.propertyIds && data.propertyIds.length > 0 
+          ? data.propertyIds 
+          : data.propertyId 
+            ? [data.propertyId] 
+            : [undefined];
+        
+        const results = await Promise.all(
+          propertyIds.map(async (propId) => {
+            const payload = {
+              ...basePayload,
+              propertyId: propId,
+            };
+            delete (payload as any).propertyIds;
+            console.log('[Compliance] Upload payload for property:', propId, payload);
+            return apiRequest('POST', '/api/compliance', payload);
+          })
+        );
+        
+        console.log('[Compliance] Upload successful:', results);
+        return results;
       } catch (error: any) {
         console.error('[Compliance] Upload error details:', error);
         throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (results) => {
       queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/compliance/expiring'] });
+      const count = Array.isArray(results) ? results.length : 1;
       toast({
         title: "Document uploaded",
-        description: "Compliance document uploaded successfully",
+        description: count > 1 
+          ? `Compliance document uploaded to ${count} properties successfully`
+          : "Compliance document uploaded successfully",
       });
       setOpen(false);
       form.reset();
+      setSelectedPropertyIds([]);
       setIsUploading(false);
     },
     onError: (error: any) => {
@@ -322,7 +350,13 @@ export default function Compliance() {
       return;
     }
     
-    uploadMutation.mutate(data);
+    // Include selected property IDs in the mutation data
+    const mutationData = {
+      ...data,
+      propertyIds: selectedPropertyIds.length > 0 ? selectedPropertyIds : undefined,
+    };
+    
+    uploadMutation.mutate(mutationData);
   };
 
   const getStatusBadge = (doc: ComplianceDocument) => {
@@ -544,35 +578,116 @@ export default function Compliance() {
                   )}
                 />
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="propertyId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Property (Optional)</FormLabel>
-                        <Select 
-                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
-                          value={field.value || "none"}
+                <div className="space-y-4">
+                  {/* Multi-select Properties */}
+                  <div className="space-y-2">
+                    <Label>Properties (Optional)</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className="w-full justify-between font-normal"
+                          data-testid="select-properties-multi"
                         >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-property">
-                              <SelectValue placeholder="Select property" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {properties.map((property) => (
-                              <SelectItem key={property.id} value={property.id}>
-                                {property.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
+                          {selectedPropertyIds.length === 0 
+                            ? "Select properties..." 
+                            : selectedPropertyIds.length === 1
+                              ? properties.find(p => p.id === selectedPropertyIds[0])?.name || "1 property selected"
+                              : `${selectedPropertyIds.length} properties selected`
+                          }
+                          <Home className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[400px] p-0" align="start">
+                        <Command>
+                          <CommandInput 
+                            placeholder="Search properties..." 
+                            value={propertySearchTerm}
+                            onValueChange={setPropertySearchTerm}
+                            data-testid="input-search-properties"
+                          />
+                          <CommandList>
+                            <CommandEmpty>No properties found.</CommandEmpty>
+                            <CommandGroup className="max-h-[200px] overflow-auto">
+                              {properties
+                                .filter(property => 
+                                  property.name.toLowerCase().includes(propertySearchTerm.toLowerCase()) ||
+                                  (property.address && property.address.toLowerCase().includes(propertySearchTerm.toLowerCase()))
+                                )
+                                .map((property) => {
+                                  const isSelected = selectedPropertyIds.includes(property.id);
+                                  return (
+                                    <CommandItem
+                                      key={property.id}
+                                      value={property.id}
+                                      onSelect={() => {
+                                        setSelectedPropertyIds(prev => 
+                                          isSelected 
+                                            ? prev.filter(id => id !== property.id)
+                                            : [...prev, property.id]
+                                        );
+                                      }}
+                                      data-testid={`option-property-${property.id}`}
+                                    >
+                                      <div className={cn(
+                                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                        isSelected ? "bg-primary text-primary-foreground" : "opacity-50"
+                                      )}>
+                                        {isSelected && <Check className="h-3 w-3" />}
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span>{property.name}</span>
+                                        {property.address && (
+                                          <span className="text-xs text-muted-foreground">{property.address}</span>
+                                        )}
+                                      </div>
+                                    </CommandItem>
+                                  );
+                                })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                        {selectedPropertyIds.length > 0 && (
+                          <div className="border-t p-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedPropertyIds([])}
+                              className="w-full"
+                              data-testid="button-clear-properties"
+                            >
+                              Clear selection
+                            </Button>
+                          </div>
+                        )}
+                      </PopoverContent>
+                    </Popover>
+                    {selectedPropertyIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {selectedPropertyIds.map(propId => {
+                          const property = properties.find(p => p.id === propId);
+                          return property ? (
+                            <Badge 
+                              key={propId} 
+                              variant="secondary"
+                              className="flex items-center gap-1"
+                              data-testid={`badge-selected-property-${propId}`}
+                            >
+                              {property.name}
+                              <X 
+                                className="h-3 w-3 cursor-pointer" 
+                                onClick={() => setSelectedPropertyIds(prev => prev.filter(id => id !== propId))}
+                              />
+                            </Badge>
+                          ) : null;
+                        })}
+                      </div>
                     )}
-                  />
+                    <p className="text-xs text-muted-foreground">
+                      Select one or more properties to apply this document to. Leave empty for organization-wide.
+                    </p>
+                  </div>
 
                   <FormField
                     control={form.control}
@@ -583,6 +698,7 @@ export default function Compliance() {
                         <Select 
                           onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
                           value={field.value || "none"}
+                          disabled={selectedPropertyIds.length > 0}
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-block">
@@ -598,6 +714,12 @@ export default function Compliance() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <FormDescription>
+                          {selectedPropertyIds.length > 0 
+                            ? "Clear property selection to select a block instead"
+                            : "Select a block to apply this document to all properties in the block"
+                          }
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
