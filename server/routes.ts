@@ -13378,6 +13378,253 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     }
   });
 
+  // Get single user by ID (for tenant detail page)
+  app.get("/api/users/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { userId } = req.params;
+      const targetUser = await storage.getUser(userId);
+
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Verify user belongs to same organization
+      if (targetUser.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Return sanitized user data
+      const { password, ...userWithoutPassword } = targetUser;
+      res.json(userWithoutPassword);
+    } catch (error: any) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Get tenant tenancy history
+  app.get("/api/tenants/:tenantId/history", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { tenantId } = req.params;
+      
+      // Get all tenant assignments for this tenant
+      const assignments = await db.select()
+        .from(tenantAssignments)
+        .where(and(
+          eq(tenantAssignments.tenantId, tenantId),
+          eq(tenantAssignments.organizationId, user.organizationId)
+        ))
+        .orderBy(desc(tenantAssignments.leaseStartDate));
+
+      // Get property and block details for each assignment
+      const history = await Promise.all(assignments.map(async (assignment) => {
+        const property = await storage.getProperty(assignment.propertyId);
+        const block = property?.blockId ? await storage.getBlock(property.blockId) : null;
+        
+        return {
+          id: assignment.id,
+          propertyId: assignment.propertyId,
+          propertyName: property?.name || "Unknown Property",
+          propertyAddress: property?.address,
+          blockId: block?.id,
+          blockName: block?.name,
+          leaseStartDate: assignment.leaseStartDate,
+          leaseEndDate: assignment.leaseEndDate,
+          monthlyRent: assignment.monthlyRent,
+          depositAmount: assignment.depositAmount,
+          status: assignment.status || (assignment.isActive ? "current" : "ended"),
+          isActive: assignment.isActive,
+        };
+      }));
+
+      res.json(history);
+    } catch (error: any) {
+      console.error("Error fetching tenant history:", error);
+      res.status(500).json({ message: "Failed to fetch tenant history" });
+    }
+  });
+
+  // Get inspections for tenant's properties
+  app.get("/api/tenants/:tenantId/inspections", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { tenantId } = req.params;
+      
+      // Get all tenant assignments for this tenant
+      const assignments = await db.select()
+        .from(tenantAssignments)
+        .where(and(
+          eq(tenantAssignments.tenantId, tenantId),
+          eq(tenantAssignments.organizationId, user.organizationId)
+        ));
+
+      const propertyIds = assignments.map(a => a.propertyId);
+      
+      if (propertyIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Get inspections for these properties
+      const allInspections = await db.select()
+        .from(inspections)
+        .where(and(
+          eq(inspections.organizationId, user.organizationId),
+          inArray(inspections.propertyId, propertyIds)
+        ))
+        .orderBy(desc(inspections.createdAt))
+        .limit(50);
+
+      // Get property and template details
+      const result = await Promise.all(allInspections.map(async (inspection) => {
+        const property = await storage.getProperty(inspection.propertyId!);
+        const template = inspection.templateId ? await storage.getInspectionTemplate(inspection.templateId) : null;
+        
+        return {
+          id: inspection.id,
+          propertyId: inspection.propertyId,
+          propertyName: property?.name || "Unknown Property",
+          templateName: template?.name || "Unknown Template",
+          inspectionType: inspection.inspectionType || "routine",
+          status: inspection.status,
+          scheduledDate: inspection.scheduledDate,
+          completedAt: inspection.completedAt,
+        };
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching tenant inspections:", error);
+      res.status(500).json({ message: "Failed to fetch tenant inspections" });
+    }
+  });
+
+  // Get maintenance requests for tenant
+  app.get("/api/tenants/:tenantId/maintenance", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { tenantId } = req.params;
+      
+      // Get maintenance requests reported by this tenant or for their properties
+      const assignments = await db.select()
+        .from(tenantAssignments)
+        .where(and(
+          eq(tenantAssignments.tenantId, tenantId),
+          eq(tenantAssignments.organizationId, user.organizationId)
+        ));
+
+      const propertyIds = assignments.map(a => a.propertyId);
+
+      // Get requests reported by tenant OR for their properties
+      const requests = await db.select()
+        .from(maintenanceRequests)
+        .where(and(
+          eq(maintenanceRequests.organizationId, user.organizationId),
+          or(
+            eq(maintenanceRequests.reportedBy, tenantId),
+            propertyIds.length > 0 ? inArray(maintenanceRequests.propertyId, propertyIds) : sql`false`
+          )
+        ))
+        .orderBy(desc(maintenanceRequests.createdAt))
+        .limit(50);
+
+      // Get property details
+      const result = await Promise.all(requests.map(async (request) => {
+        const property = request.propertyId ? await storage.getProperty(request.propertyId) : null;
+        
+        return {
+          id: request.id,
+          title: request.title,
+          description: request.description,
+          propertyId: request.propertyId,
+          propertyName: property?.name || "Unknown Property",
+          status: request.status,
+          priority: request.priority,
+          createdAt: request.createdAt,
+        };
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching tenant maintenance:", error);
+      res.status(500).json({ message: "Failed to fetch tenant maintenance" });
+    }
+  });
+
+  // Get disputes for tenant
+  app.get("/api/tenants/:tenantId/disputes", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { tenantId } = req.params;
+      
+      // Get comparison reports for this tenant
+      const reports = await db.select()
+        .from(comparisonReports)
+        .where(and(
+          eq(comparisonReports.organizationId, user.organizationId),
+          eq(comparisonReports.tenantId, tenantId)
+        ));
+
+      if (reports.length === 0) {
+        return res.json([]);
+      }
+
+      const reportIds = reports.map(r => r.id);
+
+      // Get disputed items from these reports
+      const disputedItems = await db.select()
+        .from(comparisonReportItems)
+        .where(and(
+          inArray(comparisonReportItems.reportId, reportIds),
+          eq(comparisonReportItems.status, "disputed")
+        ))
+        .orderBy(desc(comparisonReportItems.createdAt));
+
+      // Get property details
+      const result = await Promise.all(disputedItems.map(async (item) => {
+        const report = reports.find(r => r.id === item.reportId);
+        const property = report?.propertyId ? await storage.getProperty(report.propertyId) : null;
+        
+        return {
+          id: item.id,
+          reportId: item.reportId,
+          itemRef: item.itemRef || item.sectionRef,
+          status: item.status,
+          estimatedCost: item.estimatedCost,
+          finalCost: item.finalCost,
+          propertyName: property?.name || "Unknown Property",
+          createdAt: item.createdAt,
+        };
+      }));
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching tenant disputes:", error);
+      res.status(500).json({ message: "Failed to fetch tenant disputes" });
+    }
+  });
+
   // Get contacts for team management (admin/owner only)
   app.get("/api/contacts", isAuthenticated, async (req: any, res) => {
     try {

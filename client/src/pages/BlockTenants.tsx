@@ -348,7 +348,9 @@ export default function BlockTenants() {
                           <AvatarFallback>{initials}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-lg font-semibold">{fullName}</h3>
+                          <Link href={`/tenants/${tenant.user.id}`}>
+                            <h3 className="text-lg font-semibold hover:text-primary hover:underline cursor-pointer">{fullName}</h3>
+                          </Link>
                           <div className="space-y-1 mt-2">
                             {tenant.user.email && (
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">

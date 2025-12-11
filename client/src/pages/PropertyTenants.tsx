@@ -184,7 +184,9 @@ export default function PropertyTenants() {
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <CardTitle className="text-base">{fullName}</CardTitle>
+                <Link href={`/tenants/${tenant.id}`}>
+                  <CardTitle className="text-base hover:text-primary hover:underline cursor-pointer">{fullName}</CardTitle>
+                </Link>
                 <div className="space-y-1 mt-2">
                   {tenant.email && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
