@@ -539,8 +539,8 @@ export default function Inspections() {
                           <SelectContent>
                             <SelectItem value="__none__">No Tenant Selected</SelectItem>
                             {tenants.map((tenant: any) => (
-                              <SelectItem key={tenant.id} value={tenant.tenant?.id || tenant.id}>
-                                {tenant.tenant?.firstName} {tenant.tenant?.lastName}
+                              <SelectItem key={tenant.id} value={tenant.id}>
+                                {tenant.firstName} {tenant.lastName}
                                 {tenant.assignment?.isActive && " (Active)"}
                               </SelectItem>
                             ))}
