@@ -131,6 +131,7 @@ export default function Maintenance() {
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [filterProperty, setFilterProperty] = useState<string>("all");
   const [filterBlock, setFilterBlock] = useState<string>("all");
+  const [formBlockFilter, setFormBlockFilter] = useState<string>("all");
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -150,6 +151,7 @@ export default function Maintenance() {
       setCurrentStep("form");
       setUploadedImages([]);
       setAiSuggestions("");
+      setFormBlockFilter("all");
     }
     if (!open) {
       // Clear editing state when closing
@@ -157,6 +159,7 @@ export default function Maintenance() {
       setUploadedImages([]);
       setAiSuggestions("");
       setIsAutoOpening(false);
+      setFormBlockFilter("all");
     }
     // Don't reset when closing - it would cancel any pending form submission
     // Form will be reset in the mutation onSuccess callback after successful submission
@@ -825,6 +828,33 @@ export default function Maintenance() {
                       </FormItem>
                     )}
                   />
+                  {/* Block Filter for Property Selection */}
+                  <div className="space-y-2">
+                    <Label>Block (Optional)</Label>
+                    <Select 
+                      value={formBlockFilter} 
+                      onValueChange={(value) => {
+                        setFormBlockFilter(value);
+                        form.setValue("propertyId", "");
+                      }}
+                    >
+                      <SelectTrigger data-testid="select-form-block">
+                        <SelectValue placeholder="Filter by block..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Blocks</SelectItem>
+                        {blocks.map((block) => (
+                          <SelectItem key={block.id} value={block.id}>
+                            {block.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Select a block to filter the property list
+                    </p>
+                  </div>
+
                   <FormField
                     control={form.control}
                     name="propertyId"
@@ -838,12 +868,14 @@ export default function Maintenance() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {properties.map((property) => (
-                              <SelectItem key={property.id} value={property.id}>
-                                {property.name}
-                                {property.address ? ` - ${property.address}` : ""}
-                              </SelectItem>
-                            ))}
+                            {properties
+                              .filter(p => formBlockFilter === "all" || p.blockId === formBlockFilter)
+                              .map((property) => (
+                                <SelectItem key={property.id} value={property.id}>
+                                  {property.name}
+                                  {property.address ? ` - ${property.address}` : ""}
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
