@@ -1036,9 +1036,11 @@ export function FieldWidget({
               <SelectValue placeholder="Select cleanliness" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Clean">Clean</SelectItem>
-              <SelectItem value="Needs a Clean">Needs a Clean</SelectItem>
+              <SelectItem value="Excellent">Excellent</SelectItem>
+              <SelectItem value="Good">Good</SelectItem>
+              <SelectItem value="Fair">Fair</SelectItem>
               <SelectItem value="Poor">Poor</SelectItem>
+              <SelectItem value="Very Poor">Very Poor</SelectItem>
             </SelectContent>
           </Select>
         </div>
