@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle, Search, Package, ClipboardCheck, FileText, Home } from "lucide-react";
+import { Plus, Building, Pencil, Trash2, Users, CheckCircle2, Calendar, AlertTriangle, Search, Package, ClipboardCheck, FileText, Home, Wrench } from "lucide-react";
+import { QuickAddMaintenanceSheet } from "@/components/QuickAddMaintenanceSheet";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { TagInput } from "@/components/TagInput";
@@ -48,6 +49,7 @@ export default function Blocks() {
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [filterTags, setFilterTags] = useState<Tag[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [maintenanceBlockId, setMaintenanceBlockId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: blocks = [], isLoading } = useQuery<Block[]>({
@@ -365,6 +367,19 @@ export default function Blocks() {
                       size="icon"
                       onClick={(e) => {
                         e.preventDefault();
+                        setMaintenanceBlockId(block.id);
+                      }}
+                      className="transition-smooth"
+                      data-testid={`button-maintenance-block-${block.id}`}
+                      title="Log Maintenance"
+                    >
+                      <Wrench className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.preventDefault();
                         handleOpenEdit(block);
                       }}
                       className="transition-smooth"
@@ -625,6 +640,12 @@ export default function Blocks() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <QuickAddMaintenanceSheet
+        open={!!maintenanceBlockId}
+        onOpenChange={(open) => !open && setMaintenanceBlockId(null)}
+        blockId={maintenanceBlockId || undefined}
+      />
     </div>
   );
 }

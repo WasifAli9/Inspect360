@@ -23,7 +23,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft, Pencil, Tag as TagIcon } from "lucide-react";
+import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft, Pencil, Tag as TagIcon, Wrench } from "lucide-react";
+import { QuickAddMaintenanceSheet } from "@/components/QuickAddMaintenanceSheet";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useSearch } from "wouter";
@@ -41,6 +42,7 @@ export default function Properties() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTags, setFilterTags] = useState<Tag[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [maintenancePropertyId, setMaintenancePropertyId] = useState<string | null>(null);
 
   const { data: properties = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/properties"],
@@ -435,19 +437,35 @@ export default function Properties() {
                         <Building2 className="w-5 h-5 text-primary" />
                         {property.name}
                       </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleOpenEdit(property);
-                        }}
-                        data-testid={`button-edit-property-${property.id}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setMaintenancePropertyId(property.id);
+                          }}
+                          data-testid={`button-maintenance-property-${property.id}`}
+                          title="Log Maintenance"
+                        >
+                          <Wrench className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleOpenEdit(property);
+                          }}
+                          data-testid={`button-edit-property-${property.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 cursor-pointer pb-4">
@@ -528,6 +546,12 @@ export default function Properties() {
           })}
         </div>
       )}
+
+      <QuickAddMaintenanceSheet
+        open={!!maintenancePropertyId}
+        onOpenChange={(open) => !open && setMaintenancePropertyId(null)}
+        propertyId={maintenancePropertyId || undefined}
+      />
     </div>
   );
 }
