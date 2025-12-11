@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
@@ -28,8 +28,20 @@ const categoryFormSchema = insertInspectionCategorySchema.extend({
 
 type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 
+type SettingsSection = 'branding' | 'categories' | 'document-types' | 'teams' | 'team' | 'integrations';
+
+const settingsMenuItems: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'branding', label: 'Company Branding', icon: Building2 },
+  { id: 'categories', label: 'Inspection Categories', icon: Tags },
+  { id: 'document-types', label: 'Document Types', icon: FileText },
+  { id: 'teams', label: 'Teams', icon: UsersIcon },
+  { id: 'team', label: 'Team Members', icon: Users },
+  { id: 'integrations', label: 'Integrations', icon: Plug },
+];
+
 export default function Settings() {
   const { toast } = useToast();
+  const [activeSection, setActiveSection] = useState<SettingsSection>('branding');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<InspectionCategory | null>(null);
 
@@ -237,7 +249,7 @@ export default function Settings() {
 
   return (
     <div className="p-8 bg-background min-h-screen">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <div className="p-3 rounded-2xl bg-primary/10 backdrop-blur-xl">
             <SettingsIcon className="w-8 h-8 text-primary" />
@@ -250,35 +262,40 @@ export default function Settings() {
           </div>
         </div>
 
-        <Tabs defaultValue="branding" className="w-full">
-          <TabsList className="grid w-full max-w-4xl grid-cols-6 mb-8">
-            <TabsTrigger value="branding" className="gap-2" data-testid="tab-company-branding">
-              <Building2 className="w-4 h-4" />
-              Company Branding
-            </TabsTrigger>
-            <TabsTrigger value="categories" className="gap-2" data-testid="tab-inspection-categories">
-              <Tags className="w-4 h-4" />
-              Inspection Categories
-            </TabsTrigger>
-            <TabsTrigger value="document-types" className="gap-2" data-testid="tab-document-types">
-              <FileText className="w-4 h-4" />
-              Document Types
-            </TabsTrigger>
-            <TabsTrigger value="teams" className="gap-2" data-testid="tab-teams">
-              <UsersIcon className="w-4 h-4" />
-              Teams
-            </TabsTrigger>
-            <TabsTrigger value="team" className="gap-2" data-testid="tab-team-members">
-              <Users className="w-4 h-4" />
-              Team Members
-            </TabsTrigger>
-            <TabsTrigger value="integrations" className="gap-2" data-testid="tab-integrations">
-              <Plug className="w-4 h-4" />
-              Integrations
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex gap-6">
+          {/* Vertical Sidebar Menu */}
+          <div className="w-64 shrink-0">
+            <Card className="sticky top-8">
+              <CardContent className="p-2">
+                <nav className="space-y-1">
+                  {settingsMenuItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveSection(item.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover-elevate'
+                        }`}
+                        data-testid={`nav-${item.id}`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </CardContent>
+            </Card>
+          </div>
 
-          <TabsContent value="branding" className="space-y-6">
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0">
+            {activeSection === 'branding' && (
+              <div className="space-y-6">
             <Card className="border-2 rounded-2xl bg-card/80 backdrop-blur-xl shadow-lg">
               <CardHeader>
                 <CardTitle className="text-2xl">Company Branding</CardTitle>
@@ -444,9 +461,11 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+              </div>
+            )}
 
-          <TabsContent value="categories" className="space-y-6">
+            {activeSection === 'categories' && (
+              <div className="space-y-6">
             <Card className="border-2 rounded-2xl bg-card/80 backdrop-blur-xl shadow-lg">
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -634,24 +653,26 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
+              </div>
+            )}
 
-          <TabsContent value="document-types" className="space-y-6">
-            <ComplianceDocumentTypesPanel />
-          </TabsContent>
+            {activeSection === 'document-types' && (
+              <ComplianceDocumentTypesPanel />
+            )}
 
-          <TabsContent value="teams">
-            <SettingsTeamsPanel />
-          </TabsContent>
+            {activeSection === 'teams' && (
+              <SettingsTeamsPanel />
+            )}
 
-          <TabsContent value="team">
-            <Team />
-          </TabsContent>
+            {activeSection === 'team' && (
+              <Team />
+            )}
 
-          <TabsContent value="integrations">
-            <FixfloIntegrationSettings />
-          </TabsContent>
-        </Tabs>
+            {activeSection === 'integrations' && (
+              <FixfloIntegrationSettings />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
