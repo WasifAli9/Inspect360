@@ -48,6 +48,8 @@ interface Property {
   blockName?: string;
   notes?: string | null;
   organizationId: string;
+  imageUrl?: string | null;
+  propertyType?: string | null;
 }
 
 interface PropertyStats {
@@ -138,7 +140,30 @@ export default function PropertyDetail() {
   const [editNotes, setEditNotes] = useState("");
   const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<AssetInventory | null>(null);
+  const [propertyImageDialogOpen, setPropertyImageDialogOpen] = useState(false);
   const { toast } = useToast();
+
+  // Mutation to update property image
+  const updatePropertyImage = useMutation({
+    mutationFn: async (imageUrl: string) => {
+      return await apiRequest("PATCH", `/api/properties/${propertyId}`, { imageUrl });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/properties", propertyId] });
+      setPropertyImageDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Property image updated successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update property image",
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: property, isLoading: propertyLoading } = useQuery<Property>({
     queryKey: ["/api/properties", propertyId],
@@ -148,6 +173,17 @@ export default function PropertyDetail() {
       return res.json();
     },
     enabled: !!propertyId,
+  });
+
+  // Fetch Google Maps API key for embedded map
+  const { data: mapsConfig } = useQuery<{ apiKey: string | null; configured: boolean }>({
+    queryKey: ['google-maps-api-key'],
+    queryFn: async () => {
+      const res = await fetch('/api/config/google-maps-key', { credentials: 'include' });
+      if (!res.ok) return { apiKey: null, configured: false };
+      return res.json();
+    },
+    staleTime: Infinity,
   });
 
   // Fetch custom document types
@@ -393,39 +429,126 @@ export default function PropertyDetail() {
 
         {/* Property Image and Map Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Property Image Placeholder */}
+          {/* Property Image with Upload */}
           <Card className="overflow-hidden">
-            <div className="aspect-video bg-muted flex items-center justify-center">
-              <div className="text-center text-muted-foreground">
-                <ImageIcon className="h-16 w-16 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Property Image</p>
-                <p className="text-xs">Coming Soon</p>
+            {property.imageUrl ? (
+              <div className="relative aspect-video">
+                <img
+                  src={property.imageUrl}
+                  alt={property.name}
+                  className="w-full h-full object-cover"
+                  data-testid="img-property"
+                />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="absolute bottom-2 right-2"
+                  onClick={() => setPropertyImageDialogOpen(true)}
+                  data-testid="button-change-property-image"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Change Photo
+                </Button>
               </div>
-            </div>
-          </Card>
-
-          {/* Map Link */}
-          <Card className="overflow-hidden">
-            <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(property.address)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block"
-              data-testid="link-map"
-            >
-              <div className="aspect-video bg-muted flex items-center justify-center hover-elevate cursor-pointer relative group">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-primary/10" />
-                <div className="text-center text-muted-foreground z-10">
-                  <MapPin className="h-16 w-16 mx-auto mb-2 text-primary opacity-70 group-hover:opacity-100 transition-opacity" />
-                  <p className="text-sm font-medium">View on Map</p>
-                  <p className="text-xs flex items-center justify-center gap-1 mt-1">
-                    Open in Google Maps <ExternalLink className="h-3 w-3" />
-                  </p>
+            ) : (
+              <div
+                className="aspect-video bg-muted flex items-center justify-center cursor-pointer hover-elevate"
+                onClick={() => setPropertyImageDialogOpen(true)}
+                data-testid="button-upload-property-image"
+              >
+                <div className="text-center text-muted-foreground">
+                  <Upload className="h-16 w-16 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm font-medium">Upload Property Photo</p>
+                  <p className="text-xs">Click to add an image</p>
                 </div>
               </div>
-            </a>
+            )}
+          </Card>
+
+          {/* Embedded Google Map */}
+          <Card className="overflow-hidden">
+            <div className="aspect-video relative">
+              {mapsConfig?.apiKey ? (
+                <iframe
+                  src={`https://www.google.com/maps/embed/v1/place?key=${mapsConfig.apiKey}&q=${encodeURIComponent(property.address)}&zoom=15`}
+                  className="w-full h-full border-0"
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title={`Map of ${property.address}`}
+                  data-testid="map-embed"
+                />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <div className="text-center text-muted-foreground">
+                    <MapPin className="h-12 w-12 mx-auto mb-2 text-primary opacity-50" />
+                    <p className="text-sm">Map preview unavailable</p>
+                  </div>
+                </div>
+              )}
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(property.address)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute bottom-2 right-2"
+                data-testid="link-map-external"
+              >
+                <Button size="sm" variant="secondary">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Open in Maps
+                </Button>
+              </a>
+            </div>
           </Card>
         </div>
+
+        {/* Property Image Upload Dialog */}
+        <Dialog open={propertyImageDialogOpen} onOpenChange={setPropertyImageDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upload Property Photo</DialogTitle>
+              <DialogDescription>
+                Upload an image of the property to display on the property page.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <ObjectUploader
+                maxNumberOfFiles={1}
+                maxFileSize={10 * 1024 * 1024}
+                onGetUploadParameters={async () => {
+                  const response = await fetch('/api/objects/upload', {
+                    method: 'POST',
+                    credentials: 'include',
+                  });
+                  const { uploadURL } = await response.json();
+                  return {
+                    method: 'PUT' as const,
+                    url: uploadURL,
+                  };
+                }}
+                onComplete={async (result) => {
+                  if (result.successful && result.successful.length > 0) {
+                    let fileUrl = result.successful[0].uploadURL;
+                    if (fileUrl) {
+                      if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+                        try {
+                          const urlObj = new URL(fileUrl);
+                          fileUrl = `/objects${urlObj.pathname}`;
+                        } catch {
+                          fileUrl = `/objects/${fileUrl}`;
+                        }
+                      }
+                      updatePropertyImage.mutate(fileUrl);
+                    }
+                  }
+                }}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Select Property Photo
+              </ObjectUploader>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {property.notes && (
           <Card>
