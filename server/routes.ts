@@ -9923,6 +9923,247 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     }
   });
 
+  // ==================== DASHBOARD STATS ROUTES ====================
+
+  // Get comprehensive dashboard statistics for BTR operators
+  app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+
+      const orgId = user.organizationId;
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const days7Ago = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const days30Ago = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const days90Ago = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+      const days7Future = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const days30Future = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      // Fetch all required data
+      const [properties, blocks, inspections, compliance, maintenance, tenantAssignments] = await Promise.all([
+        storage.getPropertiesByOrganization(orgId),
+        storage.getBlocksByOrganization(orgId),
+        storage.getInspectionsByOrganization(orgId),
+        storage.getComplianceByOrganization(orgId),
+        storage.getMaintenanceByOrganization(orgId),
+        storage.getTenantAssignmentsByOrganization(orgId),
+      ]);
+
+      // Calculate overdue inspections
+      const overdueInspections = inspections.filter(i => {
+        if (i.status === 'completed' || i.status === 'cancelled') return false;
+        if (!i.scheduledDate) return false;
+        return new Date(i.scheduledDate) < today;
+      });
+
+      // Inspections due in next 7 days
+      const inspectionsDueNext7Days = inspections.filter(i => {
+        if (i.status === 'completed' || i.status === 'cancelled') return false;
+        if (!i.scheduledDate) return false;
+        const scheduled = new Date(i.scheduledDate);
+        return scheduled >= today && scheduled <= days7Future;
+      });
+
+      // Inspections due in next 30 days
+      const inspectionsDueNext30Days = inspections.filter(i => {
+        if (i.status === 'completed' || i.status === 'cancelled') return false;
+        if (!i.scheduledDate) return false;
+        const scheduled = new Date(i.scheduledDate);
+        return scheduled >= today && scheduled <= days30Future;
+      });
+
+      // Calculate overdue compliance
+      const overdueCompliance = compliance.filter(c => {
+        if (!c.expiryDate) return false;
+        return new Date(c.expiryDate) < today;
+      });
+
+      // Compliance expiring in next 30 days
+      const complianceExpiringNext30Days = compliance.filter(c => {
+        if (!c.expiryDate) return false;
+        const expiry = new Date(c.expiryDate);
+        return expiry >= today && expiry <= days30Future;
+      });
+
+      // Compliance expiring in next 90 days
+      const complianceExpiringNext90Days = compliance.filter(c => {
+        if (!c.expiryDate) return false;
+        const expiry = new Date(c.expiryDate);
+        return expiry >= today && expiry <= new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
+      });
+
+      // Maintenance stats
+      const openMaintenance = maintenance.filter(m => m.status === 'open' || m.status === 'pending');
+      const urgentMaintenance = openMaintenance.filter(m => m.priority === 'urgent' || m.priority === 'high');
+      const inProgressMaintenance = maintenance.filter(m => m.status === 'in_progress');
+
+      // Calculate average resolution time for completed maintenance (last 90 days)
+      const completedMaintenance = maintenance.filter(m => {
+        if (m.status !== 'completed') return false;
+        if (!m.completedAt) return false;
+        return new Date(m.completedAt) >= days90Ago;
+      });
+      
+      let avgResolutionDays = 0;
+      if (completedMaintenance.length > 0) {
+        const totalDays = completedMaintenance.reduce((sum, m) => {
+          if (!m.createdAt || !m.completedAt) return sum;
+          const created = new Date(m.createdAt);
+          const completed = new Date(m.completedAt);
+          return sum + Math.ceil((completed.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+        }, 0);
+        avgResolutionDays = Math.round(totalDays / completedMaintenance.length * 10) / 10;
+      }
+
+      // Calculate occupancy rate
+      const activeAssignments = tenantAssignments.filter(t => t.status === 'active');
+      const occupiedProperties = new Set(activeAssignments.map(t => t.propertyId));
+      const occupancyRate = properties.length > 0 
+        ? Math.round((occupiedProperties.size / properties.length) * 100) 
+        : 0;
+
+      // Calculate compliance rate (valid documents vs total required)
+      const validCompliance = compliance.filter(c => {
+        if (!c.expiryDate) return true; // No expiry = always valid
+        return new Date(c.expiryDate) >= today;
+      });
+      const complianceRate = compliance.length > 0 
+        ? Math.round((validCompliance.length / compliance.length) * 100) 
+        : 100;
+
+      // Inspection completion rate (last 90 days)
+      const recentInspections = inspections.filter(i => {
+        if (!i.createdAt) return false;
+        return new Date(i.createdAt) >= days90Ago;
+      });
+      const completedRecentInspections = recentInspections.filter(i => i.status === 'completed');
+      const inspectionCompletionRate = recentInspections.length > 0 
+        ? Math.round((completedRecentInspections.length / recentInspections.length) * 100) 
+        : 0;
+
+      // Properties at risk (have overdue inspections or expired compliance)
+      const propertiesWithOverdueInspections = new Set(overdueInspections.map(i => i.propertyId).filter(Boolean));
+      const propertiesWithExpiredCompliance = new Set(overdueCompliance.map(c => c.propertyId).filter(Boolean));
+      const propertiesAtRisk = new Set([...propertiesWithOverdueInspections, ...propertiesWithExpiredCompliance]);
+
+      // Blocks at risk
+      const blocksWithOverdueInspections = new Set(overdueInspections.map(i => i.blockId).filter(Boolean));
+      const blocksAtRisk = blocksWithOverdueInspections;
+
+      // Trend data - inspections completed per week for last 12 weeks
+      const inspectionTrendData = [];
+      for (let i = 11; i >= 0; i--) {
+        const weekStart = new Date(today.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+        const weekEnd = new Date(today.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+        const completed = inspections.filter(insp => {
+          if (insp.status !== 'completed' || !insp.completedAt) return false;
+          const completedDate = new Date(insp.completedAt);
+          return completedDate >= weekStart && completedDate < weekEnd;
+        }).length;
+        inspectionTrendData.push({
+          week: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          completed
+        });
+      }
+
+      // Maintenance trend - new requests per week for last 12 weeks
+      const maintenanceTrendData = [];
+      for (let i = 11; i >= 0; i--) {
+        const weekStart = new Date(today.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+        const weekEnd = new Date(today.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+        const created = maintenance.filter(m => {
+          if (!m.createdAt) return false;
+          const createdDate = new Date(m.createdAt);
+          return createdDate >= weekStart && createdDate < weekEnd;
+        }).length;
+        maintenanceTrendData.push({
+          week: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          created
+        });
+      }
+
+      res.json({
+        // Summary counts
+        totals: {
+          properties: properties.length,
+          blocks: blocks.length,
+          inspections: inspections.length,
+          maintenance: maintenance.length,
+          compliance: compliance.length,
+        },
+        
+        // Critical alerts
+        alerts: {
+          overdueInspections: overdueInspections.length,
+          overdueInspectionsList: overdueInspections.slice(0, 10).map(i => ({
+            id: i.id,
+            propertyId: i.propertyId,
+            blockId: i.blockId,
+            type: i.type,
+            scheduledDate: i.scheduledDate,
+            daysOverdue: Math.ceil((today.getTime() - new Date(i.scheduledDate!).getTime()) / (1000 * 60 * 60 * 24))
+          })),
+          overdueCompliance: overdueCompliance.length,
+          overdueComplianceList: overdueCompliance.slice(0, 10).map(c => ({
+            id: c.id,
+            propertyId: c.propertyId,
+            blockId: c.blockId,
+            documentType: c.documentType,
+            expiryDate: c.expiryDate,
+            daysOverdue: Math.ceil((today.getTime() - new Date(c.expiryDate!).getTime()) / (1000 * 60 * 60 * 24))
+          })),
+          urgentMaintenance: urgentMaintenance.length,
+          urgentMaintenanceList: urgentMaintenance.slice(0, 10).map(m => ({
+            id: m.id,
+            title: m.title,
+            propertyId: m.propertyId,
+            priority: m.priority,
+            createdAt: m.createdAt
+          })),
+        },
+
+        // Due soon
+        upcoming: {
+          inspectionsDueNext7Days: inspectionsDueNext7Days.length,
+          inspectionsDueNext30Days: inspectionsDueNext30Days.length,
+          complianceExpiringNext30Days: complianceExpiringNext30Days.length,
+          complianceExpiringNext90Days: complianceExpiringNext90Days.length,
+        },
+
+        // KPIs
+        kpis: {
+          occupancyRate,
+          complianceRate,
+          inspectionCompletionRate,
+          avgMaintenanceResolutionDays: avgResolutionDays,
+          openMaintenanceCount: openMaintenance.length,
+          inProgressMaintenanceCount: inProgressMaintenance.length,
+        },
+
+        // Risk summary
+        risk: {
+          propertiesAtRiskCount: propertiesAtRisk.size,
+          blocksAtRiskCount: blocksAtRisk.size,
+          propertiesAtRiskIds: Array.from(propertiesAtRisk).slice(0, 20),
+          blocksAtRiskIds: Array.from(blocksAtRisk).slice(0, 20),
+        },
+
+        // Trend data for charts
+        trends: {
+          inspections: inspectionTrendData,
+          maintenance: maintenanceTrendData,
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
+
   // ==================== DASHBOARD PREFERENCES ROUTES ====================
 
   // Define role-based panel permissions
