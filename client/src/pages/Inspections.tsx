@@ -33,7 +33,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ClipboardList, Calendar, MapPin, User, Play, FileText, Filter, Sparkles } from "lucide-react";
+import { Plus, ClipboardList, Calendar, MapPin, User, Play, FileText, Filter, Sparkles, Users } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Link, useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
@@ -470,13 +471,65 @@ export default function Inspections() {
                   />
                 )}
 
+                {/* Active Tenants Display */}
+                {form.watch("targetType") === "property" && selectedPropertyId && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      Active Tenants
+                    </div>
+                    {tenants.filter((t: any) => t.assignment?.isActive).length === 0 ? (
+                      <div className="rounded-md border border-dashed p-3 text-center">
+                        <p className="text-sm text-muted-foreground">No active tenants at this property</p>
+                      </div>
+                    ) : (
+                      <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                        {tenants
+                          .filter((t: any) => t.assignment?.isActive)
+                          .map((tenant: any) => {
+                            const firstName = tenant.tenant?.firstName || tenant.firstName || "";
+                            const lastName = tenant.tenant?.lastName || tenant.lastName || "";
+                            const fullName = `${firstName} ${lastName}`.trim() || "Unnamed Tenant";
+                            const initials = fullName
+                              .split(" ")
+                              .map((n: string) => n[0])
+                              .join("")
+                              .toUpperCase()
+                              .slice(0, 2);
+                            const email = tenant.tenant?.email || tenant.email || "";
+                            
+                            return (
+                              <div 
+                                key={tenant.id} 
+                                className="flex items-center gap-3 p-2 rounded-md bg-background"
+                                data-testid={`tenant-item-${tenant.id}`}
+                              >
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src={tenant.tenant?.profileImageUrl} alt={fullName} />
+                                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{fullName}</p>
+                                  {email && (
+                                    <p className="text-xs text-muted-foreground truncate">{email}</p>
+                                  )}
+                                </div>
+                                <Badge variant="secondary" className="text-xs shrink-0">Active</Badge>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {form.watch("targetType") === "property" && selectedPropertyId && tenants.length > 0 && (
                   <FormField
                     control={form.control}
                     name="tenantId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Tenant (Optional)</FormLabel>
+                        <FormLabel>Assign to Tenant (Optional)</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value || "__none__"}>
                           <FormControl>
                             <SelectTrigger data-testid="select-tenant">
