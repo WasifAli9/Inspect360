@@ -1545,6 +1545,8 @@ export const updatePropertySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   address: z.string().min(1).optional(),
   blockId: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 // Compliance update schema

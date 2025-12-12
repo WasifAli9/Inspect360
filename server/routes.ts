@@ -1763,6 +1763,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Convert null string to actual null
         updateData.blockId = updates.blockId === null || updates.blockId === "null" ? null : updates.blockId;
       }
+      if (updates.imageUrl !== undefined) {
+        updateData.imageUrl = updates.imageUrl;
+      }
+      if (updates.notes !== undefined) {
+        updateData.notes = updates.notes;
+      }
 
       const property = await storage.updateProperty(req.params.id, updateData);
 
