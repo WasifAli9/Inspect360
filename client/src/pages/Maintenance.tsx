@@ -113,9 +113,13 @@ const createMaintenanceSchema = insertMaintenanceRequestSchema
   .omit({ organizationId: true }) // Backend adds this from session
   .extend({
     title: z.string().min(1, "Title is required"),
-    propertyId: z.string().min(1, "Property is required"),
+    propertyId: z.string().optional(), // Optional - can log maintenance against block only
+    blockId: z.string().optional(),
     priority: z.enum(["low", "medium", "high"]),
     dueDate: z.string().optional().or(z.date().optional()),
+  }).refine((data) => data.propertyId || data.blockId, {
+    message: "Either a property or a block must be selected",
+    path: ["propertyId"],
   });
 
 export default function Maintenance() {
@@ -501,6 +505,7 @@ export default function Maintenance() {
       title: "",
       description: "",
       propertyId: "",
+      blockId: "",
       priority: "medium",
       reportedBy: user?.id || "",
     },
@@ -829,46 +834,58 @@ export default function Maintenance() {
                       </FormItem>
                     )}
                   />
-                  {/* Block Filter for Property Selection */}
-                  <div className="space-y-2">
-                    <Label>Block (Optional)</Label>
-                    <Select 
-                      value={formBlockFilter} 
-                      onValueChange={(value) => {
-                        setFormBlockFilter(value);
-                        form.setValue("propertyId", "");
-                      }}
-                    >
-                      <SelectTrigger data-testid="select-form-block">
-                        <SelectValue placeholder="Filter by block..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Blocks</SelectItem>
-                        {blocks.map((block) => (
-                          <SelectItem key={block.id} value={block.id}>
-                            {block.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Select a block to filter the property list
-                    </p>
-                  </div>
+                  {/* Block Selection - can be used alone or to filter properties */}
+                  <FormField
+                    control={form.control}
+                    name="blockId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Block (Optional)</FormLabel>
+                        <Select 
+                          value={field.value || "none"} 
+                          onValueChange={(value) => {
+                            const blockValue = value === "none" ? "" : value;
+                            field.onChange(blockValue);
+                            setFormBlockFilter(blockValue || "all");
+                            form.setValue("propertyId", "");
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-form-block">
+                              <SelectValue placeholder="Select a block..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {blocks.map((block) => (
+                              <SelectItem key={block.id} value={block.id}>
+                                {block.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Select a block to log maintenance at block level, or to filter the property list
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
                   <FormField
                     control={form.control}
                     name="propertyId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Property</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <FormLabel>Property (Optional if block selected)</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
                           <FormControl>
                             <SelectTrigger data-testid="select-property">
                               <SelectValue placeholder="Select a property" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            <SelectItem value="">None (Block-level only)</SelectItem>
                             {properties
                               .filter(p => formBlockFilter === "all" || p.blockId === formBlockFilter)
                               .map((property) => (
