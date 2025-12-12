@@ -7614,6 +7614,60 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
     }
   });
 
+  // Get block compliance documents
+  app.get("/api/blocks/:id/compliance", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+
+      const block = await storage.getBlock(id);
+      if (!block || block.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Block not found" });
+      }
+
+      const allComplianceDocs = await storage.getComplianceDocuments(user.organizationId);
+      const complianceDocs = allComplianceDocs.filter((d: any) => d.blockId === id);
+
+      // Add status based on expiry and enhance with names
+      const now = new Date();
+      const enhancedDocs = complianceDocs.map((doc: any) => {
+        let status = 'valid';
+        if (doc.expiryDate) {
+          const expiryDate = new Date(doc.expiryDate);
+          const daysUntilExpiry = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+          if (daysUntilExpiry < 0) {
+            status = 'expired';
+          } else if (daysUntilExpiry <= 30) {
+            status = 'expiring';
+          } else {
+            status = 'valid';
+          }
+        }
+
+        return {
+          id: doc.id,
+          documentName: doc.documentType,
+          documentType: doc.documentType,
+          documentUrl: doc.documentUrl,
+          expiryDate: doc.expiryDate,
+          status,
+          uploadedAt: doc.createdAt,
+        };
+      });
+
+      res.json(enhancedDocs);
+    } catch (error) {
+      console.error("Error fetching block compliance:", error);
+      res.status(500).json({ message: "Failed to fetch compliance documents" });
+    }
+  });
+
   // Get block annual compliance report
   app.get("/api/blocks/:id/compliance-report", isAuthenticated, async (req: any, res) => {
     try {

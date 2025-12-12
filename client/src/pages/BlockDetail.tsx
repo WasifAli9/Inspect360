@@ -1,12 +1,29 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import ComplianceCalendar from "@/components/ComplianceCalendar";
 import ComplianceDocumentCalendar from "@/components/ComplianceDocumentCalendar";
-import { ArrowLeft, Building2, MapPin, Users, CheckCircle2, Calendar, AlertTriangle, FileCheck, ClipboardCheck } from "lucide-react";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { insertComplianceDocumentSchema } from "@shared/schema";
+import { 
+  ArrowLeft, Building2, MapPin, Users, CheckCircle2, Calendar as CalendarIcon, 
+  AlertTriangle, FileCheck, ClipboardCheck, Upload, AlertCircle, ExternalLink, Clock
+} from "lucide-react";
+import { format } from "date-fns";
 
 interface PropertyStats {
   totalUnits: number;
@@ -33,9 +50,51 @@ interface Block {
   notes?: string | null;
 }
 
+interface ComplianceDoc {
+  id: string;
+  documentName: string;
+  documentType: string;
+  documentUrl: string;
+  expiryDate: string | null;
+  status: string;
+  uploadedAt: string;
+}
+
+const DEFAULT_DOCUMENT_TYPES = [
+  "Fire Safety Certificate",
+  "Building Insurance",
+  "Electrical Safety Certificate",
+  "Gas Safety Certificate",
+  "EPC Certificate",
+  "HMO License",
+  "Planning Permission",
+];
+
+const uploadFormSchema = insertComplianceDocumentSchema.extend({
+  documentUrl: z.string().min(1, "Please upload a document"),
+  expiryDate: z.string().optional(),
+});
+
+type UploadFormValues = z.infer<typeof uploadFormSchema>;
+
 export default function BlockDetail() {
   const [, params] = useRoute("/blocks/:id");
   const blockId = params?.id;
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const { toast } = useToast();
+
+  const form = useForm<UploadFormValues>({
+    resolver: zodResolver(uploadFormSchema),
+    defaultValues: {
+      documentType: "",
+      documentUrl: "",
+      expiryDate: undefined,
+      organizationId: "",
+      blockId: blockId || "",
+      uploadedBy: "",
+      status: "current",
+    },
+  });
 
   const { data: block, isLoading: blockLoading } = useQuery<Block>({
     queryKey: ["/api/blocks", blockId],
@@ -66,6 +125,67 @@ export default function BlockDetail() {
     },
     enabled: !!blockId,
   });
+
+  const { data: compliance = [], isLoading: complianceLoading } = useQuery<ComplianceDoc[]>({
+    queryKey: ["/api/blocks", blockId, "compliance"],
+    queryFn: async () => {
+      const res = await fetch(`/api/blocks/${blockId}/compliance`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch compliance documents");
+      return res.json();
+    },
+    enabled: !!blockId,
+  });
+
+  const { data: customDocTypes = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/compliance-document-types"],
+  });
+
+  const allDocumentTypes = [
+    ...DEFAULT_DOCUMENT_TYPES,
+    ...customDocTypes.map((t) => t.name),
+  ];
+
+  const uploadMutation = useMutation({
+    mutationFn: async (data: UploadFormValues) => {
+      return await apiRequest("POST", "/api/compliance-documents", {
+        ...data,
+        blockId: blockId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blocks", blockId, "compliance"] });
+      setUploadDialogOpen(false);
+      form.reset();
+      toast({
+        title: "Document Uploaded",
+        description: "Compliance document has been uploaded successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Upload Failed",
+        description: error.message || "Failed to upload compliance document.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onSubmit = (data: UploadFormValues) => {
+    uploadMutation.mutate(data);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'valid':
+        return <Badge className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />Valid</Badge>;
+      case 'expiring':
+        return <Badge variant="secondary" className="text-yellow-600"><Clock className="h-3 w-3 mr-1" />Expiring Soon</Badge>;
+      case 'expired':
+        return <Badge variant="destructive"><AlertCircle className="h-3 w-3 mr-1" />Expired</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
   if (blockLoading || propertiesLoading) {
     return (
@@ -197,7 +317,7 @@ export default function BlockDetail() {
                         {/* Due Soon */}
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 text-sm font-medium">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
                             Due Soon
                           </div>
                           <Badge 
@@ -239,20 +359,195 @@ export default function BlockDetail() {
           />
         </TabsContent>
 
-        {/* Compliance Schedule Tab */}
+        {/* Compliance Documents Tab */}
         <TabsContent value="compliance-schedule" className="space-y-6">
           <ComplianceDocumentCalendar 
-            documents={[]}
-            isLoading={false}
+            documents={compliance.map(doc => ({
+              id: doc.id,
+              documentType: doc.documentType,
+              expiryDate: doc.expiryDate,
+              documentUrl: doc.documentUrl || '',
+              createdAt: doc.uploadedAt || new Date().toISOString(),
+            }))}
+            isLoading={complianceLoading}
             entityType="block"
           />
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <FileCheck className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">Compliance documents are managed at the property level</p>
-              <p className="text-sm text-muted-foreground mt-2">View individual properties to manage their compliance documents</p>
-            </CardContent>
-          </Card>
+
+          {/* Compliance Documents Section */}
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Compliance Documents</h2>
+            <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-upload-block-compliance">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Document
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Upload Compliance Document</DialogTitle>
+                </DialogHeader>
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="documentType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Document Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-document-type">
+                                <SelectValue placeholder="Select document type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {allDocumentTypes.map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {type}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="expiryDate"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>Expiry Date (Optional)</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className="w-full justify-start text-left font-normal"
+                                  data-testid="button-expiry-date"
+                                >
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {field.value ? format(new Date(field.value), "PPP") : "Select expiry date"}
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value ? new Date(field.value) : undefined}
+                                onSelect={(date) => field.onChange(date?.toISOString())}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="documentUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Document File</FormLabel>
+                          <FormControl>
+                            <ObjectUploader
+                              onUploadComplete={(urls) => {
+                                if (urls.length > 0) {
+                                  field.onChange(urls[0]);
+                                }
+                              }}
+                              accept="application/pdf,image/*,.doc,.docx"
+                              maxNumberOfFiles={20}
+                            />
+                          </FormControl>
+                          {field.value && (
+                            <p className="text-sm text-muted-foreground mt-2">
+                              File uploaded successfully
+                            </p>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setUploadDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={uploadMutation.isPending}>
+                        {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {/* Documents List */}
+          {complianceLoading ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                Loading documents...
+              </CardContent>
+            </Card>
+          ) : compliance.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <FileCheck className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No compliance documents</h3>
+                <p className="text-muted-foreground text-center">
+                  Upload block-level compliance documents like building insurance or fire safety certificates.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {compliance.map((doc) => (
+                <Card key={doc.id} data-testid={`card-compliance-${doc.id}`}>
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold">{doc.documentType}</h3>
+                          {getStatusBadge(doc.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {doc.documentName}
+                        </p>
+                        {doc.expiryDate && (
+                          <p className={`text-sm mt-1 ${
+                            doc.status === 'expired' ? 'text-destructive' :
+                            doc.status === 'expiring' ? 'text-yellow-600' :
+                            'text-muted-foreground'
+                          }`}>
+                            {doc.status === 'expired' ? 'Expired' : 'Expires'} {format(new Date(doc.expiryDate), "d MMMM yyyy")}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(doc.documentUrl, '_blank')}
+                        data-testid={`button-view-doc-${doc.id}`}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        View
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>
