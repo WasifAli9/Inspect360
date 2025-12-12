@@ -3433,7 +3433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { inspectionId, fieldKey, fieldLabel, fieldDescription, photos } = validation.data;
+      const { inspectionId, fieldKey, fieldLabel, fieldDescription, sectionName, photos } = validation.data;
 
       // Get user and verify organization membership
       const user = await storage.getUser(req.user.id);
@@ -3561,45 +3561,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Build the prompt with field context - using custom instruction if provided
       let promptText: string;
 
+      // Build section context string
+      const sectionContext = sectionName ? `Section: "${sectionName}", ` : "";
+      const fullContext = `${sectionContext}Inspection Point: "${fieldLabel}"`;
+
       if (aiInstruction) {
         // Use custom AI instruction from template or organization
         promptText = `${aiInstruction}
 
-Focus SPECIFICALLY on: "${fieldLabel}"`;
+${fullContext}`;
         if (fieldDescription) {
           promptText += `\nContext: ${fieldDescription}`;
         }
-        promptText += `\n\nI have ${photoUrls.length} image(s) to analyze. Provide your assessment for "${fieldLabel}".
+        promptText += `\n\nI have ${photoUrls.length} image(s) to analyze. Focus ONLY on "${fieldLabel}" - ignore all other elements in the photo.
 
-IMPORTANT FORMATTING RULES:
+IMPORTANT RULES:
 - Keep your response under ${aiMaxWords} words
-- Write in plain text only - do NOT use asterisks (*), hash symbols (#), bullet points, or numbered lists
-- Do NOT use any markdown formatting
-- Do NOT include emojis
-- Write in professional, flowing paragraphs`;
+- Be concise and direct - no unnecessary explanations
+- Write in plain text only - no markdown, asterisks, bullets, or emojis
+- Recommendations must be brief and actionable`;
       } else {
-        // Default prompt
-        promptText = `You are analyzing a property inspection photo. Focus SPECIFICALLY on: "${fieldLabel}"`;
+        // Default prompt - highly focused on the specific inspection point
+        promptText = `You are a property inspector analyzing a photo for a specific inspection point.
+
+${fullContext}`;
         if (fieldDescription) {
-          promptText += `\nContext: ${fieldDescription}`;
+          promptText += `\nDescription: ${fieldDescription}`;
         }
-        promptText += `\n\nIMPORTANT: The photo may show an entire room or area, but you must focus your analysis ONLY on "${fieldLabel}". Ignore other elements in the photo that are not directly related to this inspection point.
+        promptText += `
 
-I have ${photoUrls.length} image(s). Provide a concise inspection report for "${fieldLabel}" covering:
-- Overall condition assessment
-- Any visible damage, defects, or wear
-- Cleanliness and maintenance issues
-- Notable features or observations
-- Recommendations (if any)
+CRITICAL: The photo may show an entire room or area. You MUST focus your analysis EXCLUSIVELY on "${fieldLabel}" within the ${sectionName || "inspection area"}. Do NOT describe or analyze any other elements visible in the photo.
 
-IMPORTANT FORMATTING RULES:
-- Keep your response under ${aiMaxWords} words
-- Write in plain text only - do NOT use asterisks (*), hash symbols (#), bullet points, or numbered lists
-- Do NOT use any markdown formatting
-- Do NOT include emojis
-- Write in professional, flowing paragraphs
+Provide a focused assessment covering:
+1. Condition of "${fieldLabel}" only
+2. Any damage, defects, or wear specific to this item
+3. Cleanliness issues (if applicable)
+4. Brief recommendation (only if action needed)
 
-Be thorough but concise, specific, and objective about the ${fieldLabel}. Do not comment on items outside the scope of "${fieldLabel}". This will be used in a professional property inspection report.`;
+FORMATTING RULES:
+- Maximum ${aiMaxWords} words
+- Be direct and concise - avoid filler language
+- Plain text only - no markdown, asterisks, bullets, numbered lists, or emojis
+- Write professionally in flowing sentences
+- Recommendations should be actionable and brief (e.g., "Recommend repainting" not "It would be advisable to consider having the area repainted at some point")
+
+Remember: Only analyze "${fieldLabel}" - nothing else in the photo matters for this inspection point.`;
       }
 
       // Build content array with text and all images

@@ -971,6 +971,7 @@ export default function InspectionCapture() {
                   entryId={entry?.id}
                   isCheckOut={inspection?.type === "check_out"}
                   markedForReview={entry?.markedForReview || false}
+                  sectionName={currentSection.title}
                   onChange={(value: any, note?: string, photos?: string[]) => handleFieldChange(field.id, value, note, photos)}
                   onMarkedForReviewChange={(marked: boolean) => handleMarkedForReviewChange(field.id, marked)}
                   onLogMaintenance={(fieldLabel: string, photos: string[]) => {

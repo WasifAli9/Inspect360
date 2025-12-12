@@ -43,6 +43,7 @@ interface FieldWidgetProps {
   entryId?: string;
   isCheckOut?: boolean;
   markedForReview?: boolean;
+  sectionName?: string;
   onChange: (value: any, note?: string, photos?: string[]) => void;
   onMarkedForReviewChange?: (marked: boolean) => void;
   onLogMaintenance?: (fieldLabel: string, photos: string[]) => void;
@@ -57,6 +58,7 @@ export function FieldWidget({
   entryId, 
   isCheckOut,
   markedForReview,
+  sectionName,
   onChange,
   onMarkedForReviewChange,
   onLogMaintenance
@@ -247,6 +249,7 @@ export function FieldWidget({
         fieldKey: field.id,
         fieldLabel: field.label,
         fieldDescription: field.placeholder,
+        sectionName: sectionName,
         photos: localPhotos,
       });
 
