@@ -1171,7 +1171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { logoUrl, brandingName, brandingEmail, brandingPhone, brandingAddress, brandingWebsite, financeEmail } = req.body;
+      const { logoUrl, brandingName, brandingEmail, brandingPhone, brandingAddress, brandingWebsite, financeEmail, comparisonAlertThreshold } = req.body;
 
       const organization = await storage.updateOrganization(organizationId, {
         logoUrl: logoUrl || null,
@@ -1181,6 +1181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         brandingAddress: brandingAddress || null,
         brandingWebsite: brandingWebsite || null,
         financeEmail: financeEmail || null,
+        comparisonAlertThreshold: typeof comparisonAlertThreshold === 'number' ? comparisonAlertThreshold : undefined,
       });
 
       res.json(organization);
@@ -4235,6 +4236,25 @@ LIABILITY: [tenant/landlord/shared]`;
 
                 estimatedCost = costMatch ? parseInt(costMatch[1]) : 0;
 
+                // Extract condition/cleanliness from valueJson for both entries
+                const parseConditionCleanliness = (entry: any) => {
+                  if (!entry?.valueJson) return { condition: null, cleanliness: null };
+                  try {
+                    const valueJson = typeof entry.valueJson === 'string' 
+                      ? JSON.parse(entry.valueJson) 
+                      : entry.valueJson;
+                    return {
+                      condition: valueJson?.condition || null,
+                      cleanliness: valueJson?.cleanliness || null,
+                    };
+                  } catch {
+                    return { condition: null, cleanliness: null };
+                  }
+                };
+
+                const checkInRatings = parseConditionCleanliness(checkInEntry);
+                const checkOutRatings = parseConditionCleanliness(checkOutEntry);
+
                 aiComparison = {
                   summary: summaryMatch ? summaryMatch[1].trim() : analysis.replace(/\*\*/g, ''),
                   differences: summaryMatch ? summaryMatch[1].trim() : analysis.replace(/\*\*/g, ''),
@@ -4246,7 +4266,11 @@ LIABILITY: [tenant/landlord/shared]`;
                   checkOutPhotos,
                   estimatedCost,
                   checkInNote: checkInNote,
-                  checkOutNote: checkOutNote
+                  checkOutNote: checkOutNote,
+                  checkInCondition: checkInRatings.condition,
+                  checkOutCondition: checkOutRatings.condition,
+                  checkInCleanliness: checkInRatings.cleanliness,
+                  checkOutCleanliness: checkOutRatings.cleanliness,
                 };
 
                 // Extract notes_comparison if present in response
@@ -4953,6 +4977,31 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
 
             const finalCost = Math.max(0, estimatedCost - depreciation);
             totalCost += finalCost;
+
+            // Extract condition/cleanliness from valueJson for both entries
+            const parseConditionCleanliness = (entry: any) => {
+              if (!entry?.valueJson) return { condition: null, cleanliness: null };
+              try {
+                const valueJson = typeof entry.valueJson === 'string' 
+                  ? JSON.parse(entry.valueJson) 
+                  : entry.valueJson;
+                return {
+                  condition: valueJson?.condition || null,
+                  cleanliness: valueJson?.cleanliness || null,
+                };
+              } catch {
+                return { condition: null, cleanliness: null };
+              }
+            };
+
+            const checkInRatings = parseConditionCleanliness(checkInEntry);
+            const checkOutRatings = parseConditionCleanliness(checkOutEntry);
+            
+            // Add condition/cleanliness to aiComparison
+            aiComparison.checkInCondition = checkInRatings.condition;
+            aiComparison.checkOutCondition = checkOutRatings.condition;
+            aiComparison.checkInCleanliness = checkInRatings.cleanliness;
+            aiComparison.checkOutCleanliness = checkOutRatings.cleanliness;
 
             itemAnalyses.push({
               sectionRef: checkOutEntry.sectionRef,

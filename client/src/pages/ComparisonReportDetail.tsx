@@ -52,11 +52,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocale } from "@/contexts/LocaleContext";
+import type { Organization } from "@shared/schema";
+
+const conditionScoreMap: Record<string, number> = {
+  "Excellent": 5,
+  "New": 5,
+  "Excellent/New": 5,
+  "Good": 4,
+  "Fair": 3,
+  "Poor": 2,
+  "Very Poor": 1,
+};
+
+function getScore(value: string | undefined | null): number | null {
+  if (!value) return null;
+  return conditionScoreMap[value] ?? null;
+}
+
+interface ConditionAlert {
+  itemLabel: string;
+  field: "condition" | "cleanliness";
+  checkInScore: number;
+  checkOutScore: number;
+  percentageDrop: number;
+}
 
 interface ComparisonReport {
   id: string;
@@ -248,6 +273,59 @@ export default function ComparisonReportDetail() {
     queryKey: ["/api/comparison-reports", id, "comments"],
     enabled: !!id,
   });
+
+  // Fetch organization settings for comparison alert threshold
+  const { data: organization } = useQuery<Organization>({
+    queryKey: ["/api/organizations", user?.organizationId],
+    enabled: !!user?.organizationId,
+  });
+
+  // Calculate condition/cleanliness alerts based on threshold
+  const conditionAlerts: ConditionAlert[] = [];
+  const alertThreshold = organization?.comparisonAlertThreshold ?? 20;
+
+  if (report?.items) {
+    for (const item of report.items) {
+      const aiAnalysis = item.aiComparisonJson || {};
+      const itemLabel = `${item.sectionRef} - ${item.fieldKey}${item.itemRef ? ` (${item.itemRef})` : ""}`;
+
+      // Check condition score drop
+      if (aiAnalysis.checkInCondition && aiAnalysis.checkOutCondition) {
+        const checkInScore = getScore(aiAnalysis.checkInCondition);
+        const checkOutScore = getScore(aiAnalysis.checkOutCondition);
+        if (checkInScore !== null && checkOutScore !== null && checkInScore > 0) {
+          const percentageDrop = ((checkInScore - checkOutScore) / checkInScore) * 100;
+          if (percentageDrop >= alertThreshold) {
+            conditionAlerts.push({
+              itemLabel,
+              field: "condition",
+              checkInScore,
+              checkOutScore,
+              percentageDrop: Math.round(percentageDrop),
+            });
+          }
+        }
+      }
+
+      // Check cleanliness score drop
+      if (aiAnalysis.checkInCleanliness && aiAnalysis.checkOutCleanliness) {
+        const checkInScore = getScore(aiAnalysis.checkInCleanliness);
+        const checkOutScore = getScore(aiAnalysis.checkOutCleanliness);
+        if (checkInScore !== null && checkOutScore !== null && checkInScore > 0) {
+          const percentageDrop = ((checkInScore - checkOutScore) / checkInScore) * 100;
+          if (percentageDrop >= alertThreshold) {
+            conditionAlerts.push({
+              itemLabel,
+              field: "cleanliness",
+              checkInScore,
+              checkOutScore,
+              percentageDrop: Math.round(percentageDrop),
+            });
+          }
+        }
+      }
+    }
+  }
 
   const updateReportMutation = useMutation({
     mutationFn: async (updates: any) => {
@@ -522,6 +600,26 @@ export default function ComparisonReportDetail() {
           </Badge>
         </div>
       </div>
+
+      {conditionAlerts.length > 0 && (
+        <Alert variant="destructive" data-testid="alert-condition-cleanliness">
+          <TrendingDown className="h-4 w-4" />
+          <AlertTitle>Significant Condition/Cleanliness Changes Detected</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              The following items show a drop of {alertThreshold}% or more between check-in and check-out:
+            </p>
+            <ul className="list-disc list-inside space-y-1">
+              {conditionAlerts.map((alert, index) => (
+                <li key={index} className="text-sm">
+                  <span className="font-medium">{alert.itemLabel}</span>:{" "}
+                  <span className="capitalize">{alert.field}</span> dropped from {alert.checkInScore}/5 to {alert.checkOutScore}/5 ({alert.percentageDrop}% decrease)
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>
