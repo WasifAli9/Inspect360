@@ -70,6 +70,7 @@ export default function Compliance() {
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [propertySearchTerm, setPropertySearchTerm] = useState("");
+  const [propertyPopoverOpen, setPropertyPopoverOpen] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
   
   // Filter and sort state
@@ -595,13 +596,14 @@ export default function Compliance() {
                   {/* Multi-select Properties */}
                   <div className="space-y-2">
                     <Label>Properties (Optional)</Label>
-                    <Popover modal={false}>
+                    <Popover open={propertyPopoverOpen} onOpenChange={setPropertyPopoverOpen} modal={false}>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
                           role="combobox"
                           className="w-full justify-between font-normal"
                           data-testid="select-properties-multi"
+                          type="button"
                         >
                           {selectedPropertyIds.length === 0 
                             ? "Select properties..." 
@@ -612,7 +614,7 @@ export default function Compliance() {
                           <Home className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[400px] p-0" align="start">
+                      <PopoverContent className="w-[400px] p-0 z-[100]" align="start">
                         <Command>
                           <CommandInput 
                             placeholder="Search properties..." 

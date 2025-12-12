@@ -251,6 +251,20 @@ export default function Dashboard() {
     enabled: isAuthenticated && !!user?.organizationId && user?.role === "owner",
   });
 
+  // Auto-select first block for Inspection Schedule when blocks load
+  useEffect(() => {
+    if (blocks.length > 0 && !inspectionScheduleBlockId) {
+      setInspectionScheduleBlockId(blocks[0].id);
+    }
+  }, [blocks, inspectionScheduleBlockId]);
+
+  // Auto-select first block for Compliance Schedule when blocks load
+  useEffect(() => {
+    if (blocks.length > 0 && !complianceScheduleBlockId) {
+      setComplianceScheduleBlockId(blocks[0].id);
+    }
+  }, [blocks, complianceScheduleBlockId]);
+
   // Inspection Schedule compliance report query
   const inspectionScheduleEntityType = inspectionSchedulePropertyId ? 'property' : (inspectionScheduleBlockId ? 'block' : null);
   const inspectionScheduleEntityId = inspectionSchedulePropertyId || inspectionScheduleBlockId || null;
@@ -259,7 +273,11 @@ export default function Dashboard() {
     queryKey: ["/api/compliance-report", inspectionScheduleEntityType, inspectionScheduleEntityId],
     queryFn: async () => {
       if (!inspectionScheduleEntityType || !inspectionScheduleEntityId) return null;
-      const res = await fetch(`/api/compliance-report/${inspectionScheduleEntityType}/${inspectionScheduleEntityId}`, { credentials: 'include' });
+      // Use the correct API endpoint pattern
+      const endpoint = inspectionScheduleEntityType === 'property'
+        ? `/api/properties/${inspectionScheduleEntityId}/compliance-report`
+        : `/api/blocks/${inspectionScheduleEntityId}/compliance-report`;
+      const res = await fetch(endpoint, { credentials: 'include' });
       if (!res.ok) return null;
       return res.json();
     },
