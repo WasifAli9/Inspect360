@@ -834,6 +834,146 @@ function generateInspectionHTML(
         ` : ""}
       </div>
 
+      <!-- Glossary of Terms - Landscape optimized 2-column layout -->
+      <div style="margin-bottom: 32px; page-break-inside: avoid;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px; border-bottom: 2px solid #00D5CC; padding-bottom: 8px;">
+          Glossary of Terms
+        </h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+          <!-- Condition Ratings -->
+          <div style="background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <h3 style="font-size: 14px; font-weight: 600; color: #3B7A8C; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+              Condition Ratings
+            </h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; width: 40%;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #16a34a;"></span>
+                      <strong style="color: #16a34a;">Excellent (5)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    New or like-new condition, no visible wear or damage
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+                      <strong style="color: #22c55e;">Good (4)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Minor wear consistent with normal use, fully functional
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
+                      <strong style="color: #f59e0b;">Fair (3)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Moderate wear or minor damage, may need attention soon
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+                      <strong style="color: #ef4444;">Poor (2)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Significant wear or damage, requires repair or replacement
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #dc2626;"></span>
+                      <strong style="color: #dc2626;">Very Poor (1)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; color: #666; font-size: 13px;">
+                    Severe damage or unusable, immediate action required
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Cleanliness Ratings -->
+          <div style="background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <h3 style="font-size: 14px; font-weight: 600; color: #3B7A8C; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+              Cleanliness Ratings
+            </h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; width: 40%;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #16a34a;"></span>
+                      <strong style="color: #16a34a;">Excellent (5)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Professionally cleaned, spotless condition
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+                      <strong style="color: #22c55e;">Good (4)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Clean with minor dust or marks, easily tidied
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
+                      <strong style="color: #f59e0b;">Fair (3)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Needs cleaning, visible dirt or stains present
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+                      <strong style="color: #ef4444;">Poor (2)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #666; font-size: 13px;">
+                    Significant cleaning required, heavy soiling
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="width: 10px; height: 10px; border-radius: 50%; background: #dc2626;"></span>
+                      <strong style="color: #dc2626;">Very Poor (1)</strong>
+                    </span>
+                  </td>
+                  <td style="padding: 8px 0; color: #666; font-size: 13px;">
+                    Unsanitary conditions, professional cleaning needed
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- Outstanding Maintenance Requests -->
       ${maintenanceRequests && maintenanceRequests.length > 0 ? `
         <div style="margin-bottom: 32px; page-break-inside: avoid;">
