@@ -233,6 +233,20 @@ export default function InspectionCapture() {
       return response.json();
     },
     onSuccess: () => {
+      // If inspection is still in draft status, update to in_progress
+      if (inspection?.status === "draft") {
+        fetch(`/api/inspections/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "in_progress",
+            startedAt: new Date().toISOString(),
+          }),
+        }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/inspections", id] });
+          queryClient.invalidateQueries({ queryKey: ["/api/inspections"] });
+        });
+      }
       // Invalidate entries query to ensure report page gets fresh data
       queryClient.invalidateQueries({ queryKey: [`/api/inspections/${id}/entries`] });
       // Also invalidate inspection query

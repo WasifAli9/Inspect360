@@ -256,13 +256,14 @@ export default function InspectionDetail() {
   }
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, { variant: any; label: string }> = {
-      scheduled: { variant: "secondary", label: "Scheduled" },
-      in_progress: { variant: "default", label: "In Progress" },
-      completed: { variant: "outline", label: "Completed" },
+    const variants: Record<string, { variant: any; label: string; className?: string }> = {
+      draft: { variant: "outline", label: "Draft", className: "border-muted-foreground/50 text-muted-foreground" },
+      scheduled: { variant: "outline", label: "Scheduled", className: "border-blue-500 text-blue-600 dark:text-blue-400" },
+      in_progress: { variant: "default", label: "In Progress", className: "bg-amber-500 text-white dark:bg-amber-600" },
+      completed: { variant: "default", label: "Completed", className: "bg-primary text-primary-foreground" },
     };
-    const config = variants[status] || variants.scheduled;
-    return <Badge variant={config.variant}>{config.label}</Badge>;
+    const config = variants[status] || variants.draft;
+    return <Badge variant={config.variant} className={config.className}>{config.label}</Badge>;
   };
 
   const getTypeBadge = (type: string) => {
