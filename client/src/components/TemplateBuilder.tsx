@@ -79,6 +79,10 @@ const FIELD_TYPES = [
   { value: "video", label: "Video" },
   { value: "gps", label: "GPS Location" },
   { value: "signature", label: "Signature" },
+  { value: "auto_inspector", label: "Auto: Inspector Name" },
+  { value: "auto_address", label: "Auto: Property/Block Address" },
+  { value: "auto_tenant_names", label: "Auto: Tenant Name(s)" },
+  { value: "auto_inspection_date", label: "Auto: Inspection Date" },
 ];
 
 interface TemplateBuilderProps {
