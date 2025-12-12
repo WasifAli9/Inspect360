@@ -1835,12 +1835,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get inventory count
       const inventory = await storage.getAssetInventoryByProperty(id);
 
-      // Get tenants
-      const tenants = await storage.getUsersByOrganizationAndRole(user.organizationId, "tenant");
-      const propertyTenants = tenants.filter((t: any) => t.propertyId === id);
+      // Get tenants from tenant_assignments table (the correct source)
+      const tenantAssignments = await storage.getTenantAssignmentsByProperty(id, user.organizationId);
+      // Filter for active assignments only
+      const activeAssignments = tenantAssignments.filter((ta: any) => ta.status === 'active');
 
       res.json({
-        occupancyStatus: propertyTenants.length > 0 ? `${propertyTenants.length} Tenant${propertyTenants.length > 1 ? 's' : ''}` : 'Vacant',
+        occupancyStatus: activeAssignments.length > 0 ? `${activeAssignments.length} Tenant${activeAssignments.length > 1 ? 's' : ''}` : 'Vacant',
         complianceRate,
         dueInspections,
         overdueInspections,
