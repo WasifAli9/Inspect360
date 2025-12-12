@@ -878,14 +878,17 @@ export default function Maintenance() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Property (Optional if block selected)</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? "" : value)} 
+                          value={field.value || "none"}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-property">
                               <SelectValue placeholder="Select a property" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None (Block-level only)</SelectItem>
+                            <SelectItem value="none">None (Block-level only)</SelectItem>
                             {properties
                               .filter(p => formBlockFilter === "all" || p.blockId === formBlockFilter)
                               .map((property) => (
