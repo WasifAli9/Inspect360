@@ -43,7 +43,7 @@ const uploadFormSchema = insertComplianceDocumentSchema.omit({
   organizationId: true,
   uploadedBy: true,
 }).extend({
-  documentUrl: z.string().min(1, "Please upload a document"),
+  documentUrl: z.string().optional(),
   expiryDate: z.string().optional(),
 });
 
@@ -66,6 +66,7 @@ export default function Compliance() {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const [propertySearchTerm, setPropertySearchTerm] = useState("");
   const { user, isLoading: authLoading } = useAuth();
@@ -165,23 +166,27 @@ export default function Compliance() {
       
       form.reset(resetValues as UploadFormValues);
       setIsUploading(false);
+      setUploadedFiles([]);
       setPropertySearchTerm("");
     } else {
       setIsUploading(false);
       setSelectedPropertyIds([]);
+      setUploadedFiles([]);
       setPropertySearchTerm("");
       form.clearErrors();
     }
   }, [open, propertyIdFromUrl, blockIdFromUrl, form]);
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: UploadFormValues & { propertyIds?: string[] }) => {
+    mutationFn: async (data: UploadFormValues & { propertyIds?: string[], documentUrls?: string[] }) => {
       console.log('[Compliance] Sending upload request with data:', data);
       try {
         const basePayload = {
           ...data,
           expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
         };
+        delete (basePayload as any).documentUrls;
+        delete (basePayload as any).propertyIds;
         
         const propertyIds = data.propertyIds && data.propertyIds.length > 0 
           ? data.propertyIds 
@@ -189,16 +194,28 @@ export default function Compliance() {
             ? [data.propertyId] 
             : [undefined];
         
+        const documentUrls = data.documentUrls && data.documentUrls.length > 0
+          ? data.documentUrls
+          : data.documentUrl
+            ? [data.documentUrl]
+            : [];
+        
+        if (documentUrls.length === 0) {
+          throw new Error('No documents to upload');
+        }
+        
         const results = await Promise.all(
-          propertyIds.map(async (propId) => {
-            const payload = {
-              ...basePayload,
-              propertyId: propId,
-            };
-            delete (payload as any).propertyIds;
-            console.log('[Compliance] Upload payload for property:', propId, payload);
-            return apiRequest('POST', '/api/compliance', payload);
-          })
+          documentUrls.flatMap(docUrl => 
+            propertyIds.map(async (propId) => {
+              const payload = {
+                ...basePayload,
+                documentUrl: docUrl,
+                propertyId: propId,
+              };
+              console.log('[Compliance] Upload payload:', payload);
+              return apiRequest('POST', '/api/compliance', payload);
+            })
+          )
         );
         
         console.log('[Compliance] Upload successful:', results);
@@ -213,14 +230,15 @@ export default function Compliance() {
       queryClient.invalidateQueries({ queryKey: ['/api/compliance/expiring'] });
       const count = Array.isArray(results) ? results.length : 1;
       toast({
-        title: "Document uploaded",
+        title: "Documents uploaded",
         description: count > 1 
-          ? `Compliance document uploaded to ${count} properties successfully`
+          ? `${count} compliance documents uploaded successfully`
           : "Compliance document uploaded successfully",
       });
       setOpen(false);
       form.reset();
       setSelectedPropertyIds([]);
+      setUploadedFiles([]);
       setIsUploading(false);
     },
     onError: (error: any) => {
@@ -322,7 +340,6 @@ export default function Compliance() {
   const onSubmit = (data: UploadFormValues) => {
     console.log('[Compliance] Form submitted with data:', data);
     
-    // Ensure documentType is set
     if (!data.documentType) {
       form.setError('documentType', {
         type: 'manual',
@@ -336,23 +353,18 @@ export default function Compliance() {
       return;
     }
     
-    // Ensure documentUrl is set
-    if (!data.documentUrl) {
-      form.setError('documentUrl', {
-        type: 'manual',
-        message: 'Please upload a document'
-      });
+    if (uploadedFiles.length === 0) {
       toast({
         title: "Validation error",
-        description: "Please upload a document",
+        description: "Please upload at least one document",
         variant: "destructive",
       });
       return;
     }
     
-    // Include selected property IDs in the mutation data
     const mutationData = {
       ...data,
+      documentUrls: uploadedFiles,
       propertyIds: selectedPropertyIds.length > 0 ? selectedPropertyIds : undefined,
     };
     
@@ -726,147 +738,146 @@ export default function Compliance() {
                   />
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="documentUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Document File *</FormLabel>
-                      <FormControl>
-                        <div className="space-y-2">
-                          <ObjectUploader
-                            buttonClassName="w-full"
-                            onGetUploadParameters={async () => {
-                              try {
-                                setIsUploading(true);
-                                const response = await fetch('/api/objects/upload', {
-                                  method: 'POST',
-                                  credentials: 'include',
-                                });
-                                
-                                if (!response.ok) {
-                                  setIsUploading(false);
-                                  toast({
-                                    title: "Upload initialization failed",
-                                    description: "Failed to prepare upload. Please try again.",
-                                    variant: "destructive",
-                                  });
-                                  throw new Error('Failed to initialize upload');
+                <FormItem>
+                  <FormLabel>Document Files *</FormLabel>
+                  <div className="space-y-2">
+                    <ObjectUploader
+                      buttonClassName="w-full"
+                      maxNumberOfFiles={20}
+                      onGetUploadParameters={async () => {
+                        try {
+                          setIsUploading(true);
+                          const response = await fetch('/api/objects/upload', {
+                            method: 'POST',
+                            credentials: 'include',
+                          });
+                          
+                          if (!response.ok) {
+                            setIsUploading(false);
+                            toast({
+                              title: "Upload initialization failed",
+                              description: "Failed to prepare upload. Please try again.",
+                              variant: "destructive",
+                            });
+                            throw new Error('Failed to initialize upload');
+                          }
+                          
+                          const { uploadURL } = await response.json();
+                          return {
+                            method: 'PUT' as const,
+                            url: uploadURL,
+                          };
+                        } catch (error: any) {
+                          setIsUploading(false);
+                          toast({
+                            title: "Upload initialization failed",
+                            description: error.message || 'Failed to prepare upload. Please try again.',
+                            variant: "destructive",
+                          });
+                          throw error;
+                        }
+                      }}
+                      onComplete={async (result) => {
+                        try {
+                          if (result.failed && result.failed.length > 0) {
+                            toast({
+                              title: "Some uploads failed",
+                              description: `${result.failed.length} file(s) failed to upload.`,
+                              variant: "destructive",
+                            });
+                          }
+                          
+                          if (result.successful && result.successful.length > 0) {
+                            const processedUrls: string[] = [];
+                            
+                            for (const file of result.successful) {
+                              let uploadURL = file.uploadURL;
+                              
+                              if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
+                                try {
+                                  const urlObj = new URL(uploadURL);
+                                  uploadURL = urlObj.pathname;
+                                } catch (e) {
+                                  console.error('[Compliance] Invalid upload URL:', uploadURL);
+                                  continue;
                                 }
-                                
-                                const { uploadURL } = await response.json();
-                                return {
-                                  method: 'PUT' as const,
-                                  url: uploadURL,
-                                };
-                              } catch (error: any) {
-                                setIsUploading(false);
-                                toast({
-                                  title: "Upload initialization failed",
-                                  description: error.message || 'Failed to prepare upload. Please try again.',
-                                  variant: "destructive",
-                                });
-                                throw error;
                               }
-                            }}
-                            onComplete={async (result) => {
-                              try {
-                                // Check for upload failures first
-                                if (result.failed && result.failed.length > 0) {
-                                  throw new Error('Document upload failed');
-                                }
-                                
-                                if (result.successful && result.successful[0]) {
-                                  let uploadURL = result.successful[0].uploadURL;
-                                  
-                                  // Normalize URL: if absolute, extract pathname; if relative, use as is
-                                  if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
-                                    try {
-                                      const urlObj = new URL(uploadURL);
-                                      uploadURL = urlObj.pathname;
-                                    } catch (e) {
-                                      console.error('[Compliance] Invalid upload URL:', uploadURL);
-                                      setIsUploading(false);
-                                      toast({
-                                        title: "Upload Error",
-                                        description: "Invalid file URL format. Please try again.",
-                                        variant: "destructive",
-                                      });
-                                      return;
-                                    }
-                                  }
-                                  
-                                  // Ensure it's a relative path starting with /objects/
-                                  if (!uploadURL || !uploadURL.startsWith('/objects/')) {
-                                    console.error('[Compliance] Invalid file URL format:', uploadURL);
-                                    setIsUploading(false);
-                                    toast({
-                                      title: "Upload Error",
-                                      description: "Invalid file URL format. Please try again.",
-                                      variant: "destructive",
-                                    });
-                                    return;
-                                  }
-                                  
-                                  // Convert to absolute URL for ACL call
-                                  const absoluteUrl = `${window.location.origin}${uploadURL}`;
-                                  const response = await fetch('/api/objects/set-acl', {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    credentials: 'include',
-                                    body: JSON.stringify({ photoUrl: absoluteUrl }),
-                                  });
-                                  
-                                  if (!response.ok) {
-                                    const errorData = await response.json().catch(() => ({}));
-                                    throw new Error(errorData.error || 'Failed to set document permissions');
-                                  }
-                                  
-                                  const { objectPath } = await response.json();
-                                  field.onChange(objectPath);
-                                  setIsUploading(false);
-                                  toast({
-                                    title: "File uploaded",
-                                    description: "Document file uploaded successfully",
-                                  });
-                                } else {
-                                  throw new Error('No file was uploaded');
-                                }
-                              } catch (error: any) {
-                                console.error('Error uploading document:', error);
-                                setIsUploading(false);
-                                toast({
-                                  title: "Upload failed",
-                                  description: error.message || 'Failed to upload document. Please try again.',
-                                  variant: "destructive",
-                                });
-                                form.setError('documentUrl', {
-                                  type: 'manual',
-                                  message: 'Upload failed. Please try again.'
-                                });
+                              
+                              if (!uploadURL || !uploadURL.startsWith('/objects/')) {
+                                console.error('[Compliance] Invalid file URL format:', uploadURL);
+                                continue;
                               }
-                            }}
-                          >
-                            <Upload className="w-4 h-4 mr-2" />
-                            {isUploading ? 'Uploading...' : 'Select Document'}
-                          </ObjectUploader>
-                          {field.value && !isUploading && (
-                            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                              <Check className="h-4 w-4" />
-                              <span>Document uploaded successfully</span>
-                            </div>
-                          )}
-                          {form.formState.errors.documentUrl && (
-                            <p className="text-sm text-destructive">
-                              {form.formState.errors.documentUrl.message}. Click "Select Document" to try again.
-                            </p>
-                          )}
+                              
+                              const absoluteUrl = `${window.location.origin}${uploadURL}`;
+                              const response = await fetch('/api/objects/set-acl', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ photoUrl: absoluteUrl }),
+                              });
+                              
+                              if (response.ok) {
+                                const { objectPath } = await response.json();
+                                processedUrls.push(objectPath);
+                              }
+                            }
+                            
+                            if (processedUrls.length > 0) {
+                              setUploadedFiles(prev => [...prev, ...processedUrls]);
+                              setIsUploading(false);
+                              toast({
+                                title: "Files uploaded",
+                                description: `${processedUrls.length} document(s) uploaded successfully`,
+                              });
+                            } else {
+                              throw new Error('No files were processed successfully');
+                            }
+                          } else if (!result.failed || result.failed.length === 0) {
+                            throw new Error('No files were uploaded');
+                          }
+                        } catch (error: any) {
+                          console.error('Error uploading documents:', error);
+                          setIsUploading(false);
+                          toast({
+                            title: "Upload failed",
+                            description: error.message || 'Failed to upload documents. Please try again.',
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      {isUploading ? 'Uploading...' : 'Select Documents'}
+                    </ObjectUploader>
+                    {uploadedFiles.length > 0 && !isUploading && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                          <Check className="h-4 w-4" />
+                          <span>{uploadedFiles.length} document(s) ready to submit</span>
                         </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <div className="flex flex-wrap gap-1">
+                          {uploadedFiles.map((url, index) => (
+                            <Badge key={index} variant="secondary" className="text-xs gap-1">
+                              <FileText className="h-3 w-3" />
+                              Document {index + 1}
+                              <button
+                                type="button"
+                                onClick={() => setUploadedFiles(prev => prev.filter((_, i) => i !== index))}
+                                className="ml-1 hover:text-destructive"
+                                data-testid={`button-remove-file-${index}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <FormDescription>
+                      You can upload multiple documents at once. Each will be created as a separate compliance record.
+                    </FormDescription>
+                  </div>
+                </FormItem>
 
                 <FormField
                   control={form.control}
@@ -918,6 +929,7 @@ export default function Compliance() {
                     onClick={() => {
                       setOpen(false);
                       setIsUploading(false);
+                      setUploadedFiles([]);
                       form.reset();
                     }}
                     data-testid="button-cancel"
@@ -928,10 +940,10 @@ export default function Compliance() {
                   <Button
                     type="submit"
                     className="bg-primary w-full sm:w-auto"
-                    disabled={uploadMutation.isPending || isUploading || !form.watch('documentUrl') || !form.watch('documentType')}
+                    disabled={uploadMutation.isPending || isUploading || uploadedFiles.length === 0 || !form.watch('documentType')}
                     data-testid="button-submit-document"
                   >
-                    {uploadMutation.isPending ? "Saving..." : "Upload Document"}
+                    {uploadMutation.isPending ? "Saving..." : uploadedFiles.length > 1 ? `Upload ${uploadedFiles.length} Documents` : "Upload Document"}
                   </Button>
                 </div>
               </form>
