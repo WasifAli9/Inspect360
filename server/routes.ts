@@ -18022,6 +18022,397 @@ Answer the user's question based on the data provided above. Focus on being help
     }
   });
 
+  // ==================== EXCEL IMPORT ROUTES ====================
+  
+  // Download Excel template for entity type
+  app.get("/api/imports/templates/:entity", isAuthenticated, async (req: any, res) => {
+    try {
+      const { entity } = req.params;
+      const XLSX = await import("xlsx");
+      
+      let headers: string[] = [];
+      let exampleRow: any[] = [];
+      let filename = "";
+      
+      switch (entity) {
+        case "tenants":
+          headers = ["firstName*", "lastName*", "email*", "phone", "propertyName", "leaseStartDate", "leaseEndDate", "notes"];
+          exampleRow = ["John", "Doe", "john.doe@example.com", "+44 7123 456789", "Flat 1A, Oak House", "2024-01-01", "2025-01-01", "Example tenant notes"];
+          filename = "tenants_import_template.xlsx";
+          break;
+        case "properties":
+          headers = ["name*", "address*", "blockName", "propertyType", "sqft", "notes"];
+          exampleRow = ["Flat 1A", "123 High Street, London, SW1A 1AA", "Oak House", "apartment", "850", "Ground floor unit"];
+          filename = "properties_import_template.xlsx";
+          break;
+        case "blocks":
+          headers = ["name*", "address*", "totalUnits", "notes"];
+          exampleRow = ["Oak House", "100 High Street, London, SW1A 1AA", "24", "Main residential block"];
+          filename = "blocks_import_template.xlsx";
+          break;
+        case "assets":
+          headers = ["propertyName*", "name*", "category", "location", "condition*", "cleanliness", "serialNumber", "modelNumber", "supplier", "purchasePrice", "notes"];
+          exampleRow = ["Flat 1A, Oak House", "Samsung Refrigerator", "Appliances", "Kitchen", "5", "5", "RF123456", "RS27T5200SR", "Currys", "799.99", "Under warranty"];
+          filename = "assets_import_template.xlsx";
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid entity type. Valid types: tenants, properties, blocks, assets" });
+      }
+      
+      const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Import Data");
+      
+      // Add instructions sheet
+      const instructions = [
+        ["Import Instructions"],
+        [""],
+        ["1. Fields marked with * are required"],
+        ["2. Delete the example row before importing your data"],
+        ["3. Dates should be in YYYY-MM-DD format"],
+        ["4. Condition and cleanliness ratings: 1=Very Poor, 2=Poor, 3=Fair, 4=Good, 5=Excellent"],
+        ["5. Property and block names must match existing records exactly (for reference fields)"],
+        ["6. Email addresses must be unique for tenant imports"],
+      ];
+      const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
+      XLSX.utils.book_append_sheet(wb, wsInstructions, "Instructions");
+      
+      const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+      
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("Error generating template:", error);
+      res.status(500).json({ message: "Failed to generate template" });
+    }
+  });
+  
+  // Validate and preview Excel import
+  app.post("/api/imports/:entity/validate", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      const { entity } = req.params;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      if (data.length < 2) {
+        return res.status(400).json({ message: "File must have at least a header row and one data row" });
+      }
+      
+      const headers = data[0].map((h: string) => String(h).replace("*", "").trim().toLowerCase());
+      const rows = data.slice(1).filter((row: any[]) => row.some(cell => cell !== undefined && cell !== ""));
+      
+      const validRows: any[] = [];
+      const errors: { row: number; column: string; message: string }[] = [];
+      
+      // Get existing data for reference validation
+      const existingProperties = await storage.getProperties(user.organizationId);
+      const existingBlocks = await storage.getBlocks(user.organizationId);
+      
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2; // Account for 0-index and header row
+        const rowData: any = {};
+        
+        // Map row values to headers
+        headers.forEach((header: string, idx: number) => {
+          rowData[header] = row[idx];
+        });
+        
+        let hasError = false;
+        
+        switch (entity) {
+          case "tenants":
+            if (!rowData.firstname) {
+              errors.push({ row: rowNum, column: "firstName", message: "First name is required" });
+              hasError = true;
+            }
+            if (!rowData.lastname) {
+              errors.push({ row: rowNum, column: "lastName", message: "Last name is required" });
+              hasError = true;
+            }
+            if (!rowData.email) {
+              errors.push({ row: rowNum, column: "email", message: "Email is required" });
+              hasError = true;
+            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rowData.email)) {
+              errors.push({ row: rowNum, column: "email", message: "Invalid email format" });
+              hasError = true;
+            }
+            if (rowData.propertyname) {
+              const prop = existingProperties.find((p: any) => 
+                p.name.toLowerCase() === rowData.propertyname.toLowerCase()
+              );
+              if (!prop) {
+                errors.push({ row: rowNum, column: "propertyName", message: `Property "${rowData.propertyname}" not found` });
+                hasError = true;
+              } else {
+                rowData.propertyId = prop.id;
+              }
+            }
+            break;
+            
+          case "properties":
+            if (!rowData.name) {
+              errors.push({ row: rowNum, column: "name", message: "Property name is required" });
+              hasError = true;
+            }
+            if (!rowData.address) {
+              errors.push({ row: rowNum, column: "address", message: "Address is required" });
+              hasError = true;
+            }
+            if (rowData.blockname) {
+              const block = existingBlocks.find((b: any) => 
+                b.name.toLowerCase() === rowData.blockname.toLowerCase()
+              );
+              if (!block) {
+                errors.push({ row: rowNum, column: "blockName", message: `Block "${rowData.blockname}" not found` });
+                hasError = true;
+              } else {
+                rowData.blockId = block.id;
+              }
+            }
+            break;
+            
+          case "blocks":
+            if (!rowData.name) {
+              errors.push({ row: rowNum, column: "name", message: "Block name is required" });
+              hasError = true;
+            }
+            if (!rowData.address) {
+              errors.push({ row: rowNum, column: "address", message: "Address is required" });
+              hasError = true;
+            }
+            break;
+            
+          case "assets":
+            if (!rowData.propertyname) {
+              errors.push({ row: rowNum, column: "propertyName", message: "Property name is required" });
+              hasError = true;
+            } else {
+              const prop = existingProperties.find((p: any) => 
+                p.name.toLowerCase() === rowData.propertyname.toLowerCase()
+              );
+              if (!prop) {
+                errors.push({ row: rowNum, column: "propertyName", message: `Property "${rowData.propertyname}" not found` });
+                hasError = true;
+              } else {
+                rowData.propertyId = prop.id;
+              }
+            }
+            if (!rowData.name) {
+              errors.push({ row: rowNum, column: "name", message: "Asset name is required" });
+              hasError = true;
+            }
+            if (!rowData.condition || !["1", "2", "3", "4", "5"].includes(String(rowData.condition))) {
+              errors.push({ row: rowNum, column: "condition", message: "Condition must be 1-5" });
+              hasError = true;
+            }
+            break;
+        }
+        
+        if (!hasError) {
+          validRows.push({ rowNum, data: rowData });
+        }
+      }
+      
+      res.json({
+        totalRows: rows.length,
+        validRows: validRows.length,
+        errorCount: errors.length,
+        errors: errors.slice(0, 100), // Limit to first 100 errors
+        preview: validRows.slice(0, 10), // Preview first 10 valid rows
+      });
+    } catch (error: any) {
+      console.error("Error validating import:", error);
+      res.status(500).json({ message: "Failed to validate import file" });
+    }
+  });
+  
+  // Commit Excel import
+  app.post("/api/imports/:entity/commit", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      const { entity } = req.params;
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.organizationId) {
+        return res.status(403).json({ message: "User not in organization" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      const headers = data[0].map((h: string) => String(h).replace("*", "").trim().toLowerCase());
+      const rows = data.slice(1).filter((row: any[]) => row.some(cell => cell !== undefined && cell !== ""));
+      
+      const existingProperties = await storage.getProperties(user.organizationId);
+      const existingBlocks = await storage.getBlocks(user.organizationId);
+      
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: { row: number; message: string }[] = [];
+      
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2;
+        const rowData: any = {};
+        
+        headers.forEach((header: string, idx: number) => {
+          rowData[header] = row[idx];
+        });
+        
+        try {
+          switch (entity) {
+            case "tenants":
+              if (!rowData.firstname || !rowData.lastname || !rowData.email) {
+                throw new Error("Missing required fields");
+              }
+              
+              // Create tenant user
+              const bcrypt = await import("bcryptjs");
+              const tempPassword = await bcrypt.hash("TempPassword123!", 10);
+              const tenantUser = await storage.createUser({
+                username: rowData.email,
+                email: rowData.email,
+                password: tempPassword,
+                firstName: rowData.firstname,
+                lastName: rowData.lastname,
+                phone: rowData.phone || null,
+                role: "tenant",
+                organizationId: user.organizationId,
+                isActive: true,
+                onboardingCompleted: false,
+              });
+              
+              // Create tenant assignment if property specified
+              if (rowData.propertyid) {
+                await storage.createTenantAssignment({
+                  organizationId: user.organizationId,
+                  tenantId: tenantUser.id,
+                  propertyId: rowData.propertyid,
+                  leaseStartDate: rowData.leasestartdate ? new Date(rowData.leasestartdate) : null,
+                  leaseEndDate: rowData.leaseenddate ? new Date(rowData.leaseenddate) : null,
+                  notes: rowData.notes || null,
+                  isActive: true,
+                });
+              }
+              successCount++;
+              break;
+              
+            case "properties":
+              if (!rowData.name || !rowData.address) {
+                throw new Error("Missing required fields");
+              }
+              
+              let blockId = null;
+              if (rowData.blockname) {
+                const block = existingBlocks.find((b: any) => 
+                  b.name.toLowerCase() === rowData.blockname.toLowerCase()
+                );
+                if (block) blockId = block.id;
+              }
+              
+              await storage.createProperty({
+                organizationId: user.organizationId,
+                name: rowData.name,
+                address: rowData.address,
+                blockId,
+                propertyType: rowData.propertytype || null,
+                sqft: rowData.sqft ? parseInt(rowData.sqft) : null,
+              });
+              successCount++;
+              break;
+              
+            case "blocks":
+              if (!rowData.name || !rowData.address) {
+                throw new Error("Missing required fields");
+              }
+              
+              await storage.createBlock({
+                organizationId: user.organizationId,
+                name: rowData.name,
+                address: rowData.address,
+                notes: rowData.notes || null,
+              });
+              successCount++;
+              break;
+              
+            case "assets":
+              if (!rowData.name || !rowData.condition) {
+                throw new Error("Missing required fields");
+              }
+              
+              let assetPropertyId = null;
+              if (rowData.propertyname) {
+                const prop = existingProperties.find((p: any) => 
+                  p.name.toLowerCase() === rowData.propertyname.toLowerCase()
+                );
+                if (prop) assetPropertyId = prop.id;
+              }
+              
+              const conditionMap: { [key: string]: string } = {
+                "1": "very_poor", "2": "poor", "3": "fair", "4": "good", "5": "excellent"
+              };
+              const cleanlinessMap: { [key: string]: string } = {
+                "1": "very_dirty", "2": "dirty", "3": "acceptable", "4": "clean", "5": "spotless"
+              };
+              
+              await storage.createAssetInventory({
+                organizationId: user.organizationId,
+                propertyId: assetPropertyId,
+                name: rowData.name,
+                category: rowData.category || null,
+                location: rowData.location || null,
+                condition: conditionMap[String(rowData.condition)] || "fair",
+                cleanliness: rowData.cleanliness ? cleanlinessMap[String(rowData.cleanliness)] : null,
+                serialNumber: rowData.serialnumber || null,
+                modelNumber: rowData.modelnumber || null,
+                supplier: rowData.supplier || null,
+                purchasePrice: rowData.purchaseprice ? String(rowData.purchaseprice) : null,
+                description: rowData.notes || null,
+              });
+              successCount++;
+              break;
+          }
+        } catch (err: any) {
+          errorCount++;
+          errors.push({ row: rowNum, message: err.message });
+        }
+      }
+      
+      res.json({
+        success: true,
+        imported: successCount,
+        failed: errorCount,
+        errors: errors.slice(0, 50),
+      });
+    } catch (error: any) {
+      console.error("Error committing import:", error);
+      res.status(500).json({ message: "Failed to import data" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Set up WebSocket server for real-time notifications

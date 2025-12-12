@@ -17,6 +17,7 @@ import {
   BarChart3,
   FileBarChart,
   MessageSquarePlus,
+  Upload,
 } from "lucide-react";
 import {
   Sidebar,
@@ -152,6 +153,12 @@ export function AppSidebar() {
       url: "/settings",
       icon: Settings,
       roles: ["owner"],
+    },
+    {
+      title: "Bulk Import",
+      url: "/bulk-import",
+      icon: Upload,
+      roles: ["owner", "clerk"],
     },
     {
       title: "My Feedback",

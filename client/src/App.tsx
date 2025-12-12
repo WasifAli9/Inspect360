@@ -57,6 +57,7 @@ import TenantRequests from "@/pages/TenantRequests";
 import TenantComparisonReports from "@/pages/TenantComparisonReports";
 import TenantComparisonReportDetail from "@/pages/TenantComparisonReportDetail";
 import MyFeedback from "@/pages/MyFeedback";
+import BulkImport from "@/pages/BulkImport";
 import { Loader2 } from "lucide-react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { UserProfileMenu } from "@/components/UserProfileMenu";
@@ -259,6 +260,7 @@ function AppContent() {
                 <Route path="/inspection-templates" component={InspectionTemplates} />
                 <Route path="/billing" component={Billing} />
                 <Route path="/settings" component={Settings} />
+                <Route path="/bulk-import" component={BulkImport} />
                 <Route path="/my-feedback" component={MyFeedback} />
                 <Route component={NotFound} />
               </Switch>
