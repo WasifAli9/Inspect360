@@ -184,6 +184,8 @@ function AppContent() {
           </main>
         </div>
         <NotificationSystem />
+        {/* Show AI Chatbot for tenants */}
+        <AIChatbot />
         <PWAInstallPrompt />
         <Toaster />
       </TooltipProvider>
@@ -269,8 +271,8 @@ function AppContent() {
         </div>
       </SidebarProvider>
       <NotificationSystem />
-      {/* Show Ivy for all operators (non-tenants), AIChatbot for tenants */}
-      {user?.role && user.role !== "tenant" ? <IvyChatbot /> : user?.role === "tenant" ? <AIChatbot /> : null}
+      {/* Show Ivy chatbot for all authenticated operators (non-tenants) */}
+      <IvyChatbot />
       <PWAInstallPrompt />
       <Toaster />
     </TooltipProvider>
