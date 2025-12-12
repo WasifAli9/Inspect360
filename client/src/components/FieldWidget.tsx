@@ -7,9 +7,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye, Wrench } from "lucide-react";
+import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye, Wrench, ZoomIn } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import Uppy from "@uppy/core";
 import { Dashboard } from "@uppy/react";
 import AwsS3 from "@uppy/aws-s3";
@@ -84,6 +85,7 @@ export function FieldWidget({
   const [aiAnalyses, setAiAnalyses] = useState<Record<string, any>>({});
   const [analyzingPhoto, setAnalyzingPhoto] = useState<string | null>(null);
   const [analyzingField, setAnalyzingField] = useState(false);
+  const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -809,12 +811,21 @@ export function FieldWidget({
                 {localPhotos.map((photoUrl, index) => (
                   <Card key={index} className="overflow-hidden">
                     <CardContent className="p-0">
-                      <div className="relative bg-muted">
+                      <div className="relative bg-muted group">
                         <img
                           src={photoUrl}
                           alt={`${field.label} ${index + 1}`}
-                          className="w-full h-auto max-h-64 object-contain"
+                          className="w-full h-auto max-h-64 object-contain cursor-pointer"
+                          onClick={() => setEnlargedPhoto(photoUrl)}
+                          data-testid={`img-photo-${index}`}
                         />
+                        <div 
+                          className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none"
+                        >
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded-full p-2">
+                            <ZoomIn className="w-5 h-5 text-foreground" />
+                          </div>
+                        </div>
                         <Button
                           size="icon"
                           variant="destructive"
@@ -1137,6 +1148,32 @@ export function FieldWidget({
           </Label>
         </div>
       )}
+
+      {/* Enlarged Photo Modal */}
+      <Dialog open={!!enlargedPhoto} onOpenChange={(open) => !open && setEnlargedPhoto(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
+          <DialogTitle className="sr-only">Enlarged Photo View</DialogTitle>
+          {enlargedPhoto && (
+            <div className="relative">
+              <img
+                src={enlargedPhoto}
+                alt="Enlarged view"
+                className="w-full h-auto max-h-[85vh] object-contain"
+                data-testid="img-enlarged-photo"
+              />
+              <Button
+                size="icon"
+                variant="secondary"
+                className="absolute top-2 right-2"
+                onClick={() => setEnlargedPhoto(null)}
+                data-testid="button-close-enlarged"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
