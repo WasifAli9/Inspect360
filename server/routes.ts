@@ -14495,7 +14495,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       ] = await Promise.all([
         storage.getPropertiesByOrganization(user.organizationId),
         storage.getInspectionsByOrganization(user.organizationId),
-        storage.getComplianceDocumentsByOrganization(user.organizationId),
+        storage.getComplianceDocuments(user.organizationId),
         storage.getMaintenanceRequestsByOrganization(user.organizationId),
         storage.getWorkOrdersByOrganization(user.organizationId),
         storage.getTenantAssignmentsByOrganization(user.organizationId),
