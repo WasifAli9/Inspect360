@@ -1171,10 +1171,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { logoUrl, brandingName, brandingEmail, brandingPhone, brandingAddress, brandingWebsite, financeEmail, comparisonAlertThreshold } = req.body;
+      const { logoUrl, trademarkUrl, brandingName, brandingEmail, brandingPhone, brandingAddress, brandingWebsite, financeEmail, comparisonAlertThreshold } = req.body;
 
       const organization = await storage.updateOrganization(organizationId, {
         logoUrl: logoUrl || null,
+        trademarkUrl: trademarkUrl || null,
         brandingName: brandingName || null,
         brandingEmail: brandingEmail || null,
         brandingPhone: brandingPhone || null,
@@ -2777,6 +2778,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const organization = await storage.getOrganization(user.organizationId);
       const branding = organization ? {
         logoUrl: organization.logoUrl,
+        trademarkUrl: organization.trademarkUrl,
         brandingName: organization.brandingName,
         brandingEmail: organization.brandingEmail,
         brandingPhone: organization.brandingPhone,

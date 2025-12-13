@@ -46,6 +46,7 @@ export default function Settings() {
   const [editingCategory, setEditingCategory] = useState<InspectionCategory | null>(null);
 
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [trademarkUrl, setTrademarkUrl] = useState<string | null>(null);
   const [brandingName, setBrandingName] = useState("");
   const [brandingEmail, setBrandingEmail] = useState("");
   const [brandingPhone, setBrandingPhone] = useState("");
@@ -66,6 +67,7 @@ export default function Settings() {
   useEffect(() => {
     if (organization) {
       setLogoUrl(organization.logoUrl || null);
+      setTrademarkUrl(organization.trademarkUrl || null);
       setBrandingName(organization.brandingName || "");
       setBrandingEmail(organization.brandingEmail || "");
       setBrandingPhone(organization.brandingPhone || "");
@@ -81,6 +83,7 @@ export default function Settings() {
       if (!user?.organizationId) return null;
       const response = await apiRequest("PATCH", `/api/organizations/${user.organizationId}/branding`, {
         logoUrl,
+        trademarkUrl,
         brandingName: brandingName || null,
         brandingEmail: brandingEmail || null,
         brandingPhone: brandingPhone || null,
@@ -355,6 +358,66 @@ export default function Settings() {
                             <li>Email communications</li>
                           </ul>
                           <p className="mt-2 text-xs">Recommended size: 400x400 pixels. Max file size: 5MB.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border pt-6 space-y-4">
+                      <Label className="text-base font-medium">Trademark / Certification Badge</Label>
+                      <div className="flex items-start gap-6">
+                        {trademarkUrl ? (
+                          <div className="relative">
+                            <div className="w-32 h-32 rounded-md border border-border overflow-hidden bg-muted flex items-center justify-center">
+                              <img 
+                                src={trademarkUrl} 
+                                alt="Trademark" 
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="destructive"
+                              className="absolute -top-2 -right-2"
+                              onClick={() => setTrademarkUrl(null)}
+                              data-testid="button-remove-trademark"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <ObjectUploader
+                            maxNumberOfFiles={1}
+                            maxFileSize={5242880}
+                            onGetUploadParameters={async () => {
+                              const response = await apiRequest("POST", "/api/upload/generate-upload-url", {
+                                folder: "branding",
+                                fileName: `trademark-${Date.now()}.png`,
+                                contentType: "image/*",
+                              });
+                              const data = await response.json();
+                              return { method: "PUT" as const, url: data.uploadUrl };
+                            }}
+                            onComplete={(result: any) => {
+                              if (result.successful && result.successful.length > 0) {
+                                const uploadedFile = result.successful[0];
+                                const fileUrl = uploadedFile.uploadURL || uploadedFile.meta?.extractedFileUrl;
+                                if (fileUrl) setTrademarkUrl(fileUrl);
+                              }
+                            }}
+                            buttonClassName="h-32 w-32 border-2 border-dashed border-border rounded-md flex flex-col items-center justify-center gap-2 bg-muted/50"
+                          >
+                            <Upload className="w-8 h-8 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">Upload Trademark</span>
+                          </ObjectUploader>
+                        )}
+                        <div className="flex-1 text-sm text-muted-foreground">
+                          <p>Upload your trademark, certification badge, or accreditation logo.</p>
+                          <ul className="list-disc list-inside mt-2 space-y-1">
+                            <li>Appears on inspection report cover pages</li>
+                            <li>Adds professional credibility to your reports</li>
+                            <li>Supports industry certifications (ARLA, RICS, etc.)</li>
+                          </ul>
+                          <p className="mt-2 text-xs">Recommended size: 200x200 pixels. Max file size: 5MB.</p>
                         </div>
                       </div>
                     </div>

@@ -168,6 +168,7 @@ interface InspectionEntry {
 
 interface BrandingInfo {
   logoUrl?: string | null;
+  trademarkUrl?: string | null;
   brandingName?: string | null;
   brandingEmail?: string | null;
   brandingPhone?: string | null;
@@ -311,6 +312,12 @@ function generateInspectionHTML(
   
   const contactInfoHtml = contactParts.length > 0
     ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
+    : '';
+
+  // Trademark HTML for cover page
+  const hasTrademark = !!branding?.trademarkUrl;
+  const trademarkHtml = hasTrademark
+    ? `<div class="cover-trademark"><img src="${sanitizeUrl(branding.trademarkUrl!)}" alt="Certification" class="cover-trademark-img" /></div>`
     : '';
 
   // Build entries map
@@ -653,6 +660,22 @@ function generateInspectionHTML(
       z-index: 1;
     }
 
+    .cover-trademark {
+      position: absolute;
+      top: 40px;
+      right: 40px;
+      z-index: 1;
+    }
+
+    .cover-trademark-img {
+      max-height: 80px;
+      max-width: 120px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2));
+    }
+
     /* Header for content pages */
     .header {
       background: white;
@@ -766,6 +789,7 @@ function generateInspectionHTML(
   <div class="container">
     <!-- Cover Page -->
     <div class="cover-page">
+      ${trademarkHtml}
       <div class="cover-content">
         <div class="cover-logo-container">
           ${logoHtml}
