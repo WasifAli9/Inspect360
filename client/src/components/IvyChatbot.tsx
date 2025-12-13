@@ -17,6 +17,23 @@ interface Message {
   timestamp: Date;
 }
 
+// Helper function to strip markdown formatting from AI responses
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/#{1,6}\s*/g, '') // Remove headers (# ## ### etc)
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold **text**
+    .replace(/\*([^*]+)\*/g, '$1') // Remove italic *text*
+    .replace(/__([^_]+)__/g, '$1') // Remove bold __text__
+    .replace(/_([^_]+)_/g, '$1') // Remove italic _text_
+    .replace(/~~([^~]+)~~/g, '$1') // Remove strikethrough
+    .replace(/`([^`]+)`/g, '$1') // Remove inline code
+    .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links [text](url)
+    .replace(/^\s*[-*+]\s+/gm, '- ') // Normalize bullet points
+    .replace(/^\s*\d+\.\s+/gm, '') // Remove numbered list markers
+    .trim();
+}
+
 export function IvyChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -185,7 +202,9 @@ export function IvyChatbot() {
                           : "bg-muted"
                       }`}
                     >
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      <p className="text-sm whitespace-pre-wrap">
+                        {msg.role === "assistant" ? stripMarkdown(msg.content) : msg.content}
+                      </p>
                     </Card>
                   </div>
                 ))}
