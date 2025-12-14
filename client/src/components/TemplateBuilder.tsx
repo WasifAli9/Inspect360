@@ -247,6 +247,101 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
     setExpandedSections(newExpanded);
   };
 
+  const renderPreviewField = (field: TemplateField) => {
+    switch (field.type) {
+      case "short_text":
+        return <Input disabled placeholder={field.placeholder || "Enter text..."} className="bg-muted/50" />;
+      case "long_text":
+        return <Textarea disabled placeholder={field.placeholder || "Enter text..."} className="bg-muted/50 min-h-[80px]" />;
+      case "number":
+        return <Input disabled type="number" placeholder={field.placeholder || "0"} className="bg-muted/50 max-w-[200px]" />;
+      case "rating":
+        return (
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <div key={star} className="w-8 h-8 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground">
+                {star}
+              </div>
+            ))}
+          </div>
+        );
+      case "select":
+        return (
+          <Select disabled>
+            <SelectTrigger className="bg-muted/50 max-w-[300px]">
+              <SelectValue placeholder={field.options?.[0] || "Select option..."} />
+            </SelectTrigger>
+          </Select>
+        );
+      case "multiselect":
+        return (
+          <div className="flex flex-wrap gap-1">
+            {field.options?.slice(0, 3).map((opt, i) => (
+              <Badge key={i} variant="outline" className="text-muted-foreground">{opt}</Badge>
+            )) || <span className="text-muted-foreground text-sm">No options defined</span>}
+          </div>
+        );
+      case "boolean":
+        return (
+          <div className="flex gap-2">
+            <Badge variant="outline">Yes</Badge>
+            <Badge variant="outline">No</Badge>
+          </div>
+        );
+      case "date":
+        return <Input disabled type="date" className="bg-muted/50 max-w-[200px]" />;
+      case "time":
+        return <Input disabled type="time" className="bg-muted/50 max-w-[150px]" />;
+      case "datetime":
+        return <Input disabled type="datetime-local" className="bg-muted/50 max-w-[250px]" />;
+      case "photo":
+        return (
+          <div className="w-32 h-24 border-2 border-dashed border-muted-foreground/30 rounded-lg flex items-center justify-center text-muted-foreground text-sm">
+            Photo Upload
+          </div>
+        );
+      case "photo_array":
+        return (
+          <div className="flex gap-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="w-20 h-16 border-2 border-dashed border-muted-foreground/30 rounded-lg flex items-center justify-center text-muted-foreground text-xs">
+                Photo {i}
+              </div>
+            ))}
+          </div>
+        );
+      case "video":
+        return (
+          <div className="w-40 h-24 border-2 border-dashed border-muted-foreground/30 rounded-lg flex items-center justify-center text-muted-foreground text-sm">
+            Video Upload
+          </div>
+        );
+      case "gps":
+        return (
+          <div className="flex gap-2 items-center text-muted-foreground text-sm">
+            <Badge variant="outline">GPS Location</Badge>
+            <span>Lat/Long coordinates</span>
+          </div>
+        );
+      case "signature":
+        return (
+          <div className="w-64 h-20 border-2 border-dashed border-muted-foreground/30 rounded-lg flex items-center justify-center text-muted-foreground text-sm">
+            Signature Pad
+          </div>
+        );
+      case "auto_inspector":
+        return <Input disabled value="[Auto-filled: Inspector Name]" className="bg-muted/50 max-w-[300px] italic text-muted-foreground" />;
+      case "auto_address":
+        return <Input disabled value="[Auto-filled: Property/Block Address]" className="bg-muted/50 max-w-[400px] italic text-muted-foreground" />;
+      case "auto_tenant_names":
+        return <Input disabled value="[Auto-filled: Tenant Name(s)]" className="bg-muted/50 max-w-[300px] italic text-muted-foreground" />;
+      case "auto_inspection_date":
+        return <Input disabled value="[Auto-filled: Inspection Date]" className="bg-muted/50 max-w-[200px] italic text-muted-foreground" />;
+      default:
+        return <Input disabled placeholder="Field preview" className="bg-muted/50" />;
+    }
+  };
+
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl h-[90vh] p-0 gap-0 flex flex-col">
@@ -282,17 +377,54 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
 
         <div className="flex-1 overflow-auto p-6">
           {previewMode ? (
-            <div className="space-y-6">
-              <Card className="shadow-sm">
-                <CardHeader>
-                  <CardTitle>Preview Mode</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <pre className="text-xs bg-muted p-4 rounded-lg overflow-auto">
-                    {JSON.stringify({ ...form.getValues(), structureJson: structure }, null, 2)}
-                  </pre>
-                </CardContent>
-              </Card>
+            <div className="space-y-6 max-w-3xl mx-auto">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold">{form.getValues().name || "Untitled Template"}</h2>
+                {form.getValues().description && (
+                  <p className="text-muted-foreground mt-1">{form.getValues().description}</p>
+                )}
+                <div className="flex gap-2 mt-2">
+                  <Badge variant="outline">{form.getValues().scope === "property" ? "Property" : form.getValues().scope === "block" ? "Block" : "Property & Block"}</Badge>
+                  {form.getValues().isActive !== false && <Badge variant="secondary">Active</Badge>}
+                </div>
+              </div>
+
+              {structure.sections.length === 0 ? (
+                <Card className="shadow-sm">
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    No sections defined yet. Switch to Edit mode to add sections and fields.
+                  </CardContent>
+                </Card>
+              ) : (
+                structure.sections.map((section, sectionIdx) => (
+                  <Card key={section.id} className="shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-lg">{section.title || `Section ${sectionIdx + 1}`}</CardTitle>
+                      {section.description && (
+                        <p className="text-sm text-muted-foreground">{section.description}</p>
+                      )}
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {section.fields.length === 0 ? (
+                        <p className="text-muted-foreground text-sm">No fields in this section</p>
+                      ) : (
+                        section.fields.map((field) => (
+                          <div key={field.id} className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{field.label}</span>
+                              {field.required && <span className="text-destructive text-xs">*</span>}
+                              <Badge variant="outline" className="text-xs">
+                                {FIELD_TYPES.find(t => t.value === field.type)?.label || field.type}
+                              </Badge>
+                            </div>
+                            {renderPreviewField(field)}
+                          </div>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
