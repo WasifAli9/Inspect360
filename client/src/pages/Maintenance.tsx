@@ -1632,7 +1632,7 @@ function WorkOrderForm({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="none">None</SelectItem>
-            {contractors.filter((c: any) => c.role === "contractor").map((contractor: any) => (
+            {contractors.filter((c: any) => c.type === "contractor").map((contractor: any) => (
               <SelectItem key={contractor.id} value={contractor.id} data-testid={`option-contractor-${contractor.id}`}>
                 {contractor.firstName} {contractor.lastName}
                 {contractor.email && ` (${contractor.email})`}
