@@ -161,6 +161,7 @@ export const organizations = pgTable("organizations", {
   brandingPhone: varchar("branding_phone"), // White-label: Contact phone
   brandingAddress: text("branding_address"), // White-label: Address for reports
   brandingWebsite: varchar("branding_website"), // White-label: Company website
+  brandingPrimaryColor: varchar("branding_primary_color"), // White-label: Primary brand color (hex)
   financeEmail: varchar("finance_email"), // Finance department email for liability reports
   autoRenewEnabled: boolean("auto_renew_enabled").default(false), // Auto-renew credits when low
   autoRenewBundleId: varchar("auto_renew_bundle_id"), // Which bundle to auto-purchase

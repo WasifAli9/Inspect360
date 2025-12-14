@@ -127,6 +127,18 @@ export function AppSidebar() {
     item.roles.includes(user?.role || "")
   );
 
+  // Dynamic active state styling based on organization's brand color
+  const getActiveStyle = (isActive: boolean) => {
+    if (!isActive) return undefined;
+    if (organization?.brandingPrimaryColor) {
+      return {
+        backgroundColor: `${organization.brandingPrimaryColor}20`, // 20% opacity tint
+        borderLeft: `3px solid ${organization.brandingPrimaryColor}`,
+      };
+    }
+    return undefined; // Fall back to CSS class
+  };
+
   return (
     <Sidebar data-testid="sidebar-main">
       <SidebarHeader className="p-4 border-b">
@@ -150,21 +162,25 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {filteredMainMenu.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    data-active={location === item.url}
-                    className="data-[active=true]:bg-sidebar-accent"
-                    data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                  >
-                    <Link href={item.url}>
-                      <item.icon className="w-4 h-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {filteredMainMenu.map((item) => {
+                const isActive = location === item.url;
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      data-active={isActive}
+                      className={!organization?.brandingPrimaryColor ? "data-[active=true]:bg-sidebar-accent" : ""}
+                      style={getActiveStyle(isActive)}
+                      data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -172,19 +188,25 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  data-active={location.startsWith("/settings")}
-                  className="data-[active=true]:bg-sidebar-accent"
-                  data-testid="link-settings"
-                >
-                  <Link href="/settings">
-                    <Settings className="w-4 h-4" />
-                    <span>Settings</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {(() => {
+                const isActive = location.startsWith("/settings");
+                return (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      data-active={isActive}
+                      className={!organization?.brandingPrimaryColor ? "data-[active=true]:bg-sidebar-accent" : ""}
+                      style={getActiveStyle(isActive)}
+                      data-testid="link-settings"
+                    >
+                      <Link href="/settings">
+                        <Settings className="w-4 h-4" />
+                        <span>Settings</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })()}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
