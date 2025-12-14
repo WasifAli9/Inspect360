@@ -1539,8 +1539,30 @@ function WorkOrderForm({
   const locale = useLocale();
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedContractorId, setSelectedContractorId] = useState<string>("");
+  const [assignedToId, setAssignedToId] = useState<string>("");
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [slaDue, setSlaDue] = useState<string>("");
   const [costEstimate, setCostEstimate] = useState<string>("");
+
+  useEffect(() => {
+    setAssignedToId("");
+    if (selectedTeamId && selectedTeamId !== "none") {
+      setIsLoadingMembers(true);
+      fetch(`/api/teams/${selectedTeamId}/members`, { credentials: 'include' })
+        .then(res => res.json())
+        .then(members => {
+          setTeamMembers(members || []);
+          setIsLoadingMembers(false);
+        })
+        .catch(() => {
+          setTeamMembers([]);
+          setIsLoadingMembers(false);
+        });
+    } else {
+      setTeamMembers([]);
+    }
+  }, [selectedTeamId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1549,6 +1571,7 @@ function WorkOrderForm({
       maintenanceRequestId: maintenanceRequest.id,
       teamId: selectedTeamId && selectedTeamId !== "none" ? selectedTeamId : undefined,
       contractorId: selectedContractorId && selectedContractorId !== "none" ? selectedContractorId : undefined,
+      assignedToId: assignedToId && assignedToId !== "none" ? assignedToId : undefined,
       slaDue: slaDue ? new Date(slaDue).toISOString() : undefined,
       costEstimate: costEstimate ? Math.round(parseFloat(costEstimate) * 100) : undefined,
       status: "assigned",
@@ -1576,6 +1599,28 @@ function WorkOrderForm({
           </SelectContent>
         </Select>
       </div>
+
+      {selectedTeamId && selectedTeamId !== "none" && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="assigned-to">
+            Assigned To (Team Member)
+          </label>
+          <Select value={assignedToId} onValueChange={setAssignedToId} disabled={isLoadingMembers}>
+            <SelectTrigger id="assigned-to" data-testid="select-assigned-to">
+              <SelectValue placeholder={isLoadingMembers ? "Loading members..." : "Select a team member (optional)"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {teamMembers.map((member: any) => (
+                <SelectItem key={member.id} value={member.id} data-testid={`option-member-${member.id}`}>
+                  {member.firstName} {member.lastName}
+                  {member.email && ` (${member.email})`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="text-sm font-medium" htmlFor="contractor">

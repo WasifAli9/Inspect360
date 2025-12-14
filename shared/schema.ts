@@ -895,6 +895,7 @@ export const workOrders = pgTable("work_orders", {
   maintenanceRequestId: varchar("maintenance_request_id").notNull(),
   teamId: varchar("team_id"), // Assigned team for work order
   contractorId: varchar("contractor_id"), // Specific contractor assigned (if any)
+  assignedToId: varchar("assigned_to_id"), // Specific team member assigned
   status: workOrderStatusEnum("status").notNull().default("assigned"),
   slaDue: timestamp("sla_due"), // Service Level Agreement deadline
   costEstimate: integer("cost_estimate"), // In cents
