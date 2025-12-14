@@ -69,6 +69,7 @@ export const users = pgTable("users", {
     formatted?: string;
   }>(),
   skills: text("skills").array(),
+  qualifications: text("qualifications").array(),
   education: text("education"),
   certificateUrls: text("certificate_urls").array(),
   role: userRoleEnum("role").notNull().default("owner"),
@@ -197,6 +198,28 @@ export const insertOrganizationTrademarkSchema = createInsertSchema(organization
 });
 export type OrganizationTrademark = typeof organizationTrademarks.$inferSelect;
 export type InsertOrganizationTrademark = z.infer<typeof insertOrganizationTrademarkSchema>;
+
+// User Documents (profile-attached documents like certifications, licenses, etc.)
+export const userDocuments = pgTable("user_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  organizationId: varchar("organization_id").notNull(),
+  documentName: varchar("document_name").notNull(),
+  documentType: varchar("document_type"), // e.g., "certification", "license", "id", "training", "other"
+  fileUrl: varchar("file_url").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertUserDocumentSchema = createInsertSchema(userDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type UserDocument = typeof userDocuments.$inferSelect;
+export type InsertUserDocument = z.infer<typeof insertUserDocumentSchema>;
 
 // Contacts (Internal team members and external contacts)
 export const contacts = pgTable("contacts", {
@@ -1564,7 +1587,18 @@ export const updateSelfProfileSchema = z.object({
   lastName: z.string().min(1).max(255).optional(),
   phone: z.string().max(50).optional(),
   profileImageUrl: z.union([z.string().url(), z.string().startsWith("/objects/"), z.literal("")]).optional(),
+  skills: z.array(z.string()).optional(),
+  qualifications: z.array(z.string()).optional(),
 });
+
+// User document update schema
+export const updateUserDocumentSchema = z.object({
+  documentName: z.string().min(1).max(255).optional(),
+  documentType: z.string().max(100).optional(),
+  expiryDate: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+export type UpdateUserDocument = z.infer<typeof updateUserDocumentSchema>;
 
 // Property update schema
 export const updatePropertySchema = z.object({

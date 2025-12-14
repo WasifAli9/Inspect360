@@ -15806,12 +15806,18 @@ Answer the user's question based on the data provided above. Focus on being help
   // ==================== REPORTS ====================
 
   // Branding info type for reports
+  interface ReportTrademarkInfo {
+    imageUrl: string;
+    altText?: string | null;
+  }
+  
   interface ReportBrandingInfo {
     logoUrl?: string | null;
     brandingName?: string | null;
     brandingEmail?: string | null;
     brandingPhone?: string | null;
     brandingWebsite?: string | null;
+    trademarks?: ReportTrademarkInfo[];
   }
 
   // Sanitize URL for use in HTML attributes
@@ -16360,14 +16366,21 @@ Answer the user's question based on the data provided above. Focus on being help
       const properties = await storage.getPropertiesByOrganization(user.organizationId);
       const tenantAssignments = await storage.getTenantAssignmentsByOrganization(user.organizationId);
 
-      // Fetch organization branding
+      // Fetch organization branding and trademarks
       const organization = await storage.getOrganization(user.organizationId);
+      const organizationTrademarks = await storage.getOrganizationTrademarks(user.organizationId);
+      const trademarksArray = organizationTrademarks.map(tm => ({
+        imageUrl: tm.imageUrl,
+        altText: tm.altText,
+      }));
+      
       const branding: ReportBrandingInfo = organization ? {
         logoUrl: organization.logoUrl,
         brandingName: organization.brandingName,
         brandingEmail: organization.brandingEmail,
         brandingPhone: organization.brandingPhone,
         brandingWebsite: organization.brandingWebsite,
+        trademarks: trademarksArray,
       } : {};
 
       const html = generateBlocksReportHTML(blocks, properties, tenantAssignments, branding);
