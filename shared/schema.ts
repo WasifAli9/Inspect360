@@ -181,6 +181,23 @@ export const insertOrganizationSchema = createInsertSchema(organizations).omit({
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 
+// Organization Trademarks (Multiple trademark/certification images for reports)
+export const organizationTrademarks = pgTable("organization_trademarks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  imageUrl: varchar("image_url").notNull(),
+  displayOrder: integer("display_order").default(0),
+  altText: varchar("alt_text"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOrganizationTrademarkSchema = createInsertSchema(organizationTrademarks).omit({
+  id: true,
+  createdAt: true,
+});
+export type OrganizationTrademark = typeof organizationTrademarks.$inferSelect;
+export type InsertOrganizationTrademark = z.infer<typeof insertOrganizationTrademarkSchema>;
+
 // Contacts (Internal team members and external contacts)
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
