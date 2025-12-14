@@ -2912,9 +2912,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fetch organization branding for white-label PDF
       const organization = await storage.getOrganization(user.organizationId);
+      
+      // Fetch organization trademarks (new multi-trademark system)
+      const organizationTrademarks = await storage.getOrganizationTrademarks(user.organizationId);
+      const trademarksArray = organizationTrademarks.map(tm => ({
+        imageUrl: tm.imageUrl,
+        altText: tm.altText,
+      }));
+      
       const branding = organization ? {
         logoUrl: organization.logoUrl,
         trademarkUrl: organization.trademarkUrl,
+        trademarks: trademarksArray,
         brandingName: organization.brandingName,
         brandingEmail: organization.brandingEmail,
         brandingPhone: organization.brandingPhone,

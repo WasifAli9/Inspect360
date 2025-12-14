@@ -166,9 +166,15 @@ interface InspectionEntry {
   markedForReview?: boolean;
 }
 
+interface TrademarkInfo {
+  imageUrl: string;
+  altText?: string | null;
+}
+
 interface BrandingInfo {
   logoUrl?: string | null;
   trademarkUrl?: string | null;
+  trademarks?: TrademarkInfo[];
   brandingName?: string | null;
   brandingEmail?: string | null;
   brandingPhone?: string | null;
@@ -314,11 +320,22 @@ function generateInspectionHTML(
     ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
     : '';
 
-  // Trademark HTML for cover page
-  const hasTrademark = !!branding?.trademarkUrl;
-  const trademarkHtml = hasTrademark
-    ? `<div class="cover-trademark"><img src="${sanitizeUrl(branding.trademarkUrl!)}" alt="Certification" class="cover-trademark-img" /></div>`
-    : '';
+  // Trademark HTML for cover page - supports multiple trademarks in a row
+  const trademarksList = branding?.trademarks || [];
+  const hasLegacyTrademark = !!branding?.trademarkUrl;
+  const hasNewTrademarks = trademarksList.length > 0;
+  
+  let trademarkHtml = '';
+  if (hasNewTrademarks) {
+    // Display multiple trademarks in a horizontal row
+    const trademarkImages = trademarksList.map(tm => 
+      `<img src="${sanitizeUrl(tm.imageUrl)}" alt="${escapeHtml(tm.altText || 'Certification')}" class="cover-trademark-img" />`
+    ).join('');
+    trademarkHtml = `<div class="cover-trademarks-row">${trademarkImages}</div>`;
+  } else if (hasLegacyTrademark) {
+    // Fallback to legacy single trademark
+    trademarkHtml = `<div class="cover-trademark"><img src="${sanitizeUrl(branding.trademarkUrl!)}" alt="Certification" class="cover-trademark-img" /></div>`;
+  }
 
   // Build entries map
   const entriesMap = new Map<string, InspectionEntry>();
@@ -665,6 +682,17 @@ function generateInspectionHTML(
       top: 40px;
       right: 40px;
       z-index: 1;
+    }
+
+    .cover-trademarks-row {
+      position: absolute;
+      top: 40px;
+      right: 40px;
+      z-index: 1;
+      display: flex;
+      flex-direction: row;
+      gap: 16px;
+      align-items: center;
     }
 
     .cover-trademark-img {
