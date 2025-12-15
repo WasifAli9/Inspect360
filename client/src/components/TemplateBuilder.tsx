@@ -45,6 +45,12 @@ const reportConfigSchema = z.object({
   showInventory: z.boolean().default(true),
   showTermsConditions: z.boolean().default(true),
   showClosingSection: z.boolean().default(true),
+  // Custom content fields
+  coverPageTitle: z.string().optional(),
+  coverPageSubtitle: z.string().optional(),
+  termsConditionsText: z.string().optional(),
+  closingSectionTitle: z.string().optional(),
+  closingSectionText: z.string().optional(),
 });
 
 // UI-specific schema - only includes fields user can edit
@@ -776,6 +782,144 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                           )}
                         />
                       </div>
+                    </Form>
+                  </CardContent>
+                </Card>
+
+                <Card className="shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Report Content Customization</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Customize the text content that appears in each section of your PDF reports.
+                    </p>
+                    <Form {...form}>
+                      <Collapsible className="border rounded-md">
+                        <CollapsibleTrigger className="flex items-center justify-between w-full p-3 hover-elevate">
+                          <span className="font-medium text-sm">Cover Page Content</span>
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="p-3 pt-0 space-y-3">
+                          <FormField
+                            control={form.control}
+                            name="reportConfig.coverPageTitle"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Report Title</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Inspection Report"
+                                    data-testid="input-cover-title"
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  Leave blank to use "Inspection Report"
+                                </FormDescription>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="reportConfig.coverPageSubtitle"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Subtitle</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Optional subtitle text"
+                                    data-testid="input-cover-subtitle"
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  Optional text shown below the title
+                                </FormDescription>
+                              </FormItem>
+                            )}
+                          />
+                        </CollapsibleContent>
+                      </Collapsible>
+
+                      <Collapsible className="border rounded-md">
+                        <CollapsibleTrigger className="flex items-center justify-between w-full p-3 hover-elevate">
+                          <span className="font-medium text-sm">Terms and Conditions</span>
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="p-3 pt-0">
+                          <FormField
+                            control={form.control}
+                            name="reportConfig.termsConditionsText"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Terms and Conditions Text</FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Enter your terms and conditions text here. This will appear in the Terms and Conditions section of the PDF report."
+                                    rows={8}
+                                    data-testid="input-terms-text"
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  Custom terms that will appear in your inspection reports. Leave blank to omit this section.
+                                </FormDescription>
+                              </FormItem>
+                            )}
+                          />
+                        </CollapsibleContent>
+                      </Collapsible>
+
+                      <Collapsible className="border rounded-md">
+                        <CollapsibleTrigger className="flex items-center justify-between w-full p-3 hover-elevate">
+                          <span className="font-medium text-sm">Closing Section</span>
+                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="p-3 pt-0 space-y-3">
+                          <FormField
+                            control={form.control}
+                            name="reportConfig.closingSectionTitle"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Section Title</FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Closing Statement"
+                                    data-testid="input-closing-title"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="reportConfig.closingSectionText"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Closing Text</FormLabel>
+                                <FormControl>
+                                  <Textarea
+                                    {...field}
+                                    value={field.value || ""}
+                                    placeholder="Enter your closing statement or additional notes that will appear at the end of the report."
+                                    rows={6}
+                                    data-testid="input-closing-text"
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  Custom text for the closing section of your reports
+                                </FormDescription>
+                              </FormItem>
+                            )}
+                          />
+                        </CollapsibleContent>
+                      </Collapsible>
                     </Form>
                   </CardContent>
                 </Card>

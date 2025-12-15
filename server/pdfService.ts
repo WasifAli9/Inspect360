@@ -202,6 +202,12 @@ interface ReportConfig {
   showInventory?: boolean;
   showTermsConditions?: boolean;
   showClosingSection?: boolean;
+  // Custom content fields
+  coverPageTitle?: string;
+  coverPageSubtitle?: string;
+  termsConditionsText?: string;
+  closingSectionTitle?: string;
+  closingSectionText?: string;
 }
 
 export async function generateInspectionPDF(
@@ -314,6 +320,12 @@ function generateInspectionHTML(
     showInventory: reportConfig?.showInventory ?? true,
     showTermsConditions: reportConfig?.showTermsConditions ?? true,
     showClosingSection: reportConfig?.showClosingSection ?? true,
+    // Custom content fields
+    coverPageTitle: reportConfig?.coverPageTitle || '',
+    coverPageSubtitle: reportConfig?.coverPageSubtitle || '',
+    termsConditionsText: reportConfig?.termsConditionsText || '',
+    closingSectionTitle: reportConfig?.closingSectionTitle || '',
+    closingSectionText: reportConfig?.closingSectionText || '',
   };
   const templateStructure = inspection.templateSnapshotJson as { sections: TemplateSection[] } | null;
   const sections = templateStructure?.sections || [];
@@ -330,7 +342,7 @@ function generateInspectionHTML(
   const companyName = branding?.brandingName || "Inspect360";
   const hasLogo = !!branding?.logoUrl;
   const logoHtml = hasLogo
-    ? `<img src="${sanitizeUrl(branding.logoUrl)}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
+    ? `<img src="${sanitizeUrl(branding.logoUrl || '')}" alt="${escapeHtml(companyName)}" class="cover-logo-img" />`
     : `<div class="cover-logo-text">${escapeHtml(companyName)}</div>`;
   
   const companyNameHtml = hasLogo 
@@ -414,29 +426,29 @@ function generateInspectionHTML(
       const key = `${section.id}-${fieldKey}`;
       const entry = entriesMap.get(key);
 
-      // Extract data from entry - condition/cleanliness are stored inside valueJson
-      const valueJson = entry?.valueJson;
+      // Extract data from entry - condition/cleanliness are stored inside value
+      const valueData = entry?.value;
       const note = entry?.note;
       const photos = entry?.photos || [];
       const fieldRef = `${sectionIndex + 1}.${fieldCounter}`;
 
-      // Parse valueJson to extract condition, cleanliness, and value
+      // Parse value to extract condition, cleanliness, and description
       let condition: string | null = null;
       let cleanliness: string | null = null;
       let description: string | null = null;
 
-      if (valueJson !== undefined && valueJson !== null) {
-        if (typeof valueJson === 'object' && !Array.isArray(valueJson)) {
+      if (valueData !== undefined && valueData !== null) {
+        if (typeof valueData === 'object' && !Array.isArray(valueData)) {
           // Extract from structured object (for fields with condition/cleanliness)
-          condition = valueJson.condition || null;
-          cleanliness = valueJson.cleanliness || null;
-          description = valueJson.value || null;
-        } else if (typeof valueJson === 'string') {
-          description = valueJson;
-        } else if (typeof valueJson === 'boolean') {
-          description = valueJson ? 'Yes' : 'No';
+          condition = (valueData as any).condition || null;
+          cleanliness = (valueData as any).cleanliness || null;
+          description = (valueData as any).value || null;
+        } else if (typeof valueData === 'string') {
+          description = valueData;
+        } else if (typeof valueData === 'boolean') {
+          description = valueData ? 'Yes' : 'No';
         } else {
-          description = String(valueJson);
+          description = String(valueData);
         }
       }
 
@@ -562,7 +574,9 @@ function generateInspectionHTML(
     `;
   });
 
-  // Build cover page HTML conditionally
+  // Build cover page HTML conditionally - with custom title/subtitle support
+  const coverTitle = config.coverPageTitle || 'Inspection Report';
+  const coverSubtitle = config.coverPageSubtitle || '';
   const coverPageHTML = config.showCover ? `
     <!-- Cover Page -->
     <div class="cover-page">
@@ -573,7 +587,8 @@ function generateInspectionHTML(
           ${companyNameHtml}
         </div>
         <div class="cover-divider"></div>
-        <div class="cover-title">Inspection Report</div>
+        <div class="cover-title">${escapeHtml(coverTitle)}</div>
+        ${coverSubtitle ? `<div class="cover-subtitle">${escapeHtml(coverSubtitle)}</div>` : ''}
         <div class="cover-property">${escapeHtml(propertyName)}</div>
         <div class="cover-details">
           <div class="cover-detail-item">
@@ -783,6 +798,34 @@ function generateInspectionHTML(
     </div>
   ` : '';
 
+  // Build Terms and Conditions HTML conditionally
+  const termsConditionsHTML = config.showTermsConditions && config.termsConditionsText ? `
+    <!-- Terms and Conditions -->
+    <div style="margin-bottom: 32px; page-break-inside: avoid;">
+      <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px;">
+        Terms and Conditions
+      </h2>
+      <div style="background: #f9fafb; padding: 20px; border-radius: 8px; border: 1px solid #e5e7eb;">
+        <div style="color: #333; font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(config.termsConditionsText)}</div>
+      </div>
+    </div>
+  ` : '';
+
+  // Build Closing Section HTML conditionally
+  const closingSectionHTML = config.showClosingSection && config.closingSectionText ? `
+    <!-- Closing Section -->
+    <div style="margin-bottom: 32px; page-break-inside: avoid;">
+      ${config.closingSectionTitle ? `
+        <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px;">
+          ${escapeHtml(config.closingSectionTitle)}
+        </h2>
+      ` : ''}
+      <div style="background: #f0fdfa; padding: 20px; border-radius: 8px; border: 1px solid #00D5CC; border-left: 4px solid #00D5CC;">
+        <div style="color: #333; font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(config.closingSectionText)}</div>
+      </div>
+    </div>
+  ` : '';
+
   return `
 <!DOCTYPE html>
 <html>
@@ -893,6 +936,13 @@ function generateInspectionHTML(
       font-weight: 700;
       margin-bottom: 12px;
       letter-spacing: 0.5px;
+    }
+
+    .cover-subtitle {
+      font-size: 22px;
+      font-weight: 400;
+      margin-bottom: 20px;
+      opacity: 0.9;
     }
 
     .cover-property {
@@ -1118,6 +1168,10 @@ function generateInspectionHTML(
 
       <!-- Inspection Sections -->
       ${config.showInspection ? sectionsHTML : ''}
+
+      ${termsConditionsHTML}
+
+      ${closingSectionHTML}
     </div>
   </div>
 </body>

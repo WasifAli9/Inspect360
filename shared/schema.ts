@@ -429,7 +429,13 @@ export const inspectionTemplates = pgTable("inspection_templates", {
     showInventory: boolean;
     showTermsConditions: boolean;
     showClosingSection: boolean;
-  }>(), // Report section visibility configuration
+    // Custom content fields
+    coverPageTitle?: string;
+    coverPageSubtitle?: string;
+    termsConditionsText?: string;
+    closingSectionTitle?: string;
+    closingSectionText?: string;
+  }>(), // Report section visibility and custom content configuration
   createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
