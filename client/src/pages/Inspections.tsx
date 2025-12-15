@@ -787,7 +787,7 @@ export default function Inspections() {
               <CardHeader>
                 <div className="flex justify-between items-start gap-2">
                   <CardTitle className="text-lg">
-                    {inspection.property?.name || "Unknown Property"}
+                    {inspection.property?.name || inspection.block?.name || "Unknown Property"}
                   </CardTitle>
                   {getStatusBadge(inspection.status)}
                 </div>

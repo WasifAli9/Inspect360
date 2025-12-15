@@ -3,6 +3,13 @@ import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AlertCircle, CheckCircle2, Clock, Circle, CalendarPlus, X, Loader2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -135,6 +142,7 @@ function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: Statu
 export default function ComplianceCalendar({ report, isLoading, entityType, entityId }: ComplianceCalendarProps) {
   const { toast } = useToast();
   const [pendingSelections, setPendingSelections] = useState<PendingSelection[]>([]);
+  const [selectedType, setSelectedType] = useState<string>('routine');
 
   const bulkScheduleMutation = useMutation({
     mutationFn: async (selections: PendingSelection[]) => {
@@ -142,6 +150,7 @@ export default function ComplianceCalendar({ report, isLoading, entityType, enti
         entityType,
         entityId,
         year: report?.year || new Date().getFullYear(),
+        type: selectedType,
         selections: selections.map(s => ({
           templateId: s.templateId,
           monthIndex: s.monthIndex
@@ -249,10 +258,21 @@ export default function ComplianceCalendar({ report, isLoading, entityType, enti
             </CardDescription>
           </div>
           {pendingSelections.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="secondary" data-testid="badge-pending-count">
                 {pendingSelections.length} selected
               </Badge>
+              <Select value={selectedType} onValueChange={setSelectedType}>
+                <SelectTrigger className="w-[140px]" data-testid="select-inspection-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="check_in">Check In</SelectItem>
+                  <SelectItem value="check_out">Check Out</SelectItem>
+                  <SelectItem value="routine">Routine</SelectItem>
+                  <SelectItem value="maintenance">Maintenance</SelectItem>
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
                 size="sm"

@@ -2668,6 +2668,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const targetYear = year || new Date().getFullYear();
       const createdInspections = [];
 
+      const inspectionType = req.body.type || 'routine';
+      
       for (const selection of selections) {
         const { templateId, monthIndex } = selection;
         
@@ -2698,7 +2700,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             propertyId: entityType === 'property' ? entityId : null,
             blockId: entityType === 'block' ? entityId : null,
             inspectorId: userId,
-            type: 'routine',
+            type: inspectionType,
             scheduledDate,
             notes: `Scheduled via bulk calendar scheduling`,
             templateId,
