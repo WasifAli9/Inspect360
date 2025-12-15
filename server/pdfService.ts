@@ -403,9 +403,10 @@ function generateInspectionHTML(
     ? `<div class="cover-contact">${contactParts.join(' &nbsp;|&nbsp; ')}</div>`
     : '';
 
-  // Trademark HTML for cover page - supports multiple trademarks in a row
-  const trademarksList = branding?.trademarks || [];
-  const hasLegacyTrademark = !!branding?.trademarkUrl;
+  // Trademark HTML for second page - supports multiple trademarks in a row
+  // Filter out trademarks without valid imageUrl to prevent broken links
+  const trademarksList = (branding?.trademarks || []).filter(tm => tm.imageUrl && tm.imageUrl.trim() !== '');
+  const hasLegacyTrademark = !!branding?.trademarkUrl && branding.trademarkUrl.trim() !== '';
   const hasNewTrademarks = trademarksList.length > 0;
   
   let trademarkHtml = '';
@@ -622,10 +623,22 @@ function generateInspectionHTML(
   // Build cover page HTML conditionally - with custom title/subtitle support
   const coverTitle = config.coverPageTitle || 'Inspection Report';
   const coverSubtitle = config.coverPageSubtitle || '';
+  // Trade associations section for second page (after cover)
+  const tradeAssociationsPageHTML = config.showTradeMarks && trademarkHtml ? `
+    <!-- Trade Associations Page -->
+    <div style="page-break-before: always; padding: 40px 0; text-align: center;">
+      <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 24px; border-bottom: 2px solid #00D5CC; padding-bottom: 8px; display: inline-block;">
+        Trade Associations & Certifications
+      </h2>
+      <div style="display: flex; justify-content: center; align-items: center; gap: 32px; flex-wrap: wrap; margin-top: 24px;">
+        ${trademarkHtml}
+      </div>
+    </div>
+  ` : '';
+
   const coverPageHTML = config.showCover ? `
     <!-- Cover Page -->
     <div class="cover-page">
-      ${config.showTradeMarks ? trademarkHtml : ''}
       <div class="cover-content">
         <div class="cover-logo-container">
           ${logoHtml}
@@ -1158,6 +1171,8 @@ function generateInspectionHTML(
 <body>
   <div class="container">
     ${coverPageHTML}
+
+    ${tradeAssociationsPageHTML}
 
     <!-- Main Content -->
     <div style="padding: 0;">
