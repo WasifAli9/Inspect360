@@ -10738,9 +10738,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         const weekStart = new Date(today.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
         const weekEnd = new Date(today.getTime() - i * 7 * 24 * 60 * 60 * 1000);
         const completed = inspections.filter(insp => {
-          if (insp.status !== 'completed' || !insp.completedAt) return false;
-          const completedDate = new Date(insp.completedAt);
-          return completedDate >= weekStart && completedDate < weekEnd;
+          if (insp.status !== 'completed' || !insp.completedDate) return false;
+          const completedDateValue = new Date(insp.completedDate);
+          return completedDateValue >= weekStart && completedDateValue < weekEnd;
         }).length;
         inspectionTrendData.push({
           week: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
