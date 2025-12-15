@@ -13,7 +13,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Trash2, GripVertical, Save, X, Eye, Code, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Trash2, GripVertical, Save, X, Eye, Code, ChevronDown, ChevronRight, FileText, Layers } from "lucide-react";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type InspectionTemplate, type TemplateCategory } from "@shared/schema";
 import { z } from "zod";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -844,96 +846,33 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                         </CollapsibleContent>
                       </Collapsible>
 
-                      <Collapsible className="border rounded-md">
-                        <CollapsibleTrigger className="flex items-center justify-between w-full p-3 hover-elevate">
-                          <span className="font-medium text-sm">Terms and Conditions</span>
-                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="p-3 pt-0">
-                          <FormField
-                            control={form.control}
-                            name="reportConfig.termsConditionsText"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Terms and Conditions Text</FormLabel>
-                                <FormControl>
-                                  <Textarea
-                                    {...field}
-                                    value={field.value || ""}
-                                    placeholder="Enter your terms and conditions text here. This will appear in the Terms and Conditions section of the PDF report."
-                                    rows={8}
-                                    data-testid="input-terms-text"
-                                  />
-                                </FormControl>
-                                <FormDescription>
-                                  Custom terms that will appear in your inspection reports. Leave blank to omit this section.
-                                </FormDescription>
-                              </FormItem>
-                            )}
-                          />
-                        </CollapsibleContent>
-                      </Collapsible>
-
-                      <Collapsible className="border rounded-md">
-                        <CollapsibleTrigger className="flex items-center justify-between w-full p-3 hover-elevate">
-                          <span className="font-medium text-sm">Closing Section</span>
-                          <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="p-3 pt-0 space-y-3">
-                          <FormField
-                            control={form.control}
-                            name="reportConfig.closingSectionTitle"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Section Title</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    {...field}
-                                    value={field.value || ""}
-                                    placeholder="Closing Statement"
-                                    data-testid="input-closing-title"
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="reportConfig.closingSectionText"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Closing Text</FormLabel>
-                                <FormControl>
-                                  <Textarea
-                                    {...field}
-                                    value={field.value || ""}
-                                    placeholder="Enter your closing statement or additional notes that will appear at the end of the report."
-                                    rows={6}
-                                    data-testid="input-closing-text"
-                                  />
-                                </FormControl>
-                                <FormDescription>
-                                  Custom text for the closing section of your reports
-                                </FormDescription>
-                              </FormItem>
-                            )}
-                          />
-                        </CollapsibleContent>
-                      </Collapsible>
                     </Form>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Structure Editor */}
+              {/* Structure Editor & Report Content */}
               <div className="lg:col-span-2 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Template Structure</h3>
-                  <Button onClick={addSection} size="sm" data-testid="button-add-section">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Section
-                  </Button>
-                </div>
+                <Tabs defaultValue="structure" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="structure" className="gap-2" data-testid="tab-template-structure">
+                      <Layers className="w-4 h-4" />
+                      Template Structure
+                    </TabsTrigger>
+                    <TabsTrigger value="content" className="gap-2" data-testid="tab-report-content">
+                      <FileText className="w-4 h-4" />
+                      Report Content
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="structure" className="space-y-4 mt-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Template Structure</h3>
+                      <Button onClick={addSection} size="sm" data-testid="button-add-section">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Section
+                      </Button>
+                    </div>
 
                 {structure.sections.length === 0 ? (
                   <Card className="shadow-sm">
@@ -1144,6 +1083,95 @@ export function TemplateBuilder({ template, categories, onClose, onSave }: Templ
                     ))}
                   </div>
                 )}
+                  </TabsContent>
+                  
+                  <TabsContent value="content" className="space-y-6 mt-4">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Report Content Customization</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Customize the text content that appears in each section of your PDF reports. Use the formatting toolbar to style your text.
+                      </p>
+                    </div>
+                    
+                    <Form {...form}>
+                      <div className="space-y-6">
+                        <Card className="shadow-sm">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-base">Terms and Conditions</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <FormField
+                              control={form.control}
+                              name="reportConfig.termsConditionsText"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <RichTextEditor
+                                      value={field.value || ""}
+                                      onChange={field.onChange}
+                                      placeholder="Enter your terms and conditions text here. This will appear in the Terms and Conditions section of the PDF report."
+                                      minHeight="250px"
+                                      data-testid="editor-terms-text"
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    Custom terms that will appear in your inspection reports. Leave blank to omit this section.
+                                  </FormDescription>
+                                </FormItem>
+                              )}
+                            />
+                          </CardContent>
+                        </Card>
+
+                        <Card className="shadow-sm">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-base">Closing Section</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <FormField
+                              control={form.control}
+                              name="reportConfig.closingSectionTitle"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Section Title</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      value={field.value || ""}
+                                      placeholder="Closing Statement"
+                                      data-testid="input-closing-title"
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name="reportConfig.closingSectionText"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Closing Text</FormLabel>
+                                  <FormControl>
+                                    <RichTextEditor
+                                      value={field.value || ""}
+                                      onChange={field.onChange}
+                                      placeholder="Enter your closing statement or additional notes that will appear at the end of the report."
+                                      minHeight="200px"
+                                      data-testid="editor-closing-text"
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    Custom text for the closing section of your reports
+                                  </FormDescription>
+                                </FormItem>
+                              )}
+                            />
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </Form>
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           )}

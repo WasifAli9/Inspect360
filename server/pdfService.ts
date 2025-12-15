@@ -72,6 +72,51 @@ function formatText(text: string): string {
   return withBreaks;
 }
 
+// Sanitize rich text HTML - strict whitelist approach
+function sanitizeRichText(html: string): string {
+  if (!html) return '';
+  
+  // Allowed tags for rich text formatting (whitelist)
+  const allowedTags = new Set(['b', 'strong', 'i', 'em', 'u', 'ul', 'ol', 'li', 'br', 'p', 'div', 'span']);
+  
+  let result = '';
+  let i = 0;
+  
+  while (i < html.length) {
+    if (html[i] === '<') {
+      const closeIdx = html.indexOf('>', i);
+      if (closeIdx === -1) {
+        result += escapeHtml(html.substring(i));
+        break;
+      }
+      
+      const tagContent = html.substring(i + 1, closeIdx);
+      const isClosing = tagContent.startsWith('/');
+      const tagName = (isClosing ? tagContent.substring(1) : tagContent.split(/\s/)[0]).toLowerCase();
+      
+      if (allowedTags.has(tagName)) {
+        if (isClosing) {
+          result += `</${tagName}>`;
+        } else {
+          result += `<${tagName}>`;
+        }
+      }
+      i = closeIdx + 1;
+    } else {
+      const nextTag = html.indexOf('<', i);
+      if (nextTag === -1) {
+        result += escapeHtml(html.substring(i));
+        break;
+      } else {
+        result += escapeHtml(html.substring(i, nextTag));
+        i = nextTag;
+      }
+    }
+  }
+  
+  return result;
+}
+
 // Get condition score (5 = best, 1 = worst)
 function getConditionScore(condition: string | null | undefined): number | null {
   if (!condition) return null;
@@ -806,7 +851,7 @@ function generateInspectionHTML(
         Terms and Conditions
       </h2>
       <div style="background: #f9fafb; padding: 20px; border-radius: 8px; border: 1px solid #e5e7eb;">
-        <div style="color: #333; font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(config.termsConditionsText)}</div>
+        <div style="color: #333; font-size: 14px; line-height: 1.7;">${sanitizeRichText(config.termsConditionsText)}</div>
       </div>
     </div>
   ` : '';
@@ -821,7 +866,7 @@ function generateInspectionHTML(
         </h2>
       ` : ''}
       <div style="background: #f0fdfa; padding: 20px; border-radius: 8px; border: 1px solid #00D5CC; border-left: 4px solid #00D5CC;">
-        <div style="color: #333; font-size: 14px; line-height: 1.7; white-space: pre-wrap;">${escapeHtml(config.closingSectionText)}</div>
+        <div style="color: #333; font-size: 14px; line-height: 1.7;">${sanitizeRichText(config.closingSectionText)}</div>
       </div>
     </div>
   ` : '';
