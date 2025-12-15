@@ -809,13 +809,7 @@ export default function Dashboard() {
             <CardContent>
               <div className="h-[250px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats?.trends?.inspections ?? []}>
-                    <defs>
-                      <linearGradient id="colorCompleted" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
+                  <LineChart data={stats?.trends?.inspections ?? []}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis 
                       dataKey="week" 
@@ -826,6 +820,7 @@ export default function Dashboard() {
                     <YAxis 
                       stroke="hsl(var(--muted-foreground))" 
                       tick={{ fontSize: 10 }}
+                      allowDecimals={false}
                     />
                     <Tooltip 
                       contentStyle={{ 
@@ -835,16 +830,37 @@ export default function Dashboard() {
                         fontSize: '0.75rem'
                       }} 
                     />
-                    <Area 
+                    <Legend 
+                      wrapperStyle={{ fontSize: '0.75rem' }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="scheduled" 
+                      name="Scheduled"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                    <Line 
                       type="monotone" 
                       dataKey="completed" 
-                      name="Inspections Completed"
-                      stroke="hsl(var(--primary))" 
-                      fillOpacity={1}
-                      fill="url(#colorCompleted)"
+                      name="Completed"
+                      stroke="hsl(var(--primary))"
                       strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
                     />
-                  </AreaChart>
+                    <Line 
+                      type="monotone" 
+                      dataKey="overdue" 
+                      name="Overdue"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>

@@ -10857,19 +10857,47 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const blocksWithOverdueInspections = new Set(overdueInspections.map(i => i.blockId).filter(Boolean));
       const blocksAtRisk = blocksWithOverdueInspections;
 
-      // Trend data - inspections completed per week for last 12 weeks
+      // Trend data - inspections scheduled, completed, and overdue per week for last 12 weeks
       const inspectionTrendData = [];
       for (let i = 11; i >= 0; i--) {
         const weekStart = new Date(today.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
         const weekEnd = new Date(today.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+        
+        // Count scheduled inspections for this week
+        const scheduled = inspections.filter(insp => {
+          if (!insp.scheduledDate) return false;
+          const scheduledDate = new Date(insp.scheduledDate);
+          return scheduledDate >= weekStart && scheduledDate < weekEnd;
+        }).length;
+        
+        // Count completed inspections for this week
         const completed = inspections.filter(insp => {
           if (insp.status !== 'completed' || !insp.completedDate) return false;
           const completedDateValue = new Date(insp.completedDate);
           return completedDateValue >= weekStart && completedDateValue < weekEnd;
         }).length;
+        
+        // Count overdue inspections as of this week's end (scheduled before weekEnd but not completed by weekEnd)
+        const overdue = inspections.filter(insp => {
+          if (!insp.scheduledDate) return false;
+          const scheduledDate = new Date(insp.scheduledDate);
+          // Was scheduled before the week ended
+          if (scheduledDate >= weekEnd) return false;
+          // Check if it was overdue as of this week
+          if (insp.status === 'completed' && insp.completedDate) {
+            const completedDate = new Date(insp.completedDate);
+            // If completed after scheduled date and that happened within this week period
+            return scheduledDate < weekStart && completedDate >= weekStart && completedDate < weekEnd && completedDate > scheduledDate;
+          }
+          // Still not completed and was scheduled before this week
+          return insp.status !== 'completed' && scheduledDate < weekStart;
+        }).length;
+        
         inspectionTrendData.push({
           week: weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          completed
+          scheduled,
+          completed,
+          overdue
         });
       }
 
