@@ -419,6 +419,17 @@ export const inspectionTemplates = pgTable("inspection_templates", {
   categoryId: varchar("category_id"), // Optional link to template_categories
   aiMaxWords: integer("ai_max_words").default(150), // Max word count for AI analysis output
   aiInstruction: text("ai_instruction"), // Custom AI instruction/prompt for this template
+  reportConfig: jsonb("report_config").$type<{
+    showCover: boolean;
+    showContentsPage: boolean;
+    showTradeMarks: boolean;
+    showGlossary: boolean;
+    showMaintenanceLog: boolean;
+    showInspection: boolean;
+    showInventory: boolean;
+    showTermsConditions: boolean;
+    showClosingSection: boolean;
+  }>(), // Report section visibility configuration
   createdBy: varchar("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
