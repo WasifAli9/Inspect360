@@ -9102,12 +9102,38 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           });
           console.log(`[Send Password] Using stored original password for tenant ${tenant.email}`);
         } else {
-          // No stored original password found - return error instead of generating new password
-          console.error(`[Send Password] No stored original password found for tenant ${tenant.email}`);
-          return res.status(400).json({
-            error: "Cannot retrieve original password. The password was not stored when the tenant was created. Please contact support or reset the password manually.",
-            emailSent: false
+          // No stored original password found - generate a new secure password
+          console.log(`[Send Password] No stored original password found for tenant ${tenant.email}, generating new password`);
+          
+          // Generate a secure random password
+          const { randomBytes } = await import('crypto');
+          passwordToSend = randomBytes(8).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) + 'A1!';
+          
+          const { hashPassword } = await import('./auth');
+          const hashedPassword = await hashPassword(passwordToSend);
+
+          // Update tenant password with the new password
+          await storage.upsertUser({
+            ...tenant,
+            password: hashedPassword,
           });
+          
+          // Store the new password for future use
+          try {
+            let notesObj: any = {};
+            if (assignment.notes) {
+              try {
+                notesObj = JSON.parse(assignment.notes);
+              } catch {
+                notesObj._userNotes = assignment.notes;
+              }
+            }
+            notesObj._originalPassword = passwordToSend;
+            await storage.updateTenantAssignment(assignment.id, { notes: JSON.stringify(notesObj) });
+            console.log(`[Send Password] Stored newly generated password for tenant ${tenant.email}`);
+          } catch (storeError) {
+            console.error(`[Send Password] Failed to store generated password:`, storeError);
+          }
         }
       }
 
