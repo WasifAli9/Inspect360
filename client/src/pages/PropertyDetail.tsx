@@ -297,6 +297,8 @@ export default function PropertyDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/properties', propertyId, 'compliance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
+      // Also invalidate Dashboard's compliance documents query
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance-documents', 'property', propertyId] });
       setUploadDialogOpen(false);
       form.reset({
         documentType: "",

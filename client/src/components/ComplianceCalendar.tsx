@@ -50,6 +50,9 @@ interface PendingSelection {
 interface ComplianceCalendarProps {
   entityType: 'property' | 'block';
   entityId?: string;
+  // Optional: external data for when parent fetches the data (e.g., Dashboard)
+  report?: ComplianceReport | null;
+  isLoading?: boolean;
 }
 
 interface StatusCellProps {
@@ -137,15 +140,18 @@ function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: Statu
   );
 }
 
-export default function ComplianceCalendar({ entityType, entityId }: ComplianceCalendarProps) {
+export default function ComplianceCalendar({ entityType, entityId, report: externalReport, isLoading: externalLoading }: ComplianceCalendarProps) {
   const { toast } = useToast();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [pendingSelections, setPendingSelections] = useState<PendingSelection[]>([]);
   const [selectedType, setSelectedType] = useState<string>('routine');
 
-  // Fetch compliance report with year parameter
-  const { data: report, isLoading } = useQuery<ComplianceReport>({
+  // Determine if we should fetch data internally or use external data
+  const useExternalData = externalReport !== undefined;
+
+  // Fetch compliance report with year parameter (only when not using external data)
+  const { data: internalReport, isLoading: internalLoading } = useQuery<ComplianceReport>({
     queryKey: [`/api/${entityType === 'property' ? 'properties' : 'blocks'}`, entityId, 'compliance-report', selectedYear],
     queryFn: async () => {
       const endpoint = entityType === 'property' 
@@ -155,8 +161,12 @@ export default function ComplianceCalendar({ entityType, entityId }: ComplianceC
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!entityId,
+    enabled: !!entityId && !useExternalData,
   });
+
+  // Use external data if provided, otherwise use internal data
+  const report = useExternalData ? externalReport : internalReport;
+  const isLoading = useExternalData ? (externalLoading ?? false) : internalLoading;
 
   const bulkScheduleMutation = useMutation({
     mutationFn: async (params: { selections: PendingSelection[], yearToSchedule: number }) => {
@@ -182,6 +192,8 @@ export default function ComplianceCalendar({ entityType, entityId }: ComplianceC
       // Invalidate the calendar data for this entity and the year that was scheduled
       const baseKey = entityType === 'property' ? '/api/properties' : '/api/blocks';
       queryClient.invalidateQueries({ queryKey: [baseKey, entityId, 'compliance-report', data.yearScheduled] });
+      // Also invalidate Dashboard's query key pattern
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance-report', entityType, entityId] });
       queryClient.invalidateQueries({ queryKey: ['/api/inspections'] });
     },
     onError: (error: Error) => {

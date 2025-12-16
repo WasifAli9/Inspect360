@@ -154,6 +154,8 @@ export default function BlockDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blocks", blockId, "compliance"] });
+      // Also invalidate Dashboard's compliance documents query
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance-documents', 'block', blockId] });
       setUploadDialogOpen(false);
       form.reset();
       toast({
