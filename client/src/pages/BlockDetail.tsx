@@ -353,8 +353,6 @@ export default function BlockDetail() {
         {/* Inspection Schedule Tab */}
         <TabsContent value="inspection-schedule" className="space-y-6">
           <ComplianceCalendar 
-            report={complianceReport} 
-            isLoading={complianceReportLoading}
             entityType="block"
             entityId={blockId}
           />

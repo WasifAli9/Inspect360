@@ -806,8 +806,6 @@ export default function PropertyDetail() {
         <TabsContent value="inspection-schedule" className="space-y-6">
           {/* Annual Inspection Compliance Report */}
           <ComplianceCalendar 
-            report={complianceReport} 
-            isLoading={complianceReportLoading}
             entityType="property"
             entityId={propertyId}
           />

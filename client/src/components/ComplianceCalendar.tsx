@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, CheckCircle2, Clock, Circle, CalendarPlus, X, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Circle, CalendarPlus, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -48,8 +48,6 @@ interface PendingSelection {
 }
 
 interface ComplianceCalendarProps {
-  report: ComplianceReport | null;
-  isLoading: boolean;
   entityType: 'property' | 'block';
   entityId?: string;
 }
@@ -139,10 +137,26 @@ function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: Statu
   );
 }
 
-export default function ComplianceCalendar({ report, isLoading, entityType, entityId }: ComplianceCalendarProps) {
+export default function ComplianceCalendar({ entityType, entityId }: ComplianceCalendarProps) {
   const { toast } = useToast();
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
   const [pendingSelections, setPendingSelections] = useState<PendingSelection[]>([]);
   const [selectedType, setSelectedType] = useState<string>('routine');
+
+  // Fetch compliance report with year parameter
+  const { data: report, isLoading } = useQuery<ComplianceReport>({
+    queryKey: [`/api/${entityType === 'property' ? 'properties' : 'blocks'}`, entityId, 'compliance-report', selectedYear],
+    queryFn: async () => {
+      const endpoint = entityType === 'property' 
+        ? `/api/properties/${entityId}/compliance-report?year=${selectedYear}`
+        : `/api/blocks/${entityId}/compliance-report?year=${selectedYear}`;
+      const res = await fetch(endpoint, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!entityId,
+  });
 
   const bulkScheduleMutation = useMutation({
     mutationFn: async (selections: PendingSelection[]) => {
@@ -164,8 +178,9 @@ export default function ComplianceCalendar({ report, isLoading, entityType, enti
         description: `Successfully scheduled ${data.count} inspection${data.count !== 1 ? 's' : ''}.`,
       });
       setPendingSelections([]);
-      queryClient.invalidateQueries({ queryKey: ['/api/compliance/property'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/compliance/block'] });
+      // Invalidate the calendar data for this entity and year
+      const baseKey = entityType === 'property' ? '/api/properties' : '/api/blocks';
+      queryClient.invalidateQueries({ queryKey: [baseKey, entityId, 'compliance-report', selectedYear] });
       queryClient.invalidateQueries({ queryKey: ['/api/inspections'] });
     },
     onError: (error: Error) => {
@@ -200,16 +215,43 @@ export default function ComplianceCalendar({ report, isLoading, entityType, enti
     bulkScheduleMutation.mutate(pendingSelections);
   };
 
+  const yearNavigator = (
+    <div className="flex items-center gap-1">
+      <Button 
+        variant="ghost" 
+        size="icon" 
+        className="h-6 w-6"
+        onClick={() => setSelectedYear(y => y - 1)}
+        data-testid="button-prev-year"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <span className="font-medium min-w-[4rem] text-center" data-testid="text-selected-year">{selectedYear}</span>
+      <Button 
+        variant="ghost" 
+        size="icon" 
+        className="h-6 w-6"
+        onClick={() => setSelectedYear(y => y + 1)}
+        data-testid="button-next-year"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Annual Inspection Compliance</CardTitle>
-          <CardDescription>Loading compliance report...</CardDescription>
+          <CardDescription className="flex items-center gap-2">
+            {yearNavigator}
+            <span className="text-muted-foreground">· Loading compliance report...</span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-64 flex items-center justify-center">
-            <div className="text-muted-foreground">Loading...</div>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -221,16 +263,17 @@ export default function ComplianceCalendar({ report, isLoading, entityType, enti
       <Card>
         <CardHeader>
           <CardTitle>Annual Inspection Compliance</CardTitle>
-          <CardDescription>
-            Track inspection compliance across all months for {entityType === 'property' ? 'this property' : 'this block'}
+          <CardDescription className="flex items-center gap-2">
+            {yearNavigator}
+            <span className="text-muted-foreground">· Track inspection compliance for {entityType === 'property' ? 'this property' : 'this block'}</span>
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="py-12 text-center">
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Inspection Templates</h3>
+            <h3 className="text-lg font-semibold mb-2">No Inspections for {selectedYear}</h3>
             <p className="text-muted-foreground">
-              Create inspection templates and schedule inspections to track compliance.
+              No inspection templates or scheduled inspections found for this year.
             </p>
           </div>
         </CardContent>
@@ -252,9 +295,11 @@ export default function ComplianceCalendar({ report, isLoading, entityType, enti
                 {report.overallCompliance}% Overall
               </Badge>
             </CardTitle>
-            <CardDescription className="mt-1">
-              {report.year} · {report.totalCompleted} of {report.totalScheduled} inspections completed
-              {canSchedule && " · Click empty cells to select for scheduling"}
+            <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
+              {yearNavigator}
+              <span className="text-muted-foreground">·</span>
+              <span>{report.totalCompleted} of {report.totalScheduled} inspections completed</span>
+              {canSchedule && <span className="text-muted-foreground">· Click empty cells to select for scheduling</span>}
             </CardDescription>
           </div>
           {pendingSelections.length > 0 && (

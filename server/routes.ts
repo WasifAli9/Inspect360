@@ -2312,6 +2312,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Property not found" });
       }
 
+      // Get year from query parameter, default to current year
+      const yearParam = req.query.year;
+      const year = yearParam ? parseInt(yearParam as string, 10) : new Date().getFullYear();
+
       // Get all inspections for this property
       const allInspections = await storage.getInspectionsByProperty(id);
 
@@ -2320,7 +2324,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activeTemplates = templates.filter(t => t.isActive && (t.scope === 'property' || t.scope === 'both'));
 
       // Build compliance data by template and month
-      const currentYear = new Date().getFullYear();
+      const currentYear = year;
       const months = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
@@ -8415,6 +8419,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(404).json({ message: "Block not found" });
       }
 
+      // Get year from query parameter, default to current year
+      const yearParam = req.query.year;
+      const year = yearParam ? parseInt(yearParam as string, 10) : new Date().getFullYear();
+
       // Get all inspections for this block
       const allInspections = await storage.getInspectionsByBlock(id);
 
@@ -8423,7 +8431,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const activeTemplates = templates.filter(t => t.isActive && (t.scope === 'block' || t.scope === 'both'));
 
       // Build compliance data by template and month
-      const currentYear = new Date().getFullYear();
+      const currentYear = year;
       const months = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'

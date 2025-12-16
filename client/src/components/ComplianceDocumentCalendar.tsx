@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, CheckCircle2, Clock, Circle, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, CheckCircle2, Clock, Circle, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 interface ComplianceDocument {
   id: string;
@@ -94,6 +96,31 @@ export default function ComplianceDocumentCalendar({ documents, isLoading, entit
   const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+
+  const yearNavigator = (
+    <div className="flex items-center gap-1">
+      <Button 
+        variant="ghost" 
+        size="icon" 
+        className="h-6 w-6"
+        onClick={() => setSelectedYear(y => y - 1)}
+        data-testid="button-doc-prev-year"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <span className="font-medium min-w-[4rem] text-center" data-testid="text-doc-selected-year">{selectedYear}</span>
+      <Button 
+        variant="ghost" 
+        size="icon" 
+        className="h-6 w-6"
+        onClick={() => setSelectedYear(y => y + 1)}
+        data-testid="button-doc-next-year"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
   const DEFAULT_DOCUMENT_TYPES = [
     "Fire Safety Certificate",
@@ -110,11 +137,14 @@ export default function ComplianceDocumentCalendar({ documents, isLoading, entit
       <Card>
         <CardHeader>
           <CardTitle>Annual Compliance Documents</CardTitle>
-          <CardDescription>Loading compliance documents...</CardDescription>
+          <CardDescription className="flex items-center gap-2">
+            {yearNavigator}
+            <span className="text-muted-foreground">· Loading compliance documents...</span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-64 flex items-center justify-center">
-            <div className="text-muted-foreground">Loading...</div>
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -158,10 +188,13 @@ export default function ComplianceDocumentCalendar({ documents, isLoading, entit
     const expiryYear = latestDoc.expiryDate ? new Date(latestDoc.expiryDate).getFullYear() : null;
     
     const monthData: MonthData[] = monthAbbreviations.map((month, idx) => {
-      const isExpiryMonth = expiryYear === currentYear && expiryMonth === idx;
-      const isPastMonth = idx < currentMonth && expiryYear === currentYear;
+      const isExpiryMonth = expiryYear === selectedYear && expiryMonth === idx;
+      // For past years, all months are "past". For future years, no months are "past".
+      // For current year, use actual current month.
+      const effectiveCurrentMonth = selectedYear < currentYear ? 12 : (selectedYear > currentYear ? -1 : currentMonth);
+      const isPastMonth = idx < effectiveCurrentMonth && expiryYear === selectedYear;
       const hasDocument = latestDoc.expiryDate 
-        ? (expiryYear && expiryYear > currentYear) || (expiryYear === currentYear && idx <= (expiryMonth ?? 11))
+        ? (expiryYear && expiryYear > selectedYear) || (expiryYear === selectedYear && idx <= (expiryMonth ?? 11))
         : true;
       
       let monthStatus: DocumentStatus = 'no_expiry';
@@ -212,8 +245,10 @@ export default function ComplianceDocumentCalendar({ documents, isLoading, entit
                 {overallCompliance}% Compliant
               </Badge>
             </CardTitle>
-            <CardDescription className="mt-1">
-              {currentYear} · {documents.length} document(s) uploaded · {missingCount} type(s) missing
+            <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
+              {yearNavigator}
+              <span className="text-muted-foreground">·</span>
+              <span>{documents.length} document(s) uploaded · {missingCount} type(s) missing</span>
             </CardDescription>
           </div>
         </div>
