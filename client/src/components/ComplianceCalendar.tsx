@@ -159,18 +159,19 @@ export default function ComplianceCalendar({ entityType, entityId }: ComplianceC
   });
 
   const bulkScheduleMutation = useMutation({
-    mutationFn: async (selections: PendingSelection[]) => {
+    mutationFn: async (params: { selections: PendingSelection[], yearToSchedule: number }) => {
       const response = await apiRequest("POST", "/api/inspections/bulk-schedule", {
         entityType,
         entityId,
-        year: report?.year || new Date().getFullYear(),
+        year: params.yearToSchedule,
         type: selectedType,
-        selections: selections.map(s => ({
+        selections: params.selections.map(s => ({
           templateId: s.templateId,
           monthIndex: s.monthIndex
         }))
       });
-      return response.json();
+      const result = await response.json();
+      return { ...result, yearScheduled: params.yearToSchedule };
     },
     onSuccess: (data) => {
       toast({
@@ -178,9 +179,9 @@ export default function ComplianceCalendar({ entityType, entityId }: ComplianceC
         description: `Successfully scheduled ${data.count} inspection${data.count !== 1 ? 's' : ''}.`,
       });
       setPendingSelections([]);
-      // Invalidate the calendar data for this entity and year
+      // Invalidate the calendar data for this entity and the year that was scheduled
       const baseKey = entityType === 'property' ? '/api/properties' : '/api/blocks';
-      queryClient.invalidateQueries({ queryKey: [baseKey, entityId, 'compliance-report', selectedYear] });
+      queryClient.invalidateQueries({ queryKey: [baseKey, entityId, 'compliance-report', data.yearScheduled] });
       queryClient.invalidateQueries({ queryKey: ['/api/inspections'] });
     },
     onError: (error: Error) => {
@@ -212,7 +213,7 @@ export default function ComplianceCalendar({ entityType, entityId }: ComplianceC
 
   const handleSchedule = () => {
     if (pendingSelections.length === 0) return;
-    bulkScheduleMutation.mutate(pendingSelections);
+    bulkScheduleMutation.mutate({ selections: pendingSelections, yearToSchedule: selectedYear });
   };
 
   const yearNavigator = (
