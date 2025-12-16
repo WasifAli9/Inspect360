@@ -996,16 +996,16 @@ export default function Billing() {
             Find Your Perfect Plan
           </CardTitle>
           <CardDescription>
-            Use the slider to estimate your annual inspection volume and see real-time pricing
+            Use the slider to estimate your monthly inspection volume and see real-time pricing
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
           {/* Slider Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Annual Inspections Needed</Label>
+              <Label className="text-sm font-medium">Monthly Inspections Needed</Label>
               <span className="text-3xl font-bold text-primary" data-testid="text-inspections-needed">
-                {inspectionsNeeded * 12}
+                {inspectionsNeeded}
               </span>
             </div>
             <Slider
@@ -1018,17 +1018,17 @@ export default function Billing() {
               data-testid="slider-inspections"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>120</span>
-              <span>600</span>
-              <span>3,000</span>
-              <span>10,000</span>
-              <span>25,000+</span>
+              <span>10</span>
+              <span>50</span>
+              <span>250</span>
+              <span>833</span>
+              <span>2,083+</span>
             </div>
           </div>
 
           {/* Recommended Plan with Pricing */}
           {(() => {
-            // Define plan tiers with annual inspections
+            // Define plan tiers with monthly inspections
             const planTiers = [
               { code: 'freelancer', name: 'Freelancer', annualInspections: 120, monthlyInspections: 10 },
               { code: 'btr', name: 'BTR / Lettings', annualInspections: 600, monthlyInspections: 50 },
@@ -1037,12 +1037,12 @@ export default function Billing() {
               { code: 'council', name: 'Council / Enterprise', annualInspections: 25000, monthlyInspections: 2083 },
             ];
 
-            const annualNeeded = inspectionsNeeded * 12;
+            const monthlyNeeded = inspectionsNeeded;
             let recommendedTier = planTiers[0];
-            if (annualNeeded > 120) recommendedTier = planTiers[1];
-            if (annualNeeded > 600) recommendedTier = planTiers[2];
-            if (annualNeeded > 3000) recommendedTier = planTiers[3];
-            if (annualNeeded > 10000) recommendedTier = planTiers[4];
+            if (monthlyNeeded > 10) recommendedTier = planTiers[1];
+            if (monthlyNeeded > 50) recommendedTier = planTiers[2];
+            if (monthlyNeeded > 250) recommendedTier = planTiers[3];
+            if (monthlyNeeded > 833) recommendedTier = planTiers[4];
 
             const matchingPlan = plans?.find(p => p.code === recommendedTier.code);
             const monthlyPrice = matchingPlan ? getPlanPrice(matchingPlan, "monthly") : 0;
@@ -1053,11 +1053,11 @@ export default function Billing() {
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                   <div className="flex-1">
                     <p className="text-sm text-muted-foreground mb-1">
-                      Based on <strong>{annualNeeded.toLocaleString()} inspections/year</strong>, we recommend:
+                      Based on <strong>{monthlyNeeded.toLocaleString()} inspections/month</strong>, we recommend:
                     </p>
                     <h3 className="text-2xl font-bold text-primary">{recommendedTier.name}</h3>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Includes {recommendedTier.annualInspections.toLocaleString()} inspections per year ({recommendedTier.monthlyInspections}/month)
+                      Includes {recommendedTier.monthlyInspections.toLocaleString()} inspections/month ({recommendedTier.annualInspections.toLocaleString()}/year)
                     </p>
                   </div>
                   
