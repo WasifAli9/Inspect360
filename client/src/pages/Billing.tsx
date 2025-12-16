@@ -1012,7 +1012,7 @@ export default function Billing() {
               value={[inspectionsNeeded]}
               onValueChange={(value) => setInspectionsNeeded(value[0])}
               min={10}
-              max={2100}
+              max={500}
               step={10}
               className="w-full"
               data-testid="slider-inspections"
@@ -1021,8 +1021,7 @@ export default function Billing() {
               <span>10</span>
               <span>50</span>
               <span>250</span>
-              <span>833</span>
-              <span>2,083+</span>
+              <span>500+</span>
             </div>
           </div>
 
@@ -1033,20 +1032,54 @@ export default function Billing() {
               { code: 'freelancer', name: 'Freelancer', annualInspections: 120, monthlyInspections: 10 },
               { code: 'btr', name: 'BTR / Lettings', annualInspections: 600, monthlyInspections: 50 },
               { code: 'pbsa', name: 'PBSA', annualInspections: 3000, monthlyInspections: 250 },
-              { code: 'housing_association', name: 'Housing Association', annualInspections: 10000, monthlyInspections: 833 },
-              { code: 'council', name: 'Council / Enterprise', annualInspections: 25000, monthlyInspections: 2083 },
             ];
 
             const monthlyNeeded = inspectionsNeeded;
+            const requiresQuote = monthlyNeeded > 250;
+            
             let recommendedTier = planTiers[0];
             if (monthlyNeeded > 10) recommendedTier = planTiers[1];
             if (monthlyNeeded > 50) recommendedTier = planTiers[2];
-            if (monthlyNeeded > 250) recommendedTier = planTiers[3];
-            if (monthlyNeeded > 833) recommendedTier = planTiers[4];
 
             const matchingPlan = plans?.find(p => p.code === recommendedTier.code);
             const monthlyPrice = matchingPlan ? getPlanPrice(matchingPlan, "monthly") : 0;
             const annualPrice = matchingPlan ? getPlanPrice(matchingPlan, "annual") : monthlyPrice ? monthlyPrice * 12 * 0.9 : 0;
+
+            // Show "Request a Quote" for volumes over 250/month
+            if (requiresQuote) {
+              return (
+                <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-6 rounded-lg border border-primary/20">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                    <div className="flex-1">
+                      <p className="text-sm text-muted-foreground mb-1">
+                        Based on <strong>{monthlyNeeded.toLocaleString()} inspections/month</strong>:
+                      </p>
+                      <h3 className="text-2xl font-bold text-primary">Enterprise Volume</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        For high-volume needs, we offer custom pricing tailored to your organization
+                      </p>
+                    </div>
+                    
+                    <div className="p-4 rounded-lg border-2 border-primary bg-background">
+                      <p className="text-xl font-bold">Custom Pricing</p>
+                      <p className="text-xs text-muted-foreground">Contact our sales team</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <Button
+                      className="w-full lg:w-auto"
+                      onClick={() => {
+                        window.location.href = "mailto:sales@inspect360.ai?subject=Enterprise Volume Inquiry - " + monthlyNeeded + " inspections/month";
+                      }}
+                      data-testid="button-request-quote"
+                    >
+                      Request a Quote
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div className="bg-gradient-to-br from-primary/5 to-primary/10 p-6 rounded-lg border border-primary/20">
@@ -1061,7 +1094,7 @@ export default function Billing() {
                     </p>
                   </div>
                   
-                  {recommendedTier.code !== 'council' && matchingPlan && (
+                  {matchingPlan && (
                     <div className="flex gap-4">
                       {/* Monthly Price */}
                       <div className={`p-4 rounded-lg border-2 transition-all cursor-pointer ${billingPeriod === 'monthly' ? 'border-primary bg-background' : 'border-muted bg-muted/30'}`}
@@ -1081,13 +1114,6 @@ export default function Billing() {
                       </div>
                     </div>
                   )}
-                  
-                  {recommendedTier.code === 'council' && (
-                    <div className="p-4 rounded-lg border-2 border-muted bg-muted/30">
-                      <p className="text-xl font-bold">Custom Pricing</p>
-                      <p className="text-xs text-muted-foreground">Contact our sales team</p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Select Plan Button */}
@@ -1095,9 +1121,7 @@ export default function Billing() {
                   <Button
                     className="w-full lg:w-auto"
                     onClick={() => {
-                      if (recommendedTier.code === "council") {
-                        window.location.href = "mailto:sales@inspect360.com?subject=Council/Enterprise Inquiry";
-                      } else if (matchingPlan) {
+                      if (matchingPlan) {
                         checkoutMutation.mutate(matchingPlan.code);
                       }
                     }}
@@ -1106,9 +1130,7 @@ export default function Billing() {
                   >
                     {subscription?.planSnapshotJson.planName === recommendedTier.name 
                       ? "Current Plan" 
-                      : recommendedTier.code === "council" 
-                        ? "Contact Sales" 
-                        : `Subscribe to ${recommendedTier.name}`}
+                      : `Subscribe to ${recommendedTier.name}`}
                   </Button>
                 </div>
               </div>
