@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle2, Clock, Circle, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 interface ComplianceDocument {
   id: string;
@@ -49,10 +49,17 @@ function getDocumentStatus(expiryDate: string | null): DocumentStatus {
 }
 
 function StatusCell({ data }: { data: MonthData }) {
+  // If no document exists, render an empty cell (blank)
+  if (!data.hasDocument) {
+    return (
+      <div 
+        className="flex items-center justify-center p-2 rounded-md border border-transparent"
+        title={`${data.month}: No document`}
+      />
+    );
+  }
+
   const getStatusIcon = () => {
-    if (!data.hasDocument) {
-      return <Circle className="h-4 w-4 text-muted-foreground/30" />;
-    }
     switch (data.status) {
       case 'valid':
         return <CheckCircle2 className="h-4 w-4 text-green-600" />;
@@ -63,14 +70,11 @@ function StatusCell({ data }: { data: MonthData }) {
       case 'no_expiry':
         return <CheckCircle2 className="h-4 w-4 text-blue-600" />;
       default:
-        return <Circle className="h-4 w-4 text-muted-foreground/30" />;
+        return null;
     }
   };
 
   const getStatusColor = () => {
-    if (!data.hasDocument) {
-      return 'bg-muted/30 border-border/30';
-    }
     switch (data.status) {
       case 'valid':
         return 'bg-green-100 dark:bg-green-950 border-green-300 dark:border-green-800';
@@ -81,14 +85,14 @@ function StatusCell({ data }: { data: MonthData }) {
       case 'no_expiry':
         return 'bg-blue-100 dark:bg-blue-950 border-blue-300 dark:border-blue-800';
       default:
-        return 'bg-muted/30 border-border/30';
+        return 'border-transparent';
     }
   };
 
   return (
     <div 
       className={`flex items-center justify-center p-2 rounded-md border ${getStatusColor()} transition-all`}
-      title={data.hasDocument ? `${data.month}: ${data.status.replace('_', ' ')}` : `${data.month}: No document`}
+      title={`${data.month}: ${data.status.replace('_', ' ')}`}
     >
       {getStatusIcon()}
     </div>
@@ -292,7 +296,7 @@ export default function ComplianceDocumentCalendar({ entityType, entityId, docum
             <span className="text-muted-foreground">Expiring Soon ({expiringCount})</span>
           </div>
           <div className="flex items-center gap-2">
-            <Circle className="h-4 w-4 text-muted-foreground/30" />
+            <div className="h-4 w-4 rounded border border-dashed border-muted-foreground/30" />
             <span className="text-muted-foreground">Missing ({missingCount})</span>
           </div>
         </div>
