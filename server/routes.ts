@@ -13345,11 +13345,24 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
     let event: any;
     try {
-      // In production, verify the webhook signature
-      // For now, we'll accept the event as-is
-      event = req.body;
+      // Verify webhook signature if secret is configured
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      if (webhookSecret && sig) {
+        const stripe = await getUncachableStripeClient();
+        try {
+          event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+          console.log(`[Stripe Webhook] Signature verified for event: ${event.type}`);
+        } catch (err: any) {
+          console.error(`[Stripe Webhook] Signature verification failed:`, err.message);
+          return res.status(400).json({ message: "Webhook signature verification failed" });
+        }
+      } else {
+        // In development without webhook secret, accept raw body
+        event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        console.log(`[Stripe Webhook] Received event (unverified): ${event.type}`);
+      }
 
-      console.log(`[Stripe Webhook] Received event: ${event.type}`);
+      console.log(`[Stripe Webhook] Processing event: ${event.type}`);
 
       switch (event.type) {
         case "checkout.session.completed": {
@@ -13549,6 +13562,51 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
               console.log(`[Stripe Webhook] Payment failed for org ${dbSubscription.organizationId}`);
             }
+          }
+          break;
+        }
+
+        case "customer.subscription.updated": {
+          const subscription = event.data.object;
+          const dbSubscription = await storage.getSubscriptionByStripeId(subscription.id);
+
+          if (dbSubscription) {
+            // Helper function to safely create Date from Stripe timestamp
+            const safeDateFromTimestamp = (timestamp: any, fallback: Date): Date => {
+              if (!timestamp || typeof timestamp !== 'number' || isNaN(timestamp)) {
+                return fallback;
+              }
+              const date = new Date(timestamp * 1000);
+              return isNaN(date.getTime()) ? fallback : date;
+            };
+
+            const now = new Date();
+            const defaultPeriodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+            // Update subscription status and period
+            await storage.updateSubscription(dbSubscription.id, {
+              status: subscription.status as any,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
+              currentPeriodStart: safeDateFromTimestamp(subscription.current_period_start, dbSubscription.currentPeriodStart || now),
+              currentPeriodEnd: safeDateFromTimestamp(subscription.current_period_end, dbSubscription.currentPeriodEnd || defaultPeriodEnd),
+            });
+
+            // If plan changed, update the organization's included inspections
+            if (subscription.items?.data?.[0]?.price) {
+              const priceItem = subscription.items.data[0];
+              // Extract credits from product metadata if available
+              const productMetadata = priceItem.price?.product?.metadata || {};
+              if (productMetadata.includedInspections) {
+                const org = await storage.getOrganization(dbSubscription.organizationId);
+                if (org) {
+                  await storage.updateOrganization(dbSubscription.organizationId, {
+                    includedInspectionsPerMonth: parseInt(productMetadata.includedInspections),
+                  });
+                }
+              }
+            }
+
+            console.log(`[Stripe Webhook] Subscription updated for org ${dbSubscription.organizationId}: status=${subscription.status}, cancel_at_period_end=${subscription.cancel_at_period_end}`);
           }
           break;
         }
@@ -14088,6 +14146,471 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     } catch (error: any) {
       console.error("Error fetching aggregate credits:", error);
       res.status(500).json({ message: "Failed to fetch aggregate credits" });
+    }
+  });
+
+  // Get recommended plan based on inspection slider value
+  app.get("/api/billing/recommend-plan", async (req, res) => {
+    try {
+      const inspectionsNeeded = parseInt(req.query.inspections as string) || 10;
+      const currency = ((req.query.currency as string) || "GBP").toUpperCase();
+
+      const plans = await storage.getActivePlans();
+      
+      // Sort plans by included inspections
+      const sortedPlans = plans
+        .filter(p => ["freelancer", "btr", "pbsa", "housing_association", "council"].includes(p.code))
+        .sort((a, b) => (a.includedInspections || 0) - (b.includedInspections || 0));
+
+      // Find the smallest plan that covers the needed inspections
+      let recommendedPlan = sortedPlans[sortedPlans.length - 1]; // Default to largest
+      for (const plan of sortedPlans) {
+        if ((plan.includedInspections || 0) >= inspectionsNeeded) {
+          recommendedPlan = plan;
+          break;
+        }
+      }
+
+      // Get price based on currency
+      const getCurrencyPrice = (plan: any, isAnnual: boolean) => {
+        if (currency === "USD") {
+          return isAnnual ? plan.annualPriceUsd : plan.monthlyPriceUsd;
+        } else if (currency === "AED") {
+          return isAnnual ? plan.annualPriceAed : plan.monthlyPriceAed;
+        }
+        return isAnnual ? plan.annualPriceGbp : plan.monthlyPriceGbp;
+      };
+
+      res.json({
+        recommendedPlan: {
+          id: recommendedPlan.id,
+          code: recommendedPlan.code,
+          name: recommendedPlan.name,
+          includedInspections: recommendedPlan.includedInspections || recommendedPlan.includedCredits,
+          monthlyPrice: getCurrencyPrice(recommendedPlan, false),
+          annualPrice: getCurrencyPrice(recommendedPlan, true),
+          topupPricePerInspection: currency === "USD" ? recommendedPlan.topupPricePerInspectionUsd :
+                                   currency === "AED" ? recommendedPlan.topupPricePerInspectionAed :
+                                   recommendedPlan.topupPricePerInspectionGbp,
+          currency,
+        },
+        allPlans: sortedPlans.map(p => ({
+          id: p.id,
+          code: p.code,
+          name: p.name,
+          includedInspections: p.includedInspections || p.includedCredits,
+          monthlyPrice: getCurrencyPrice(p, false),
+          annualPrice: getCurrencyPrice(p, true),
+          currency,
+        })),
+        inspectionsNeeded,
+        needsContactForEnterprise: inspectionsNeeded > 2000,
+      });
+    } catch (error: any) {
+      console.error("Error recommending plan:", error);
+      res.status(500).json({ message: "Failed to recommend plan" });
+    }
+  });
+
+  // Get tier-based bundle pricing
+  app.get("/api/billing/bundles", async (req, res) => {
+    try {
+      const currency = ((req.query.currency as string) || "GBP").toUpperCase();
+      const planCode = req.query.planCode as string;
+
+      const bundles = await storage.getActiveCreditBundles();
+      const allTierPricing = await storage.getAllBundleTierPricing();
+
+      const bundlesWithPricing = bundles.map(bundle => {
+        // Find tier pricing for this bundle
+        let pricing = allTierPricing.filter(tp => tp.bundleId === bundle.id);
+        
+        // If planCode provided, filter to that tier
+        let effectivePrice = bundle.priceGbp; // Default Freelancer price
+        if (planCode && pricing.length > 0) {
+          const tierPricing = pricing.find(tp => tp.planCode === planCode);
+          if (tierPricing) {
+            effectivePrice = currency === "USD" ? tierPricing.priceUsd :
+                            currency === "AED" ? tierPricing.priceAed :
+                            tierPricing.priceGbp;
+          }
+        } else {
+          effectivePrice = currency === "USD" ? bundle.priceUsd :
+                          currency === "AED" ? bundle.priceAed :
+                          bundle.priceGbp;
+        }
+
+        return {
+          id: bundle.id,
+          name: bundle.name,
+          credits: bundle.credits,
+          price: effectivePrice,
+          currency,
+          isPopular: bundle.isPopular,
+          discountLabel: bundle.discountLabel,
+          tierPricing: pricing.map(tp => ({
+            planCode: tp.planCode,
+            price: currency === "USD" ? tp.priceUsd :
+                   currency === "AED" ? tp.priceAed :
+                   tp.priceGbp,
+            currency,
+          })),
+        };
+      });
+
+      res.json(bundlesWithPricing);
+    } catch (error: any) {
+      console.error("Error fetching bundles:", error);
+      res.status(500).json({ message: "Failed to fetch bundles" });
+    }
+  });
+
+  // Get inspection balance for current organization
+  app.get("/api/billing/inspection-balance", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const org = await storage.getOrganization(user.organizationId);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      // Get credit balance from batches
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+
+      res.json({
+        includedInspectionsPerMonth: org.includedInspectionsPerMonth || 0,
+        usedInspectionsThisMonth: org.usedInspectionsThisMonth || 0,
+        topupInspectionsBalance: org.topupInspectionsBalance || 0,
+        remainingMonthlyAllowance: Math.max(0, (org.includedInspectionsPerMonth || 0) - (org.usedInspectionsThisMonth || 0)),
+        totalAvailable: creditBalance.total,
+        billingCycleResetAt: org.billingCycleResetAt,
+        preferredCurrency: org.preferredCurrency || "GBP",
+      });
+    } catch (error: any) {
+      console.error("Error fetching inspection balance:", error);
+      res.status(500).json({ message: "Failed to fetch inspection balance" });
+    }
+  });
+
+  // Cancel subscription with reason
+  app.post("/api/billing/cancel", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only owners can cancel subscriptions
+      if (user.role !== "owner") {
+        return res.status(403).json({ message: "Only organization owners can cancel subscriptions" });
+      }
+
+      const { reason, reasonText, cancelImmediately } = req.body;
+      if (!reason) {
+        return res.status(400).json({ message: "Cancellation reason is required" });
+      }
+
+      const org = await storage.getOrganization(user.organizationId);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      const subscription = await storage.getSubscriptionByOrganization(user.organizationId);
+      if (!subscription) {
+        return res.status(404).json({ message: "No active subscription found" });
+      }
+
+      // Cancel in Stripe
+      if (subscription.stripeSubscriptionId) {
+        const stripe = await getUncachableStripeClient();
+        
+        if (cancelImmediately) {
+          await stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
+        } else {
+          await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+            cancel_at_period_end: true,
+          });
+        }
+      }
+
+      // Update subscription in database
+      await storage.updateSubscription(subscription.id, {
+        cancelAtPeriodEnd: !cancelImmediately,
+        cancellationReason: reason,
+        cancellationReasonText: reasonText || null,
+        cancelledAt: cancelImmediately ? new Date() : null,
+        status: cancelImmediately ? "cancelled" : subscription.status,
+      } as any);
+
+      res.json({ 
+        success: true, 
+        cancelledImmediately: cancelImmediately,
+        cancelAtPeriodEnd: !cancelImmediately,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+      });
+    } catch (error: any) {
+      console.error("Error cancelling subscription:", error);
+      res.status(500).json({ message: "Failed to cancel subscription", error: error.message });
+    }
+  });
+
+  // Upgrade or downgrade subscription
+  app.post("/api/billing/change-plan", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only owners can change subscriptions
+      if (user.role !== "owner") {
+        return res.status(403).json({ message: "Only organization owners can change plans" });
+      }
+
+      const { newPlanCode, billingInterval } = req.body;
+      if (!newPlanCode) {
+        return res.status(400).json({ message: "New plan code is required" });
+      }
+
+      const org = await storage.getOrganization(user.organizationId);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      const subscription = await storage.getSubscriptionByOrganization(user.organizationId);
+      if (!subscription?.stripeSubscriptionId) {
+        return res.status(400).json({ message: "No active Stripe subscription to change" });
+      }
+
+      const newPlan = await storage.getPlanByCode(newPlanCode);
+      if (!newPlan) {
+        return res.status(404).json({ message: "New plan not found" });
+      }
+
+      const currentPlan = subscription.planSnapshotJson;
+      const isUpgrade = (newPlan.includedInspections || newPlan.includedCredits) > 
+                        (currentPlan?.includedInspections || currentPlan?.includedCredits || 0);
+
+      // Get the Stripe subscription to modify
+      const stripe = await getUncachableStripeClient();
+      const stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+
+      // Determine pricing based on currency and interval
+      const currency = org.preferredCurrency || "GBP";
+      const isAnnual = billingInterval === "annual";
+      
+      let unitAmount: number;
+      if (currency === "USD") {
+        unitAmount = isAnnual ? (newPlan.annualPriceUsd || newPlan.monthlyPriceUsd! * 12) : newPlan.monthlyPriceUsd!;
+      } else if (currency === "AED") {
+        unitAmount = isAnnual ? (newPlan.annualPriceAed || newPlan.monthlyPriceAed! * 12) : newPlan.monthlyPriceAed!;
+      } else {
+        unitAmount = isAnnual ? (newPlan.annualPriceGbp || newPlan.monthlyPriceGbp * 12) : newPlan.monthlyPriceGbp;
+      }
+
+      // Create a new price for the subscription
+      const subscriptionItemId = stripeSubscription.items.data[0]?.id;
+      if (!subscriptionItemId) {
+        return res.status(400).json({ message: "Invalid subscription state" });
+      }
+
+      // Update the subscription with proration
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        items: [{
+          id: subscriptionItemId,
+          price_data: {
+            currency: currency.toLowerCase(),
+            product_data: {
+              name: newPlan.name,
+              description: `${newPlan.includedInspections || newPlan.includedCredits} inspections per month`,
+            },
+            recurring: {
+              interval: isAnnual ? "year" : "month",
+            },
+            unit_amount: unitAmount,
+          },
+        }],
+        proration_behavior: isUpgrade ? "create_prorations" : "none",
+      });
+
+      // Update subscription in database
+      await storage.updateSubscription(subscription.id, {
+        planSnapshotJson: {
+          planId: newPlan.id,
+          planCode: newPlan.code,
+          planName: newPlan.name,
+          monthlyPrice: newPlan.monthlyPriceGbp,
+          annualPrice: newPlan.annualPriceGbp || undefined,
+          includedCredits: newPlan.includedCredits,
+          includedInspections: newPlan.includedInspections || newPlan.includedCredits,
+          currency,
+        },
+        billingInterval: isAnnual ? "annual" : "monthly",
+      } as any);
+
+      // Update organization's included inspections
+      await storage.updateOrganization(user.organizationId, {
+        includedInspectionsPerMonth: newPlan.includedInspections || newPlan.includedCredits,
+        currentPlanId: newPlan.id,
+        subscriptionLevel: newPlan.code as any,
+      });
+
+      res.json({ 
+        success: true,
+        isUpgrade,
+        newPlan: {
+          code: newPlan.code,
+          name: newPlan.name,
+          includedInspections: newPlan.includedInspections || newPlan.includedCredits,
+        },
+      });
+    } catch (error: any) {
+      console.error("Error changing plan:", error);
+      res.status(500).json({ message: "Failed to change plan", error: error.message });
+    }
+  });
+
+  // Get billing history / invoices
+  app.get("/api/billing/invoices", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const org = await storage.getOrganization(user.organizationId);
+      if (!org?.stripeCustomerId) {
+        return res.json({ invoices: [], hasStripeCustomer: false });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const invoices = await stripe.invoices.list({
+        customer: org.stripeCustomerId,
+        limit: 24,
+      });
+
+      const formattedInvoices = invoices.data.map(inv => ({
+        id: inv.id,
+        number: inv.number,
+        date: inv.created ? new Date(inv.created * 1000).toISOString() : null,
+        dueDate: inv.due_date ? new Date(inv.due_date * 1000).toISOString() : null,
+        amount: inv.total,
+        currency: inv.currency?.toUpperCase(),
+        status: inv.status,
+        pdfUrl: inv.invoice_pdf,
+        hostedInvoiceUrl: inv.hosted_invoice_url,
+        description: inv.lines?.data?.[0]?.description || "Subscription",
+      }));
+
+      res.json({ 
+        invoices: formattedInvoices,
+        hasStripeCustomer: true,
+      });
+    } catch (error: any) {
+      console.error("Error fetching invoices:", error);
+      res.status(500).json({ message: "Failed to fetch invoices", error: error.message });
+    }
+  });
+
+  // Create top-up checkout session with tier-based pricing
+  app.post("/api/billing/topup-checkout", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { bundleId, currency = "GBP" } = req.body;
+      if (!bundleId) {
+        return res.status(400).json({ message: "Bundle ID is required" });
+      }
+
+      const org = await storage.getOrganization(user.organizationId);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      const bundle = await storage.getCreditBundle(bundleId);
+      if (!bundle) {
+        return res.status(404).json({ message: "Bundle not found" });
+      }
+
+      // Determine tier pricing based on current plan
+      const subscription = await storage.getSubscriptionByOrganization(user.organizationId);
+      const planCode = subscription?.planSnapshotJson?.planCode || "freelancer";
+
+      // Try to get tier-specific pricing
+      const tierPricing = await storage.getBundleTierPricing(bundleId, planCode);
+      
+      let price: number;
+      if (tierPricing) {
+        price = currency === "USD" ? tierPricing.priceUsd :
+                currency === "AED" ? tierPricing.priceAed :
+                tierPricing.priceGbp;
+      } else {
+        price = currency === "USD" ? bundle.priceUsd :
+                currency === "AED" ? bundle.priceAed :
+                bundle.priceGbp;
+      }
+
+      // Create or get Stripe customer
+      let stripeCustomerId = org.stripeCustomerId;
+      if (!stripeCustomerId) {
+        const stripe = await getUncachableStripeClient();
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: org.name,
+          metadata: { organizationId: org.id },
+        });
+        stripeCustomerId = customer.id;
+        await storage.updateOrganizationStripe(org.id, stripeCustomerId, "inactive");
+      }
+
+      // Create top-up order record
+      const topupOrder = await storage.createTopupOrder({
+        organizationId: org.id,
+        packSize: bundle.credits,
+        currency: currency as any,
+        unitPriceMinorUnits: Math.round(price / bundle.credits),
+        totalPriceMinorUnits: price,
+        status: "pending",
+      });
+
+      // Create checkout session
+      const baseUrl = getBaseUrl(req);
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        mode: "payment",
+        line_items: [{
+          price_data: {
+            currency: currency.toLowerCase(),
+            product_data: {
+              name: bundle.name,
+              description: `${bundle.credits} inspection credits`,
+            },
+            unit_amount: price,
+          },
+          quantity: 1,
+        }],
+        success_url: `${baseUrl}/billing?topup=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/billing?topup=canceled`,
+        metadata: {
+          organizationId: org.id,
+          topupOrderId: topupOrder.id,
+          packSize: bundle.credits.toString(),
+          bundleId: bundle.id,
+        },
+      });
+
+      res.json({ url: session.url, orderId: topupOrder.id });
+    } catch (error: any) {
+      console.error("Error creating top-up checkout:", error);
+      res.status(500).json({ message: "Failed to create top-up checkout", error: error.message });
     }
   });
 

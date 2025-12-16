@@ -33,7 +33,7 @@ export const inspectionTypeEnum = pgEnum("inspection_type", ["check_in", "check_
 export const complianceStatusEnum = pgEnum("compliance_status", ["current", "expiring_soon", "expired"]);
 export const maintenanceStatusEnum = pgEnum("maintenance_status", ["open", "in_progress", "completed", "closed"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["active", "inactive", "cancelled"]);
-export const subscriptionLevelEnum = pgEnum("subscription_level", ["free", "starter", "professional", "enterprise"]);
+export const subscriptionLevelEnum = pgEnum("subscription_level", ["free", "starter", "professional", "enterprise", "freelancer", "btr", "pbsa", "housing_association", "council"]);
 export const workOrderStatusEnum = pgEnum("work_order_status", ["assigned", "in_progress", "waiting_parts", "completed", "rejected"]);
 export const assetConditionEnum = pgEnum("asset_condition", ["excellent", "good", "fair", "poor", "needs_replacement"]);
 export const inspectionPointDataTypeEnum = pgEnum("inspection_point_data_type", ["text", "number", "checkbox", "photo", "rating"]);
@@ -46,7 +46,7 @@ export const maintenanceSourceEnum = pgEnum("maintenance_source", ["manual", "in
 export const comparisonReportStatusEnum = pgEnum("comparison_report_status", ["draft", "under_review", "awaiting_signatures", "signed", "filed"]);
 export const comparisonItemStatusEnum = pgEnum("comparison_item_status", ["pending", "reviewed", "disputed", "resolved", "waived"]);
 export const currencyEnum = pgEnum("currency", ["GBP", "USD", "AED"]);
-export const planCodeEnum = pgEnum("plan_code", ["starter", "professional", "enterprise", "enterprise_plus"]);
+export const planCodeEnum = pgEnum("plan_code", ["starter", "professional", "enterprise", "enterprise_plus", "freelancer", "btr", "pbsa", "housing_association", "council"]);
 export const creditSourceEnum = pgEnum("credit_source", ["plan_inclusion", "topup", "admin_grant", "refund", "adjustment", "consumption", "expiry"]);
 export const topupStatusEnum = pgEnum("topup_status", ["pending", "paid", "failed", "refunded"]);
 
@@ -153,6 +153,11 @@ export const organizations = pgTable("organizations", {
   trialEndAt: timestamp("trial_end_at"),
   isActive: boolean("is_active").default(true),
   creditsRemaining: integer("credits_remaining").default(5),
+  includedInspectionsPerMonth: integer("included_inspections_per_month").default(0), // From subscription plan
+  usedInspectionsThisMonth: integer("used_inspections_this_month").default(0), // Resets at billing cycle
+  topupInspectionsBalance: integer("topup_inspections_balance").default(0), // Rolls over until used
+  billingCycleResetAt: timestamp("billing_cycle_reset_at"), // When to reset monthly usage
+  preferredCurrency: currencyEnum("preferred_currency").default("GBP"),
   defaultAiMaxWords: integer("default_ai_max_words").default(150), // Eco Admin default max word count
   defaultAiInstruction: text("default_ai_instruction"), // Eco Admin default AI instruction
   logoUrl: varchar("logo_url"), // White-label: Company logo URL
@@ -1753,10 +1758,25 @@ export const plans = pgTable("plans", {
   name: varchar("name", { length: 100 }).notNull(),
   monthlyPriceGbp: integer("monthly_price_gbp").notNull(), // Price in pence
   annualPriceGbp: integer("annual_price_gbp"), // Price in pence (nullable for plans without annual option)
-  includedCredits: integer("included_credits").notNull(),
+  monthlyPriceUsd: integer("monthly_price_usd"), // Price in cents
+  annualPriceUsd: integer("annual_price_usd"), // Price in cents
+  monthlyPriceAed: integer("monthly_price_aed"), // Price in fils
+  annualPriceAed: integer("annual_price_aed"), // Price in fils
+  includedInspections: integer("included_inspections").notNull().default(0), // Renamed from credits
+  includedCredits: integer("included_credits").notNull(), // Kept for backward compatibility
   softCap: integer("soft_cap").default(5000), // Fair usage limit for "unlimited" plans
+  topupPricePerInspectionGbp: integer("topup_price_per_inspection_gbp"), // Tier-based top-up price in pence
+  topupPricePerInspectionUsd: integer("topup_price_per_inspection_usd"), // Tier-based top-up price in cents
+  topupPricePerInspectionAed: integer("topup_price_per_inspection_aed"), // Tier-based top-up price in fils
+  stripePriceIdMonthlyGbp: varchar("stripe_price_id_monthly_gbp"),
+  stripePriceIdAnnualGbp: varchar("stripe_price_id_annual_gbp"),
+  stripePriceIdMonthlyUsd: varchar("stripe_price_id_monthly_usd"),
+  stripePriceIdAnnualUsd: varchar("stripe_price_id_annual_usd"),
+  stripePriceIdMonthlyAed: varchar("stripe_price_id_monthly_aed"),
+  stripePriceIdAnnualAed: varchar("stripe_price_id_annual_aed"),
   isCustom: boolean("is_custom").default(false),
   isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1798,10 +1818,10 @@ export type InsertCountryPricingOverride = z.infer<typeof insertCountryPricingOv
 export const creditBundles = pgTable("credit_bundles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 100 }).notNull(),
-  credits: integer("credits").notNull(),
-  priceGbp: integer("price_gbp").notNull(), // Price in pence
-  priceUsd: integer("price_usd").notNull(), // Price in cents
-  priceAed: integer("price_aed").notNull(), // Price in fils
+  credits: integer("credits").notNull(), // Number of inspections in bundle (100, 500, 1000)
+  priceGbp: integer("price_gbp").notNull(), // Base price in pence (for freelancer tier)
+  priceUsd: integer("price_usd").notNull(), // Base price in cents (for freelancer tier)
+  priceAed: integer("price_aed").notNull(), // Base price in fils (for freelancer tier)
   sortOrder: integer("sort_order").default(0),
   isPopular: boolean("is_popular").default(false),
   discountLabel: varchar("discount_label", { length: 50 }),
@@ -1810,6 +1830,22 @@ export const creditBundles = pgTable("credit_bundles", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const bundleTierPricing = pgTable("bundle_tier_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bundleId: varchar("bundle_id").notNull(),
+  planCode: planCodeEnum("plan_code").notNull(), // Which plan tier this price applies to
+  priceGbp: integer("price_gbp").notNull(), // Price in pence for this tier
+  priceUsd: integer("price_usd").notNull(), // Price in cents for this tier
+  priceAed: integer("price_aed").notNull(), // Price in fils for this tier
+  stripePriceIdGbp: varchar("stripe_price_id_gbp"),
+  stripePriceIdUsd: varchar("stripe_price_id_usd"),
+  stripePriceIdAed: varchar("stripe_price_id_aed"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_bundle_tier_pricing_bundle").on(table.bundleId),
+  index("idx_bundle_tier_pricing_plan").on(table.planCode),
+]);
+
 export const insertCreditBundleSchema = createInsertSchema(creditBundles).omit({
   id: true,
   createdAt: true,
@@ -1817,6 +1853,26 @@ export const insertCreditBundleSchema = createInsertSchema(creditBundles).omit({
 });
 export type CreditBundle = typeof creditBundles.$inferSelect;
 export type InsertCreditBundle = z.infer<typeof insertCreditBundleSchema>;
+
+export const insertBundleTierPricingSchema = createInsertSchema(bundleTierPricing).omit({
+  id: true,
+  createdAt: true,
+});
+export type BundleTierPricing = typeof bundleTierPricing.$inferSelect;
+export type InsertBundleTierPricing = z.infer<typeof insertBundleTierPricingSchema>;
+
+// Billing interval for subscriptions
+export const billingIntervalEnum = pgEnum("billing_interval", ["monthly", "annual"]);
+
+// Cancellation reason for subscriptions
+export const cancellationReasonEnum = pgEnum("cancellation_reason", [
+  "too_expensive",
+  "missing_features",
+  "not_using_enough",
+  "switching_provider",
+  "support_issues",
+  "other"
+]);
 
 // Subscriptions
 export const subscriptions = pgTable("subscriptions", {
@@ -1827,15 +1883,22 @@ export const subscriptions = pgTable("subscriptions", {
     planCode: string;
     planName: string;
     monthlyPrice: number;
+    annualPrice?: number;
     includedCredits: number;
+    includedInspections: number;
     currency: string;
   }>().notNull(),
   stripeSubscriptionId: varchar("stripe_subscription_id").unique(),
+  stripeCustomerId: varchar("stripe_customer_id"),
+  billingInterval: billingIntervalEnum("billing_interval").notNull().default("monthly"),
   billingCycleAnchor: timestamp("billing_cycle_anchor").notNull(),
   currentPeriodStart: timestamp("current_period_start").notNull(),
   currentPeriodEnd: timestamp("current_period_end").notNull(),
   status: subscriptionStatusEnum("status").notNull().default("active"),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  cancellationReason: cancellationReasonEnum("cancellation_reason"),
+  cancellationReasonText: text("cancellation_reason_text"),
+  cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

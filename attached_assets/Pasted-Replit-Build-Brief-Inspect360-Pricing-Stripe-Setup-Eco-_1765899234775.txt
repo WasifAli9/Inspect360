@@ -1,0 +1,348 @@
+Replit Build Brief: Inspect360 Pricing + Stripe Setup (Eco-Admin + Add-Ons + Upgrades + Multi-Currency)
+1) What we’re selling (keep it simple for customers)
+
+Customers should only see two things:
+
+A plan (monthly or annual) that includes a set number of AI inspections per month
+
+Top-up bundles if they need more inspections (repeat purchase allowed)
+
+Do NOT show tokens or photo maths. That’s internal.
+
+2) Plans (what to create in Stripe Billing)
+Plans and included inspections (per month)
+
+Create these as Stripe Products with Prices in GBP, USD, AED, each with monthly and annual billing options.
+
+Plan A — Freelancer
+
+Included: 10 inspections/month
+
+Price: £79/mo or £948/yr
+
+USD: $99/mo or $1,188/yr
+
+AED: 365 AED/mo or 4,380 AED/yr
+
+Plan B — BTR / Lettings
+
+Included: 50 inspections/month
+
+Price: £349/mo or £4,188/yr
+
+USD: $449/mo or $5,388/yr
+
+AED: 1,650 AED/mo or 19,800 AED/yr
+
+Plan C — PBSA
+
+Included: 250 inspections/month
+
+Price: £1,250/mo or £15,000/yr
+
+USD: $1,590/mo or $19,080/yr
+
+AED: 5,950 AED/mo or 71,400 AED/yr
+
+Plan D — Housing Association
+
+Included: 833 inspections/month (≈10,000/yr)
+
+Price: £3,500/mo or £42,000/yr
+
+USD: $4,450/mo or $53,400/yr
+
+AED: 16,500 AED/mo or 198,000 AED/yr
+
+Plan E — Council / Enterprise
+
+Included: 2,083 inspections/month (≈25,000/yr)
+
+Price: £6,250/mo or £75,000/yr
+
+USD: $7,990/mo or $95,880/yr
+
+AED: 29,500 AED/mo or 354,000 AED/yr
+
+Important: These numbers are intentionally rounded and “budgetable.” Don’t try to do dynamic FX in public pricing.
+
+3) Add-On Top-Up Bundles (repeat purchase)
+
+These must be one-off purchases that can be bought repeatedly and immediately add inspection allowance to the account.
+
+Top-Up bundles (apply instantly)
+
+Top-ups are inspection credits (not tokens). They should be available to all customers.
+
+Use tiered per-inspection pricing based on the customer’s plan:
+
+Freelancer: £6 / inspection
+
+BTR: £5 / inspection
+
+PBSA: £4 / inspection
+
+Housing Association: £3 / inspection
+
+Council: £2 / inspection
+
+Create three bundle products in Stripe (each with GBP/USD/AED prices). Prices below include a small bundle discount:
+
+Bundle 100 inspections
+
+Freelancer: £550 | $690 | AED 2,550
+
+BTR: £450 | $590 | AED 2,100
+
+PBSA: £360 | $470 | AED 1,700
+
+HA: £270 | $350 | AED 1,250
+
+Council: £180 | $240 | AED 850
+
+Bundle 500 inspections
+
+Freelancer: £2,650 | $3,350 | AED 12,250
+
+BTR: £2,150 | $2,750 | AED 9,950
+
+PBSA: £1,700 | $2,150 | AED 7,850
+
+HA: £1,250 | $1,590 | AED 5,750
+
+Council: £850 | $1,100 | AED 3,950
+
+Bundle 1,000 inspections
+
+Freelancer: £5,000 | $6,350 | AED 23,000
+
+BTR: £4,000 | $5,100 | AED 18,400
+
+PBSA: £3,100 | $3,950 | AED 14,250
+
+HA: £2,250 | $2,850 | AED 10,350
+
+Council: £1,500 | $1,900 | AED 6,900
+
+Repeat purchase requirement
+
+Implement top-ups as Stripe Checkout sessions (mode=payment) so customers can buy them again and again. After successful payment, webhook credits the account instantly.
+
+4) Eco-Admin (multi-tenant) requirements
+
+Inspect360 supports Eco-Admins. Each Eco-Admin must be able to define:
+
+Which plans are available
+
+Their plan pricing (GBP/USD/AED)
+
+Their top-up pricing (GBP/USD/AED)
+
+Whether they allow monthly, annual, or both
+
+Optional discount % for annual
+
+Stripe architecture
+
+Each Eco-Admin should have their own Stripe account (Stripe Connect recommended).
+Store at Eco-Admin level:
+
+stripe_account_id
+
+currency_default (GBP or USD or AED)
+
+For every plan + currency + cadence: the Stripe Price ID
+
+For every top-up bundle + currency: the Stripe Price ID
+
+In the database, create tables like:
+
+eco_admin_pricing_plans
+
+eco_admin_pricing_topups
+
+subscriptions
+
+topup_purchases
+
+billing_events
+
+5) Subscription creation flow
+
+When a customer selects a plan:
+
+Create Stripe Checkout session (mode=subscription)
+
+Use the correct Price ID for: plan + currency + monthly/annual
+
+On success webhook:
+
+Save stripe_customer_id, stripe_subscription_id
+
+Set account’s included inspections/month
+
+Set account’s current plan tier
+
+Reset monthly allowance counters on billing cycle
+
+6) Upgrades / downgrades (must be simple)
+
+In the app, add an “Upgrade plan” page.
+
+Upgrade rules
+
+Customer can move from any plan to a higher plan instantly
+
+Stripe should prorate fairly
+
+Implementation:
+
+stripe.subscriptions.update(subscription_id, { items: [{id: subscription_item_id, price: new_price_id}], proration_behavior: "create_prorations" })
+
+If moving from monthly to annual: create a new annual subscription OR update price with proration (whichever is cleaner with your current codebase)
+
+Update the tenant plan in DB immediately after Stripe confirms success
+
+Downgrades:
+
+Allow downgrades but apply at end of billing period to avoid refunds and support hassle.
+
+7) Cancellation (visible + requires reason)
+
+Add a “Cancel subscription” button in the app.
+
+Flow:
+
+User clicks cancel
+
+Show a modal:
+
+“Why are you cancelling?” (radio list + optional text)
+
+Options:
+
+Too expensive
+
+Missing features
+
+Not using it enough
+
+Switching provider
+
+Support issues
+
+Other (textbox)
+
+Save cancellation reason to DB
+
+Then call Stripe to cancel:
+
+Default: cancel_at_period_end = true
+
+Allow an “Cancel immediately” option only for admins (internal)
+
+8) Past invoices and billing history
+
+Add a “Billing & Invoices” page:
+
+Show current plan, next billing date
+
+List invoices with:
+
+invoice date
+
+amount
+
+status
+
+download link (PDF)
+
+Implementation options (pick one and do it properly):
+
+Stripe Customer Portal for invoices (fastest)
+
+Or fetch via API: stripe.invoices.list({customer: stripe_customer_id})
+
+Either way, user must be able to access past invoices.
+
+9) Inspection slider (10 to 2000 per month)
+
+On the pricing page, add a slider:
+
+Min: 10
+
+Max: 2000
+
+Step: 10 (or 25; keep smooth)
+
+Toggle: Monthly / Annual
+
+Slider logic (no mental gymnastics)
+
+Based on slider value, choose the nearest plan that covers it:
+
+10–49 → Freelancer
+
+50–249 → BTR / Lettings
+
+250–832 → PBSA
+
+833–2000 → Housing Association
+
+2000 → Council/Enterprise “Book a demo”
+
+The UI must show:
+
+Recommended plan name
+
+Included inspections
+
+Monthly price
+
+Annual price
+
+CTA button: “Start free trial” or “Subscribe”
+
+If user exceeds plan capacity and is near boundary, show:
+
+“Need more than included? Add top-ups anytime.”
+
+10) Webhooks (must be implemented)
+
+Implement Stripe webhooks for:
+
+checkout.session.completed (subscription + top-up payments)
+
+invoice.paid (renewals)
+
+customer.subscription.updated (upgrades/downgrades)
+
+customer.subscription.deleted (cancelled)
+
+invoice.payment_failed (lock features / notify)
+
+Top-up payment webhook must:
+
+Detect bundle purchased
+
+Add inspections to balance immediately
+
+Log transaction for audit
+
+11) What “inspections balance” means in the app
+
+Maintain three counters per tenant:
+
+included_inspections_per_month (from plan)
+
+used_inspections_this_month
+
+topup_inspections_balance (rolls over until used)
+
+Consumption logic:
+
+Use included monthly allowance first
+
+Then consume top-up balance
+
+If both exhausted, block creation and show “Buy top-up” button

@@ -1,171 +1,248 @@
 import "dotenv/config";
 import { db } from "./db";
-import { plans, creditBundles } from "@shared/schema";
+import { plans, creditBundles, bundleTierPricing } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 async function seedEcoAdmin() {
   console.log("🌱 Seeding Eco Admin data...");
 
   try {
-    // Seed Subscription Plans
+    // Seed NEW Subscription Plans (per specification)
     console.log("📦 Seeding subscription plans...");
     
     const planData = [
       {
-        code: "starter" as const,
-        name: "Starter Plan",
-        monthlyPriceGbp: 4900, // £49.00
-        annualPriceGbp: 52920, // £529.20 (10% discount: £49 * 12 * 0.9)
+        code: "freelancer" as const,
+        name: "Freelancer",
+        monthlyPriceGbp: 7900, // £79/mo
+        annualPriceGbp: 94800, // £948/yr
+        monthlyPriceUsd: 9900, // $99/mo
+        annualPriceUsd: 118800, // $1,188/yr
+        monthlyPriceAed: 36500, // 365 AED/mo
+        annualPriceAed: 438000, // 4,380 AED/yr
+        includedInspections: 10,
+        includedCredits: 10, // Backward compatibility
+        topupPricePerInspectionGbp: 600, // £6 per inspection
+        topupPricePerInspectionUsd: 760,
+        topupPricePerInspectionAed: 2800,
+        softCap: 1000,
+        isCustom: false,
+        isActive: true,
+        sortOrder: 0,
+      },
+      {
+        code: "btr" as const,
+        name: "BTR / Lettings",
+        monthlyPriceGbp: 34900, // £349/mo
+        annualPriceGbp: 418800, // £4,188/yr
+        monthlyPriceUsd: 44900, // $449/mo
+        annualPriceUsd: 538800, // $5,388/yr
+        monthlyPriceAed: 165000, // 1,650 AED/mo
+        annualPriceAed: 1980000, // 19,800 AED/yr
+        includedInspections: 50,
         includedCredits: 50,
+        topupPricePerInspectionGbp: 500, // £5 per inspection
+        topupPricePerInspectionUsd: 640,
+        topupPricePerInspectionAed: 2350,
         softCap: 5000,
         isCustom: false,
         isActive: true,
+        sortOrder: 1,
       },
       {
-        code: "professional" as const,
-        name: "Professional Plan",
-        monthlyPriceGbp: 14900, // £149.00
-        annualPriceGbp: 160920, // £1,609.20 (10% discount: £149 * 12 * 0.9)
-        includedCredits: 200,
-        softCap: 5000,
-        isCustom: false,
-        isActive: true,
-      },
-      {
-        code: "enterprise" as const,
-        name: "Enterprise Plan",
-        monthlyPriceGbp: 34900, // £349.00
-        annualPriceGbp: 376920, // £3,769.20 (10% discount: £349 * 12 * 0.9)
-        includedCredits: 500,
-        softCap: 5000,
-        isCustom: false,
-        isActive: true,
-      },
-      {
-        code: "enterprise_plus" as const,
-        name: "Enterprise+ Plan",
-        monthlyPriceGbp: 99900, // £999.00 (custom pricing)
-        annualPriceGbp: null, // No annual pricing for custom plans
-        includedCredits: 2000,
+        code: "pbsa" as const,
+        name: "PBSA",
+        monthlyPriceGbp: 125000, // £1,250/mo
+        annualPriceGbp: 1500000, // £15,000/yr
+        monthlyPriceUsd: 159000, // $1,590/mo
+        annualPriceUsd: 1908000, // $19,080/yr
+        monthlyPriceAed: 595000, // 5,950 AED/mo
+        annualPriceAed: 7140000, // 71,400 AED/yr
+        includedInspections: 250,
+        includedCredits: 250,
+        topupPricePerInspectionGbp: 400, // £4 per inspection
+        topupPricePerInspectionUsd: 510,
+        topupPricePerInspectionAed: 1900,
         softCap: 10000,
-        isCustom: true,
+        isCustom: false,
         isActive: true,
+        sortOrder: 2,
+      },
+      {
+        code: "housing_association" as const,
+        name: "Housing Association",
+        monthlyPriceGbp: 350000, // £3,500/mo
+        annualPriceGbp: 4200000, // £42,000/yr
+        monthlyPriceUsd: 445000, // $4,450/mo
+        annualPriceUsd: 5340000, // $53,400/yr
+        monthlyPriceAed: 1650000, // 16,500 AED/mo
+        annualPriceAed: 19800000, // 198,000 AED/yr
+        includedInspections: 833, // ~10,000/yr
+        includedCredits: 833,
+        topupPricePerInspectionGbp: 300, // £3 per inspection
+        topupPricePerInspectionUsd: 380,
+        topupPricePerInspectionAed: 1400,
+        softCap: 20000,
+        isCustom: false,
+        isActive: true,
+        sortOrder: 3,
+      },
+      {
+        code: "council" as const,
+        name: "Council / Enterprise",
+        monthlyPriceGbp: 625000, // £6,250/mo
+        annualPriceGbp: 7500000, // £75,000/yr
+        monthlyPriceUsd: 799000, // $7,990/mo
+        annualPriceUsd: 9588000, // $95,880/yr
+        monthlyPriceAed: 2950000, // 29,500 AED/mo
+        annualPriceAed: 35400000, // 354,000 AED/yr
+        includedInspections: 2083, // ~25,000/yr
+        includedCredits: 2083,
+        topupPricePerInspectionGbp: 200, // £2 per inspection
+        topupPricePerInspectionUsd: 260,
+        topupPricePerInspectionAed: 950,
+        softCap: 50000,
+        isCustom: false,
+        isActive: true,
+        sortOrder: 4,
       },
     ];
 
     for (const plan of planData) {
-      // Check if plan exists
       const existing = await db.select().from(plans).where(eq(plans.code, plan.code));
       
       if (existing.length === 0) {
         await db.insert(plans).values(plan);
         console.log(`✅ Created plan: ${plan.name}`);
       } else {
-        // Always update existing plan to ensure it matches seed data
         const [existingPlan] = existing;
-        const updates: any = {};
-        
-        // Always update annual price if seed data has it (for non-custom plans)
-        if (plan.annualPriceGbp !== null && existingPlan.annualPriceGbp !== plan.annualPriceGbp) {
-          updates.annualPriceGbp = plan.annualPriceGbp;
-        } else if (plan.annualPriceGbp === null && existingPlan.annualPriceGbp !== null) {
-          // If seed data says null (for custom plans), ensure it's null
-          updates.annualPriceGbp = null;
-        }
-        
-        // Also ensure other fields are up to date
-        if (existingPlan.monthlyPriceGbp !== plan.monthlyPriceGbp) {
-          updates.monthlyPriceGbp = plan.monthlyPriceGbp;
-        }
-        if (existingPlan.includedCredits !== plan.includedCredits) {
-          updates.includedCredits = plan.includedCredits;
-        }
-        if (existingPlan.isActive !== plan.isActive) {
-          updates.isActive = plan.isActive;
-        }
-        
-        if (Object.keys(updates).length > 0) {
-          await db.update(plans)
-            .set(updates)
-            .where(eq(plans.id, existingPlan.id));
-          console.log(`✅ Updated plan: ${plan.name} - Updated: ${Object.keys(updates).join(', ')}`);
-        } else {
-          console.log(`⏭️  Plan already exists and matches seed data: ${plan.name}`);
-        }
+        await db.update(plans)
+          .set(plan)
+          .where(eq(plans.id, existingPlan.id));
+        console.log(`✅ Updated plan: ${plan.name}`);
       }
     }
 
-    // Seed Credit Bundles (optional - skip if table doesn't exist)
-    try {
-      console.log("\n💳 Seeding credit bundles...");
-      
-      const bundleData = [
-        {
-          name: "100 Credits Pack",
-          credits: 100,
-          priceGbp: 40000, // £400 = £4.00 per credit
-          priceUsd: 52000, // $520 = $5.20 per credit
-          priceAed: 190000, // AED 1,900 = AED 19.00 per credit
-          sortOrder: 0,
-          isPopular: false,
-          discountLabel: null,
-          isActive: true,
-        },
-        {
-          name: "250 Credits Pack",
-          credits: 250,
-          priceGbp: 75000, // £750 = £3.00 per credit
-          priceUsd: 97500, // $975 = $3.90 per credit
-          priceAed: 360000, // AED 3,600 = AED 14.40 per credit
-          sortOrder: 1,
-          isPopular: true,
-          discountLabel: "Best Value",
-          isActive: true,
-        },
-        {
-          name: "500 Credits Pack",
-          credits: 500,
-          priceGbp: 100000, // £1,000 = £2.00 per credit
-          priceUsd: 130000, // $1,300 = $2.60 per credit
-          priceAed: 480000, // AED 4,800 = AED 9.60 per credit
-          sortOrder: 2,
-          isPopular: false,
-          discountLabel: "Save 50%",
-          isActive: true,
-        },
-        {
-          name: "1000 Credits Pack",
-          credits: 1000,
-          priceGbp: 150000, // £1,500 = £1.50 per credit
-          priceUsd: 195000, // $1,950 = $1.95 per credit
-          priceAed: 720000, // AED 7,200 = AED 7.20 per credit
-          sortOrder: 3,
-          isPopular: false,
-          discountLabel: "Enterprise Value",
-          isActive: true,
-        },
-      ];
+    // Seed Credit Bundles (100, 500, 1000 inspections)
+    console.log("\n💳 Seeding inspection bundles...");
+    
+    const bundleData = [
+      {
+        name: "100 Inspections Bundle",
+        credits: 100,
+        priceGbp: 55000, // £550 (Freelancer tier base price)
+        priceUsd: 69000, // $690
+        priceAed: 255000, // 2,550 AED
+        sortOrder: 0,
+        isPopular: false,
+        discountLabel: null,
+        isActive: true,
+      },
+      {
+        name: "500 Inspections Bundle",
+        credits: 500,
+        priceGbp: 265000, // £2,650 (Freelancer tier base price)
+        priceUsd: 335000, // $3,350
+        priceAed: 1225000, // 12,250 AED
+        sortOrder: 1,
+        isPopular: true,
+        discountLabel: "Popular",
+        isActive: true,
+      },
+      {
+        name: "1000 Inspections Bundle",
+        credits: 1000,
+        priceGbp: 500000, // £5,000 (Freelancer tier base price)
+        priceUsd: 635000, // $6,350
+        priceAed: 2300000, // 23,000 AED
+        sortOrder: 2,
+        isPopular: false,
+        discountLabel: "Best Value",
+        isActive: true,
+      },
+    ];
 
-      for (const bundle of bundleData) {
-        // Check if bundle exists by name and credits
-        const existing = await db
-          .select()
-          .from(creditBundles)
-          .where(eq(creditBundles.name, bundle.name));
-        
-        if (existing.length === 0) {
-          await db.insert(creditBundles).values(bundle);
-          console.log(`✅ Created bundle: ${bundle.name}`);
-        } else {
-          console.log(`⏭️  Bundle already exists: ${bundle.name}`);
-        }
-      }
-    } catch (bundleError: any) {
-      // Credit bundles table might not exist yet - that's okay
-      if (bundleError.code === '42P01') {
-        console.log(`⏭️  Credit bundles table doesn't exist yet - skipping bundle seeding`);
+    const createdBundles: Array<{ id: string; credits: number }> = [];
+
+    for (const bundle of bundleData) {
+      const existing = await db
+        .select()
+        .from(creditBundles)
+        .where(eq(creditBundles.credits, bundle.credits));
+      
+      if (existing.length === 0) {
+        const [created] = await db.insert(creditBundles).values(bundle).returning();
+        console.log(`✅ Created bundle: ${bundle.name}`);
+        createdBundles.push({ id: created.id, credits: bundle.credits });
       } else {
-        throw bundleError; // Re-throw if it's a different error
+        await db.update(creditBundles)
+          .set(bundle)
+          .where(eq(creditBundles.id, existing[0].id));
+        console.log(`✅ Updated bundle: ${bundle.name}`);
+        createdBundles.push({ id: existing[0].id, credits: bundle.credits });
+      }
+    }
+
+    // Seed tier-based pricing for each bundle
+    console.log("\n💰 Seeding tier-based bundle pricing...");
+    
+    const tierPricing = {
+      100: {
+        freelancer: { gbp: 55000, usd: 69000, aed: 255000 },
+        btr: { gbp: 45000, usd: 59000, aed: 210000 },
+        pbsa: { gbp: 36000, usd: 47000, aed: 170000 },
+        housing_association: { gbp: 27000, usd: 35000, aed: 125000 },
+        council: { gbp: 18000, usd: 24000, aed: 85000 },
+      },
+      500: {
+        freelancer: { gbp: 265000, usd: 335000, aed: 1225000 },
+        btr: { gbp: 215000, usd: 275000, aed: 995000 },
+        pbsa: { gbp: 170000, usd: 215000, aed: 785000 },
+        housing_association: { gbp: 125000, usd: 159000, aed: 575000 },
+        council: { gbp: 85000, usd: 110000, aed: 395000 },
+      },
+      1000: {
+        freelancer: { gbp: 500000, usd: 635000, aed: 2300000 },
+        btr: { gbp: 400000, usd: 510000, aed: 1840000 },
+        pbsa: { gbp: 310000, usd: 395000, aed: 1425000 },
+        housing_association: { gbp: 225000, usd: 285000, aed: 1035000 },
+        council: { gbp: 150000, usd: 190000, aed: 690000 },
+      },
+    };
+
+    for (const bundle of createdBundles) {
+      const bundleCredits = bundle.credits as 100 | 500 | 1000;
+      const pricing = tierPricing[bundleCredits];
+      
+      if (pricing) {
+        for (const [planCode, prices] of Object.entries(pricing)) {
+          const existing = await db
+            .select()
+            .from(bundleTierPricing)
+            .where(eq(bundleTierPricing.bundleId, bundle.id));
+          
+          const existingForPlan = existing.find(e => e.planCode === planCode);
+          
+          if (!existingForPlan) {
+            await db.insert(bundleTierPricing).values({
+              bundleId: bundle.id,
+              planCode: planCode as any,
+              priceGbp: prices.gbp,
+              priceUsd: prices.usd,
+              priceAed: prices.aed,
+            });
+            console.log(`✅ Created tier pricing: ${bundleCredits} bundle for ${planCode}`);
+          } else {
+            await db.update(bundleTierPricing)
+              .set({
+                priceGbp: prices.gbp,
+                priceUsd: prices.usd,
+                priceAed: prices.aed,
+              })
+              .where(eq(bundleTierPricing.id, existingForPlan.id));
+            console.log(`✅ Updated tier pricing: ${bundleCredits} bundle for ${planCode}`);
+          }
+        }
       }
     }
 

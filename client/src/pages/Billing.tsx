@@ -1,14 +1,14 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, Package, TrendingUp, ExternalLink, Zap, AlertCircle, CheckCircle2 } from "lucide-react";
+import { CreditCard, Package, TrendingUp, ExternalLink, Zap, AlertCircle, CheckCircle2, FileText, Download, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useLocale } from "@/contexts/LocaleContext";
 import { format } from "date-fns";
 import { getCurrencyForCountry, formatCurrency as formatCurrencyUtil } from "@shared/countryUtils";
+import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface Plan {
   id: string;
@@ -24,7 +27,12 @@ interface Plan {
   name: string;
   monthlyPriceGbp: number;
   annualPriceGbp?: number | null;
+  monthlyPriceUsd?: number | null;
+  annualPriceUsd?: number | null;
+  monthlyPriceAed?: number | null;
+  annualPriceAed?: number | null;
   includedCredits: number;
+  includedInspections?: number;
   includedCreditsPerMonth?: number; // For backwards compatibility
   active: boolean;
   isActive?: boolean;
@@ -67,6 +75,29 @@ interface LedgerEntry {
   } | null;
 }
 
+// Cancellation reasons
+const CANCELLATION_REASONS = [
+  { value: "too_expensive", label: "Too expensive" },
+  { value: "not_using_enough", label: "Not using enough features" },
+  { value: "switching_to_competitor", label: "Switching to a competitor" },
+  { value: "missing_features", label: "Missing features I need" },
+  { value: "temporary_pause", label: "Taking a temporary break" },
+  { value: "other", label: "Other reason" },
+];
+
+// Invoice interface
+interface Invoice {
+  id: string;
+  number: string | null;
+  date: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  pdfUrl: string | null;
+  hostedInvoiceUrl: string | null;
+  description: string;
+}
+
 export default function Billing() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -75,6 +106,18 @@ export default function Billing() {
   const [topupDialogOpen, setTopupDialogOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
+  
+  // Inspection slider state
+  const [inspectionsNeeded, setInspectionsNeeded] = useState<number>(50);
+  
+  // Currency selection state
+  const [selectedCurrency, setSelectedCurrency] = useState<"GBP" | "USD" | "AED">("GBP");
+  
+  // Cancellation dialog state
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState<string>("");
+  const [cancellationReasonText, setCancellationReasonText] = useState<string>("");
+  const [cancelImmediately, setCancelImmediately] = useState(false);
   
   // Get currency from user's organization country (via locale context)
   const currency = locale.currency;
@@ -91,9 +134,26 @@ export default function Billing() {
     : currency;
 
   // Helper function to format price based on currency
-  const formatPrice = (penceAmount: number | null | undefined, curr: "GBP" | "USD" | "AED" = effectiveCurrency) => {
+  const formatPrice = (penceAmount: number | null | undefined, curr: "GBP" | "USD" | "AED" = selectedCurrency) => {
     if (!penceAmount) return "N/A";
     return formatCurrencyUtil(penceAmount, curr, true);
+  };
+  
+  // Helper function to get the correct price for a plan based on selected currency
+  const getPlanPrice = (plan: Plan, period: "monthly" | "annual"): number | null => {
+    if (period === "monthly") {
+      switch (selectedCurrency) {
+        case "USD": return plan.monthlyPriceUsd ?? null;
+        case "AED": return plan.monthlyPriceAed ?? null;
+        default: return plan.monthlyPriceGbp ?? null;
+      }
+    } else {
+      switch (selectedCurrency) {
+        case "USD": return plan.annualPriceUsd ?? null;
+        case "AED": return plan.annualPriceAed ?? null;
+        default: return plan.annualPriceGbp ?? null;
+      }
+    }
   };
 
   // Check for action=topup URL parameter and auto-open dialog
@@ -366,14 +426,35 @@ export default function Billing() {
     enabled: !!user,
   });
 
+  // Fetch invoices
+  const { data: invoicesData, isLoading: invoicesLoading } = useQuery<{ invoices: Invoice[]; hasStripeCustomer: boolean }>({
+    queryKey: ["/api/billing/invoices"],
+    enabled: !!user,
+  });
+
+  // Fetch inspection balance
+  const { data: inspectionBalance } = useQuery<{
+    includedInspectionsPerMonth: number;
+    usedInspectionsThisMonth: number;
+    topupInspectionsBalance: number;
+    remainingMonthlyAllowance: number;
+    totalAvailable: number;
+    preferredCurrency: string;
+  }>({
+    queryKey: ["/api/billing/inspection-balance"],
+    enabled: !!user,
+  });
+
   // Create checkout session
   const checkoutMutation = useMutation({
     mutationFn: async (planCode: string) => {
       console.log(`[Billing] SUBSCRIPTION CHECKOUT initiated for plan: ${planCode}, billing period: ${billingPeriod}`);
+      console.log(`[Billing] Currency: ${selectedCurrency}`);
       console.log(`[Billing] Calling POST /api/billing/checkout`);
       const response = await apiRequest("POST", "/api/billing/checkout", { 
         planCode,
-        billingPeriod // Send billing period (monthly or annual)
+        billingPeriod, // Send billing period (monthly or annual)
+        currency: selectedCurrency
       });
       
       if (!response.ok) {
@@ -437,8 +518,12 @@ export default function Billing() {
   const topupMutation = useMutation({
     mutationFn: async (packSize: number) => {
       console.log(`[Billing] TOP-UP CHECKOUT initiated for pack size: ${packSize}`);
-      console.log(`[Billing] Calling POST /api/credits/topup/checkout`);
-      const response = await apiRequest("POST", "/api/credits/topup/checkout", { packSize });
+      console.log(`[Billing] Currency: ${selectedCurrency}`);
+      console.log(`[Billing] Calling POST /api/billing/topup-checkout`);
+      const response = await apiRequest("POST", "/api/billing/topup-checkout", { 
+        bundleSize: packSize, 
+        currency: selectedCurrency 
+      });
       const data = await response.json() as { url: string };
       console.log(`[Billing] TOP-UP checkout URL received:`, data.url);
       return data;
@@ -454,6 +539,70 @@ export default function Billing() {
       toast({
         title: "Error",
         description: error.message || "Failed to start top-up checkout",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Cancellation mutation
+  const cancelMutation = useMutation({
+    mutationFn: async ({ reason, reasonText, cancelImmediately }: { reason: string; reasonText?: string; cancelImmediately?: boolean }) => {
+      const response = await apiRequest("POST", "/api/billing/cancel", { reason, reasonText, cancelImmediately });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to cancel subscription");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setCancelDialogOpen(false);
+      setCancellationReason("");
+      setCancellationReasonText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription"] });
+      
+      if (data.cancelledImmediately) {
+        toast({
+          title: "Subscription Cancelled",
+          description: "Your subscription has been cancelled immediately.",
+        });
+      } else {
+        toast({
+          title: "Cancellation Scheduled",
+          description: `Your subscription will remain active until ${format(new Date(data.currentPeriodEnd), "MMMM d, yyyy")}.`,
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to cancel subscription",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Change plan mutation
+  const changePlanMutation = useMutation({
+    mutationFn: async ({ newPlanCode, billingInterval }: { newPlanCode: string; billingInterval: string }) => {
+      const response = await apiRequest("POST", "/api/billing/change-plan", { newPlanCode, billingInterval });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to change plan");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/inspection-balance"] });
+      toast({
+        title: data.isUpgrade ? "Plan Upgraded" : "Plan Changed",
+        description: `You are now on the ${data.newPlan.name} plan.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to change plan",
         variant: "destructive",
       });
     },
@@ -739,18 +888,30 @@ export default function Billing() {
                 data-testid="button-change-plan"
               >
                 <CreditCard className="mr-2 h-4 w-4" />
-                Change Plan or Payment Method
+                {portalMutation.isPending ? "Loading..." : "Manage Payment Method"}
               </Button>
-              <Button
-                variant={subscription.cancelAtPeriodEnd ? "default" : "destructive"}
-                className="flex-1"
-                onClick={() => portalMutation.mutate()}
-                disabled={portalMutation.isPending}
-                data-testid="button-cancel-subscription"
-              >
-                <AlertCircle className="mr-2 h-4 w-4" />
-                {subscription.cancelAtPeriodEnd ? "Reactivate Subscription" : "Cancel Subscription"}
-              </Button>
+              {subscription.cancelAtPeriodEnd ? (
+                <Button
+                  variant="default"
+                  className="flex-1"
+                  onClick={() => portalMutation.mutate()}
+                  disabled={portalMutation.isPending}
+                  data-testid="button-reactivate-subscription"
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Reactivate Subscription
+                </Button>
+              ) : (
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => setCancelDialogOpen(true)}
+                  data-testid="button-cancel-subscription"
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel Subscription
+                </Button>
+              )}
             </div>
 
             {!subscription.cancelAtPeriodEnd && (
@@ -765,9 +926,80 @@ export default function Billing() {
         </Card>
       )}
 
+      {/* Plan Finder - Inspection Slider */}
+      <Card data-testid="card-plan-finder">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Find Your Perfect Plan
+          </CardTitle>
+          <CardDescription>
+            Drag the slider to estimate your monthly inspection needs
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Inspections per month</Label>
+              <span className="text-2xl font-bold text-primary" data-testid="text-inspections-needed">{inspectionsNeeded}</span>
+            </div>
+            <Slider
+              value={[inspectionsNeeded]}
+              onValueChange={(value) => setInspectionsNeeded(value[0])}
+              min={10}
+              max={2000}
+              step={10}
+              className="w-full"
+              data-testid="slider-inspections"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>10</span>
+              <span>100</span>
+              <span>500</span>
+              <span>1000</span>
+              <span>2000</span>
+            </div>
+          </div>
+
+          {/* Recommended Plan Highlight */}
+          <div className="bg-muted p-4 rounded-md">
+            <p className="text-sm">
+              Based on <strong>{inspectionsNeeded} inspections/month</strong>, we recommend:
+            </p>
+            <p className="text-lg font-bold text-primary mt-1">
+              {inspectionsNeeded <= 10 && "Freelancer Plan"}
+              {inspectionsNeeded > 10 && inspectionsNeeded <= 100 && "BTR/Lettings Plan"}
+              {inspectionsNeeded > 100 && inspectionsNeeded <= 500 && "PBSA Plan"}
+              {inspectionsNeeded > 500 && inspectionsNeeded <= 1000 && "Housing Association Plan"}
+              {inspectionsNeeded > 1000 && "Council/Enterprise Plan"}
+            </p>
+            {inspectionsNeeded > 1000 && (
+              <p className="text-xs text-muted-foreground mt-2">
+                For more than 1000 inspections, please contact our sales team for custom pricing.
+              </p>
+            )}
+          </div>
+
+          {/* Currency Selector */}
+          <div className="flex items-center gap-4">
+            <Label className="text-sm">Display prices in:</Label>
+            <Select value={selectedCurrency} onValueChange={(v) => setSelectedCurrency(v as "GBP" | "USD" | "AED")}>
+              <SelectTrigger className="w-32" data-testid="select-currency">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GBP">GBP</SelectItem>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="AED">AED</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Available Plans */}
       <div id="plans">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <h2 className="text-2xl font-bold">Available Plans</h2>
           
           <div className="flex items-center gap-6">
@@ -794,43 +1026,56 @@ export default function Billing() {
             <p className="text-muted-foreground">Loading plans...</p>
           </div>
         ) : plans && plans.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {plans
             .sort((a, b) => {
-              const order = ['starter', 'professional', 'enterprise', 'enterprise_plus'];
+              const order = ['freelancer', 'btr', 'pbsa', 'housing_association', 'council'];
               return order.indexOf(a.code) - order.indexOf(b.code);
             })
             .map((plan) => {
-            const planDescriptions: Record<string, { idealFor: string; features: string[] }> = {
-              starter: {
-                idealFor: "Ideal for Small Property Managers or Local Agents",
+            const planDescriptions: Record<string, { idealFor: string; features: string[]; popular?: boolean }> = {
+              freelancer: {
+                idealFor: "Independent Inspectors & Small Landlords",
                 features: [
-                  "50 Inspection Credits per month",
-                  "AI-powered inspections",
-                  "Basic support"
+                  "10 Inspections per month",
+                  "AI-powered analysis",
+                  "Basic reporting",
+                  "Email support"
                 ]
               },
-              professional: {
-                idealFor: "Ideal for Medium Sized Agency / Facilities Manager",
+              btr: {
+                idealFor: "Build-to-Rent Operators & Lettings Agents",
                 features: [
-                  "200 Inspection Credits per month",
-                  "AI-powered inspections",
+                  "100 Inspections per month",
+                  "AI-powered analysis",
+                  "Full reporting suite",
                   "Priority support"
+                ],
+                popular: true
+              },
+              pbsa: {
+                idealFor: "Student Accommodation Providers",
+                features: [
+                  "500 Inspections per month",
+                  "AI-powered analysis",
+                  "Bulk scheduling",
+                  "Dedicated support"
                 ]
               },
-              enterprise: {
-                idealFor: "Ideal for BTR, Housing Association, or Student Accommodation Provider",
+              housing_association: {
+                idealFor: "Housing Associations & Social Housing",
                 features: [
-                  "500 Inspection Credits per month",
-                  "AI-powered inspections",
-                  "Dedicated account manager"
+                  "1000 Inspections per month",
+                  "AI-powered analysis",
+                  "Compliance tracking",
+                  "Account manager"
                 ]
               },
-              enterprise_plus: {
-                idealFor: "Ideal for National or Multi-Site Operator",
+              council: {
+                idealFor: "Councils & Enterprise Organizations",
                 features: [
-                  "2000+ Inspection Credits per month",
-                  "AI-powered inspections",
+                  "2000+ Inspections per month",
+                  "Full AI suite",
                   "White-label options",
                   "Custom integrations"
                 ]
@@ -842,73 +1087,79 @@ export default function Billing() {
               features: [`${plan.includedCreditsPerMonth} credits/month`, "AI-powered inspections"]
             };
 
+            const isPopular = description.popular;
+            const isCurrentPlan = subscription?.planSnapshotJson.planName === plan.name;
+            
             return (
-              <Card key={plan.id} data-testid={`card-plan-${plan.code}`} className={subscription?.planSnapshotJson.planName === plan.name ? "border-primary" : ""}>
-                <CardHeader>
-                  <CardTitle>{plan.name}</CardTitle>
-                  {plan.code === "enterprise_plus" ? (
+              <Card key={plan.id} data-testid={`card-plan-${plan.code}`} className={`relative ${isCurrentPlan ? "border-primary" : ""} ${isPopular ? "border-primary shadow-md" : ""}`}>
+                {isPopular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-primary text-primary-foreground">Most Popular</Badge>
+                  </div>
+                )}
+                <CardHeader className={isPopular ? "pt-6" : ""}>
+                  <CardTitle className="flex items-center justify-between gap-2">
+                    {plan.name}
+                  </CardTitle>
+                  {plan.code === "council" ? (
                     <CardDescription>
                       <span className="text-2xl font-bold">Custom Pricing</span>
                     </CardDescription>
                   ) : (
                     <CardDescription>
-                      {billingPeriod === "annual" && plan.annualPriceGbp ? (
+                      {billingPeriod === "annual" && getPlanPrice(plan, "annual") ? (
                         <>
-                          <span className="text-3xl font-bold">{formatPrice(plan.annualPriceGbp, effectiveCurrency)}</span>
-                          <span className="text-base text-muted-foreground">/year</span>
-                          <div className="text-sm text-muted-foreground mt-1">
-                            ({formatPrice(Math.floor(plan.annualPriceGbp / 12), effectiveCurrency)}/month billed annually)
+                          <span className="text-2xl font-bold">{formatPrice(getPlanPrice(plan, "annual"))}</span>
+                          <span className="text-sm text-muted-foreground">/year</span>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            ({formatPrice(Math.floor((getPlanPrice(plan, "annual") ?? 0) / 12))}/mo)
                           </div>
                         </>
-                      ) : billingPeriod === "annual" && !plan.annualPriceGbp ? (
+                      ) : billingPeriod === "annual" && !getPlanPrice(plan, "annual") ? (
                         <div className="space-y-1">
-                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, effectiveCurrency)}</span>
-                          <span className="text-base text-muted-foreground">/month</span>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            Annual billing not available for this plan
-                          </div>
+                          <span className="text-2xl font-bold">{formatPrice(getPlanPrice(plan, "monthly"))}</span>
+                          <span className="text-sm text-muted-foreground">/month</span>
                         </div>
                       ) : (
                         <>
-                          <span className="text-3xl font-bold">{formatPrice(plan.monthlyPriceGbp, effectiveCurrency)}</span>
-                          <span className="text-base text-muted-foreground">/month</span>
+                          <span className="text-2xl font-bold">{formatPrice(getPlanPrice(plan, "monthly"))}</span>
+                          <span className="text-sm text-muted-foreground">/month</span>
                         </>
                       )}
                     </CardDescription>
                   )}
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <p className="text-sm text-muted-foreground italic">{description.idealFor}</p>
+                  <p className="text-xs text-muted-foreground italic">{description.idealFor}</p>
                   <Separator />
                   <div className="space-y-2">
                     {description.features.map((feature, idx) => (
                       <div key={idx} className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="text-sm">{feature}</span>
+                        <span className="text-xs">{feature}</span>
                       </div>
                     ))}
                   </div>
 
                   <Button
                     className="w-full"
-                    variant={subscription?.planSnapshotJson.planName === plan.name ? "outline" : "default"}
+                    variant={isCurrentPlan ? "outline" : isPopular ? "default" : "secondary"}
                     onClick={() => {
-                      if (plan.code === "enterprise_plus") {
-                        console.log(`[Billing] Contact Sales clicked for Enterprise+`);
-                        window.location.href = "mailto:sales@inspect360.com?subject=Enterprise+ Inquiry";
+                      if (plan.code === "council") {
+                        console.log(`[Billing] Contact Sales clicked for Council/Enterprise`);
+                        window.location.href = "mailto:sales@inspect360.com?subject=Council/Enterprise Inquiry";
                       } else {
                         console.log(`[Billing] SELECT PLAN CLICKED for plan: ${plan.code} (${plan.name})`);
                         console.log(`[Billing] Billing period: ${billingPeriod}`);
-                        console.log(`[Billing] This should trigger SUBSCRIPTION checkout, NOT top-up`);
                         checkoutMutation.mutate(plan.code);
                       }
                     }}
-                    disabled={checkoutMutation.isPending || topupMutation.isPending || subscription?.planSnapshotJson.planName === plan.name}
+                    disabled={checkoutMutation.isPending || topupMutation.isPending || isCurrentPlan}
                     data-testid={`button-select-plan-${plan.code}`}
                   >
-                    {subscription?.planSnapshotJson.planName === plan.name 
+                    {isCurrentPlan 
                       ? "Current Plan" 
-                      : plan.code === "enterprise_plus" 
+                      : plan.code === "council" 
                         ? "Contact Sales" 
                         : "Select Plan"}
                   </Button>
@@ -1053,6 +1304,133 @@ export default function Billing() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Invoices / Billing History */}
+      <Card data-testid="card-invoices">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Invoices
+          </CardTitle>
+          <CardDescription>View and download your billing invoices</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {invoicesLoading ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Loading invoices...</p>
+          ) : !invoicesData?.hasStripeCustomer ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No invoices yet. Subscribe to a plan to see invoices here.
+            </p>
+          ) : invoicesData.invoices.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No invoices available</p>
+          ) : (
+            <div className="space-y-3">
+              {invoicesData.invoices.slice(0, 10).map((invoice) => (
+                <div key={invoice.id} className="flex items-center justify-between py-2 border-b last:border-0" data-testid={`invoice-${invoice.id}`}>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{invoice.description}</p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{invoice.number || "Draft"}</span>
+                      {invoice.date && (
+                        <>
+                          <span>•</span>
+                          <span>{format(new Date(invoice.date), "MMM d, yyyy")}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-sm font-medium">{formatCurrency(invoice.amount, invoice.currency)}</p>
+                      <Badge variant={invoice.status === "paid" ? "default" : invoice.status === "open" ? "secondary" : "outline"} className="text-xs">
+                        {invoice.status}
+                      </Badge>
+                    </div>
+                    {invoice.pdfUrl && (
+                      <Button variant="ghost" size="icon" asChild>
+                        <a href={invoice.pdfUrl} target="_blank" rel="noopener noreferrer" data-testid={`button-download-invoice-${invoice.id}`}>
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cancellation Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel Subscription</DialogTitle>
+            <DialogDescription>
+              We're sorry to see you go. Please let us know why you're canceling.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3">
+              <Label>Why are you canceling?</Label>
+              <RadioGroup value={cancellationReason} onValueChange={setCancellationReason}>
+                {CANCELLATION_REASONS.map((reason) => (
+                  <div key={reason.value} className="flex items-center space-x-2">
+                    <RadioGroupItem value={reason.value} id={reason.value} />
+                    <Label htmlFor={reason.value} className="font-normal">{reason.label}</Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+
+            {cancellationReason === "other" && (
+              <div className="space-y-2">
+                <Label>Please tell us more</Label>
+                <Textarea
+                  placeholder="Your feedback helps us improve..."
+                  value={cancellationReasonText}
+                  onChange={(e) => setCancellationReasonText(e.target.value)}
+                  className="min-h-20"
+                  data-testid="textarea-cancellation-reason"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="cancel-immediately"
+                checked={cancelImmediately}
+                onCheckedChange={setCancelImmediately}
+              />
+              <Label htmlFor="cancel-immediately" className="text-sm">
+                Cancel immediately (lose remaining access)
+              </Label>
+            </div>
+
+            {!cancelImmediately && subscription && (
+              <div className="bg-muted p-3 rounded-md">
+                <p className="text-xs text-muted-foreground">
+                  Your subscription will remain active until <strong>{format(new Date(subscription.currentPeriodEnd), "MMMM d, yyyy")}</strong>.
+                  You can continue using all features until then.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>
+              Keep Subscription
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => cancelMutation.mutate({ reason: cancellationReason, reasonText: cancellationReasonText, cancelImmediately })}
+              disabled={!cancellationReason || cancelMutation.isPending}
+              data-testid="button-confirm-cancel"
+            >
+              {cancelMutation.isPending ? "Canceling..." : "Confirm Cancellation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

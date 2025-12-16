@@ -144,6 +144,8 @@ import {
   creditBundles,
   type CreditBundle,
   type InsertCreditBundle,
+  bundleTierPricing,
+  type BundleTierPricing,
   knowledgeBaseDocuments,
   type KnowledgeBaseDocument,
   type InsertKnowledgeBaseDocument,
@@ -302,6 +304,11 @@ export interface IStorage {
   createCreditBundle(bundle: InsertCreditBundle): Promise<CreditBundle>;
   updateCreditBundle(id: string, updates: Partial<InsertCreditBundle>): Promise<CreditBundle>;
   deleteCreditBundle(id: string): Promise<void>;
+
+  // Bundle Tier Pricing operations
+  getBundleTierPricing(bundleId: string, planCode: string): Promise<BundleTierPricing | undefined>;
+  getBundleTierPricingByBundle(bundleId: string): Promise<BundleTierPricing[]>;
+  getAllBundleTierPricing(): Promise<BundleTierPricing[]>;
 
   // Subscription operations
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
@@ -3316,6 +3323,31 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCreditBundle(id: string): Promise<void> {
     await db.delete(creditBundles).where(eq(creditBundles.id, id));
+  }
+
+  // Bundle Tier Pricing operations
+  async getBundleTierPricing(bundleId: string, planCode: string): Promise<BundleTierPricing | undefined> {
+    const [pricing] = await db
+      .select()
+      .from(bundleTierPricing)
+      .where(
+        and(
+          eq(bundleTierPricing.bundleId, bundleId),
+          eq(bundleTierPricing.planCode, planCode as any)
+        )
+      );
+    return pricing;
+  }
+
+  async getBundleTierPricingByBundle(bundleId: string): Promise<BundleTierPricing[]> {
+    return await db
+      .select()
+      .from(bundleTierPricing)
+      .where(eq(bundleTierPricing.bundleId, bundleId));
+  }
+
+  async getAllBundleTierPricing(): Promise<BundleTierPricing[]> {
+    return await db.select().from(bundleTierPricing);
   }
 
   // Subscription operations
