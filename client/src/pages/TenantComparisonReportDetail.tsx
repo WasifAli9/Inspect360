@@ -7,8 +7,18 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import SignatureCanvas from "react-signature-canvas";
-import { Trash2 } from "lucide-react";
+import { Trash2, Flag, Loader2 } from "lucide-react";
 import { 
   FileText, 
   ArrowLeft, 
@@ -71,6 +81,11 @@ interface ComparisonReportItem {
   status: string;
   checkInPhotos?: string[];
   checkOutPhotos?: string[];
+  disputeReason?: string | null;
+  disputedAt?: string | null;
+  aiCostCalculationNotes?: string | null;
+  costCalculationMethod?: string | null;
+  assetInventoryId?: string | null;
 }
 
 interface Comment {
@@ -114,6 +129,11 @@ export default function TenantComparisonReportDetail() {
   const [commentText, setCommentText] = useState("");
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const signaturePadRef = useRef<SignatureCanvas>(null);
+  
+  // Dispute dialog state
+  const [disputeDialogOpen, setDisputeDialogOpen] = useState(false);
+  const [selectedItemForDispute, setSelectedItemForDispute] = useState<ComparisonReportItem | null>(null);
+  const [disputeReason, setDisputeReason] = useState("");
 
   const { data: report, isLoading } = useQuery<ComparisonReport>({
     queryKey: ["/api/tenant/comparison-reports", id],
@@ -182,6 +202,48 @@ export default function TenantComparisonReportDetail() {
       });
     },
   });
+
+  const disputeMutation = useMutation({
+    mutationFn: async (data: { itemId: string; reason: string }) => {
+      const response = await apiRequest("POST", `/api/tenant/comparison-reports/${id}/items/${data.itemId}/dispute`, {
+        reason: data.reason,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/comparison-reports", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/comparison-reports", id, "comments"] });
+      setDisputeDialogOpen(false);
+      setSelectedItemForDispute(null);
+      setDisputeReason("");
+      toast({
+        title: "Dispute Submitted",
+        description: "Your dispute has been submitted. The property manager will review it and the cost has been recalculated based on AI analysis.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to submit dispute.",
+      });
+    },
+  });
+
+  const handleOpenDisputeDialog = (item: ComparisonReportItem) => {
+    setSelectedItemForDispute(item);
+    setDisputeReason("");
+    setDisputeDialogOpen(true);
+  };
+
+  const handleSubmitDispute = () => {
+    if (!selectedItemForDispute || !disputeReason.trim()) return;
+    
+    disputeMutation.mutate({
+      itemId: selectedItemForDispute.id,
+      reason: disputeReason,
+    });
+  };
 
   const handleDownloadPdf = async () => {
     if (!id) return;
@@ -457,6 +519,45 @@ export default function TenantComparisonReportDetail() {
                     </div>
                   </div>
                 </div>
+
+                {/* Show dispute info if disputed */}
+                {item.status === "disputed" && item.aiCostCalculationNotes && (
+                  <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2">
+                    <h4 className="font-medium text-sm flex items-center gap-2 text-amber-900 dark:text-amber-100">
+                      <Flag className="w-4 h-4" />
+                      Dispute Details
+                    </h4>
+                    {item.disputeReason && (
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        <span className="font-medium">Your reason:</span> {item.disputeReason}
+                      </p>
+                    )}
+                    <div className="text-sm text-amber-800 dark:text-amber-200 whitespace-pre-wrap font-mono bg-amber-100/50 dark:bg-amber-900/20 p-2 rounded">
+                      {item.aiCostCalculationNotes}
+                    </div>
+                    {item.costCalculationMethod && (
+                      <Badge variant="outline" className="text-xs">
+                        {item.costCalculationMethod === "depreciation" ? "Based on Asset Depreciation" : "Based on Local Market Search"}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+
+                {/* Dispute button - only show if not already disputed and report not finalized */}
+                {item.status !== "disputed" && item.status !== "resolved" && item.status !== "waived" && 
+                 report.status !== "signed" && report.status !== "filed" && !report.tenantSignature && (
+                  <div className="pt-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleOpenDisputeDialog(item)}
+                      data-testid={`button-dispute-${item.id}`}
+                    >
+                      <Flag className="w-4 h-4 mr-2" />
+                      Dispute This Item
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -724,6 +825,80 @@ export default function TenantComparisonReportDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* Dispute Dialog */}
+      <Dialog open={disputeDialogOpen} onOpenChange={setDisputeDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Flag className="w-5 h-5" />
+              Dispute Item
+            </DialogTitle>
+            <DialogDescription>
+              Explain why you disagree with this charge. We'll use AI to calculate a fair cost based on depreciation or local market rates.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedItemForDispute && (
+            <div className="space-y-4">
+              <div className="bg-muted p-3 rounded-lg">
+                <p className="font-medium">{selectedItemForDispute.sectionRef} - {selectedItemForDispute.fieldKey}</p>
+                {selectedItemForDispute.itemRef && (
+                  <p className="text-sm text-muted-foreground">{selectedItemForDispute.itemRef}</p>
+                )}
+                <p className="text-sm mt-1">
+                  Current cost: <span className="font-semibold">{locale.formatCurrency(parseFloat(selectedItemForDispute.finalCost || "0"), false)}</span>
+                </p>
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                When you submit this dispute, our AI will analyze the charge and recalculate the cost fairly. 
+                For inventory items with linked assets, we'll use depreciated values. For other items, 
+                we'll estimate costs based on local market rates.
+              </p>
+
+              <div className="space-y-2">
+                <Label htmlFor="dispute-reason">Reason for Dispute</Label>
+                <Textarea
+                  id="dispute-reason"
+                  placeholder="Please explain why you believe this charge is incorrect or unfair..."
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  rows={4}
+                  data-testid="textarea-dispute-reason"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDisputeDialogOpen(false)}
+              disabled={disputeMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitDispute}
+              disabled={!disputeReason.trim() || disputeMutation.isPending}
+              data-testid="button-submit-dispute"
+            >
+              {disputeMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Flag className="w-4 h-4 mr-2" />
+                  Submit Dispute
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

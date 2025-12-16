@@ -16358,6 +16358,222 @@ Answer the user's question based on the data provided above. Focus on being help
     }
   });
 
+  // Dispute a comparison report item (tenant)
+  app.post("/api/tenant/comparison-reports/:reportId/items/:itemId/dispute", isAuthenticated, async (req: any, res) => {
+    try {
+      const { reportId, itemId } = req.params;
+      const { reason } = req.body; // Only accept reason - itemType is determined server-side
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+
+      if (!user || user.role !== "tenant") {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!reason || reason.trim().length === 0) {
+        return res.status(400).json({ message: "Dispute reason is required" });
+      }
+
+      const report = await storage.getComparisonReport(reportId);
+      if (!report) {
+        return res.status(404).json({ message: "Comparison report not found" });
+      }
+
+      // Verify tenant has access to this report
+      const assignments = await db
+        .select({ propertyId: tenantAssignments.propertyId })
+        .from(tenantAssignments)
+        .where(eq(tenantAssignments.tenantId, userId));
+
+      const tenantPropertyIds = assignments.map(a => a.propertyId);
+      const tenantHasAccess = tenantPropertyIds.includes(report.propertyId);
+
+      if (!tenantHasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Prevent disputes on finalized reports
+      if (report.status === "signed" || report.status === "filed" || report.tenantSignature) {
+        return res.status(409).json({ message: "Cannot dispute items on finalized reports" });
+      }
+
+      // Get the comparison report item
+      const items = await storage.getComparisonReportItems(reportId);
+      const item = items.find((i: any) => i.id === itemId);
+
+      if (!item) {
+        return res.status(404).json({ message: "Comparison report item not found" });
+      }
+
+      // Get property for location data
+      const property = await storage.getProperty(report.propertyId);
+      if (!property) {
+        return res.status(404).json({ message: "Property not found" });
+      }
+
+      let aiCostNotes = "";
+      let costMethod = "";
+      let calculatedCost = item.estimatedCost;
+      let calculatedDepreciation = item.depreciation;
+      let calculatedFinalCost = item.finalCost;
+      let verifiedAssetId: string | null = null;
+
+      // Server-side only: Check if there's an existing linked asset on the item
+      // This is set by operators during comparison report creation, not by tenants
+      const existingAssetId = item.assetInventoryId;
+      let matchedAsset = null;
+
+      if (existingAssetId) {
+        // Only use assets that are already linked AND belong to the right organization
+        const assets = await db.select()
+          .from(assetInventory)
+          .where(and(
+            eq(assetInventory.id, existingAssetId),
+            eq(assetInventory.organizationId, report.organizationId),
+            eq(assetInventory.propertyId, report.propertyId)
+          ))
+          .limit(1);
+        if (assets.length > 0) {
+          matchedAsset = assets[0];
+          verifiedAssetId = existingAssetId;
+        }
+      }
+
+      // Determine item type purely from server-side data - tenant cannot influence this
+      const actualItemType = matchedAsset ? "inventory" : "maintenance";
+
+      // Process based on actual (verified) item type
+      if (actualItemType === "inventory" && matchedAsset) {
+        // Inventory item - use depreciated value
+        costMethod = "depreciation";
+        
+        const asset = matchedAsset;
+        const purchasePrice = parseFloat(asset.purchasePrice || "0");
+        const currentValue = parseFloat(asset.currentValue || "0");
+        const depreciationPerYear = parseFloat(asset.depreciationPerYear || "0");
+        const expectedLifespan = asset.expectedLifespanYears || 5;
+        
+        // Calculate depreciated value if not already set
+        let depreciatedValue = currentValue;
+        if (depreciatedValue === 0 && purchasePrice > 0 && asset.datePurchased) {
+          const purchaseDate = new Date(asset.datePurchased);
+          const yearsOwned = Math.max(0, (Date.now() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24 * 365));
+          const totalDepreciation = depreciationPerYear > 0 
+            ? depreciationPerYear * yearsOwned 
+            : (purchasePrice / expectedLifespan) * yearsOwned;
+          depreciatedValue = Math.max(0, purchasePrice - totalDepreciation);
+        }
+
+        calculatedCost = depreciatedValue.toFixed(2);
+        calculatedDepreciation = (purchasePrice - depreciatedValue).toFixed(2);
+        calculatedFinalCost = depreciatedValue.toFixed(2);
+
+        aiCostNotes = `DEPRECIATION-BASED COST CALCULATION:
+Asset: ${asset.name}
+Category: ${asset.category || "N/A"}
+Original Purchase Price: £${purchasePrice.toFixed(2)}
+Purchase Date: ${asset.datePurchased ? format(new Date(asset.datePurchased), "MMM d, yyyy") : "Unknown"}
+Expected Lifespan: ${expectedLifespan} years
+Annual Depreciation: £${depreciationPerYear.toFixed(2)}
+Current Depreciated Value: £${depreciatedValue.toFixed(2)}
+Total Depreciation Applied: £${(purchasePrice - depreciatedValue).toFixed(2)}
+
+The repair/replacement cost has been calculated using the asset's depreciated value rather than the original purchase price. This reflects fair wear and tear over the item's lifetime.`;
+      } else {
+        // Maintenance issue - search for local repair costs
+        costMethod = "local_market_search";
+        
+        const location = `${property.city || ""}, ${property.address || ""}`.trim();
+        const itemDescription = item.itemRef || item.sectionRef || item.fieldKey;
+
+        // Use AI to search for local repair costs
+        try {
+          const openaiApiKey = process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+          if (openaiApiKey) {
+            const openai = new OpenAI({ apiKey: openaiApiKey });
+            
+            const searchPrompt = `You are a property maintenance cost estimator. Based on the location and issue described, provide an estimated cost range for repair in the UK market.
+
+Location: ${location}
+Issue/Item: ${itemDescription}
+${item.aiSummary ? `Description: ${item.aiSummary}` : ""}
+
+Please provide:
+1. Average cost range for this type of repair in this area
+2. Factors that affect the price (e.g., labor rates, materials)
+3. Recommendation for next steps
+
+Format your response as a brief, professional cost assessment note. Include specific price ranges in GBP (£).`;
+
+            const response = await openai.chat.completions.create({
+              model: "gpt-4o",
+              messages: [
+                { role: "system", content: "You are a property maintenance cost expert with knowledge of UK repair costs." },
+                { role: "user", content: searchPrompt }
+              ],
+              max_tokens: 500,
+              temperature: 0.3,
+            });
+
+            aiCostNotes = `LOCAL MARKET REPAIR COST ANALYSIS:
+Location: ${location}
+Issue: ${itemDescription}
+
+${response.choices[0]?.message?.content || "Unable to retrieve cost estimate."}
+
+Note: This is an AI-generated estimate based on typical market rates. Actual costs may vary based on specific contractor quotes and property conditions.`;
+          } else {
+            aiCostNotes = `LOCAL MARKET ANALYSIS UNAVAILABLE:
+OpenAI API key not configured. Original cost estimate retained.
+Please obtain quotes from local contractors for accurate pricing.`;
+          }
+        } catch (aiError) {
+          console.error("Error getting AI cost estimate:", aiError);
+          aiCostNotes = `LOCAL MARKET ANALYSIS ERROR:
+Unable to retrieve local market pricing. Original cost estimate retained.
+Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
+        }
+      }
+
+      // Update the comparison report item with dispute information
+      const updatedItem = await db.update(comparisonReportItems)
+        .set({
+          status: "disputed",
+          disputeReason: reason.trim(),
+          disputedAt: new Date(),
+          aiCostCalculationNotes: aiCostNotes,
+          costCalculationMethod: costMethod || null,
+          assetInventoryId: verifiedAssetId,
+          estimatedCost: calculatedCost,
+          depreciation: calculatedDepreciation,
+          finalCost: calculatedFinalCost,
+          updatedAt: new Date(),
+        })
+        .where(eq(comparisonReportItems.id, itemId))
+        .returning();
+
+      // Also add a comment to the report for visibility
+      await storage.createComparisonComment({
+        comparisonReportId: reportId,
+        comparisonReportItemId: itemId,
+        userId: user.id,
+        authorName: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+        authorRole: "tenant",
+        content: `DISPUTE RAISED: ${reason.trim()}\n\n${aiCostNotes}`,
+        isInternal: false,
+      });
+
+      res.json({
+        item: updatedItem[0],
+        message: "Item disputed successfully",
+        aiCostNotes,
+      });
+    } catch (error) {
+      console.error("Error disputing comparison report item:", error);
+      res.status(500).json({ message: "Failed to dispute item" });
+    }
+  });
+
   // ==================== REPORTS ====================
 
   // Branding info type for reports

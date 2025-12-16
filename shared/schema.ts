@@ -827,6 +827,12 @@ export const comparisonReportItems = pgTable("comparison_report_items", {
   liabilityDecision: varchar("liability_decision"), // "tenant", "landlord", "shared", "waived"
   liabilityNotes: text("liability_notes"),
   status: comparisonItemStatusEnum("status").notNull().default("pending"), // Item review status
+  // Dispute-related fields
+  disputeReason: text("dispute_reason"), // Tenant's reason for disputing
+  disputedAt: timestamp("disputed_at"), // When the dispute was raised
+  aiCostCalculationNotes: text("ai_cost_calculation_notes"), // AI-generated notes about cost calculation
+  costCalculationMethod: varchar("cost_calculation_method"), // "depreciation" or "local_market_search"
+  assetInventoryId: varchar("asset_inventory_id"), // Link to asset if this is an inventory item
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
