@@ -50,9 +50,6 @@ interface PendingSelection {
 interface ComplianceCalendarProps {
   entityType: 'property' | 'block';
   entityId?: string;
-  // Optional: external data for when parent fetches the data (e.g., Dashboard)
-  report?: ComplianceReport | null;
-  isLoading?: boolean;
 }
 
 interface StatusCellProps {
@@ -140,18 +137,15 @@ function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: Statu
   );
 }
 
-export default function ComplianceCalendar({ entityType, entityId, report: externalReport, isLoading: externalLoading }: ComplianceCalendarProps) {
+export default function ComplianceCalendar({ entityType, entityId }: ComplianceCalendarProps) {
   const { toast } = useToast();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [pendingSelections, setPendingSelections] = useState<PendingSelection[]>([]);
   const [selectedType, setSelectedType] = useState<string>('routine');
 
-  // Determine if we should fetch data internally or use external data
-  const useExternalData = externalReport !== undefined;
-
-  // Fetch compliance report with year parameter (only when not using external data)
-  const { data: internalReport, isLoading: internalLoading } = useQuery<ComplianceReport>({
+  // Always fetch compliance report with year parameter
+  const { data: report, isLoading } = useQuery<ComplianceReport>({
     queryKey: [`/api/${entityType === 'property' ? 'properties' : 'blocks'}`, entityId, 'compliance-report', selectedYear],
     queryFn: async () => {
       const endpoint = entityType === 'property' 
@@ -161,12 +155,8 @@ export default function ComplianceCalendar({ entityType, entityId, report: exter
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!entityId && !useExternalData,
+    enabled: !!entityId,
   });
-
-  // Use external data if provided, otherwise use internal data
-  const report = useExternalData ? externalReport : internalReport;
-  const isLoading = useExternalData ? (externalLoading ?? false) : internalLoading;
 
   const bulkScheduleMutation = useMutation({
     mutationFn: async (params: { selections: PendingSelection[], yearToSchedule: number }) => {

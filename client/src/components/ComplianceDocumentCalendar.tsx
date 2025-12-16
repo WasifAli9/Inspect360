@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,9 +14,11 @@ interface ComplianceDocument {
 }
 
 interface ComplianceDocumentCalendarProps {
-  documents: ComplianceDocument[];
-  isLoading: boolean;
-  entityType: 'property' | 'block';
+  entityType?: 'property' | 'block';
+  entityId?: string;
+  // Optional: for aggregate views like Compliance page where documents are filtered externally
+  documents?: ComplianceDocument[];
+  isLoading?: boolean;
 }
 
 type DocumentStatus = 'valid' | 'expiring_soon' | 'expired' | 'no_expiry';
@@ -92,11 +95,32 @@ function StatusCell({ data }: { data: MonthData }) {
   );
 }
 
-export default function ComplianceDocumentCalendar({ documents, isLoading, entityType }: ComplianceDocumentCalendarProps) {
+export default function ComplianceDocumentCalendar({ entityType, entityId, documents: externalDocs, isLoading: externalLoading }: ComplianceDocumentCalendarProps) {
   const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
   const [selectedYear, setSelectedYear] = useState(currentYear);
+
+  // Determine if we should fetch data internally or use external data
+  const useExternalData = externalDocs !== undefined;
+
+  // Fetch compliance documents for the entity (only when not using external data)
+  const { data: internalDocs = [], isLoading: internalLoading } = useQuery<ComplianceDocument[]>({
+    queryKey: [`/api/${entityType === 'property' ? 'properties' : 'blocks'}`, entityId, 'compliance'],
+    queryFn: async () => {
+      const endpoint = entityType === 'property' 
+        ? `/api/properties/${entityId}/compliance`
+        : `/api/blocks/${entityId}/compliance`;
+      const res = await fetch(endpoint, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!entityId && !useExternalData,
+  });
+
+  // Use external data if provided, otherwise use internal data
+  const documents = useExternalData ? externalDocs : internalDocs;
+  const isLoading = useExternalData ? (externalLoading ?? false) : internalLoading;
 
   const yearNavigator = (
     <div className="flex items-center gap-1">

@@ -1094,8 +1094,6 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ComplianceCalendar 
-              report={inspectionScheduleEntityId ? inspectionComplianceReport : undefined} 
-              isLoading={inspectionScheduleEntityId ? inspectionComplianceLoading : false}
               entityType={inspectionScheduleEntityType as 'property' | 'block' || 'property'}
               entityId={inspectionScheduleEntityId || undefined}
             />
@@ -1149,9 +1147,8 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <ComplianceDocumentCalendar 
-              documents={complianceScheduleEntityId ? complianceDocuments : []} 
-              isLoading={complianceScheduleEntityId ? complianceDocumentsLoading : false}
               entityType={complianceScheduleEntityType as 'property' | 'block' || 'property'}
+              entityId={complianceScheduleEntityId || undefined}
             />
           </CardContent>
         </Card>

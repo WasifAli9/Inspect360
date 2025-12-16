@@ -297,8 +297,6 @@ export default function PropertyDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/properties', propertyId, 'compliance'] });
       queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
-      // Also invalidate Dashboard's compliance documents query
-      queryClient.invalidateQueries({ queryKey: ['/api/compliance-documents', 'property', propertyId] });
       setUploadDialogOpen(false);
       form.reset({
         documentType: "",
@@ -817,15 +815,8 @@ export default function PropertyDetail() {
         <TabsContent value="compliance-schedule" className="space-y-6">
           {/* Annual Compliance Document Calendar */}
           <ComplianceDocumentCalendar 
-            documents={compliance.map(doc => ({
-              id: doc.id,
-              documentType: doc.documentType,
-              expiryDate: doc.expiryDate,
-              documentUrl: doc.documentUrl || '',
-              createdAt: doc.createdAt || new Date().toISOString(),
-            }))}
-            isLoading={propertyLoading}
             entityType="property"
+            entityId={propertyId}
           />
 
           {/* Compliance Documents Section */}

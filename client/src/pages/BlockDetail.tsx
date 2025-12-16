@@ -154,8 +154,6 @@ export default function BlockDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blocks", blockId, "compliance"] });
-      // Also invalidate Dashboard's compliance documents query
-      queryClient.invalidateQueries({ queryKey: ['/api/compliance-documents', 'block', blockId] });
       setUploadDialogOpen(false);
       form.reset();
       toast({
@@ -363,15 +361,8 @@ export default function BlockDetail() {
         {/* Compliance Documents Tab */}
         <TabsContent value="compliance-schedule" className="space-y-6">
           <ComplianceDocumentCalendar 
-            documents={compliance.map(doc => ({
-              id: doc.id,
-              documentType: doc.documentType,
-              expiryDate: doc.expiryDate,
-              documentUrl: doc.documentUrl || '',
-              createdAt: doc.uploadedAt || new Date().toISOString(),
-            }))}
-            isLoading={complianceLoading}
             entityType="block"
+            entityId={blockId}
           />
 
           {/* Compliance Documents Section */}
