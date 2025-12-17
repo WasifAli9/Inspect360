@@ -123,7 +123,14 @@ interface BlockedTenant {
   blockedByUserId: string;
   blockedByName: string;
   reason: string | null;
-  createdAt: string;
+}
+
+interface ActiveTenant {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  name: string;
 }
 
 type ViewMode = 'list' | 'group' | 'thread';
@@ -188,6 +195,11 @@ export default function CommunityModeration() {
 
   const { data: blockedTenants = [], isLoading: blockedLoading } = useQuery<BlockedTenant[]>({
     queryKey: ["/api/community/blocked-tenants"],
+  });
+
+  // Fetch active tenants for the block tenant dropdown
+  const { data: activeTenants = [] } = useQuery<ActiveTenant[]>({
+    queryKey: ["/api/tenants/active"],
   });
 
   const blockTenantMutation = useMutation({
@@ -1230,19 +1242,34 @@ export default function CommunityModeration() {
           <DialogHeader>
             <DialogTitle>Block Tenant from Community</DialogTitle>
             <DialogDescription>
-              Enter the tenant's user ID to block them from posting in the community. They will not be able to create threads or replies.
+              Select a tenant to block them from posting in the community. They will not be able to create threads or replies.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="tenant-user-id">Tenant User ID</Label>
-              <Input
-                id="tenant-user-id"
-                placeholder="Enter tenant user ID..."
+              <Label htmlFor="tenant-select">Select Tenant</Label>
+              <Select
                 value={blockTenantUserId}
-                onChange={(e) => setBlockTenantUserId(e.target.value)}
-                data-testid="input-block-tenant-id"
-              />
+                onValueChange={setBlockTenantUserId}
+              >
+                <SelectTrigger data-testid="select-block-tenant">
+                  <SelectValue placeholder="Choose a tenant to block..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeTenants
+                    .filter(tenant => !blockedTenants.some(b => b.tenantUserId === tenant.id))
+                    .map(tenant => (
+                      <SelectItem key={tenant.id} value={tenant.id} data-testid={`select-tenant-${tenant.id}`}>
+                        {tenant.name} ({tenant.email})
+                      </SelectItem>
+                    ))}
+                  {activeTenants.filter(t => !blockedTenants.some(b => b.tenantUserId === t.id)).length === 0 && (
+                    <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                      No tenants available to block
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="block-reason">Reason (optional)</Label>
