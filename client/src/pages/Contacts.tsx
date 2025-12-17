@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit, Tag, X } from "lucide-react";
-import type { Contact, Tag as TagType } from "@shared/schema";
+import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit, Tag, X, Home } from "lucide-react";
+import type { Contact, Tag as TagType, Block, Property, TenantAssignment } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AddressInput } from "@/components/AddressInput";
 import { PhoneInput } from "@/components/PhoneInput";
@@ -49,6 +49,8 @@ export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterTag, setFilterTag] = useState<string>("all");
+  const [filterBlock, setFilterBlock] = useState<string>("all");
+  const [filterProperty, setFilterProperty] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<ContactWithTags | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -61,6 +63,18 @@ export default function Contacts() {
 
   const { data: allTags } = useQuery<TagType[]>({
     queryKey: ["/api/tags"],
+  });
+
+  const { data: blocks = [] } = useQuery<Block[]>({
+    queryKey: ["/api/blocks"],
+  });
+
+  const { data: properties = [] } = useQuery<Property[]>({
+    queryKey: ["/api/properties"],
+  });
+
+  const { data: tenantAssignments = [] } = useQuery<TenantAssignment[]>({
+    queryKey: ["/api/tenant-assignments"],
   });
 
   const createMutation = useMutation({
@@ -276,6 +290,23 @@ export default function Contacts() {
     }
   };
 
+  // Build a map of linkedUserId to their tenant assignments (for block/property filtering)
+  const tenantAssignmentMap = useMemo(() => {
+    const map = new Map<string, TenantAssignment[]>();
+    tenantAssignments.forEach((assignment) => {
+      const existing = map.get(assignment.tenantId) || [];
+      existing.push(assignment);
+      map.set(assignment.tenantId, existing);
+    });
+    return map;
+  }, [tenantAssignments]);
+
+  // Filter properties based on selected block
+  const filteredProperties = useMemo(() => {
+    if (filterBlock === "all") return properties;
+    return properties.filter((p) => p.blockId === filterBlock);
+  }, [properties, filterBlock]);
+
   const filteredContacts = contacts?.filter((contact) => {
     const matchesSearch =
       searchTerm === "" ||
@@ -287,7 +318,38 @@ export default function Contacts() {
 
     const matchesTag = filterTag === "all" || contact.tags?.some(tag => tag.id === filterTag);
 
-    return matchesSearch && matchesType && matchesTag;
+    // Block/Property filtering only applies to tenant contacts with linkedUserId
+    let matchesBlock = true;
+    let matchesProperty = true;
+
+    if (filterBlock !== "all" || filterProperty !== "all") {
+      // Only filter tenant contacts by block/property
+      if (contact.type === "tenant" && contact.linkedUserId) {
+        const assignments = tenantAssignmentMap.get(contact.linkedUserId) || [];
+        const activeAssignments = assignments.filter(a => a.isActive);
+        
+        if (filterBlock !== "all") {
+          // Check if any active assignment is in a property belonging to this block
+          matchesBlock = activeAssignments.some(assignment => {
+            const property = properties.find(p => p.id === assignment.propertyId);
+            return property?.blockId === filterBlock;
+          });
+        }
+        
+        if (filterProperty !== "all") {
+          // Check if any active assignment is for this specific property
+          matchesProperty = activeAssignments.some(assignment => 
+            assignment.propertyId === filterProperty
+          );
+        }
+      } else if (filterBlock !== "all" || filterProperty !== "all") {
+        // Non-tenant contacts don't match block/property filters
+        matchesBlock = false;
+        matchesProperty = false;
+      }
+    }
+
+    return matchesSearch && matchesType && matchesTag && matchesBlock && matchesProperty;
   });
 
   const getInitials = (firstName: string, lastName: string) => {
@@ -685,19 +747,75 @@ export default function Contacts() {
           </Select>
         </div>
 
+        <div className="flex gap-4 items-center flex-wrap">
+          <Select 
+            value={filterBlock} 
+            onValueChange={(value) => {
+              setFilterBlock(value);
+              // Reset property filter when block changes
+              if (value !== filterBlock) {
+                setFilterProperty("all");
+              }
+            }}
+          >
+            <SelectTrigger className="w-48" data-testid="select-filter-block">
+              <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+              <SelectValue placeholder="All Blocks" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Blocks</SelectItem>
+              {blocks.map((block) => (
+                <SelectItem key={block.id} value={block.id}>
+                  {block.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filterProperty} onValueChange={setFilterProperty}>
+            <SelectTrigger className="w-48" data-testid="select-filter-property">
+              <Home className="w-4 h-4 mr-2 text-muted-foreground" />
+              <SelectValue placeholder="All Properties" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Properties</SelectItem>
+              {filteredProperties.map((property) => (
+                <SelectItem key={property.id} value={property.id}>
+                  {property.name || property.address}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {(filterBlock !== "all" || filterProperty !== "all") && (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => {
+                setFilterBlock("all");
+                setFilterProperty("all");
+              }}
+              data-testid="button-clear-location-filters"
+            >
+              <X className="w-4 h-4 mr-1" />
+              Clear location filters
+            </Button>
+          )}
+        </div>
+
         {!filteredContacts || filteredContacts.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
               <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">
-                {searchTerm || filterType !== "all" ? "No Contacts Found" : "No Contacts Yet"}
+                {searchTerm || filterType !== "all" || filterBlock !== "all" || filterProperty !== "all" ? "No Contacts Found" : "No Contacts Yet"}
               </h3>
               <p className="text-muted-foreground mb-4">
-                {searchTerm || filterType !== "all"
+                {searchTerm || filterType !== "all" || filterBlock !== "all" || filterProperty !== "all"
                   ? "Try adjusting your search or filters"
                   : "Get started by adding your first contact"}
               </p>
-              {!searchTerm && filterType === "all" && (
+              {!searchTerm && filterType === "all" && filterBlock === "all" && filterProperty === "all" && (
                 <Button onClick={() => setDialogOpen(true)} data-testid="button-add-first-contact">
                   <Plus className="w-4 h-4 mr-2" />
                   Add Your First Contact
