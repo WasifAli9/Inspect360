@@ -153,6 +153,10 @@ export default function Inspections() {
   // Filter state
   const [filterBlockId, setFilterBlockId] = useState<string>("");
   const [filterPropertyId, setFilterPropertyId] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("");
+  const [filterOverdue, setFilterOverdue] = useState<boolean>(false);
+  const [filterDueSoon, setFilterDueSoon] = useState<boolean>(false);
+  const [filterTenantId, setFilterTenantId] = useState<string>("");
 
   const { data: inspections = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/inspections/my"],
@@ -289,28 +293,80 @@ export default function Inspections() {
     return properties.filter((p: any) => p.blockId === filterBlockId);
   }, [properties, filterBlockId]);
 
-  // Filter inspections based on selected block and property
+  // Extract unique tenants from inspections for filter dropdown
+  const allTenants = useMemo(() => {
+    const tenantMap = new Map<string, { id: string; name: string }>();
+    inspections.forEach((inspection: any) => {
+      if (inspection.tenant) {
+        const firstName = inspection.tenant.firstName || "";
+        const lastName = inspection.tenant.lastName || "";
+        const name = `${firstName} ${lastName}`.trim() || "Unnamed Tenant";
+        tenantMap.set(inspection.tenant.id, { id: inspection.tenant.id, name });
+      }
+    });
+    return Array.from(tenantMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [inspections]);
+
+  // Filter inspections based on all criteria
   const filteredInspections = useMemo(() => {
     let filtered = inspections;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sevenDaysFromNow = new Date(today);
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
 
+    // Block filter
     if (filterBlockId) {
       filtered = filtered.filter((inspection: any) => {
-        // Include inspections directly linked to the block
         if (inspection.blockId === filterBlockId) return true;
-        // Include inspections linked to properties in this block
         if (inspection.property?.blockId === filterBlockId) return true;
         return false;
       });
     }
 
+    // Property filter
     if (filterPropertyId) {
       filtered = filtered.filter((inspection: any) => 
         inspection.propertyId === filterPropertyId
       );
     }
 
+    // Status filter
+    if (filterStatus) {
+      filtered = filtered.filter((inspection: any) => 
+        inspection.status === filterStatus
+      );
+    }
+
+    // Overdue filter
+    if (filterOverdue) {
+      filtered = filtered.filter((inspection: any) => {
+        if (inspection.status === "completed") return false;
+        const scheduledDate = new Date(inspection.scheduledDate);
+        scheduledDate.setHours(0, 0, 0, 0);
+        return scheduledDate < today;
+      });
+    }
+
+    // Due soon filter (next 7 days)
+    if (filterDueSoon) {
+      filtered = filtered.filter((inspection: any) => {
+        if (inspection.status === "completed") return false;
+        const scheduledDate = new Date(inspection.scheduledDate);
+        scheduledDate.setHours(0, 0, 0, 0);
+        return scheduledDate >= today && scheduledDate <= sevenDaysFromNow;
+      });
+    }
+
+    // Tenant filter
+    if (filterTenantId) {
+      filtered = filtered.filter((inspection: any) => 
+        inspection.tenantId === filterTenantId
+      );
+    }
+
     return filtered;
-  }, [inspections, filterBlockId, filterPropertyId]);
+  }, [inspections, filterBlockId, filterPropertyId, filterStatus, filterOverdue, filterDueSoon, filterTenantId]);
 
   // Clear property filter when block filter changes
   useEffect(() => {
@@ -821,13 +877,72 @@ export default function Inspections() {
                 </SelectContent>
               </Select>
             </div>
-            {(filterBlockId || filterPropertyId) && (
+            <div className="flex-1 min-w-[150px] max-w-[180px]">
+              <label className="text-sm font-medium mb-1.5 block">Status</label>
+              <Select value={filterStatus || "__all__"} onValueChange={(value) => setFilterStatus(value === "__all__" ? "" : value)}>
+                <SelectTrigger data-testid="filter-status">
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All statuses</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px] max-w-xs">
+              <label className="text-sm font-medium mb-1.5 block">Tenant</label>
+              <Select value={filterTenantId || "__all__"} onValueChange={(value) => setFilterTenantId(value === "__all__" ? "" : value)}>
+                <SelectTrigger data-testid="filter-tenant">
+                  <SelectValue placeholder="All tenants" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All tenants</SelectItem>
+                  {allTenants.map((tenant) => (
+                    <SelectItem key={tenant.id} value={tenant.id}>
+                      {tenant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end gap-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="filter-overdue"
+                  checked={filterOverdue}
+                  onCheckedChange={(checked) => setFilterOverdue(checked === true)}
+                  data-testid="filter-overdue"
+                />
+                <label htmlFor="filter-overdue" className="text-sm font-medium cursor-pointer">
+                  Overdue
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="filter-due-soon"
+                  checked={filterDueSoon}
+                  onCheckedChange={(checked) => setFilterDueSoon(checked === true)}
+                  data-testid="filter-due-soon"
+                />
+                <label htmlFor="filter-due-soon" className="text-sm font-medium cursor-pointer">
+                  Due Soon
+                </label>
+              </div>
+            </div>
+            {(filterBlockId || filterPropertyId || filterStatus || filterOverdue || filterDueSoon || filterTenantId) && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
                   setFilterBlockId("");
                   setFilterPropertyId("");
+                  setFilterStatus("");
+                  setFilterOverdue(false);
+                  setFilterDueSoon(false);
+                  setFilterTenantId("");
                 }}
                 data-testid="button-clear-filters"
               >
