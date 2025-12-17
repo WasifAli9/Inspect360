@@ -179,6 +179,11 @@ export default function Inspections() {
     queryKey: ["/api/users/clerks"],
   });
 
+  // Fetch active tenants for filter dropdown
+  const { data: activeTenants = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/tenants/active"],
+  });
+
   const form = useForm<CreateInspectionData>({
     resolver: zodResolver(createInspectionSchema),
     defaultValues: {
@@ -297,19 +302,10 @@ export default function Inspections() {
     return properties.filter((p: any) => p.blockId === filterBlockId);
   }, [properties, filterBlockId]);
 
-  // Extract unique tenants from inspections for filter dropdown
-  const allTenants = useMemo(() => {
-    const tenantMap = new Map<string, { id: string; name: string }>();
-    inspections.forEach((inspection: any) => {
-      if (inspection.tenant) {
-        const firstName = inspection.tenant.firstName || "";
-        const lastName = inspection.tenant.lastName || "";
-        const name = `${firstName} ${lastName}`.trim() || "Unnamed Tenant";
-        tenantMap.set(inspection.tenant.id, { id: inspection.tenant.id, name });
-      }
-    });
-    return Array.from(tenantMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [inspections]);
+  // Sort active tenants alphabetically for filter dropdown
+  const sortedActiveTenants = useMemo(() => {
+    return [...activeTenants].sort((a, b) => a.name.localeCompare(b.name));
+  }, [activeTenants]);
 
   // Filter inspections based on all criteria
   const filteredInspections = useMemo(() => {
@@ -904,7 +900,7 @@ export default function Inspections() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all__">All tenants</SelectItem>
-                  {allTenants.map((tenant) => (
+                  {sortedActiveTenants.map((tenant) => (
                     <SelectItem key={tenant.id} value={tenant.id}>
                       {tenant.name}
                     </SelectItem>

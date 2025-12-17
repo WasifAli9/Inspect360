@@ -8790,6 +8790,42 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
   // ==================== TENANT ASSIGNMENT ROUTES ====================
 
+  // Get all active tenants for the organization (for filter dropdowns)
+  app.get("/api/tenants/active", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      if (!user?.organizationId) {
+        return res.status(403).json({ error: "No organization found" });
+      }
+
+      // Get all active tenant assignments with tenant user info
+      const assignments = await storage.getTenantAssignmentsByOrganization(user.organizationId);
+      const activeAssignments = assignments.filter(a => a.isActive);
+
+      // Get unique active tenants with their info
+      const tenantIds = [...new Set(activeAssignments.map(a => a.tenantId))];
+      const tenants = await Promise.all(
+        tenantIds.map(async (tenantId) => {
+          const tenantUser = await storage.getUser(tenantId);
+          if (!tenantUser) return null;
+          return {
+            id: tenantUser.id,
+            firstName: tenantUser.firstName || '',
+            lastName: tenantUser.lastName || '',
+            email: tenantUser.email,
+            name: `${tenantUser.firstName || ''} ${tenantUser.lastName || ''}`.trim() || tenantUser.email,
+          };
+        })
+      );
+
+      res.json(tenants.filter(t => t !== null));
+    } catch (error) {
+      console.error("Error fetching active tenants:", error);
+      res.status(500).json({ error: "Failed to fetch active tenants" });
+    }
+  });
+
   app.post("/api/tenant-assignments", isAuthenticated, requireRole("owner", "clerk"), async (req: any, res) => {
     try {
       const userId = req.user.id;
@@ -8880,6 +8916,30 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         ...assignmentData,
         organizationId: user.organizationId,
       });
+
+      // Auto-create contact for this tenant if one doesn't exist
+      try {
+        const existingContacts = await storage.getContactsByOrganization(user.organizationId);
+        const hasContact = existingContacts.some(c => c.linkedUserId === tenantUser.id);
+        
+        if (!hasContact) {
+          await storage.createContact({
+            organizationId: user.organizationId,
+            type: 'tenant',
+            firstName: tenantUser.firstName || '',
+            lastName: tenantUser.lastName || '',
+            email: tenantUser.email,
+            phone: tenantUser.phone || undefined,
+            profileImageUrl: tenantUser.profileImageUrl || undefined,
+            linkedUserId: tenantUser.id,
+            notes: 'Created automatically with tenant assignment',
+          });
+          console.log(`✓ Auto-created contact for tenant ${tenantUser.id}`);
+        }
+      } catch (contactError) {
+        // Log but don't fail the assignment creation
+        console.error(`Warning: Failed to auto-create contact for tenant:`, contactError);
+      }
 
       res.status(201).json(assignment);
     } catch (error) {
