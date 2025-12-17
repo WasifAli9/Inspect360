@@ -475,14 +475,38 @@ export default function BlockDetail() {
                           <FormLabel>Document File</FormLabel>
                           <FormControl>
                             <ObjectUploader
-                              onUploadComplete={(urls) => {
-                                if (urls.length > 0) {
-                                  field.onChange(urls[0]);
+                              maxNumberOfFiles={1}
+                              onGetUploadParameters={async () => {
+                                const response = await fetch('/api/objects/upload', {
+                                  method: 'POST',
+                                  credentials: 'include',
+                                });
+                                const { uploadURL } = await response.json();
+                                return {
+                                  method: 'PUT',
+                                  url: uploadURL,
+                                };
+                              }}
+                              onComplete={(result) => {
+                                if (result.successful && result.successful[0]) {
+                                  let uploadURL = result.successful[0].uploadURL;
+                                  if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
+                                    try {
+                                      const urlObj = new URL(uploadURL);
+                                      uploadURL = urlObj.pathname;
+                                    } catch (e) {
+                                      console.error('Invalid upload URL:', uploadURL);
+                                    }
+                                  }
+                                  if (uploadURL) {
+                                    field.onChange(uploadURL);
+                                  }
                                 }
                               }}
-                              accept="application/pdf,image/*,.doc,.docx"
-                              maxNumberOfFiles={20}
-                            />
+                            >
+                              <Upload className="mr-2 h-4 w-4" />
+                              Choose File
+                            </ObjectUploader>
                           </FormControl>
                           {field.value && (
                             <p className="text-sm text-muted-foreground mt-2">
