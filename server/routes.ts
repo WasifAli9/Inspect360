@@ -21026,6 +21026,124 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
     }
   });
 
+  // Get blocked tenants list (operator)
+  app.get("/api/community/blocked-tenants", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const blocks = await storage.getCommunityTenantBlocks(user.organizationId!);
+      
+      // Get tenant and blocker names
+      const blocksWithDetails = await Promise.all(blocks.map(async (block) => {
+        const tenant = await storage.getUser(block.tenantUserId);
+        const blocker = await storage.getUser(block.blockedByUserId);
+        return {
+          ...block,
+          tenantName: tenant ? `${tenant.firstName || ''} ${tenant.lastName || ''}`.trim() || tenant.username : 'Unknown',
+          tenantEmail: tenant?.email || '',
+          blockedByName: blocker ? `${blocker.firstName || ''} ${blocker.lastName || ''}`.trim() || blocker.username : 'Unknown',
+        };
+      }));
+
+      res.json(blocksWithDetails);
+    } catch (error: any) {
+      console.error("Error fetching blocked tenants:", error);
+      res.status(500).json({ message: "Failed to fetch blocked tenants" });
+    }
+  });
+
+  // Block a tenant (operator)
+  app.post("/api/community/blocked-tenants", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const { tenantUserId, reason } = req.body;
+
+      if (!tenantUserId) {
+        return res.status(400).json({ message: "Tenant user ID is required" });
+      }
+
+      // Check if already blocked
+      const existing = await storage.getCommunityTenantBlock(user.organizationId!, tenantUserId);
+      if (existing) {
+        return res.status(400).json({ message: "Tenant is already blocked" });
+      }
+
+      const block = await storage.createCommunityTenantBlock({
+        organizationId: user.organizationId!,
+        tenantUserId,
+        blockedByUserId: user.id,
+        reason: reason || null,
+      });
+
+      // Log the moderation action
+      await storage.createCommunityModerationLog({
+        organizationId: user.organizationId!,
+        moderatorId: user.id,
+        action: 'tenant_blocked',
+        targetType: 'tenant',
+        targetId: tenantUserId,
+        details: reason ? `Reason: ${reason}` : 'Tenant blocked from community',
+      });
+
+      res.json(block);
+    } catch (error: any) {
+      console.error("Error blocking tenant:", error);
+      res.status(500).json({ message: "Failed to block tenant" });
+    }
+  });
+
+  // Unblock a tenant (operator)
+  app.delete("/api/community/blocked-tenants/:tenantUserId", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const { tenantUserId } = req.params;
+
+      await storage.deleteCommunityTenantBlock(user.organizationId!, tenantUserId);
+
+      // Log the moderation action
+      await storage.createCommunityModerationLog({
+        organizationId: user.organizationId!,
+        moderatorId: user.id,
+        action: 'tenant_unblocked',
+        targetType: 'tenant',
+        targetId: tenantUserId,
+        details: 'Tenant unblocked from community',
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error unblocking tenant:", error);
+      res.status(500).json({ message: "Failed to unblock tenant" });
+    }
+  });
+
+  // Check if current user (tenant) is blocked
+  app.get("/api/community/am-i-blocked", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const isBlocked = await storage.isTenantBlocked(user.organizationId!, user.id);
+      res.json({ blocked: isBlocked });
+    } catch (error: any) {
+      console.error("Error checking block status:", error);
+      res.status(500).json({ message: "Failed to check block status" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   // Set up WebSocket server for real-time notifications
