@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, CheckCircle2, Clock, Circle, CalendarPlus, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Circle, CalendarPlus, X, Loader2, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -58,10 +59,13 @@ interface StatusCellProps {
   isClickable: boolean;
   isDisabled: boolean;
   onClick: () => void;
+  onNavigate?: () => void;
 }
 
-function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: StatusCellProps) {
+function StatusCell({ data, isPending, isClickable, isDisabled, onClick, onNavigate }: StatusCellProps) {
   const effectivelyClickable = (isClickable || isPending) && !isDisabled;
+  const isNavigable = (data.status === 'overdue' || data.status === 'due') && onNavigate;
+  
   const getStatusIcon = () => {
     if (isPending) {
       return <CalendarPlus className="h-4 w-4 text-primary" data-testid={`icon-pending-${data.month}`} />;
@@ -108,9 +112,9 @@ function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: Statu
       case 'completed':
         return `${data.month}: Completed - ${data.completed || 0} of ${data.count} inspections completed`;
       case 'overdue':
-        return `${data.month}: Overdue - ${data.overdue || 0} of ${data.count} inspections overdue`;
+        return `${data.month}: Overdue - ${data.overdue || 0} of ${data.count} inspections overdue - Click to view`;
       case 'due':
-        return `${data.month}: Due Soon - ${data.count} inspections due within 30 days`;
+        return `${data.month}: Due Soon - ${data.count} inspections due within 30 days - Click to view`;
       case 'scheduled':
         return `${data.month}: Scheduled - ${data.count} inspections scheduled`;
       case 'not_scheduled':
@@ -122,23 +126,34 @@ function StatusCell({ data, isPending, isClickable, isDisabled, onClick }: Statu
   };
 
   const statusLabel = getStatusLabel();
+  const canClick = effectivelyClickable || isNavigable;
+
+  const handleClick = () => {
+    if (isNavigable) {
+      onNavigate?.();
+    } else if (effectivelyClickable) {
+      onClick();
+    }
+  };
 
   return (
     <div 
-      className={`flex items-center justify-center p-2 rounded-md border ${getStatusColor()} hover-elevate transition-all ${effectivelyClickable ? 'cursor-pointer' : ''} ${isDisabled ? 'opacity-50' : ''}`}
+      className={`flex items-center justify-center p-2 rounded-md border ${getStatusColor()} hover-elevate transition-all ${canClick ? 'cursor-pointer' : ''} ${isDisabled ? 'opacity-50' : ''}`}
       title={statusLabel}
       aria-label={statusLabel}
-      role={effectivelyClickable ? "button" : "status"}
-      onClick={effectivelyClickable ? onClick : undefined}
+      role={canClick ? "button" : "status"}
+      onClick={canClick ? handleClick : undefined}
       data-testid={`cell-${isPending ? 'pending' : data.status}-${data.month}`}
     >
       {getStatusIcon()}
+      {isNavigable && <ExternalLink className="h-3 w-3 ml-1 opacity-60" />}
     </div>
   );
 }
 
 export default function ComplianceCalendar({ entityType, entityId }: ComplianceCalendarProps) {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [pendingSelections, setPendingSelections] = useState<PendingSelection[]>([]);
@@ -413,6 +428,11 @@ export default function ComplianceCalendar({ entityType, entityId }: ComplianceC
                     isClickable={canSchedule && monthData.status === 'not_scheduled'}
                     isDisabled={bulkScheduleMutation.isPending}
                     onClick={() => toggleSelection(template.templateId, template.templateName, monthIndex, monthData.month)}
+                    onNavigate={() => {
+                      const filterType = monthData.status === 'overdue' ? 'overdue=true' : 'dueSoon=true';
+                      const entityFilter = entityType === 'property' ? `propertyId=${entityId}` : `blockId=${entityId}`;
+                      navigate(`/inspections?${entityFilter}&${filterType}`);
+                    }}
                   />
                 ))}
 

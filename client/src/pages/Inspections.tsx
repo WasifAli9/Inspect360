@@ -141,8 +141,12 @@ export default function Inspections() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const searchParams = useSearch();
-  const urlPropertyId = new URLSearchParams(searchParams).get("propertyId");
-  const shouldCreate = new URLSearchParams(searchParams).get("create");
+  const urlParams = new URLSearchParams(searchParams);
+  const urlPropertyId = urlParams.get("propertyId");
+  const urlBlockId = urlParams.get("blockId");
+  const urlOverdue = urlParams.get("overdue");
+  const urlDueSoon = urlParams.get("dueSoon");
+  const shouldCreate = urlParams.get("create");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
   
@@ -150,12 +154,12 @@ export default function Inspections() {
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [inspectionToCopy, setInspectionToCopy] = useState<any>(null);
   
-  // Filter state
-  const [filterBlockId, setFilterBlockId] = useState<string>("");
-  const [filterPropertyId, setFilterPropertyId] = useState<string>("");
+  // Filter state - initialize from URL params if present
+  const [filterBlockId, setFilterBlockId] = useState<string>(urlBlockId || "");
+  const [filterPropertyId, setFilterPropertyId] = useState<string>(urlPropertyId || "");
   const [filterStatus, setFilterStatus] = useState<string>("");
-  const [filterOverdue, setFilterOverdue] = useState<boolean>(false);
-  const [filterDueSoon, setFilterDueSoon] = useState<boolean>(false);
+  const [filterOverdue, setFilterOverdue] = useState<boolean>(urlOverdue === "true");
+  const [filterDueSoon, setFilterDueSoon] = useState<boolean>(urlDueSoon === "true");
   const [filterTenantId, setFilterTenantId] = useState<string>("");
 
   const { data: inspections = [], isLoading } = useQuery<any[]>({
