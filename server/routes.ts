@@ -20930,6 +20930,15 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
         return res.status(403).json({ message: "Access denied" });
       }
 
+      // Get thread author details
+      const threadAuthor = await storage.getUser(thread.createdBy);
+      const threadAuthorName = threadAuthor 
+        ? `${threadAuthor.firstName || ''} ${threadAuthor.lastName || ''}`.trim() || threadAuthor.username 
+        : 'Unknown';
+      const threadIsOperator = threadAuthor 
+        ? ['owner', 'clerk'].includes(threadAuthor.role || '') 
+        : false;
+
       const posts = await storage.getCommunityPosts(req.params.id);
       
       const postsWithDetails = await Promise.all(posts.map(async (post) => {
@@ -20941,7 +20950,13 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
         };
       }));
 
-      res.json({ ...thread, posts: postsWithDetails, group });
+      res.json({ 
+        ...thread, 
+        authorName: threadAuthorName,
+        isOperator: threadIsOperator,
+        posts: postsWithDetails, 
+        group 
+      });
     } catch (error: any) {
       console.error("Error fetching thread:", error);
       res.status(500).json({ message: "Failed to fetch thread" });
