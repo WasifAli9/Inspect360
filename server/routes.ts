@@ -20731,6 +20731,183 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
     }
   });
 
+  // Operator create group (auto-approved)
+  app.post("/api/community/groups", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const { name, description, blockId } = req.body;
+
+      if (!name || !blockId) {
+        return res.status(400).json({ message: "Name and block are required" });
+      }
+
+      // Verify block belongs to organization
+      const block = await storage.getBlock(blockId);
+      if (!block || block.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Block not found" });
+      }
+
+      const group = await storage.createCommunityGroup({
+        organizationId: user.organizationId!,
+        blockId,
+        name,
+        description: description || null,
+        createdBy: user.id,
+        status: "approved", // Auto-approve operator-created groups
+      });
+      
+      // Update with approved status since operator created it
+      await storage.updateCommunityGroup(group.id, { approvedBy: user.id });
+
+      res.json(group);
+    } catch (error: any) {
+      console.error("Error creating group:", error);
+      res.status(500).json({ message: "Failed to create group" });
+    }
+  });
+
+  // Operator get group threads
+  app.get("/api/community/groups/:id/threads", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const group = await storage.getCommunityGroup(req.params.id);
+      if (!group || group.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      const threads = await storage.getCommunityThreads(req.params.id);
+      
+      // Add author info (check if user is operator or tenant)
+      const threadsWithDetails = await Promise.all(threads.map(async (thread) => {
+        const author = await storage.getUser(thread.createdBy);
+        return {
+          ...thread,
+          authorName: author ? `${author.firstName || ''} ${author.lastName || ''}`.trim() || author.username : 'Unknown',
+          isOperator: author ? ['owner', 'clerk'].includes(author.role || '') : false,
+        };
+      }));
+
+      res.json(threadsWithDetails);
+    } catch (error: any) {
+      console.error("Error fetching threads:", error);
+      res.status(500).json({ message: "Failed to fetch threads" });
+    }
+  });
+
+  // Operator create thread
+  app.post("/api/community/groups/:id/threads", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const { title, content } = req.body;
+
+      if (!title || !content) {
+        return res.status(400).json({ message: "Title and content are required" });
+      }
+
+      const group = await storage.getCommunityGroup(req.params.id);
+      if (!group || group.organizationId !== user.organizationId) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      const thread = await storage.createCommunityThread({
+        groupId: req.params.id,
+        title,
+        content,
+        createdBy: user.id,
+      });
+
+      res.json(thread);
+    } catch (error: any) {
+      console.error("Error creating thread:", error);
+      res.status(500).json({ message: "Failed to create thread" });
+    }
+  });
+
+  // Operator get thread with posts
+  app.get("/api/community/threads/:id", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const thread = await storage.getCommunityThread(req.params.id);
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+
+      const group = await storage.getCommunityGroup(thread.groupId);
+      if (!group || group.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const posts = await storage.getCommunityPosts(req.params.id);
+      
+      const postsWithDetails = await Promise.all(posts.map(async (post) => {
+        const author = await storage.getUser(post.createdBy);
+        return {
+          ...post,
+          authorName: author ? `${author.firstName || ''} ${author.lastName || ''}`.trim() || author.username : 'Unknown',
+          isOperator: author ? ['owner', 'clerk'].includes(author.role || '') : false,
+        };
+      }));
+
+      res.json({ ...thread, posts: postsWithDetails, group });
+    } catch (error: any) {
+      console.error("Error fetching thread:", error);
+      res.status(500).json({ message: "Failed to fetch thread" });
+    }
+  });
+
+  // Operator create post
+  app.post("/api/community/threads/:id/posts", async (req, res) => {
+    if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as User;
+      const { content } = req.body;
+
+      if (!content) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+
+      const thread = await storage.getCommunityThread(req.params.id);
+      if (!thread) {
+        return res.status(404).json({ message: "Thread not found" });
+      }
+
+      const group = await storage.getCommunityGroup(thread.groupId);
+      if (!group || group.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const post = await storage.createCommunityPost({
+        threadId: req.params.id,
+        content,
+        createdBy: user.id,
+      });
+
+      res.json(post);
+    } catch (error: any) {
+      console.error("Error creating post:", error);
+      res.status(500).json({ message: "Failed to create post" });
+    }
+  });
+
   // Get moderation log (operator)
   app.get("/api/community/moderation-log", async (req, res) => {
     if (!req.isAuthenticated() || !["owner", "clerk"].includes(req.user?.role || "")) {

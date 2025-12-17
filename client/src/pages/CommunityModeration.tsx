@@ -5,15 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
   Users, MessageSquare, Check, X, Flag, Clock, Eye, Shield, 
-  AlertTriangle, CheckCircle, FileText, Settings
+  AlertTriangle, CheckCircle, FileText, Settings, Plus, ArrowLeft, Send
 } from "lucide-react";
 import {
   Breadcrumb,
@@ -25,6 +29,11 @@ import {
 } from "@/components/ui/breadcrumb";
 import { format } from "date-fns";
 import { Link } from "wouter";
+
+interface Block {
+  id: string;
+  name: string;
+}
 
 interface CommunityGroup {
   id: string;
@@ -39,6 +48,39 @@ interface CommunityGroup {
   status: string;
   rejectionReason: string | null;
   createdAt: string;
+}
+
+interface CommunityThread {
+  id: string;
+  groupId: string;
+  title: string;
+  content: string;
+  createdBy: string;
+  authorName: string;
+  isOperator: boolean;
+  status: string;
+  isPinned: boolean;
+  isLocked: boolean;
+  viewCount: number;
+  replyCount: number;
+  lastActivityAt: string;
+  createdAt: string;
+}
+
+interface CommunityPost {
+  id: string;
+  threadId: string;
+  content: string;
+  createdBy: string;
+  authorName: string;
+  isOperator: boolean;
+  status: string;
+  createdAt: string;
+}
+
+interface ThreadWithPosts extends CommunityThread {
+  posts: CommunityPost[];
+  group: CommunityGroup;
 }
 
 interface CommunityFlag {
@@ -71,15 +113,28 @@ interface CommunityRules {
   createdAt: string;
 }
 
+type ViewMode = 'list' | 'group' | 'thread';
+
 export default function CommunityModeration() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("groups");
-  const [selectedGroup, setSelectedGroup] = useState<CommunityGroup | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [selectedGroupForReject, setSelectedGroupForReject] = useState<CommunityGroup | null>(null);
   const [selectedFlag, setSelectedFlag] = useState<CommunityFlag | null>(null);
   const [showRulesEditor, setShowRulesEditor] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showCreateThread, setShowCreateThread] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [rulesText, setRulesText] = useState("");
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDescription, setNewGroupDescription] = useState("");
+  const [newGroupBlockId, setNewGroupBlockId] = useState("");
+  const [newThreadTitle, setNewThreadTitle] = useState("");
+  const [newThreadContent, setNewThreadContent] = useState("");
+  const [replyContent, setReplyContent] = useState("");
 
   const { data: pendingCount = { count: 0 } } = useQuery<{ count: number }>({
     queryKey: ["/api/community/pending-count"],
@@ -87,6 +142,20 @@ export default function CommunityModeration() {
 
   const { data: groups = [], isLoading: groupsLoading } = useQuery<CommunityGroup[]>({
     queryKey: ["/api/community/groups"],
+  });
+
+  const { data: blocks = [] } = useQuery<Block[]>({
+    queryKey: ["/api/blocks"],
+  });
+
+  const { data: threads = [], isLoading: threadsLoading } = useQuery<CommunityThread[]>({
+    queryKey: ["/api/community/groups", selectedGroupId, "threads"],
+    enabled: !!selectedGroupId && viewMode === 'group',
+  });
+
+  const { data: threadData, isLoading: threadLoading } = useQuery<ThreadWithPosts>({
+    queryKey: ["/api/community/threads", selectedThreadId],
+    enabled: !!selectedThreadId && viewMode === 'thread',
   });
 
   const { data: flags = [], isLoading: flagsLoading } = useQuery<CommunityFlag[]>({
@@ -99,6 +168,50 @@ export default function CommunityModeration() {
 
   const { data: currentRules } = useQuery<CommunityRules | null>({
     queryKey: ["/api/community/rules"],
+  });
+
+  const createGroupMutation = useMutation({
+    mutationFn: (data: { name: string; description: string; blockId: string }) => 
+      apiRequest("POST", "/api/community/groups", data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/groups"] });
+      setShowCreateGroup(false);
+      setNewGroupName("");
+      setNewGroupDescription("");
+      setNewGroupBlockId("");
+      toast({ title: "Group created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create group", variant: "destructive" });
+    },
+  });
+
+  const createThreadMutation = useMutation({
+    mutationFn: (data: { title: string; content: string }) => 
+      apiRequest("POST", `/api/community/groups/${selectedGroupId}/threads`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/groups", selectedGroupId, "threads"] });
+      setShowCreateThread(false);
+      setNewThreadTitle("");
+      setNewThreadContent("");
+      toast({ title: "Thread created" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create thread", variant: "destructive" });
+    },
+  });
+
+  const createPostMutation = useMutation({
+    mutationFn: (content: string) => 
+      apiRequest("POST", `/api/community/threads/${selectedThreadId}/posts`, { content }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/community/threads", selectedThreadId] });
+      setReplyContent("");
+      toast({ title: "Reply posted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to post reply", variant: "destructive" });
+    },
   });
 
   const approveGroupMutation = useMutation({
@@ -123,7 +236,7 @@ export default function CommunityModeration() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/community/groups"] });
       queryClient.invalidateQueries({ queryKey: ["/api/community/pending-count"] });
-      setSelectedGroup(null);
+      setSelectedGroupForReject(null);
       setRejectionReason("");
       toast({ title: "Group rejected" });
     },
@@ -168,6 +281,29 @@ export default function CommunityModeration() {
   const rejectedGroups = groups.filter(g => g.status === "rejected");
   const unresolvedFlags = flags.filter(f => !f.isResolved);
 
+  const currentGroup = groups.find(g => g.id === selectedGroupId);
+
+  const handleViewGroup = (groupId: string) => {
+    setSelectedGroupId(groupId);
+    setViewMode('group');
+  };
+
+  const handleViewThread = (threadId: string) => {
+    setSelectedThreadId(threadId);
+    setViewMode('thread');
+  };
+
+  const handleBackToList = () => {
+    setViewMode('list');
+    setSelectedGroupId(null);
+    setSelectedThreadId(null);
+  };
+
+  const handleBackToGroup = () => {
+    setViewMode('group');
+    setSelectedThreadId(null);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
@@ -198,6 +334,260 @@ export default function CommunityModeration() {
     }
   };
 
+  // Thread view
+  if (viewMode === 'thread' && threadData) {
+    return (
+      <div className="p-6 space-y-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToList}>Community</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToGroup}>{threadData.group.name}</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{threadData.title}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBackToGroup} data-testid="button-back-to-group">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-thread-title">{threadData.title}</h1>
+            <p className="text-muted-foreground text-sm">
+              Started by {threadData.authorName} {threadData.isOperator && <Badge variant="outline" className="ml-1">Staff</Badge>}
+            </p>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="pt-6">
+            <ScrollArea className="h-[400px]">
+              <div className="space-y-4">
+                {/* Original post */}
+                <div className="flex gap-4">
+                  <Avatar>
+                    <AvatarFallback>{threadData.authorName.charAt(0).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{threadData.authorName}</span>
+                      {threadData.isOperator && <Badge variant="outline">Staff</Badge>}
+                      <span className="text-sm text-muted-foreground">{format(new Date(threadData.createdAt), "PPp")}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap">{threadData.content}</p>
+                  </div>
+                </div>
+
+                {threadData.posts.length > 0 && <Separator className="my-4" />}
+
+                {/* Replies */}
+                {threadData.posts.map((post) => (
+                  <div key={post.id} className="flex gap-4" data-testid={`post-${post.id}`}>
+                    <Avatar>
+                      <AvatarFallback>{post.authorName.charAt(0).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{post.authorName}</span>
+                        {post.isOperator && <Badge variant="outline">Staff</Badge>}
+                        <span className="text-sm text-muted-foreground">{format(new Date(post.createdAt), "PPp")}</span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap">{post.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        {/* Reply form */}
+        {!threadData.isLocked && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Reply to this thread</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Write your reply..."
+                  value={replyContent}
+                  onChange={(e) => setReplyContent(e.target.value)}
+                  rows={3}
+                  className="flex-1"
+                  data-testid="input-reply-content"
+                />
+              </div>
+              <div className="flex justify-end mt-3">
+                <Button
+                  onClick={() => createPostMutation.mutate(replyContent)}
+                  disabled={!replyContent.trim() || createPostMutation.isPending}
+                  data-testid="button-submit-reply"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  {createPostMutation.isPending ? "Posting..." : "Post Reply"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  // Group view (threads list)
+  if (viewMode === 'group' && currentGroup) {
+    return (
+      <div className="p-6 space-y-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToList}>Community</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{currentGroup.name}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={handleBackToList} data-testid="button-back-to-list">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold" data-testid="text-group-name">{currentGroup.name}</h1>
+              <p className="text-muted-foreground text-sm">{currentGroup.blockName}</p>
+            </div>
+          </div>
+          <Button onClick={() => setShowCreateThread(true)} data-testid="button-new-thread">
+            <Plus className="h-4 w-4 mr-2" />
+            New Thread
+          </Button>
+        </div>
+
+        {threadsLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-24" />
+            <Skeleton className="h-24" />
+          </div>
+        ) : threads.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6 text-center text-muted-foreground">
+              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No discussions yet. Start the conversation!</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {threads.map((thread) => (
+              <Card 
+                key={thread.id} 
+                className="cursor-pointer hover-elevate"
+                onClick={() => handleViewThread(thread.id)}
+                data-testid={`card-thread-${thread.id}`}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        {thread.isPinned && <Badge variant="secondary">Pinned</Badge>}
+                        {thread.title}
+                        {thread.isLocked && <Badge variant="outline">Locked</Badge>}
+                      </CardTitle>
+                      <CardDescription>
+                        by {thread.authorName} {thread.isOperator && <Badge variant="outline" className="ml-1">Staff</Badge>} | {format(new Date(thread.createdAt), "PP")}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Eye className="h-3 w-3" /> {thread.viewCount}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="h-3 w-3" /> {thread.replyCount}
+                      </span>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <p className="text-sm text-muted-foreground line-clamp-2">{thread.content}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Create Thread Dialog */}
+        <Dialog open={showCreateThread} onOpenChange={setShowCreateThread}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Start a New Discussion</DialogTitle>
+              <DialogDescription>
+                Create a new thread in {currentGroup.name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="thread-title">Title</Label>
+                <Input
+                  id="thread-title"
+                  placeholder="Discussion title..."
+                  value={newThreadTitle}
+                  onChange={(e) => setNewThreadTitle(e.target.value)}
+                  data-testid="input-thread-title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="thread-content">Content</Label>
+                <Textarea
+                  id="thread-content"
+                  placeholder="What would you like to discuss?"
+                  value={newThreadContent}
+                  onChange={(e) => setNewThreadContent(e.target.value)}
+                  rows={5}
+                  data-testid="input-thread-content"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreateThread(false)} data-testid="button-cancel-thread">
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createThreadMutation.mutate({ title: newThreadTitle, content: newThreadContent })}
+                disabled={!newThreadTitle.trim() || !newThreadContent.trim() || createThreadMutation.isPending}
+                data-testid="button-submit-thread"
+              >
+                {createThreadMutation.isPending ? "Creating..." : "Create Thread"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // Main list view
   return (
     <div className="p-6 space-y-6">
       <Breadcrumb>
@@ -222,13 +612,19 @@ export default function CommunityModeration() {
           </h1>
           <p className="text-muted-foreground">Manage community groups and moderate content</p>
         </div>
-        <Button onClick={() => {
-          setRulesText(currentRules?.rulesText || "");
-          setShowRulesEditor(true);
-        }} data-testid="button-edit-rules">
-          <Settings className="h-4 w-4 mr-2" />
-          Edit Community Rules
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setShowCreateGroup(true)} data-testid="button-create-group">
+            <Plus className="h-4 w-4 mr-2" />
+            Create Group
+          </Button>
+          <Button onClick={() => {
+            setRulesText(currentRules?.rulesText || "");
+            setShowRulesEditor(true);
+          }} data-testid="button-edit-rules">
+            <Settings className="h-4 w-4 mr-2" />
+            Edit Community Rules
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -291,6 +687,10 @@ export default function CommunityModeration() {
               <CardContent className="pt-6 text-center text-muted-foreground">
                 <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No community groups have been created yet.</p>
+                <Button className="mt-4" onClick={() => setShowCreateGroup(true)} data-testid="button-create-first-group">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create First Group
+                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -327,7 +727,7 @@ export default function CommunityModeration() {
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => setSelectedGroup(group)}
+                                onClick={() => setSelectedGroupForReject(group)}
                                 data-testid={`button-reject-${group.id}`}
                               >
                                 <X className="h-4 w-4 mr-1" />
@@ -355,7 +755,12 @@ export default function CommunityModeration() {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {approvedGroups.map((group) => (
-                      <Card key={group.id} data-testid={`card-approved-group-${group.id}`}>
+                      <Card 
+                        key={group.id} 
+                        className="cursor-pointer hover-elevate"
+                        onClick={() => handleViewGroup(group.id)}
+                        data-testid={`card-approved-group-${group.id}`}
+                      >
                         <CardHeader className="pb-2">
                           <CardTitle className="text-base">{group.name}</CardTitle>
                           <CardDescription>{group.blockName}</CardDescription>
@@ -537,12 +942,13 @@ export default function CommunityModeration() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!selectedGroup} onOpenChange={(open) => !open && setSelectedGroup(null)}>
+      {/* Reject Group Dialog */}
+      <Dialog open={!!selectedGroupForReject} onOpenChange={(open) => !open && setSelectedGroupForReject(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject Group</DialogTitle>
             <DialogDescription>
-              Provide a reason for rejecting "{selectedGroup?.name}". The creator will be notified.
+              Provide a reason for rejecting "{selectedGroupForReject?.name}". The creator will be notified.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -555,14 +961,14 @@ export default function CommunityModeration() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedGroup(null)} data-testid="button-cancel-reject">
+            <Button variant="outline" onClick={() => setSelectedGroupForReject(null)} data-testid="button-cancel-reject">
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={() => {
-                if (selectedGroup) {
-                  rejectGroupMutation.mutate({ groupId: selectedGroup.id, reason: rejectionReason });
+                if (selectedGroupForReject) {
+                  rejectGroupMutation.mutate({ groupId: selectedGroupForReject.id, reason: rejectionReason });
                 }
               }}
               disabled={!rejectionReason.trim() || rejectGroupMutation.isPending}
@@ -574,6 +980,7 @@ export default function CommunityModeration() {
         </DialogContent>
       </Dialog>
 
+      {/* Flag Review Dialog */}
       <Dialog open={!!selectedFlag} onOpenChange={(open) => !open && setSelectedFlag(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -600,7 +1007,7 @@ export default function CommunityModeration() {
               )}
             </div>
             <div>
-              <label className="font-medium">Resolution Notes (optional)</label>
+              <Label>Resolution Notes (optional)</Label>
               <Textarea
                 placeholder="Notes about your decision..."
                 value={resolutionNotes}
@@ -654,6 +1061,73 @@ export default function CommunityModeration() {
         </DialogContent>
       </Dialog>
 
+      {/* Create Group Dialog */}
+      <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Community Group</DialogTitle>
+            <DialogDescription>
+              Create a new community group for tenants to discuss and share.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="group-name">Group Name</Label>
+              <Input
+                id="group-name"
+                placeholder="e.g., Building Announcements"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                data-testid="input-group-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group-block">Block</Label>
+              <Select value={newGroupBlockId} onValueChange={setNewGroupBlockId}>
+                <SelectTrigger data-testid="select-group-block">
+                  <SelectValue placeholder="Select a block" />
+                </SelectTrigger>
+                <SelectContent>
+                  {blocks.map((block) => (
+                    <SelectItem key={block.id} value={block.id}>
+                      {block.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group-description">Description (optional)</Label>
+              <Textarea
+                id="group-description"
+                placeholder="What is this group about?"
+                value={newGroupDescription}
+                onChange={(e) => setNewGroupDescription(e.target.value)}
+                rows={3}
+                data-testid="input-group-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateGroup(false)} data-testid="button-cancel-create-group">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createGroupMutation.mutate({ 
+                name: newGroupName, 
+                description: newGroupDescription, 
+                blockId: newGroupBlockId 
+              })}
+              disabled={!newGroupName.trim() || !newGroupBlockId || createGroupMutation.isPending}
+              data-testid="button-submit-create-group"
+            >
+              {createGroupMutation.isPending ? "Creating..." : "Create Group"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rules Editor Dialog */}
       <Dialog open={showRulesEditor} onOpenChange={setShowRulesEditor}>
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
@@ -682,7 +1156,7 @@ export default function CommunityModeration() {
               disabled={!rulesText.trim() || saveRulesMutation.isPending}
               data-testid="button-save-rules"
             >
-              {saveRulesMutation.isPending ? "Saving..." : "Save & Publish"}
+              {saveRulesMutation.isPending ? "Saving..." : "Save Rules"}
             </Button>
           </DialogFooter>
         </DialogContent>
