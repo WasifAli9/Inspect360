@@ -7951,40 +7951,41 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       // Make AI call using Responses API (consistent with rest of codebase)
       let aiCallSucceeded = false;
 
-      // Build the input content
-      const inputContent: any[] = [];
+      // Build the input content using legacy format (text/image_url types)
+      // then pass through normalizeApiContent which converts to input_text/input_image
+      const contentItems: any[] = [];
       
-      // Add image if available
-      if (imageUrlForAI) {
-        console.log("[Maintenance Analyze Image] Adding image to AI request");
-        inputContent.push({
-          type: "input_image",
-          image_url: imageUrlForAI,
-        });
-      }
-
-      // Add text description
-      inputContent.push({
-        type: "input_text",
+      // Add text description first
+      contentItems.push({
+        type: "text",
         text: `You are a helpful maintenance assistant. Analyze this maintenance issue and provide simple, actionable suggestions on how to fix it. Be concise and practical.
 
 Issue description: ${issueDescription || "Please analyze this maintenance issue"}
 
 Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what the person can do themselves first, then mention when to call a professional.`,
       });
+      
+      // Add image if available
+      if (imageUrlForAI) {
+        console.log("[Maintenance Analyze Image] Adding image to AI request");
+        contentItems.push({
+          type: "image_url",
+          image_url: { url: imageUrlForAI },
+        });
+      }
 
       console.log("[Maintenance Analyze Image] Making AI call with Responses API");
       try {
         const response = await openaiClient.responses.create({
           model: "gpt-4o",
-          input: inputContent,
+          input: [{ role: "user", content: normalizeApiContent(contentItems) }],
         });
 
-        console.log("[Maintenance Analyze Image] OpenAI Response:", JSON.stringify(response, null, 2));
+        console.log("[Maintenance Analyze Image] OpenAI Response received, status:", response.status);
 
-        // Extract content from response
-        const outputContent = normalizeResponseContent(response);
-        console.log("[Maintenance Analyze Image] Normalized output:", outputContent);
+        // Extract content from response using standard pattern
+        const outputContent = response.output_text || (response.output?.[0] as any)?.content?.[0]?.text || "";
+        console.log("[Maintenance Analyze Image] Output content length:", outputContent?.length || 0);
 
         if (outputContent && outputContent.trim().length > 0) {
           suggestedFixes = cleanMarkdownText(outputContent.trim());
@@ -8047,9 +8048,16 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(404).json({ message: "User not found" });
       }
 
+      // Preprocess dueDate - convert string to Date if needed
+      const requestBody = { ...req.body };
+      if (requestBody.dueDate && typeof requestBody.dueDate === 'string') {
+        requestBody.dueDate = new Date(requestBody.dueDate);
+      }
+      
       // Validate request body - allow optional propertyId and blockId
-      const validation = insertMaintenanceRequestSchema.omit({ organizationId: true, reportedBy: true }).safeParse(req.body);
+      const validation = insertMaintenanceRequestSchema.omit({ organizationId: true, reportedBy: true }).safeParse(requestBody);
       if (!validation.success) {
+        console.error("[Maintenance] Validation failed:", JSON.stringify(validation.error.errors, null, 2));
         return res.status(400).json({
           message: "Invalid request data",
           errors: validation.error.errors
@@ -12829,11 +12837,24 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
       const config = await storage.getFixfloConfig(user.organizationId);
       if (!config) {
-        return res.status(404).json({ message: "Fixflo not configured for this organization" });
+        // Return empty/default config if not configured yet
+        return res.json({
+          organizationId: user.organizationId,
+          baseUrl: "",
+          bearerToken: "",
+          webhookVerifyToken: "",
+          isEnabled: false,
+          lastHealthCheck: null,
+          healthCheckStatus: null,
+          lastError: null
+        });
       }
 
-      // Don't send the bearer token to the frontend
-      const { bearerToken: _, ...safeConfig } = config;
+      // Don't send the bearer token to the frontend (mask it)
+      const safeConfig = {
+        ...config,
+        bearerToken: config.bearerToken ? "********" : "",
+      };
       res.json(safeConfig);
     } catch (error) {
       console.error("Error fetching Fixflo config:", error);

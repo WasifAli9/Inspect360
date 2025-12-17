@@ -110,6 +110,17 @@ function AppContent() {
     }
   }, [isLoading, isAuthenticated, isProtectedRoute, location]);
 
+  // Check if user needs to see onboarding (first-time login)
+  // Only show onboarding for owner/operator role
+  // NOTE: This hook must be called before any early returns to follow Rules of Hooks
+  useEffect(() => {
+    if (user && user.organizationId && !user.onboardingCompleted && user.role === "owner") {
+      setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+    }
+  }, [user]);
+
   // If unauthorized and trying to access protected route, show loading while redirecting
   if (!isLoading && !isAuthenticated && isProtectedRoute) {
     return (
@@ -118,16 +129,6 @@ function AppContent() {
       </div>
     );
   }
-  
-  // Check if user needs to see onboarding (first-time login)
-  // Only show onboarding for owner/operator role
-  useEffect(() => {
-    if (user && user.organizationId && !user.onboardingCompleted && user.role === "owner") {
-      setShowOnboarding(true);
-    } else {
-      setShowOnboarding(false);
-    }
-  }, [user]);
 
   const style = {
     "--sidebar-width": "16rem",

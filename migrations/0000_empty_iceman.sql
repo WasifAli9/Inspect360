@@ -1,31 +1,140 @@
-CREATE TYPE "public"."asset_condition" AS ENUM('excellent', 'good', 'fair', 'poor', 'needs_replacement');--> statement-breakpoint
-CREATE TYPE "public"."billing_interval" AS ENUM('monthly', 'annual');--> statement-breakpoint
-CREATE TYPE "public"."cancellation_reason" AS ENUM('too_expensive', 'missing_features', 'not_using_enough', 'switching_provider', 'support_issues', 'other');--> statement-breakpoint
-CREATE TYPE "public"."cleanliness_rating" AS ENUM('very_clean', 'clean', 'acceptable', 'needs_cleaning', 'not_applicable');--> statement-breakpoint
-CREATE TYPE "public"."comparison_item_status" AS ENUM('pending', 'reviewed', 'disputed', 'resolved', 'waived');--> statement-breakpoint
-CREATE TYPE "public"."comparison_report_status" AS ENUM('draft', 'under_review', 'awaiting_signatures', 'signed', 'filed');--> statement-breakpoint
-CREATE TYPE "public"."compliance_status" AS ENUM('current', 'expiring_soon', 'expired');--> statement-breakpoint
-CREATE TYPE "public"."condition_rating" AS ENUM('excellent', 'good', 'fair', 'poor', 'not_applicable');--> statement-breakpoint
-CREATE TYPE "public"."contact_type" AS ENUM('internal', 'contractor', 'lead', 'company', 'partner', 'vendor', 'tenant', 'other');--> statement-breakpoint
-CREATE TYPE "public"."credit_source" AS ENUM('plan_inclusion', 'topup', 'admin_grant', 'refund', 'adjustment', 'consumption', 'expiry');--> statement-breakpoint
-CREATE TYPE "public"."currency" AS ENUM('GBP', 'USD', 'AED');--> statement-breakpoint
-CREATE TYPE "public"."feedback_category" AS ENUM('bug', 'feature', 'improvement');--> statement-breakpoint
-CREATE TYPE "public"."feedback_priority" AS ENUM('low', 'medium', 'high');--> statement-breakpoint
-CREATE TYPE "public"."feedback_status" AS ENUM('new', 'in_review', 'in_progress', 'completed', 'rejected');--> statement-breakpoint
-CREATE TYPE "public"."field_type" AS ENUM('short_text', 'long_text', 'number', 'select', 'multiselect', 'boolean', 'rating', 'date', 'time', 'datetime', 'photo', 'photo_array', 'video', 'gps', 'signature');--> statement-breakpoint
-CREATE TYPE "public"."inspection_point_data_type" AS ENUM('text', 'number', 'checkbox', 'photo', 'rating');--> statement-breakpoint
-CREATE TYPE "public"."inspection_status" AS ENUM('scheduled', 'in_progress', 'completed', 'reviewed');--> statement-breakpoint
-CREATE TYPE "public"."inspection_type" AS ENUM('check_in', 'check_out', 'routine', 'maintenance');--> statement-breakpoint
-CREATE TYPE "public"."maintenance_source" AS ENUM('manual', 'inspection', 'tenant_portal', 'routine');--> statement-breakpoint
-CREATE TYPE "public"."maintenance_status" AS ENUM('open', 'in_progress', 'completed', 'closed');--> statement-breakpoint
-CREATE TYPE "public"."plan_code" AS ENUM('starter', 'professional', 'enterprise', 'enterprise_plus', 'freelancer', 'btr', 'pbsa', 'housing_association', 'council');--> statement-breakpoint
-CREATE TYPE "public"."subscription_level" AS ENUM('free', 'starter', 'professional', 'enterprise', 'freelancer', 'btr', 'pbsa', 'housing_association', 'council');--> statement-breakpoint
-CREATE TYPE "public"."subscription_status" AS ENUM('active', 'inactive', 'cancelled');--> statement-breakpoint
-CREATE TYPE "public"."template_scope" AS ENUM('block', 'property', 'both');--> statement-breakpoint
-CREATE TYPE "public"."topup_status" AS ENUM('pending', 'paid', 'failed', 'refunded');--> statement-breakpoint
-CREATE TYPE "public"."user_role" AS ENUM('owner', 'clerk', 'compliance', 'tenant', 'contractor');--> statement-breakpoint
-CREATE TYPE "public"."work_order_status" AS ENUM('assigned', 'in_progress', 'waiting_parts', 'completed', 'rejected');--> statement-breakpoint
-CREATE TABLE "admin_users" (
+-- Create ENUM types only if they don't exist
+DO $$ BEGIN
+    CREATE TYPE "public"."asset_condition" AS ENUM('excellent', 'good', 'fair', 'poor', 'needs_replacement');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."billing_interval" AS ENUM('monthly', 'annual');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."cancellation_reason" AS ENUM('too_expensive', 'missing_features', 'not_using_enough', 'switching_provider', 'support_issues', 'other');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."cleanliness_rating" AS ENUM('very_clean', 'clean', 'acceptable', 'needs_cleaning', 'not_applicable');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."comparison_item_status" AS ENUM('pending', 'reviewed', 'disputed', 'resolved', 'waived');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."comparison_report_status" AS ENUM('draft', 'under_review', 'awaiting_signatures', 'signed', 'filed');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."compliance_status" AS ENUM('current', 'expiring_soon', 'expired');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."condition_rating" AS ENUM('excellent', 'good', 'fair', 'poor', 'not_applicable');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."contact_type" AS ENUM('internal', 'contractor', 'lead', 'company', 'partner', 'vendor', 'tenant', 'other');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."credit_source" AS ENUM('plan_inclusion', 'topup', 'admin_grant', 'refund', 'adjustment', 'consumption', 'expiry');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."currency" AS ENUM('GBP', 'USD', 'AED');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."feedback_category" AS ENUM('bug', 'feature', 'improvement');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."feedback_priority" AS ENUM('low', 'medium', 'high');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."feedback_status" AS ENUM('new', 'in_review', 'in_progress', 'completed', 'rejected');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."field_type" AS ENUM('short_text', 'long_text', 'number', 'select', 'multiselect', 'boolean', 'rating', 'date', 'time', 'datetime', 'photo', 'photo_array', 'video', 'gps', 'signature');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."inspection_point_data_type" AS ENUM('text', 'number', 'checkbox', 'photo', 'rating');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."inspection_status" AS ENUM('scheduled', 'in_progress', 'completed', 'reviewed');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."inspection_type" AS ENUM('check_in', 'check_out', 'routine', 'maintenance');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."maintenance_source" AS ENUM('manual', 'inspection', 'tenant_portal', 'routine');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."maintenance_status" AS ENUM('open', 'in_progress', 'completed', 'closed');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."plan_code" AS ENUM('starter', 'professional', 'enterprise', 'enterprise_plus', 'freelancer', 'btr', 'pbsa', 'housing_association', 'council');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."subscription_level" AS ENUM('free', 'starter', 'professional', 'enterprise', 'freelancer', 'btr', 'pbsa', 'housing_association', 'council');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."subscription_status" AS ENUM('active', 'inactive', 'cancelled');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."template_scope" AS ENUM('block', 'property', 'both');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."topup_status" AS ENUM('pending', 'paid', 'failed', 'refunded');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."user_role" AS ENUM('owner', 'clerk', 'compliance', 'tenant', 'contractor');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."work_order_status" AS ENUM('assigned', 'in_progress', 'waiting_parts', 'completed', 'rejected');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "admin_users" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"email" varchar NOT NULL,
 	"password" varchar NOT NULL,
@@ -36,7 +145,7 @@ CREATE TABLE "admin_users" (
 	CONSTRAINT "admin_users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
-CREATE TABLE "ai_image_analyses" (
+CREATE TABLE IF NOT EXISTS "ai_image_analyses" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"inspection_entry_id" varchar,
 	"inspection_id" varchar,
@@ -50,7 +159,7 @@ CREATE TABLE "ai_image_analyses" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "asset_inventory" (
+CREATE TABLE IF NOT EXISTS "asset_inventory" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"property_id" varchar,
@@ -82,21 +191,21 @@ CREATE TABLE "asset_inventory" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "asset_inventory_tags" (
+CREATE TABLE IF NOT EXISTS "asset_inventory_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"asset_inventory_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "block_tags" (
+CREATE TABLE IF NOT EXISTS "block_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"block_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "blocks" (
+CREATE TABLE IF NOT EXISTS "blocks" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -106,7 +215,7 @@ CREATE TABLE "blocks" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "bundle_tier_pricing" (
+CREATE TABLE IF NOT EXISTS "bundle_tier_pricing" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"bundle_id" varchar NOT NULL,
 	"plan_code" "plan_code" NOT NULL,
@@ -119,7 +228,7 @@ CREATE TABLE "bundle_tier_pricing" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "central_team_config" (
+CREATE TABLE IF NOT EXISTS "central_team_config" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"notification_email" varchar NOT NULL,
 	"is_active" boolean DEFAULT true NOT NULL,
@@ -127,7 +236,7 @@ CREATE TABLE "central_team_config" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "chat_conversations" (
+CREATE TABLE IF NOT EXISTS "chat_conversations" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"user_id" varchar NOT NULL,
@@ -137,7 +246,7 @@ CREATE TABLE "chat_conversations" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "chat_messages" (
+CREATE TABLE IF NOT EXISTS "chat_messages" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"conversation_id" varchar NOT NULL,
 	"role" varchar(50) NOT NULL,
@@ -146,7 +255,7 @@ CREATE TABLE "chat_messages" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "comparison_comments" (
+CREATE TABLE IF NOT EXISTS "comparison_comments" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"comparison_report_id" varchar NOT NULL,
 	"comparison_report_item_id" varchar,
@@ -160,7 +269,7 @@ CREATE TABLE "comparison_comments" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "comparison_report_items" (
+CREATE TABLE IF NOT EXISTS "comparison_report_items" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"comparison_report_id" varchar NOT NULL,
 	"check_in_entry_id" varchar,
@@ -185,7 +294,7 @@ CREATE TABLE "comparison_report_items" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "comparison_reports" (
+CREATE TABLE IF NOT EXISTS "comparison_reports" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"property_id" varchar NOT NULL,
@@ -209,14 +318,14 @@ CREATE TABLE "comparison_reports" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "compliance_document_tags" (
+CREATE TABLE IF NOT EXISTS "compliance_document_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"compliance_document_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "compliance_document_types" (
+CREATE TABLE IF NOT EXISTS "compliance_document_types" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -227,7 +336,7 @@ CREATE TABLE "compliance_document_types" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "compliance_documents" (
+CREATE TABLE IF NOT EXISTS "compliance_documents" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"property_id" varchar,
@@ -241,14 +350,14 @@ CREATE TABLE "compliance_documents" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "contact_tags" (
+CREATE TABLE IF NOT EXISTS "contact_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"contact_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "contacts" (
+CREATE TABLE IF NOT EXISTS "contacts" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"type" "contact_type" DEFAULT 'other' NOT NULL,
@@ -273,7 +382,7 @@ CREATE TABLE "contacts" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "country_pricing_overrides" (
+CREATE TABLE IF NOT EXISTS "country_pricing_overrides" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"country_code" varchar(2) NOT NULL,
 	"plan_id" varchar NOT NULL,
@@ -287,7 +396,7 @@ CREATE TABLE "country_pricing_overrides" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "credit_batches" (
+CREATE TABLE IF NOT EXISTS "credit_batches" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"granted_quantity" integer NOT NULL,
@@ -302,7 +411,7 @@ CREATE TABLE "credit_batches" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "credit_bundles" (
+CREATE TABLE IF NOT EXISTS "credit_bundles" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar(100) NOT NULL,
 	"credits" integer NOT NULL,
@@ -317,7 +426,7 @@ CREATE TABLE "credit_bundles" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "credit_ledger" (
+CREATE TABLE IF NOT EXISTS "credit_ledger" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"created_by" varchar,
@@ -331,7 +440,7 @@ CREATE TABLE "credit_ledger" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "credit_transactions" (
+CREATE TABLE IF NOT EXISTS "credit_transactions" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"amount" integer NOT NULL,
@@ -341,7 +450,7 @@ CREATE TABLE "credit_transactions" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "dashboard_preferences" (
+CREATE TABLE IF NOT EXISTS "dashboard_preferences" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" varchar NOT NULL,
 	"enabled_panels" jsonb DEFAULT '["stats", "inspections", "compliance", "maintenance"]' NOT NULL,
@@ -349,7 +458,7 @@ CREATE TABLE "dashboard_preferences" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "feedback_submissions" (
+CREATE TABLE IF NOT EXISTS "feedback_submissions" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"title" varchar(255) NOT NULL,
 	"description" text NOT NULL,
@@ -369,7 +478,7 @@ CREATE TABLE "feedback_submissions" (
 	"resolved_at" timestamp
 );
 --> statement-breakpoint
-CREATE TABLE "fixflo_config" (
+CREATE TABLE IF NOT EXISTS "fixflo_config" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"base_url" varchar DEFAULT 'https://api-sandbox.fixflo.com/api/v2' NOT NULL,
@@ -384,7 +493,7 @@ CREATE TABLE "fixflo_config" (
 	CONSTRAINT "fixflo_config_organization_id_unique" UNIQUE("organization_id")
 );
 --> statement-breakpoint
-CREATE TABLE "fixflo_sync_state" (
+CREATE TABLE IF NOT EXISTS "fixflo_sync_state" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"entity_type" varchar NOT NULL,
@@ -398,7 +507,7 @@ CREATE TABLE "fixflo_sync_state" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "fixflo_webhook_logs" (
+CREATE TABLE IF NOT EXISTS "fixflo_webhook_logs" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"event_type" varchar NOT NULL,
@@ -412,7 +521,7 @@ CREATE TABLE "fixflo_webhook_logs" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inspection_categories" (
+CREATE TABLE IF NOT EXISTS "inspection_categories" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -423,7 +532,7 @@ CREATE TABLE "inspection_categories" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inspection_entries" (
+CREATE TABLE IF NOT EXISTS "inspection_entries" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"inspection_id" varchar NOT NULL,
 	"section_ref" text NOT NULL,
@@ -444,7 +553,7 @@ CREATE TABLE "inspection_entries" (
 	CONSTRAINT "inspection_entries_offline_id_unique" UNIQUE("offline_id")
 );
 --> statement-breakpoint
-CREATE TABLE "inspection_items" (
+CREATE TABLE IF NOT EXISTS "inspection_items" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"inspection_id" varchar NOT NULL,
 	"category_id" varchar,
@@ -457,7 +566,7 @@ CREATE TABLE "inspection_items" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inspection_responses" (
+CREATE TABLE IF NOT EXISTS "inspection_responses" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"inspection_id" varchar NOT NULL,
 	"template_point_id" varchar NOT NULL,
@@ -474,7 +583,7 @@ CREATE TABLE "inspection_responses" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inspection_template_points" (
+CREATE TABLE IF NOT EXISTS "inspection_template_points" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"template_id" varchar NOT NULL,
 	"category_id" varchar,
@@ -488,7 +597,7 @@ CREATE TABLE "inspection_template_points" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inspection_templates" (
+CREATE TABLE IF NOT EXISTS "inspection_templates" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -507,7 +616,7 @@ CREATE TABLE "inspection_templates" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inspections" (
+CREATE TABLE IF NOT EXISTS "inspections" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"template_id" varchar,
@@ -532,7 +641,7 @@ CREATE TABLE "inspections" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inventories" (
+CREATE TABLE IF NOT EXISTS "inventories" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"property_id" varchar NOT NULL,
@@ -543,7 +652,7 @@ CREATE TABLE "inventories" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inventory_items" (
+CREATE TABLE IF NOT EXISTS "inventory_items" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"inventory_id" varchar NOT NULL,
 	"path" text NOT NULL,
@@ -555,7 +664,7 @@ CREATE TABLE "inventory_items" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "inventory_templates" (
+CREATE TABLE IF NOT EXISTS "inventory_templates" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -565,7 +674,7 @@ CREATE TABLE "inventory_templates" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "knowledge_base_documents" (
+CREATE TABLE IF NOT EXISTS "knowledge_base_documents" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"title" varchar(500) NOT NULL,
 	"file_name" varchar(500) NOT NULL,
@@ -581,14 +690,14 @@ CREATE TABLE "knowledge_base_documents" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "maintenance_request_tags" (
+CREATE TABLE IF NOT EXISTS "maintenance_request_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"maintenance_request_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "maintenance_requests" (
+CREATE TABLE IF NOT EXISTS "maintenance_requests" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"property_id" varchar,
@@ -615,7 +724,7 @@ CREATE TABLE "maintenance_requests" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "message_templates" (
+CREATE TABLE IF NOT EXISTS "message_templates" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar(255) NOT NULL,
@@ -629,7 +738,7 @@ CREATE TABLE "message_templates" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "notifications" (
+CREATE TABLE IF NOT EXISTS "notifications" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" varchar NOT NULL,
 	"organization_id" varchar NOT NULL,
@@ -643,7 +752,7 @@ CREATE TABLE "notifications" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "organization_trademarks" (
+CREATE TABLE IF NOT EXISTS "organization_trademarks" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"image_url" varchar NOT NULL,
@@ -652,7 +761,7 @@ CREATE TABLE "organization_trademarks" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "organizations" (
+CREATE TABLE IF NOT EXISTS "organizations" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar NOT NULL,
 	"owner_id" varchar NOT NULL,
@@ -690,7 +799,7 @@ CREATE TABLE "organizations" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "plans" (
+CREATE TABLE IF NOT EXISTS "plans" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"code" "plan_code" NOT NULL,
 	"name" varchar(100) NOT NULL,
@@ -720,7 +829,7 @@ CREATE TABLE "plans" (
 	CONSTRAINT "plans_code_unique" UNIQUE("code")
 );
 --> statement-breakpoint
-CREATE TABLE "properties" (
+CREATE TABLE IF NOT EXISTS "properties" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"block_id" varchar,
@@ -735,20 +844,20 @@ CREATE TABLE "properties" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "property_tags" (
+CREATE TABLE IF NOT EXISTS "property_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"property_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "sessions" (
+CREATE TABLE IF NOT EXISTS "sessions" (
 	"sid" varchar PRIMARY KEY NOT NULL,
 	"sess" jsonb NOT NULL,
 	"expire" timestamp NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "subscriptions" (
+CREATE TABLE IF NOT EXISTS "subscriptions" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"plan_snapshot_json" jsonb NOT NULL,
@@ -768,7 +877,7 @@ CREATE TABLE "subscriptions" (
 	CONSTRAINT "subscriptions_stripe_subscription_id_unique" UNIQUE("stripe_subscription_id")
 );
 --> statement-breakpoint
-CREATE TABLE "tags" (
+CREATE TABLE IF NOT EXISTS "tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -777,14 +886,14 @@ CREATE TABLE "tags" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "team_categories" (
+CREATE TABLE IF NOT EXISTS "team_categories" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"team_id" varchar NOT NULL,
 	"category" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "team_members" (
+CREATE TABLE IF NOT EXISTS "team_members" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"team_id" varchar NOT NULL,
 	"user_id" varchar,
@@ -793,7 +902,7 @@ CREATE TABLE "team_members" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "teams" (
+CREATE TABLE IF NOT EXISTS "teams" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -804,7 +913,7 @@ CREATE TABLE "teams" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "template_categories" (
+CREATE TABLE IF NOT EXISTS "template_categories" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"name" varchar NOT NULL,
@@ -813,14 +922,14 @@ CREATE TABLE "template_categories" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "template_inventory_links" (
+CREATE TABLE IF NOT EXISTS "template_inventory_links" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"template_id" varchar NOT NULL,
 	"inventory_template_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "tenancy_attachments" (
+CREATE TABLE IF NOT EXISTS "tenancy_attachments" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_assignment_id" varchar NOT NULL,
 	"organization_id" varchar NOT NULL,
@@ -834,14 +943,14 @@ CREATE TABLE "tenancy_attachments" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "tenant_assignment_tags" (
+CREATE TABLE IF NOT EXISTS "tenant_assignment_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_assignment_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "tenant_assignments" (
+CREATE TABLE IF NOT EXISTS "tenant_assignments" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"tenant_id" varchar NOT NULL,
@@ -861,7 +970,7 @@ CREATE TABLE "tenant_assignments" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "tenant_maintenance_chat_messages" (
+CREATE TABLE IF NOT EXISTS "tenant_maintenance_chat_messages" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"chat_id" varchar NOT NULL,
 	"role" varchar NOT NULL,
@@ -871,7 +980,7 @@ CREATE TABLE "tenant_maintenance_chat_messages" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "tenant_maintenance_chats" (
+CREATE TABLE IF NOT EXISTS "tenant_maintenance_chats" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"tenant_id" varchar NOT NULL,
@@ -883,7 +992,7 @@ CREATE TABLE "tenant_maintenance_chats" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "topup_orders" (
+CREATE TABLE IF NOT EXISTS "topup_orders" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"pack_size" integer NOT NULL,
@@ -897,7 +1006,7 @@ CREATE TABLE "topup_orders" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "user_documents" (
+CREATE TABLE IF NOT EXISTS "user_documents" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" varchar NOT NULL,
 	"organization_id" varchar NOT NULL,
@@ -910,14 +1019,14 @@ CREATE TABLE "user_documents" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "user_tags" (
+CREATE TABLE IF NOT EXISTS "user_tags" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" varchar NOT NULL,
 	"tag_id" varchar NOT NULL,
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "users" (
+CREATE TABLE IF NOT EXISTS "users" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"username" varchar NOT NULL,
 	"password" varchar NOT NULL,
@@ -943,7 +1052,7 @@ CREATE TABLE "users" (
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
-CREATE TABLE "work_logs" (
+CREATE TABLE IF NOT EXISTS "work_logs" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"work_order_id" varchar NOT NULL,
 	"note" text NOT NULL,
@@ -952,7 +1061,7 @@ CREATE TABLE "work_logs" (
 	"created_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE TABLE "work_orders" (
+CREATE TABLE IF NOT EXISTS "work_orders" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" varchar NOT NULL,
 	"maintenance_request_id" varchar NOT NULL,
@@ -969,49 +1078,54 @@ CREATE TABLE "work_orders" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
-CREATE INDEX "ai_image_analyses_entry_id_idx" ON "ai_image_analyses" USING btree ("inspection_entry_id");--> statement-breakpoint
-CREATE INDEX "ai_image_analyses_inspection_id_idx" ON "ai_image_analyses" USING btree ("inspection_id");--> statement-breakpoint
-CREATE INDEX "idx_bundle_tier_pricing_bundle" ON "bundle_tier_pricing" USING btree ("bundle_id");--> statement-breakpoint
-CREATE INDEX "idx_bundle_tier_pricing_plan" ON "bundle_tier_pricing" USING btree ("plan_code");--> statement-breakpoint
-CREATE INDEX "idx_chat_conversations_user" ON "chat_conversations" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "idx_chat_conversations_org" ON "chat_conversations" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "idx_chat_messages_conversation" ON "chat_messages" USING btree ("conversation_id");--> statement-breakpoint
-CREATE INDEX "comparison_comments_report_id_idx" ON "comparison_comments" USING btree ("comparison_report_id");--> statement-breakpoint
-CREATE INDEX "comparison_comments_item_id_idx" ON "comparison_comments" USING btree ("comparison_report_item_id");--> statement-breakpoint
-CREATE INDEX "comparison_report_items_report_id_idx" ON "comparison_report_items" USING btree ("comparison_report_id");--> statement-breakpoint
-CREATE INDEX "comparison_reports_organization_id_idx" ON "comparison_reports" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "comparison_reports_property_id_idx" ON "comparison_reports" USING btree ("property_id");--> statement-breakpoint
-CREATE INDEX "comparison_reports_check_out_inspection_id_idx" ON "comparison_reports" USING btree ("check_out_inspection_id");--> statement-breakpoint
-CREATE INDEX "compliance_document_types_organization_id_idx" ON "compliance_document_types" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "idx_country_pricing_country_plan" ON "country_pricing_overrides" USING btree ("country_code","plan_id");--> statement-breakpoint
-CREATE INDEX "idx_credit_batches_org_expires" ON "credit_batches" USING btree ("organization_id","expires_at");--> statement-breakpoint
-CREATE INDEX "idx_credit_batches_org_granted" ON "credit_batches" USING btree ("organization_id","granted_at");--> statement-breakpoint
-CREATE INDEX "idx_credit_ledger_org_created" ON "credit_ledger" USING btree ("organization_id","created_at");--> statement-breakpoint
-CREATE INDEX "idx_credit_ledger_batch" ON "credit_ledger" USING btree ("batch_id");--> statement-breakpoint
-CREATE INDEX "idx_feedback_user" ON "feedback_submissions" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "idx_feedback_status" ON "feedback_submissions" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_feedback_category" ON "feedback_submissions" USING btree ("category");--> statement-breakpoint
-CREATE INDEX "idx_feedback_priority" ON "feedback_submissions" USING btree ("priority");--> statement-breakpoint
-CREATE INDEX "idx_feedback_created" ON "feedback_submissions" USING btree ("created_at");--> statement-breakpoint
-CREATE INDEX "fixflo_sync_state_organization_id_idx" ON "fixflo_sync_state" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "fixflo_webhook_logs_organization_id_idx" ON "fixflo_webhook_logs" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "fixflo_webhook_logs_event_type_idx" ON "fixflo_webhook_logs" USING btree ("event_type");--> statement-breakpoint
-CREATE INDEX "fixflo_webhook_logs_processing_status_idx" ON "fixflo_webhook_logs" USING btree ("processing_status");--> statement-breakpoint
-CREATE INDEX "inspection_entries_inspection_id_idx" ON "inspection_entries" USING btree ("inspection_id");--> statement-breakpoint
-CREATE INDEX "inspection_entries_offline_id_idx" ON "inspection_entries" USING btree ("offline_id");--> statement-breakpoint
-CREATE INDEX "inspections_organization_id_idx" ON "inspections" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "idx_kb_docs_active" ON "knowledge_base_documents" USING btree ("is_active");--> statement-breakpoint
-CREATE INDEX "idx_kb_docs_category" ON "knowledge_base_documents" USING btree ("category");--> statement-breakpoint
-CREATE INDEX "notifications_user_id_idx" ON "notifications" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "notifications_user_read_idx" ON "notifications" USING btree ("user_id","is_read");--> statement-breakpoint
-CREATE INDEX "notifications_organization_id_idx" ON "notifications" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "IDX_session_expire" ON "sessions" USING btree ("expire");--> statement-breakpoint
-CREATE INDEX "idx_subscriptions_org" ON "subscriptions" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "idx_subscriptions_period_end" ON "subscriptions" USING btree ("current_period_end");--> statement-breakpoint
-CREATE INDEX "team_categories_team_id_idx" ON "team_categories" USING btree ("team_id");--> statement-breakpoint
-CREATE INDEX "team_members_team_id_idx" ON "team_members" USING btree ("team_id");--> statement-breakpoint
-CREATE INDEX "team_members_user_id_idx" ON "team_members" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "team_members_contact_id_idx" ON "team_members" USING btree ("contact_id");--> statement-breakpoint
-CREATE INDEX "teams_organization_id_idx" ON "teams" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX "template_inventory_links_template_id_idx" ON "template_inventory_links" USING btree ("template_id");--> statement-breakpoint
-CREATE INDEX "idx_topup_orders_org" ON "topup_orders" USING btree ("organization_id");
+CREATE INDEX IF NOT EXISTS "ai_image_analyses_entry_id_idx" ON "ai_image_analyses" USING btree ("inspection_entry_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "ai_image_analyses_inspection_id_idx" ON "ai_image_analyses" USING btree ("inspection_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_bundle_tier_pricing_bundle" ON "bundle_tier_pricing" USING btree ("bundle_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_bundle_tier_pricing_plan" ON "bundle_tier_pricing" USING btree ("plan_code");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_chat_conversations_user" ON "chat_conversations" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_chat_conversations_org" ON "chat_conversations" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_chat_messages_conversation" ON "chat_messages" USING btree ("conversation_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "comparison_comments_report_id_idx" ON "comparison_comments" USING btree ("comparison_report_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "comparison_comments_item_id_idx" ON "comparison_comments" USING btree ("comparison_report_item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "comparison_report_items_report_id_idx" ON "comparison_report_items" USING btree ("comparison_report_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "comparison_reports_organization_id_idx" ON "comparison_reports" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "comparison_reports_property_id_idx" ON "comparison_reports" USING btree ("property_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "comparison_reports_check_out_inspection_id_idx" ON "comparison_reports" USING btree ("check_out_inspection_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "compliance_document_types_organization_id_idx" ON "compliance_document_types" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_country_pricing_country_plan" ON "country_pricing_overrides" USING btree ("country_code","plan_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_credit_batches_org_expires" ON "credit_batches" USING btree ("organization_id","expires_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_credit_batches_org_granted" ON "credit_batches" USING btree ("organization_id","granted_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_credit_ledger_org_created" ON "credit_ledger" USING btree ("organization_id","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_credit_ledger_batch" ON "credit_ledger" USING btree ("batch_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedback_user" ON "feedback_submissions" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedback_status" ON "feedback_submissions" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedback_category" ON "feedback_submissions" USING btree ("category");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedback_priority" ON "feedback_submissions" USING btree ("priority");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedback_created" ON "feedback_submissions" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "fixflo_sync_state_organization_id_idx" ON "fixflo_sync_state" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "fixflo_webhook_logs_organization_id_idx" ON "fixflo_webhook_logs" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "fixflo_webhook_logs_event_type_idx" ON "fixflo_webhook_logs" USING btree ("event_type");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "fixflo_webhook_logs_processing_status_idx" ON "fixflo_webhook_logs" USING btree ("processing_status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "inspection_entries_inspection_id_idx" ON "inspection_entries" USING btree ("inspection_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "inspection_entries_offline_id_idx" ON "inspection_entries" USING btree ("offline_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "inspections_organization_id_idx" ON "inspections" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_kb_docs_active" ON "knowledge_base_documents" USING btree ("is_active");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_kb_docs_category" ON "knowledge_base_documents" USING btree ("category");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "notifications_user_id_idx" ON "notifications" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "notifications_user_read_idx" ON "notifications" USING btree ("user_id","is_read");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "notifications_organization_id_idx" ON "notifications" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "sessions" USING btree ("expire");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_subscriptions_org" ON "subscriptions" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_subscriptions_period_end" ON "subscriptions" USING btree ("current_period_end");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "team_categories_team_id_idx" ON "team_categories" USING btree ("team_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "team_members_team_id_idx" ON "team_members" USING btree ("team_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "team_members_user_id_idx" ON "team_members" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "team_members_contact_id_idx" ON "team_members" USING btree ("contact_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "teams_organization_id_idx" ON "teams" USING btree ("organization_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "template_inventory_links_template_id_idx" ON "template_inventory_links" USING btree ("template_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_topup_orders_org" ON "topup_orders" USING btree ("organization_id");
+-- Add missing columns to users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS skills text[];
+ALTER TABLE users ADD COLUMN IF NOT EXISTS qualifications text[];
+ALTER TABLE users ADD COLUMN IF NOT EXISTS education text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS certificate_urls text[];

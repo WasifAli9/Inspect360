@@ -39,7 +39,6 @@ export function useNotifications() {
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/notifications");
       const data = await res.json();
-      console.log(`[Notification] Fetched ${data.length} notifications from API`);
       return data;
     },
     enabled: isAuthenticated && !!user,
@@ -73,15 +72,11 @@ export function useNotifications() {
 
     // Wait for notifications to load (they might be empty array initially)
     if (!notifications || notifications.length === 0) {
-      console.log("[Notification] No notifications loaded yet or empty array");
       return;
     }
 
-    console.log(`[Notification] Loaded ${notifications.length} notifications for tenant`);
-
     // Find the most recent unread notification
     const unreadNotifications = notifications.filter(n => !n.isRead);
-    console.log(`[Notification] Found ${unreadNotifications.length} unread notifications`);
     
     if (unreadNotifications.length > 0 && !popupNotification) {
       // Sort by createdAt (newest first) and show the most recent one
@@ -91,8 +86,6 @@ export function useNotifications() {
         return dateB - dateA;
       });
       
-      // Show all notifications (removed time restriction for now to debug)
-      console.log("[Notification] Showing most recent unread notification on login:", sorted[0]);
       setPopupNotification(sorted[0]);
     }
   }, [notifications, isAuthenticated, user, popupNotification]);
@@ -121,13 +114,10 @@ export function useNotifications() {
       const host = window.location.host;
       const wsUrl = `${protocol}//${host}/ws`;
 
-      console.log("[WebSocket] Connecting to:", wsUrl);
-
       try {
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          console.log("[WebSocket] Connected");
           reconnectAttempts.current = 0;
           
           // Send ping to keep connection alive
@@ -148,7 +138,6 @@ export function useNotifications() {
 
             if (data.type === "notification") {
               const notification = data.notification as Notification;
-              console.log("[WebSocket] Received notification:", notification);
 
               // Update unread count
               setUnreadCount(prev => prev + 1);
@@ -171,19 +160,17 @@ export function useNotifications() {
               setUnreadCount(data.count);
             } else if (data.type === "pong") {
               // Keepalive response
-              console.log("[WebSocket] Pong received");
             }
           } catch (error) {
-            console.error("[WebSocket] Error parsing message:", error);
+            // Error parsing message
           }
         };
 
-        ws.onerror = (error) => {
-          console.error("[WebSocket] Error:", error);
+        ws.onerror = () => {
+          // WebSocket error
         };
 
         ws.onclose = () => {
-          console.log("[WebSocket] Connection closed");
           wsRef.current = null;
 
           // Attempt to reconnect if we haven't exceeded max attempts
@@ -191,17 +178,13 @@ export function useNotifications() {
             reconnectAttempts.current++;
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000); // Exponential backoff, max 30s
             
-            console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`);
-            
             reconnectTimeoutRef.current = setTimeout(() => {
               connectWebSocket();
             }, delay);
-          } else if (reconnectAttempts.current >= maxReconnectAttempts) {
-            console.error("[WebSocket] Max reconnection attempts reached");
           }
         };
       } catch (error) {
-        console.error("[WebSocket] Failed to create connection:", error);
+        // Failed to create WebSocket connection
       }
     };
 

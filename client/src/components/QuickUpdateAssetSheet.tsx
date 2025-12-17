@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -61,6 +61,7 @@ export function QuickUpdateAssetSheet({
   const [selectedAsset, setSelectedAsset] = useState<AssetInventory | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
+  const lastProcessedAssetId = useRef<string | null>(null);
 
   // Build query params for filtering assets
   const queryParams = new URLSearchParams();
@@ -89,12 +90,16 @@ export function QuickUpdateAssetSheet({
 
   // Update selectedAsset when selectedAssetId changes
   useEffect(() => {
+    // Prevent re-processing the same assetId
+    if (lastProcessedAssetId.current === selectedAssetId) {
+      return;
+    }
+    
     if (selectedAssetId && assets.length > 0) {
       const asset = assets.find((a) => a.id === selectedAssetId);
-      setSelectedAsset(asset || null);
-      
-      // Pre-fill form with current values
       if (asset) {
+        lastProcessedAssetId.current = selectedAssetId;
+        setSelectedAsset(asset);
         form.reset({
           condition: asset.condition,
           cleanliness: asset.cleanliness || undefined,
@@ -103,13 +108,17 @@ export function QuickUpdateAssetSheet({
           inspectionId: inspectionId || undefined,
           inspectionEntryId: inspectionEntryId || undefined,
         });
-        // Initialize photos from existing asset
         setPhotos(asset.photos || []);
+      } else {
+        setSelectedAsset(null);
       }
-    } else {
+    } else if (!selectedAssetId && lastProcessedAssetId.current !== "") {
+      lastProcessedAssetId.current = "";
+      setSelectedAsset(null);
       setPhotos([]);
     }
-  }, [selectedAssetId, assets, inspectionId, inspectionEntryId, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAssetId, assets, inspectionId, inspectionEntryId]);
 
   const updateAssetMutation = useMutation({
     mutationFn: async (data: QuickUpdateAsset & { assetId: string }) => {
@@ -182,6 +191,7 @@ export function QuickUpdateAssetSheet({
   };
 
   const handleClose = () => {
+    lastProcessedAssetId.current = null;
     setSelectedAssetId("");
     setSelectedAsset(null);
     setPhotos([]);

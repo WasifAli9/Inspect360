@@ -1,11 +1,52 @@
-import puppeteer from "puppeteer-core";
+import puppeteerCore from "puppeteer-core";
+import puppeteer from "puppeteer";
 import chromium from "@sparticuz/chromium";
+import { format } from "date-fns";
 
 // Detect if running in Replit or serverless environment
 const isReplit = process.env.REPL_ID || process.env.REPLIT;
 const isServerless = process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL || process.env.NETLIFY;
 const useChromium = isReplit || isServerless;
-import { format } from "date-fns";
+
+// Convert image URL to base64 data URL for embedding in PDF
+async function imageUrlToBase64(url: string): Promise<string | null> {
+  if (!url || url.trim() === '') {
+    console.log('[PDF] imageUrlToBase64: Empty URL provided');
+    return null;
+  }
+  
+  // If already a data URL, return as-is
+  if (url.startsWith('data:')) {
+    console.log('[PDF] imageUrlToBase64: Already a data URL, returning as-is');
+    return url;
+  }
+  
+  console.log('[PDF] imageUrlToBase64: Converting URL:', url.substring(0, 100) + '...');
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'image/*',
+      },
+    });
+    
+    if (!response.ok) {
+      console.warn(`[PDF] Failed to fetch image: ${url} - Status: ${response.status}`);
+      return null;
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    
+    console.log(`[PDF] Successfully converted image to base64. Content-Type: ${contentType}, Size: ${base64.length} chars`);
+    
+    return `data:${contentType};base64,${base64}`;
+  } catch (error) {
+    console.warn(`[PDF] Error converting image to base64: ${url}`, error);
+    return null;
+  }
+}
 
 // HTML escape utility to prevent XSS
 function escapeHtml(unsafe: string): string {
@@ -32,27 +73,30 @@ function sanitizeUrl(url: string, baseUrl?: string): string {
     return escapeHtml(absoluteUrl);
   }
   
+  // For data URLs, only allow safe image types (NO SVG - can contain XSS)
+  // Don't escape data URLs as they need to be used as-is
+  const safeDataImages = [
+    'data:image/png',
+    'data:image/jpeg',
+    'data:image/jpg',
+    'data:image/gif',
+    'data:image/webp',
+  ];
+  
+  const isSafeDataUrl = safeDataImages.some(prefix => lower.startsWith(prefix));
+  if (isSafeDataUrl) {
+    // Data URLs are safe and should NOT be HTML escaped (breaks base64)
+    return trimmed;
+  }
+  
   // Allow only safe protocols via whitelist
   const safeProtocols = ['https://', 'http://'];
   const isSafeProtocol = safeProtocols.some(protocol => lower.startsWith(protocol));
   
   if (!isSafeProtocol) {
-    // For data URLs, only allow safe image types (NO SVG - can contain XSS)
-    const safeDataImages = [
-      'data:image/png',
-      'data:image/jpeg',
-      'data:image/jpg',
-      'data:image/gif',
-      'data:image/webp',
-    ];
-    
-    const isSafeDataUrl = safeDataImages.some(prefix => lower.startsWith(prefix));
-    
-    if (!isSafeDataUrl) {
-      // Reject all other protocols/schemes (javascript:, data:image/svg+xml, vbscript:, etc.)
-      console.warn(`Blocked potentially unsafe URL: ${url.substring(0, 50)}...`);
-      return '';
-    }
+    // Reject all other protocols/schemes (javascript:, vbscript:, etc.)
+    console.warn(`Blocked potentially unsafe URL: ${url.substring(0, 50)}...`);
+    return '';
   }
   
   // Return escaped URL (escape special chars for HTML attribute safety)
@@ -263,26 +307,93 @@ export async function generateInspectionPDF(
   maintenanceRequests?: MaintenanceRequest[],
   reportConfig?: ReportConfig
 ): Promise<Buffer> {
-  const html = generateInspectionHTML(inspection, entries, baseUrl, branding, maintenanceRequests, reportConfig);
+  // Convert branding images to base64 for embedding in PDF
+  let processedBranding = branding;
+  if (branding) {
+    console.log('[PDF] Processing branding images...');
+    console.log('[PDF] Logo URL:', branding.logoUrl?.substring(0, 100) || 'none');
+    console.log('[PDF] Trademark URL:', branding.trademarkUrl?.substring(0, 100) || 'none');
+    console.log('[PDF] Trademarks array:', branding.trademarks?.length || 0);
+    
+    processedBranding = { ...branding };
+    
+    // Convert logo to base64
+    if (branding.logoUrl) {
+      const logoBase64 = await imageUrlToBase64(branding.logoUrl);
+      if (logoBase64) {
+        processedBranding.logoUrl = logoBase64;
+        console.log('[PDF] Logo converted to base64 successfully');
+      } else {
+        console.log('[PDF] Logo conversion failed, keeping original URL');
+      }
+    }
+    
+    // Convert legacy trademark to base64
+    if (branding.trademarkUrl) {
+      const trademarkBase64 = await imageUrlToBase64(branding.trademarkUrl);
+      if (trademarkBase64) {
+        processedBranding.trademarkUrl = trademarkBase64;
+        console.log('[PDF] Legacy trademark converted to base64 successfully');
+      } else {
+        console.log('[PDF] Legacy trademark conversion failed, keeping original URL');
+      }
+    }
+    
+    // Convert new trademarks array to base64
+    if (branding.trademarks && branding.trademarks.length > 0) {
+      console.log('[PDF] Converting', branding.trademarks.length, 'trademark images...');
+      const processedTrademarks = await Promise.all(
+        branding.trademarks.map(async (tm, idx) => {
+          const imageBase64 = await imageUrlToBase64(tm.imageUrl);
+          console.log(`[PDF] Trademark ${idx + 1} conversion:`, imageBase64 ? 'success' : 'failed');
+          return {
+            ...tm,
+            imageUrl: imageBase64 || tm.imageUrl,
+          };
+        })
+      );
+      processedBranding.trademarks = processedTrademarks;
+    }
+    
+    console.log('[PDF] Branding image processing complete');
+  }
+  
+  const html = generateInspectionHTML(inspection, entries, baseUrl, processedBranding, maintenanceRequests, reportConfig);
 
   let browser;
   try {
-    // Use @sparticuz/chromium for Replit and serverless environments
-    const executablePath = await chromium.executablePath();
-    browser = await puppeteer.launch({
-      args: [
-        ...chromium.args,
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu'
-      ],
-      executablePath,
-      headless: true,
-    });
+    // Use puppeteer-core with @sparticuz/chromium for serverless environments
+    // Use regular puppeteer (with bundled Chromium) for local development
+    if (useChromium) {
+      const executablePath = await chromium.executablePath();
+      browser = await puppeteerCore.launch({
+        args: [
+          ...chromium.args,
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-gpu'
+        ],
+        executablePath,
+        headless: true,
+      });
+    } else {
+      // Local development - use puppeteer with bundled Chromium
+      browser = await puppeteer.launch({
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--disable-gpu'
+        ],
+        headless: true,
+      });
+    }
 
     const page = await browser.newPage();
     await page.setContent(html, {

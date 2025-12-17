@@ -22,6 +22,7 @@ import Team from "./Team";
 import FixfloIntegrationSettings from "@/components/FixfloIntegrationSettings";
 import SettingsTeamsPanel from "@/components/SettingsTeamsPanel";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { AddressInput } from "@/components/AddressInput";
 
 const categoryFormSchema = insertInspectionCategorySchema.extend({
   name: z.string().min(1, "Category name is required"),
@@ -638,13 +639,12 @@ export default function Settings() {
                         
                         <div>
                           <Label htmlFor="brandingAddress" className="text-sm">Company Address</Label>
-                          <Textarea
+                          <AddressInput
                             id="brandingAddress"
                             value={brandingAddress}
-                            onChange={(e) => setBrandingAddress(e.target.value)}
-                            placeholder="123 Business Street, City, Country, Postcode"
+                            onChange={(value) => setBrandingAddress(value)}
+                            placeholder="Start typing to search for address..."
                             className="mt-1"
-                            rows={2}
                             data-testid="input-branding-address"
                           />
                         </div>
