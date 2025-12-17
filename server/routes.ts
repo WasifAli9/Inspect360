@@ -20398,6 +20398,12 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
         return res.status(403).json({ message: "You must accept community rules first" });
       }
 
+      // Check if tenant is blocked from community
+      const isBlocked = await storage.isTenantBlocked(tenancy.organizationId, user.id);
+      if (isBlocked) {
+        return res.status(403).json({ message: "You have been blocked from participating in the community" });
+      }
+
       // Must be a member to post
       const isMember = await storage.isGroupMember(group.id, user.id);
       if (!isMember) {
@@ -20457,6 +20463,12 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
       const hasAccepted = await storage.hasAcceptedLatestRules(user.id, tenancy.organizationId);
       if (!hasAccepted) {
         return res.status(403).json({ message: "You must accept community rules first" });
+      }
+
+      // Check if tenant is blocked from community
+      const isBlocked = await storage.isTenantBlocked(tenancy.organizationId, user.id);
+      if (isBlocked) {
+        return res.status(403).json({ message: "You have been blocked from participating in the community" });
       }
 
       const isMember = await storage.isGroupMember(group.id, user.id);
