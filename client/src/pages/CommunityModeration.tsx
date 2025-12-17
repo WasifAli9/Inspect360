@@ -334,6 +334,84 @@ export default function CommunityModeration() {
     }
   };
 
+  // Thread view - loading state
+  if (viewMode === 'thread' && threadLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToList}>Community</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <Skeleton className="h-4 w-24" />
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBackToGroup} data-testid="button-back-loading">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+        </div>
+        
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Thread view - error state (no data after loading)
+  if (viewMode === 'thread' && !threadLoading && !threadData) {
+    return (
+      <div className="p-6 space-y-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToList}>Community</BreadcrumbLink>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBackToList} data-testid="button-back-error">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Discussion Not Found</h1>
+            <p className="text-muted-foreground text-sm">This discussion may have been removed or you don't have access.</p>
+          </div>
+        </div>
+        
+        <Button variant="outline" onClick={handleBackToList}>
+          Back to Community
+        </Button>
+      </div>
+    );
+  }
+
   // Thread view
   if (viewMode === 'thread' && threadData) {
     return (
@@ -444,6 +522,81 @@ export default function CommunityModeration() {
             </CardContent>
           </Card>
         )}
+      </div>
+    );
+  }
+
+  // Group view - loading state
+  if (viewMode === 'group' && groupsLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToList}>Community</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <Skeleton className="h-4 w-24" />
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBackToList} data-testid="button-back-loading">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+        
+        <div className="space-y-4">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      </div>
+    );
+  }
+
+  // Group view - error state (no group found)
+  if (viewMode === 'group' && !groupsLoading && !currentGroup) {
+    return (
+      <div className="p-6 space-y-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink className="cursor-pointer" onClick={handleBackToList}>Community</BreadcrumbLink>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBackToList} data-testid="button-back-error">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Group Not Found</h1>
+            <p className="text-muted-foreground text-sm">This group may have been removed or you don't have access.</p>
+          </div>
+        </div>
+        
+        <Button variant="outline" onClick={handleBackToList}>
+          Back to Community
+        </Button>
       </div>
     );
   }
