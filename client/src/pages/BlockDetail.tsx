@@ -13,6 +13,8 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import ComplianceCalendar from "@/components/ComplianceCalendar";
 import ComplianceDocumentCalendar from "@/components/ComplianceDocumentCalendar";
 import { ObjectUploader } from "@/components/ObjectUploader";
@@ -81,6 +83,7 @@ export default function BlockDetail() {
   const [, params] = useRoute("/blocks/:id");
   const blockId = params?.id;
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
   const { toast } = useToast();
 
   const form = useForm<UploadFormValues>({
@@ -146,15 +149,21 @@ export default function BlockDetail() {
   ];
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: UploadFormValues) => {
-      return await apiRequest("POST", "/api/compliance-documents", {
+    mutationFn: async (data: UploadFormValues & { propertyIds?: string[] }) => {
+      return await apiRequest("POST", "/api/compliance", {
         ...data,
         blockId: blockId,
+        propertyIds: data.propertyIds,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blocks", blockId, "compliance"] });
+      // Also invalidate property compliance caches
+      properties.forEach(p => {
+        queryClient.invalidateQueries({ queryKey: ["/api/properties", p.id, "compliance"] });
+      });
       setUploadDialogOpen(false);
+      setSelectedPropertyIds([]);
       form.reset();
       toast({
         title: "Document Uploaded",
@@ -171,7 +180,26 @@ export default function BlockDetail() {
   });
 
   const onSubmit = (data: UploadFormValues) => {
-    uploadMutation.mutate(data);
+    uploadMutation.mutate({
+      ...data,
+      propertyIds: selectedPropertyIds.length > 0 ? selectedPropertyIds : undefined,
+    });
+  };
+
+  const togglePropertySelection = (propertyId: string) => {
+    setSelectedPropertyIds(prev => 
+      prev.includes(propertyId) 
+        ? prev.filter(id => id !== propertyId)
+        : [...prev, propertyId]
+    );
+  };
+
+  const toggleAllProperties = () => {
+    if (selectedPropertyIds.length === properties.length) {
+      setSelectedPropertyIds([]);
+    } else {
+      setSelectedPropertyIds(properties.map(p => p.id));
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -425,7 +453,7 @@ export default function BlockDetail() {
                                 </Button>
                               </FormControl>
                             </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0" align="start">
+                            <PopoverContent className="w-auto p-0 z-[100]" align="start">
                               <Calendar
                                 mode="single"
                                 selected={field.value ? new Date(field.value) : undefined}
@@ -466,11 +494,60 @@ export default function BlockDetail() {
                       )}
                     />
 
+                    {/* Property Selection */}
+                    {properties.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">
+                            Also apply to properties (optional)
+                          </Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={toggleAllProperties}
+                            data-testid="button-toggle-all-properties"
+                          >
+                            {selectedPropertyIds.length === properties.length ? "Deselect All" : "Select All"}
+                          </Button>
+                        </div>
+                        <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                          {properties.map((property) => (
+                            <div 
+                              key={property.id} 
+                              className="flex items-center gap-2"
+                            >
+                              <Checkbox
+                                id={`property-${property.id}`}
+                                checked={selectedPropertyIds.includes(property.id)}
+                                onCheckedChange={() => togglePropertySelection(property.id)}
+                                data-testid={`checkbox-property-${property.id}`}
+                              />
+                              <Label 
+                                htmlFor={`property-${property.id}`}
+                                className="text-sm cursor-pointer flex-1"
+                              >
+                                {property.name}
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                        {selectedPropertyIds.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Document will be applied to {selectedPropertyIds.length} propert{selectedPropertyIds.length === 1 ? 'y' : 'ies'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex justify-end gap-2 pt-4">
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => setUploadDialogOpen(false)}
+                        onClick={() => {
+                          setUploadDialogOpen(false);
+                          setSelectedPropertyIds([]);
+                        }}
                       >
                         Cancel
                       </Button>

@@ -7376,7 +7376,9 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       }
 
       const { documentType, documentUrl, expiryDate, propertyId, blockId } = validation.data;
+      const propertyIds = req.body.propertyIds as string[] | undefined;
 
+      // Create the main document (for block or single property)
       const doc = await storage.createComplianceDocument({
         organizationId: user.organizationId,
         propertyId: propertyId || null,
@@ -7387,6 +7389,21 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
         expiryDate: expiryDate || null,
         uploadedBy: userId,
       });
+
+      // If propertyIds are provided, also create documents for each property
+      if (propertyIds && Array.isArray(propertyIds) && propertyIds.length > 0) {
+        for (const propId of propertyIds) {
+          await storage.createComplianceDocument({
+            organizationId: user.organizationId,
+            propertyId: propId,
+            blockId: null,
+            documentType,
+            documentUrl,
+            expiryDate: expiryDate || null,
+            uploadedBy: userId,
+          });
+        }
+      }
 
       res.json(doc);
     } catch (error) {
