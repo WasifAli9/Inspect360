@@ -106,12 +106,6 @@ export function AppSidebar() {
       roles: ["owner", "clerk", "tenant", "contractor"],
     },
     {
-      title: "Community",
-      url: "/community-moderation",
-      icon: Shield,
-      roles: ["owner", "clerk"],
-    },
-    {
       title: "Work Orders",
       url: "/analytics",
       icon: BarChart3,
@@ -128,6 +122,12 @@ export function AppSidebar() {
       url: "/asset-inventory",
       icon: Package,
       roles: ["owner", "clerk", "compliance"],
+    },
+    {
+      title: "Community",
+      url: "/community-moderation",
+      icon: Shield,
+      roles: ["owner", "clerk"],
     },
     {
       title: "Billing & Credits",
