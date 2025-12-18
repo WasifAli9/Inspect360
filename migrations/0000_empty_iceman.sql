@@ -70,7 +70,7 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-    CREATE TYPE "public"."field_type" AS ENUM('short_text', 'long_text', 'number', 'select', 'multiselect', 'boolean', 'rating', 'date', 'time', 'datetime', 'photo', 'photo_array', 'video', 'gps', 'signature');
+    CREATE TYPE "public"."field_type" AS ENUM('short_text', 'long_text', 'number', 'select', 'multiselect', 'boolean', 'rating', 'date', 'time', 'datetime', 'photo', 'photo_array', 'video', 'gps', 'signature', 'auto_inspection_date', 'auto_inspector', 'auto_address', 'auto_tenant_names');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;--> statement-breakpoint

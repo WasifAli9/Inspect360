@@ -41,7 +41,7 @@ export const conditionRatingEnum = pgEnum("condition_rating", ["excellent", "goo
 export const cleanlinessRatingEnum = pgEnum("cleanliness_rating", ["very_clean", "clean", "acceptable", "needs_cleaning", "not_applicable"]);
 export const contactTypeEnum = pgEnum("contact_type", ["internal", "contractor", "lead", "company", "partner", "vendor", "tenant", "other"]);
 export const templateScopeEnum = pgEnum("template_scope", ["block", "property", "both"]);
-export const fieldTypeEnum = pgEnum("field_type", ["short_text", "long_text", "number", "select", "multiselect", "boolean", "rating", "date", "time", "datetime", "photo", "photo_array", "video", "gps", "signature"]);
+export const fieldTypeEnum = pgEnum("field_type", ["short_text", "long_text", "number", "select", "multiselect", "boolean", "rating", "date", "time", "datetime", "photo", "photo_array", "video", "gps", "signature", "auto_inspection_date", "auto_inspector", "auto_address", "auto_tenant_names"]);
 export const maintenanceSourceEnum = pgEnum("maintenance_source", ["manual", "inspection", "tenant_portal", "routine"]);
 export const comparisonReportStatusEnum = pgEnum("comparison_report_status", ["draft", "under_review", "awaiting_signatures", "signed", "filed"]);
 export const comparisonItemStatusEnum = pgEnum("comparison_item_status", ["pending", "reviewed", "disputed", "resolved", "waived"]);
@@ -617,6 +617,8 @@ export const insertInspectionEntrySchema = createInsertSchema(inspectionEntries)
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  fieldType: z.enum(["short_text", "long_text", "number", "select", "multiselect", "boolean", "rating", "date", "time", "datetime", "photo", "photo_array", "video", "gps", "signature", "auto_inspection_date", "auto_inspector", "auto_address", "auto_tenant_names"]),
 });
 export type InspectionEntry = typeof inspectionEntries.$inferSelect;
 export type InsertInspectionEntry = z.infer<typeof insertInspectionEntrySchema>;
