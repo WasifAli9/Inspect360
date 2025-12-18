@@ -358,21 +358,55 @@ For cloud platforms, you'll want to:
 
 ### Using Nginx
 
+**Important:** For WebSocket support, you MUST configure the `/ws` endpoint properly. See `deployment/nginx.conf` for a complete configuration.
+
+**Minimal Nginx Configuration with WebSocket Support:**
+
 ```nginx
+# Map for WebSocket connection upgrade
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
 server {
     listen 80;
     server_name yourdomain.com;
 
-    location / {
+    # WebSocket endpoint - CRITICAL
+    location /ws {
         proxy_pass http://localhost:5000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket timeouts (long-lived connections)
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        proxy_buffering off;
+    }
+
+    # API and other routes
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Support WebSocket upgrade on all routes
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
     }
 }
 ```
+
+**For a complete production-ready configuration with SSL, see `deployment/nginx.conf`**
 
 ### Enable SSL with Certbot
 
