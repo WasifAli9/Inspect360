@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { useLocation, useSearch } from "wouter";
+import { useLocation, useSearch, useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -128,6 +128,8 @@ export default function Maintenance() {
   const locale = useLocale();
   const [, navigate] = useLocation();
   const searchParams = useSearch();
+  const params = useParams<{ id?: string }>();
+  const maintenanceId = params?.id;
   const urlPropertyId = new URLSearchParams(searchParams).get("propertyId");
   const shouldCreate = new URLSearchParams(searchParams).get("create");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -142,6 +144,7 @@ export default function Maintenance() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState<"form" | "images" | "suggestions" | "review">("form");
   const uppyRef = useRef<Uppy | null>(null);
+  const processedMaintenanceIdRef = useRef<string | null>(null);
   
   // Work order creation state
   const [isWorkOrderDialogOpen, setIsWorkOrderDialogOpen] = useState(false);
@@ -174,6 +177,7 @@ export default function Maintenance() {
   const { data: requests = [], isLoading } = useQuery<MaintenanceRequestWithDetails[]>({
     queryKey: ["/api/maintenance"],
   });
+
 
   // Fetch properties
   const { data: properties = [] } = useQuery<Property[]>({
@@ -511,6 +515,53 @@ export default function Maintenance() {
     },
   });
 
+  // Auto-open maintenance request when ID is in URL (must be after form initialization)
+  useEffect(() => {
+    // Only process if we have an ID, haven't processed it yet, have requests loaded, and dialog isn't already open
+    if (maintenanceId && 
+        maintenanceId !== processedMaintenanceIdRef.current && 
+        requests.length > 0 && 
+        !editingRequest && 
+        !isCreateOpen) {
+      const request = requests.find(r => r.id === maintenanceId);
+      if (request) {
+        processedMaintenanceIdRef.current = maintenanceId;
+        // Use handleEdit logic to ensure consistency
+        setEditingRequest(request);
+        form.reset({
+          title: request.title,
+          description: request.description || "",
+          propertyId: request.propertyId || undefined,
+          blockId: request.blockId || undefined,
+          priority: request.priority as "low" | "medium" | "high",
+          reportedBy: request.reportedBy || "",
+          dueDate: request.dueDate ? (typeof request.dueDate === 'string' ? request.dueDate : new Date(request.dueDate).toISOString()) : undefined,
+        });
+        setUploadedImages(request.photoUrls || []);
+        setAiSuggestions(request.aiSuggestedFixes || "");
+        setCurrentStep("form");
+        setIsCreateOpen(true);
+        setIsAutoOpening(true);
+        // Clear the ID from URL after opening
+        navigate("/maintenance", { replace: true });
+      } else {
+        // Request not found, show error and redirect
+        processedMaintenanceIdRef.current = maintenanceId; // Mark as processed to prevent retry
+        toast({
+          title: "Maintenance request not found",
+          description: "The requested maintenance request could not be found.",
+          variant: "destructive",
+        });
+        navigate("/maintenance", { replace: true });
+      }
+    }
+    
+    // Reset processed ID when maintenanceId changes or becomes null
+    if (!maintenanceId && processedMaintenanceIdRef.current) {
+      processedMaintenanceIdRef.current = null;
+    }
+  }, [maintenanceId, requests, editingRequest, isCreateOpen, navigate, toast, form]);
+
   // Handle URL parameters for auto-opening dialog and pre-populating
   useEffect(() => {
     if (urlPropertyId && shouldCreate === "true" && properties.length > 0) {
@@ -600,9 +651,9 @@ export default function Maintenance() {
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { variant: "default" | "secondary" | "outline"; label: string }> = {
       open: { variant: "outline", label: "Open" },
-      assigned: { variant: "secondary", label: "Assigned" },
-      "in-progress": { variant: "default", label: "In Progress" },
+      in_progress: { variant: "default", label: "In Progress" },
       completed: { variant: "secondary", label: "Completed" },
+      closed: { variant: "secondary", label: "Closed" },
     };
     const config = variants[status] || variants.open;
     return <Badge variant={config.variant} data-testid={`badge-status-${status}`}>{config.label}</Badge>;
@@ -1147,7 +1198,7 @@ export default function Maintenance() {
             <div className="flex flex-wrap gap-4 items-center">
               {/* Status Filter Buttons */}
               <div className="flex gap-2 flex-wrap">
-                {["all", "open", "assigned", "in-progress", "completed"].map((status) => (
+                {["all", "open", "in_progress", "completed", "closed"].map((status) => (
                   <Button
                     key={status}
                     variant={selectedStatus === status ? "default" : "outline"}
@@ -1155,7 +1206,7 @@ export default function Maintenance() {
                     onClick={() => setSelectedStatus(status)}
                     data-testid={`button-filter-${status}`}
                   >
-                    {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1).replace("-", " ")}
+                    {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1).replace("_", " ")}
                   </Button>
                 ))}
               </div>
@@ -1313,9 +1364,9 @@ export default function Maintenance() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="open" data-testid={`option-status-open-${request.id}`}>Open</SelectItem>
-                          <SelectItem value="assigned" data-testid={`option-status-assigned-${request.id}`}>Assigned</SelectItem>
-                          <SelectItem value="in-progress" data-testid={`option-status-progress-${request.id}`}>In Progress</SelectItem>
+                          <SelectItem value="in_progress" data-testid={`option-status-progress-${request.id}`}>In Progress</SelectItem>
                           <SelectItem value="completed" data-testid={`option-status-completed-${request.id}`}>Completed</SelectItem>
+                          <SelectItem value="closed" data-testid={`option-status-closed-${request.id}`}>Closed</SelectItem>
                         </SelectContent>
                       </Select>
                       
@@ -1324,7 +1375,7 @@ export default function Maintenance() {
                           onValueChange={(assignedTo) =>
                             updateStatusMutation.mutate({ 
                               id: request.id, 
-                              status: "assigned",
+                              status: "in_progress",
                               assignedTo 
                             })
                           }

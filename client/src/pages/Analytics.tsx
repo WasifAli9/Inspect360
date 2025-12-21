@@ -191,7 +191,7 @@ export default function Analytics() {
       costEstimate: workOrder.costEstimate?.toString() || "",
       slaDue: workOrder.slaDue ? format(new Date(workOrder.slaDue), "yyyy-MM-dd") : "",
       notes: workOrder.notes || "",
-      teamId: workOrder.teamId || workOrder.team?.id || "",
+      teamId: workOrder.teamId || workOrder.team?.id || "unassigned",
     });
     setEditDialogOpen(true);
   };
@@ -206,7 +206,7 @@ export default function Analytics() {
         costEstimate: editFormData.costEstimate ? parseFloat(editFormData.costEstimate) : null,
         slaDue: editFormData.slaDue || null,
         notes: editFormData.notes || null,
-        teamId: editFormData.teamId || null,
+        teamId: editFormData.teamId === "unassigned" ? null : (editFormData.teamId || null),
       },
     });
   };
@@ -592,7 +592,7 @@ export default function Analytics() {
                   <SelectValue placeholder="Select a team..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {teams.filter(t => t.isActive).map((team) => (
                     <SelectItem key={team.id} value={team.id}>
                       {team.name}

@@ -3,8 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Home, FileText, MessageSquare, Calendar, MapPin, FileCheck, LogOut, Users } from "lucide-react";
-import { useLocation, Link } from "wouter";
+import { Building2, Home, Calendar, MapPin } from "lucide-react";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -16,9 +15,7 @@ import {
 import { ActionRequiredBanner } from "@/components/ActionRequiredBanner";
 
 export default function TenantHome() {
-  const [, navigate] = useLocation();
   const locale = useLocale();
-  const { logoutMutation } = useAuth();
 
   const { data: tenancyData, isLoading } = useQuery<any>({
     queryKey: ["/api/tenant/tenancy"],
@@ -80,24 +77,13 @@ export default function TenantHome() {
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-welcome">
-            Welcome Home
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your property and maintenance requests
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => logoutMutation.mutate()}
-          disabled={logoutMutation.isPending}
-          data-testid="button-logout"
-        >
-          <LogOut className="h-4 w-4 mr-2" />
-          {logoutMutation.isPending ? "Logging out..." : "Logout"}
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold" data-testid="text-welcome">
+          Welcome Home
+        </h1>
+        <p className="text-muted-foreground mt-1">
+          Manage your property and maintenance requests
+        </p>
       </div>
 
       {/* Action Required Banners - Only for reports requiring signature */}
@@ -112,57 +98,6 @@ export default function TenantHome() {
           ))}
         </div>
       )}
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="hover-elevate cursor-pointer" onClick={() => navigate("/tenant/maintenance")}>
-          <CardHeader className="flex flex-row items-center gap-4 space-y-0">
-            <div className="p-3 bg-primary/10 rounded-lg">
-              <MessageSquare className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">AI Maintenance Help</CardTitle>
-              <CardDescription>Get instant assistance with issues</CardDescription>
-            </div>
-          </CardHeader>
-        </Card>
-
-        <Card className="hover-elevate cursor-pointer" onClick={() => navigate("/tenant/requests")}>
-          <CardHeader className="flex flex-row items-center gap-4 space-y-0">
-            <div className="p-3 bg-primary/10 rounded-lg">
-              <FileText className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">My Requests</CardTitle>
-              <CardDescription>View your maintenance requests</CardDescription>
-            </div>
-          </CardHeader>
-        </Card>
-
-        <Card className="hover-elevate cursor-pointer" onClick={() => navigate("/tenant/comparison-reports")} data-testid="card-comparison-reports">
-          <CardHeader className="flex flex-row items-center gap-4 space-y-0">
-            <div className="p-3 bg-primary/10 rounded-lg">
-              <FileCheck className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Comparison Reports</CardTitle>
-              <CardDescription>Review and sign move-out reports</CardDescription>
-            </div>
-          </CardHeader>
-        </Card>
-
-        <Card className="hover-elevate cursor-pointer" onClick={() => navigate("/tenant/community")} data-testid="card-community">
-          <CardHeader className="flex flex-row items-center gap-4 space-y-0">
-            <div className="p-3 bg-primary/10 rounded-lg">
-              <Users className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Community</CardTitle>
-              <CardDescription>Connect with your neighbors</CardDescription>
-            </div>
-          </CardHeader>
-        </Card>
-      </div>
 
       {/* Property Information */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

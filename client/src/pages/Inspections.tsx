@@ -203,6 +203,7 @@ export default function Inspections() {
   const targetType = form.watch("targetType");
   
   // Fetch active templates filtered by the current target scope
+  // Only fetch when targetType is set (property or block)
   const { data: templates = [] } = useQuery<any[]>({
     queryKey: ["/api/inspection-templates", { scope: targetType, active: true }],
     queryFn: async () => {
@@ -213,6 +214,7 @@ export default function Inspections() {
       if (!response.ok) throw new Error("Failed to fetch templates");
       return response.json();
     },
+    enabled: !!targetType && (targetType === "property" || targetType === "block"),
   });
 
   // Fetch tenants for selected property

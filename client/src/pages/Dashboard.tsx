@@ -543,20 +543,18 @@ export default function Dashboard() {
       {/* KPI Cards Row */}
       {visibleWidgets.kpis && (
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4" data-testid="panel-kpis">
-        <Link href="/tenants">
-          <Card className="hover-elevate cursor-pointer" data-testid="kpi-occupancy">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Home className="h-4 w-4 text-muted-foreground" />
-                {getKpiIcon(stats?.kpis?.occupancyRate ?? 0, { good: 90, warning: 75 })}
-              </div>
-              <p className={`text-2xl font-bold ${getKpiColor(stats?.kpis?.occupancyRate ?? 0, { good: 90, warning: 75 })}`}>
-                {stats?.kpis?.occupancyRate ?? 0}%
-              </p>
-              <p className="text-xs text-muted-foreground">Occupancy Rate</p>
-            </CardContent>
-          </Card>
-        </Link>
+        <Card data-testid="kpi-occupancy">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <Home className="h-4 w-4 text-muted-foreground" />
+              {getKpiIcon(stats?.kpis?.occupancyRate ?? 0, { good: 90, warning: 75 })}
+            </div>
+            <p className={`text-2xl font-bold ${getKpiColor(stats?.kpis?.occupancyRate ?? 0, { good: 90, warning: 75 })}`}>
+              {stats?.kpis?.occupancyRate ?? 0}%
+            </p>
+            <p className="text-xs text-muted-foreground">Occupancy Rate</p>
+          </CardContent>
+        </Card>
 
         <Link href="/compliance">
           <Card className="hover-elevate cursor-pointer" data-testid="kpi-compliance">

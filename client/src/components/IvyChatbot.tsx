@@ -157,7 +157,7 @@ export function IvyChatbot() {
                 <div>
                   <h3 className="text-lg font-semibold">Hi, I'm Ivy!</h3>
                   <p className="text-muted-foreground mt-1 max-w-sm">
-                    I can help you with inspections, compliance, tenants, maintenance, and more. Ask me anything about your BTR operations.
+                    I can help you with properties, inspections, compliance, maintenance, teams, contacts, work orders, inventory, and community. Ask me anything about your BTR operations.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 mt-4">

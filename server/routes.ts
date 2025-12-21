@@ -338,7 +338,7 @@ function detectImageMimeType(buffer: Buffer): string {
 }
 import { setupAuth, isAuthenticated, requireRole, hashPassword, comparePasswords } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
-import { ObjectPermission } from "./objectAcl";
+import { ObjectPermission, getObjectAclPolicy } from "./objectAcl";
 import { db } from "./db";
 import { eq, and, lt, gt, desc, inArray } from "drizzle-orm";
 import { getUncachableStripeClient, getStripeSecretKey } from "./stripeClient";
@@ -702,6 +702,18 @@ Style: Modern, clean, gradient colors using teal (#3B7A8C) and cyan (#00D5CC) ac
       bannerBuffer,
       'image/png'
     );
+
+    // Set the banner as public so it can be accessed without authentication
+    try {
+      await objectStorageService.trySetObjectEntityAclPolicy(bannerPath, {
+        owner: '', // No specific owner needed for public banners
+        visibility: 'public',
+      });
+      console.log(`[BannerGen] Banner set as public: ${bannerPath}`);
+    } catch (aclError: any) {
+      console.warn(`[BannerGen] Failed to set banner ACL to public: ${aclError.message}`);
+      // Continue anyway - the banner is saved, just might require auth
+    }
 
     console.log(`[BannerGen] Banner saved to: ${bannerPath}`);
     return bannerPath;
@@ -1174,6 +1186,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error completing onboarding:", error);
       res.status(500).json({ message: "Failed to complete onboarding" });
+    }
+  });
+
+  // Change password endpoint
+  app.patch('/api/auth/change-password', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current password and new password are required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      // Get user from users table to verify current password
+      const user = await storage.getUser(userId);
+      if (!user || !user.password) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Verify current password using comparePasswords (supports both scrypt and bcrypt formats)
+      const isPasswordValid = await comparePasswords(currentPassword, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+
+      // Hash new password using the same method as registration (scrypt)
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update password in users table (same table used for login)
+      await storage.updatePassword(userId, hashedPassword);
+
+      console.log(`[Change Password] Password updated successfully for user ${userId} (${user.email})`);
+      res.json({ message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Error changing password:", error);
+      res.status(500).json({ message: "Failed to change password" });
     }
   });
 
@@ -8245,9 +8297,19 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(403).json({ message: "Insufficient permissions" });
       }
 
+      // Normalize status values before validation
+      // Map "assigned" and "in-progress" to "in_progress" to match the schema
+      const normalizedBody = { ...req.body };
+      if (normalizedBody.status) {
+        if (normalizedBody.status === "assigned" || normalizedBody.status === "in-progress") {
+          normalizedBody.status = "in_progress";
+        }
+      }
+
       // Validate request body
-      const validation = updateMaintenanceRequestSchema.safeParse(req.body);
+      const validation = updateMaintenanceRequestSchema.safeParse(normalizedBody);
       if (!validation.success) {
+        console.error("Validation errors:", validation.error.errors);
         return res.status(400).json({
           message: "Invalid request data",
           errors: validation.error.errors
@@ -11257,14 +11319,34 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         avgResolutionDays = Math.round(totalDays / completedMaintenance.length * 10) / 10;
       }
 
-      // Calculate occupancy rate - include 'current', 'active', and 'notice_served' as occupied
-      const activeAssignments = tenantAssignments.filter(t => 
-        t.status === 'active' || t.status === 'current' || t.status === 'notice_served'
-      );
-      const occupiedProperties = new Set(activeAssignments.map(t => t.propertyId));
+      // Calculate occupancy rate - count properties with active tenant assignments
+      // Tenant assignments use isActive boolean field (mapped from is_active in DB)
+      // Handle both camelCase (isActive) and snake_case (is_active) for compatibility
+      const activeAssignments = tenantAssignments.filter(t => {
+        const isActive = t.isActive !== undefined ? t.isActive : (t as any).is_active;
+        return isActive === true;
+      });
+      const occupiedProperties = new Set(activeAssignments.map(t => t.propertyId || (t as any).property_id));
       const occupancyRate = properties.length > 0 
         ? Math.round((occupiedProperties.size / properties.length) * 100) 
         : 0;
+      
+      // Debug logging (remove in production if needed)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Dashboard Stats] Occupancy calculation:', {
+          totalProperties: properties.length,
+          totalTenantAssignments: tenantAssignments.length,
+          activeAssignments: activeAssignments.length,
+          occupiedProperties: occupiedProperties.size,
+          occupancyRate,
+          sampleAssignment: tenantAssignments[0] ? {
+            id: tenantAssignments[0].id,
+            propertyId: tenantAssignments[0].propertyId || (tenantAssignments[0] as any).property_id,
+            isActive: tenantAssignments[0].isActive !== undefined ? tenantAssignments[0].isActive : (tenantAssignments[0] as any).is_active,
+            allKeys: Object.keys(tenantAssignments[0] || {})
+          } : null
+        });
+      }
 
       // Calculate compliance rate (valid documents vs total required)
       const validCompliance = compliance.filter(c => {
@@ -12144,11 +12226,31 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     const objectStorageService = new ObjectStorageService();
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
-      const canAccess = await objectStorageService.canAccessObjectEntity({
-        objectFile,
-        userId: userId,
-        requestedPermission: ObjectPermission.READ,
-      });
+      
+      // Community banners are public by default (for tenant portal access)
+      const isCommunityBanner = req.path.includes('/community-banners/');
+      
+      let canAccess = false;
+      if (isCommunityBanner) {
+        // For community banners, check ACL but also allow if no ACL exists (treat as public)
+        const aclPolicy = await getObjectAclPolicy(objectFile);
+        if (!aclPolicy || aclPolicy.visibility === 'public') {
+          canAccess = true;
+        } else {
+          canAccess = await objectStorageService.canAccessObjectEntity({
+            objectFile,
+            userId: userId,
+            requestedPermission: ObjectPermission.READ,
+          });
+        }
+      } else {
+        canAccess = await objectStorageService.canAccessObjectEntity({
+          objectFile,
+          userId: userId,
+          requestedPermission: ObjectPermission.READ,
+        });
+      }
+      
       if (!canAccess) {
         return res.sendStatus(401);
       }
@@ -16076,6 +16178,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         workOrders,
         tenantAssignments,
         blocks,
+        teams,
+        contacts,
+        inventories,
+        communityGroups,
       ] = await Promise.all([
         storage.getPropertiesByOrganization(user.organizationId),
         storage.getInspectionsByOrganization(user.organizationId),
@@ -16084,6 +16190,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         storage.getWorkOrdersByOrganization(user.organizationId),
         storage.getTenantAssignmentsByOrganization(user.organizationId),
         storage.getBlocksByOrganization(user.organizationId),
+        storage.getTeamsByOrganization(user.organizationId),
+        storage.getContactsByOrganization(user.organizationId),
+        storage.getInventoriesByOrganization(user.organizationId),
+        storage.getCommunityGroupsByOrganization(user.organizationId),
       ]);
 
       const now = new Date();
@@ -16142,6 +16252,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           totalWorkOrders: workOrders.length,
           openWorkOrders: openWorkOrders.length,
           activeTenants: activeTenants.length,
+          totalTeams: teams.length,
+          totalContacts: contacts.length,
+          totalInventories: inventories.length,
+          totalCommunityGroups: communityGroups.length,
         },
         overdueInspectionsList: overdueInspections.slice(0, 10).map(i => ({
           property: properties.find(p => p.id === i.propertyId)?.name || "Unknown",
@@ -16172,7 +16286,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         })),
       };
 
-      const systemPrompt = `You are Ivy, a friendly and knowledgeable AI assistant for BTR (Build-to-Rent) property operations on the Inspect360 platform. You have access to real-time data about the organization's properties, inspections, compliance, maintenance, and tenants.
+      const systemPrompt = `You are Ivy, a friendly and knowledgeable AI assistant for BTR (Build-to-Rent) property operations on the Inspect360 platform. You have access to real-time data about the organization's properties, inspections, compliance, maintenance, tenants, teams, contacts, work orders, inventory, and community.
 
 CURRENT DATA SUMMARY:
 ${JSON.stringify(contextData.summary, null, 2)}
@@ -16308,6 +16422,56 @@ Answer the user's question based on the data provided above. Focus on being help
         sourceDocs: [],
       });
 
+      // Get tenant-specific context if user is a tenant
+      let tenantContext = '';
+      if (user?.role === 'tenant') {
+        try {
+          const tenancy = await storage.getTenancyByTenantId(user.id);
+          if (tenancy) {
+            const property = tenancy.propertyId ? await storage.getProperty(tenancy.propertyId) : null;
+            const block = tenancy.blockId ? await storage.getBlock(tenancy.blockId) : null;
+            const maintenanceRequests = await storage.getMaintenanceRequestsByReporter(user.id);
+            const comparisonReports = await storage.getComparisonReportsByTenant(user.id);
+            
+            // Fetch property info for comparison reports
+            const reportsWithProperty = await Promise.all(
+              comparisonReports.slice(0, 3).map(async (r) => {
+                if (r.propertyId) {
+                  const prop = await storage.getProperty(r.propertyId);
+                  return { ...r, propertyName: prop?.name || 'property' };
+                }
+                return { ...r, propertyName: 'property' };
+              })
+            );
+
+            tenantContext = `\n\nTENANT CONTEXT:
+- Property: ${property?.name || 'N/A'} (${property?.address || 'N/A'})
+- Block: ${block?.name || 'N/A'} (${block?.address || 'N/A'})
+- Lease Status: ${tenancy.isActive ? 'Active' : 'Inactive'}
+- Lease Period: ${tenancy.leaseStartDate ? new Date(tenancy.leaseStartDate).toLocaleDateString() : 'N/A'} to ${tenancy.leaseEndDate ? new Date(tenancy.leaseEndDate).toLocaleDateString() : 'N/A'}
+- Monthly Rent: ${tenancy.monthlyRent ? `£${parseFloat(tenancy.monthlyRent).toLocaleString()}` : 'N/A'}
+- Maintenance Requests: ${maintenanceRequests.length} total (${maintenanceRequests.filter(r => r.status === 'open').length} open, ${maintenanceRequests.filter(r => r.status === 'in_progress').length} in progress, ${maintenanceRequests.filter(r => r.status === 'completed').length} completed)
+- Comparison Reports: ${comparisonReports.length} total (${comparisonReports.filter(r => r.status === 'under_review' || r.status === 'awaiting_signatures').length} pending signature)
+
+Recent Maintenance Requests:
+${maintenanceRequests.slice(0, 5).map(r => `- ${r.title} (${r.status}, ${r.priority} priority)`).join('\n') || 'None'}
+
+Pending Comparison Reports:
+${reportsWithProperty.filter(r => r.status === 'under_review' || r.status === 'awaiting_signatures').map(r => `- Report for ${r.propertyName} (${r.status}, £${parseFloat(r.totalEstimatedCost || '0').toFixed(2)})`).join('\n') || 'None'}
+
+You can help the tenant with:
+- Questions about their property and tenancy
+- Information about their maintenance requests
+- Help with comparison reports and signing
+- General questions about using the Inspect360 tenant portal
+- Questions about community features`;
+          }
+        } catch (contextError) {
+          console.error("[Chatbot] Error fetching tenant context:", contextError);
+          // Continue without tenant context if there's an error
+        }
+      }
+
       const documents = await storage.searchKnowledgeBase(content);
 
       let contextChunks: string[] = [];
@@ -16327,19 +16491,63 @@ Answer the user's question based on the data provided above. Focus on being help
         ? `Based on the Inspect360 knowledge base:\n\n${contextChunks.join('\n\n---\n\n')}\n\n`
         : '';
 
-      const systemPrompt = `You are an AI assistant for Inspect360, a building inspection platform. ${contextText ? 'Use the knowledge base information provided to answer questions accurately.' : 'Answer questions about Inspect360 to the best of your ability.'}`;
+      const systemPrompt = `You are an AI assistant for Inspect360, a building inspection and property management platform. ${user?.role === 'tenant' ? 'You are helping a tenant with their property, maintenance requests, and tenancy-related questions.' : 'You help users with property management, inspections, compliance, and maintenance.'} ${contextText ? 'Use the knowledge base information provided to answer questions accurately.' : 'Answer questions about Inspect360 to the best of your ability.'}${tenantContext}`;
 
       const openaiClient = getOpenAI();
-      const completion = await openaiClient.chat.completions.create({
-        model: "gpt-5",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: contextText + content },
-        ],
-        max_completion_tokens: 1000,
-      });
+      
+      // Get conversation history for context
+      const previousMessages = await storage.getChatMessages(id);
+      const messageHistory = previousMessages
+        .slice(-10) // Last 10 messages for context
+        .map(msg => ({ role: msg.role, content: msg.content }));
 
-      const assistantContent = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+      const messages = [
+        { role: "system" as const, content: systemPrompt },
+        ...messageHistory,
+        { role: "user" as const, content: contextText + content },
+      ];
+
+      let completion;
+      try {
+        completion = await openaiClient.chat.completions.create({
+          model: "gpt-4o", // Use valid OpenAI model
+          messages: messages,
+          max_tokens: 1000,
+          temperature: 0.7,
+        });
+      } catch (openaiError: any) {
+        console.error("[Chatbot] OpenAI API error:", openaiError);
+        // Create an error message for the user
+        const errorMessage = await storage.createChatMessage({
+          conversationId: id,
+          role: "assistant",
+          content: "I apologize, but I'm experiencing technical difficulties. Please try again in a moment. If the problem persists, please contact support.",
+          sourceDocs: [],
+        });
+        return res.status(500).json({ 
+          message: "Failed to generate response", 
+          error: openaiError.message,
+          userMessage,
+          assistantMessage: errorMessage
+        });
+      }
+
+      const assistantContent = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response. Please try rephrasing your question.";
+
+      if (!assistantContent || assistantContent.trim().length === 0) {
+        console.error("[Chatbot] Empty response from OpenAI");
+        const errorMessage = await storage.createChatMessage({
+          conversationId: id,
+          role: "assistant",
+          content: "I apologize, but I couldn't generate a response to your question. Please try rephrasing it or ask something else.",
+          sourceDocs: [],
+        });
+        return res.status(500).json({ 
+          message: "Empty response from AI",
+          userMessage,
+          assistantMessage: errorMessage
+        });
+      }
 
       const assistantMessage = await storage.createChatMessage({
         conversationId: id,
@@ -16349,20 +16557,26 @@ Answer the user's question based on the data provided above. Focus on being help
       });
 
       if (!conversation.title || conversation.title === "New Chat") {
-        const titlePrompt = `Generate a short 3-5 word title for a conversation that starts with: "${content.substring(0, 100)}"`;
-        const titleCompletion = await openaiClient.chat.completions.create({
-          model: "gpt-5-mini",
-          messages: [{ role: "user", content: titlePrompt }],
-          max_completion_tokens: 20,
-        });
-        const title = titleCompletion.choices[0]?.message?.content?.replace(/['"]/g, '') || "Chat";
-        await storage.updateChatConversation(id, { title });
+        try {
+          const titlePrompt = `Generate a short 3-5 word title for a conversation that starts with: "${content.substring(0, 100)}"`;
+          const titleCompletion = await openaiClient.chat.completions.create({
+            model: "gpt-4o-mini", // Use valid OpenAI model
+            messages: [{ role: "user", content: titlePrompt }],
+            max_tokens: 20,
+          });
+          const title = titleCompletion.choices[0]?.message?.content?.replace(/['"]/g, '').trim() || "Chat";
+          await storage.updateChatConversation(id, { title });
+        } catch (titleError) {
+          console.error("[Chatbot] Error generating title:", titleError);
+          // Don't fail the whole request if title generation fails
+        }
       }
 
       res.json({ userMessage, assistantMessage });
     } catch (error: any) {
       console.error("[Chatbot] Error sending message:", error);
-      res.status(500).json({ message: "Failed to send message" });
+      console.error("[Chatbot] Error stack:", error.stack);
+      res.status(500).json({ message: "Failed to send message", error: error.message });
     }
   });
 
@@ -20329,8 +20543,11 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
     try {
       const user = req.user as User;
       const tenancy = await storage.getTenancyByTenantId(user.id);
+      
+      // If tenant has no block assignment, return empty array (not an error)
       if (!tenancy || !tenancy.blockId) {
-        return res.status(404).json({ message: "Block assignment not found" });
+        console.log(`[Community] Tenant ${user.id} has no block assignment`);
+        return res.json([]);
       }
 
       // Only show approved groups to tenants
@@ -20413,6 +20630,27 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
 
       // Auto-join creator to the group
       await storage.joinGroup({ groupId: group.id, tenantId: user.id });
+
+      // Automatically add all active tenants from this block to the community group
+      // Note: This happens even for pending groups, so when approved, all tenants are already members
+      try {
+        const tenantAssignments = await storage.getTenantAssignmentsByBlock(tenancy.blockId);
+        const activeTenants = tenantAssignments
+          .filter(ta => ta.assignment.isActive === true)
+          .map(ta => ta.user.id);
+        
+        // Add each active tenant to the group (skip if already a member, including creator)
+        for (const tenantId of activeTenants) {
+          const isMember = await storage.isGroupMember(group.id, tenantId);
+          if (!isMember) {
+            await storage.joinGroup({ groupId: group.id, tenantId });
+          }
+        }
+        console.log(`[Community] Auto-added ${activeTenants.length} active tenants to pending group ${group.id}`);
+      } catch (error) {
+        console.error(`[Community] Error auto-adding tenants to group ${group.id}:`, error);
+        // Don't fail the request if auto-adding tenants fails
+      }
 
       // Generate AI banner in the background (don't block the response)
       const objectStorageService = new ObjectStorageService();
@@ -20852,6 +21090,28 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
 
       const updated = await storage.updateCommunityGroup(req.params.id, updates);
 
+      // When approving a group, ensure all active tenants from the block are members
+      if (req.body.status === 'approved') {
+        try {
+          const tenantAssignments = await storage.getTenantAssignmentsByBlock(group.blockId);
+          const activeTenants = tenantAssignments
+            .filter(ta => ta.assignment.isActive === true)
+            .map(ta => ta.user.id);
+          
+          // Add each active tenant to the group (skip if already a member)
+          for (const tenantId of activeTenants) {
+            const isMember = await storage.isGroupMember(group.id, tenantId);
+            if (!isMember) {
+              await storage.joinGroup({ groupId: group.id, tenantId });
+            }
+          }
+          console.log(`[Community] Auto-added ${activeTenants.length} active tenants to approved group ${group.id}`);
+        } catch (error) {
+          console.error(`[Community] Error auto-adding tenants to approved group ${group.id}:`, error);
+          // Don't fail the request if auto-adding tenants fails
+        }
+      }
+
       // Log moderation action
       await storage.createCommunityModerationLog({
         organizationId: user.organizationId!,
@@ -21067,6 +21327,26 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
       
       // Update with approved status since operator created it
       await storage.updateCommunityGroup(group.id, { approvedBy: user.id });
+
+      // Automatically add all active tenants from this block to the community group
+      try {
+        const tenantAssignments = await storage.getTenantAssignmentsByBlock(blockId);
+        const activeTenants = tenantAssignments
+          .filter(ta => ta.assignment.isActive === true)
+          .map(ta => ta.user.id);
+        
+        // Add each active tenant to the group (skip if already a member)
+        for (const tenantId of activeTenants) {
+          const isMember = await storage.isGroupMember(group.id, tenantId);
+          if (!isMember) {
+            await storage.joinGroup({ groupId: group.id, tenantId });
+          }
+        }
+        console.log(`[Community] Auto-added ${activeTenants.length} active tenants to group ${group.id}`);
+      } catch (error) {
+        console.error(`[Community] Error auto-adding tenants to group ${group.id}:`, error);
+        // Don't fail the request if auto-adding tenants fails
+      }
 
       // Generate AI banner in the background (don't block the response)
       const objectStorageService = new ObjectStorageService();

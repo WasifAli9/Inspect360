@@ -44,7 +44,7 @@ export default function InspectionsReport() {
   const [isExporting, setIsExporting] = useState(false);
 
   const { data: inspections = [], isLoading: inspectionsLoading } = useQuery<any[]>({
-    queryKey: ["/api/inspections"],
+    queryKey: ["/api/inspections/my"],
   });
 
   const { data: properties = [] } = useQuery<any[]>({

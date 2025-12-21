@@ -450,6 +450,15 @@
     position: fixed !important;
   }
 
+  /* Fix aria-hidden accessibility issue - prevent focus on hidden elements */
+  .uppy-Dashboard-overlay[aria-hidden="true"] {
+    pointer-events: none;
+  }
+  
+  .uppy-Dashboard-overlay[aria-hidden="true"]:focus {
+    outline: none;
+  }
+
   /* Ensure Uppy modal container is rendered at root level */
   body > .uppy-Dashboard--modal {
     z-index: 99999 !important;

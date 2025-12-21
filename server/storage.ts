@@ -3840,11 +3840,27 @@ export class DatabaseStorage implements IStorage {
 
   // Tenant operations
   async getTenancyByTenantId(tenantId: string): Promise<any> {
+    // Get the most recent active tenant assignment with property and block info
     const [tenancy] = await db
-      .select()
+      .select({
+        id: tenantAssignments.id,
+        tenantId: tenantAssignments.tenantId,
+        propertyId: tenantAssignments.propertyId,
+        organizationId: tenantAssignments.organizationId,
+        leaseStartDate: tenantAssignments.leaseStartDate,
+        leaseEndDate: tenantAssignments.leaseEndDate,
+        monthlyRent: tenantAssignments.monthlyRent,
+        depositAmount: tenantAssignments.depositAmount,
+        isActive: tenantAssignments.isActive,
+        createdAt: tenantAssignments.createdAt,
+        updatedAt: tenantAssignments.updatedAt,
+        blockId: properties.blockId,
+      })
       .from(tenantAssignments)
+      .leftJoin(properties, eq(tenantAssignments.propertyId, properties.id))
       .where(eq(tenantAssignments.tenantId, tenantId))
-      .orderBy(desc(tenantAssignments.createdAt));
+      .orderBy(desc(tenantAssignments.createdAt))
+      .limit(1);
     return tenancy;
   }
 

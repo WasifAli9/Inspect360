@@ -65,7 +65,8 @@ export function BroadcastDialog({
 
   const broadcastMutation = useMutation({
     mutationFn: async (data: { templateId?: string; subject?: string; body?: string }) => {
-      return apiRequest(`/api/blocks/${blockId}/broadcast`, "POST", data);
+      const res = await apiRequest("POST", `/api/blocks/${blockId}/broadcast`, data);
+      return res.json();
     },
     onSuccess: (result: any) => {
       const successCount = result.results?.filter((r: any) => r.success).length || 0;

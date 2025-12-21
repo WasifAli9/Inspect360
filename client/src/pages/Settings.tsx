@@ -8,14 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { format as formatDate } from "date-fns";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon, Building2, Upload, X, FileText, ClipboardList, ChevronUp, ChevronDown, Award, Image as ImageIcon } from "lucide-react";
+import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon, Building2, Upload, X, FileText, ClipboardList, ChevronUp, ChevronDown, Award, Image as ImageIcon, ExternalLink, Calendar, Pencil } from "lucide-react";
 import { Link } from "wouter";
-import { insertInspectionCategorySchema, insertComplianceDocumentTypeSchema, type InspectionCategory, type ComplianceDocumentType, type Organization, type User, type OrganizationTrademark } from "@shared/schema";
+import { insertInspectionCategorySchema, insertComplianceDocumentTypeSchema, insertComplianceDocumentSchema, type InspectionCategory, type ComplianceDocumentType, type ComplianceDocument, type Organization, type User, type OrganizationTrademark } from "@shared/schema";
 import InspectionTemplatesContent from "./InspectionTemplates";
 import { z } from "zod";
 import Team from "./Team";
@@ -36,9 +38,8 @@ type SettingsSection = 'branding' | 'templates' | 'categories' | 'document-types
 const settingsMenuItems: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }>; href?: string }[] = [
   { id: 'branding', label: 'Company Branding', icon: Building2 },
   { id: 'templates', label: 'Inspection Templates', icon: ClipboardList },
-  { id: 'categories', label: 'Inspection Categories', icon: Tags },
-  { id: 'document-types', label: 'Document Types', icon: FileText },
-  { id: 'teams', label: 'Teams', icon: UsersIcon },
+  { id: 'document-types', label: 'Compliance Documents', icon: FileText },
+  { id: 'teams', label: 'Maintenance Team', icon: UsersIcon },
   { id: 'team', label: 'Team Members', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Plug },
 ];
@@ -921,7 +922,7 @@ export default function Settings() {
             )}
 
             {activeSection === 'document-types' && (
-              <ComplianceDocumentTypesPanel />
+              <ComplianceDocumentsPanel />
             )}
 
             {activeSection === 'teams' && (
@@ -942,60 +943,121 @@ export default function Settings() {
   );
 }
 
-// Compliance Document Types Management Panel
-function ComplianceDocumentTypesPanel() {
+// Compliance Documents Management Panel - Shows actual compliance documents (synced with Compliance page)
+function ComplianceDocumentsPanel() {
   const { toast } = useToast();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [editingType, setEditingType] = useState<ComplianceDocumentType | null>(null);
+  const [editingDoc, setEditingDoc] = useState<ComplianceDocument | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
 
   const { data: user } = useQuery<User>({
     queryKey: ["/api/auth/user"],
   });
 
-  const { data: documentTypes = [], isLoading } = useQuery<ComplianceDocumentType[]>({
-    queryKey: ["/api/compliance/document-types"],
+  // Use the same API endpoint as Compliance page to ensure sync
+  const { data: documents = [], isLoading } = useQuery<ComplianceDocument[]>({
+    queryKey: ['/api/compliance'],
     enabled: !!user?.organizationId,
   });
 
-  const createForm = useForm({
-    resolver: zodResolver(insertComplianceDocumentTypeSchema.omit({ organizationId: true })),
+  // Fetch custom document types for the dropdown
+  const { data: customDocumentTypes = [] } = useQuery<ComplianceDocumentType[]>({
+    queryKey: ['/api/compliance/document-types'],
+    enabled: !!user?.organizationId,
+  });
+
+  // Default document types
+  const DEFAULT_DOCUMENT_TYPES = [
+    "Fire Safety Certificate",
+    "Building Insurance",
+    "Electrical Safety Certificate",
+    "Gas Safety Certificate",
+    "EPC Certificate",
+    "HMO License",
+    "Planning Permission",
+    "Other",
+  ];
+
+  // Combine default and custom document types
+  const allDocumentTypes = [
+    ...DEFAULT_DOCUMENT_TYPES,
+    ...customDocumentTypes.map(t => t.name).filter(name => !DEFAULT_DOCUMENT_TYPES.includes(name))
+  ].sort();
+
+  // Form for creating/editing compliance documents
+  const uploadFormSchema = insertComplianceDocumentSchema.omit({
+    organizationId: true,
+    uploadedBy: true,
+  }).extend({
+    documentUrl: z.string().optional(),
+    expiryDate: z.string().optional(),
+  });
+
+  type UploadFormValues = z.infer<typeof uploadFormSchema>;
+
+  const form = useForm<UploadFormValues>({
+    resolver: zodResolver(uploadFormSchema),
     defaultValues: {
-      name: "",
-      description: "",
-      sortOrder: 0,
-      isActive: true,
+      documentType: "",
+      documentUrl: "",
+      expiryDate: undefined,
     },
   });
 
   const editForm = useForm({
-    resolver: zodResolver(insertComplianceDocumentTypeSchema.partial().omit({ organizationId: true })),
+    resolver: zodResolver(z.object({
+      documentType: z.string().min(1, "Please select a document type"),
+      expiryDate: z.string().optional(),
+    })),
     defaultValues: {
-      name: "",
-      description: "",
-      sortOrder: 0,
-      isActive: true,
+      documentType: "",
+      expiryDate: undefined,
     },
   });
 
-  const createMutation = useMutation({
+  const uploadMutation = useMutation({
     mutationFn: async (data: any) => {
       if (!user?.organizationId) throw new Error("User must belong to an organization");
-      const response = await apiRequest("POST", "/api/compliance/document-types", {
+      const payload: any = {
         ...data,
         organizationId: user.organizationId,
-      });
-      return response.json();
+        uploadedBy: user.id,
+      };
+      if (payload.expiryDate) {
+        payload.expiryDate = new Date(payload.expiryDate);
+      }
+      if (data.documentUrls && data.documentUrls.length > 0) {
+        // Handle multiple files
+        const results = [];
+        for (const url of data.documentUrls) {
+          const result = await apiRequest("POST", "/api/compliance", {
+            ...payload,
+            documentUrl: url,
+          });
+          results.push(await result.json());
+        }
+        return results;
+      } else if (data.documentUrl) {
+        const response = await apiRequest("POST", "/api/compliance", {
+          ...payload,
+          documentUrl: data.documentUrl,
+        });
+        return await response.json();
+      }
+      throw new Error("No document URL provided");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/compliance/document-types"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/compliance"] });
-      toast({ title: "Document type created successfully" });
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance/expiring'] });
+      toast({ title: "Document uploaded successfully" });
       setIsCreateDialogOpen(false);
-      createForm.reset();
+      setUploadedFiles([]);
+      form.reset();
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to create document type",
+        title: "Failed to upload document",
         description: error.message || "Please try again",
         variant: "destructive",
       });
@@ -1004,19 +1066,22 @@ function ComplianceDocumentTypesPanel() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const response = await apiRequest("PATCH", `/api/compliance/document-types/${id}`, data);
-      return response.json();
+      const payload: any = { ...data };
+      if (payload.expiryDate) {
+        payload.expiryDate = new Date(payload.expiryDate);
+      }
+      return await apiRequest('PATCH', `/api/compliance/${id}`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/compliance/document-types"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/compliance"] });
-      toast({ title: "Document type updated successfully" });
-      setEditingType(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance/expiring'] });
+      toast({ title: "Document updated successfully" });
+      setEditingDoc(null);
       editForm.reset();
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to update document type",
+        title: "Failed to update document",
         description: error.message || "Please try again",
         variant: "destructive",
       });
@@ -1025,39 +1090,74 @@ function ComplianceDocumentTypesPanel() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/compliance/document-types/${id}`, {});
+      await apiRequest("DELETE", `/api/compliance/${id}`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/compliance/document-types"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/compliance"] });
-      toast({ title: "Document type deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/compliance/expiring'] });
+      toast({ title: "Document deleted successfully" });
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to delete document type",
+        title: "Failed to delete document",
         description: error.message || "Please try again",
         variant: "destructive",
       });
     },
   });
 
-  const onCreateSubmit = (data: any) => {
-    createMutation.mutate(data);
-  };
-
-  const onEditSubmit = (data: any) => {
-    if (editingType) {
-      updateMutation.mutate({ id: editingType.id, data });
+  const getStatusBadge = (doc: ComplianceDocument) => {
+    if (!doc.expiryDate) {
+      return <Badge variant="secondary">No Expiry</Badge>;
+    }
+    const expiryDate = new Date(doc.expiryDate.toString());
+    const daysUntilExpiry = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    
+    if (daysUntilExpiry < 0) {
+      return <Badge variant="destructive">Expired</Badge>;
+    } else if (daysUntilExpiry <= 30) {
+      return <Badge variant="outline" className="border-yellow-500 text-yellow-600">Due Soon</Badge>;
+    } else {
+      return <Badge variant="outline" className="border-green-500 text-green-600">Current</Badge>;
     }
   };
 
-  const handleEdit = (type: ComplianceDocumentType) => {
-    setEditingType(type);
+  const handleEdit = (doc: ComplianceDocument) => {
+    setEditingDoc(doc);
     editForm.reset({
-      name: type.name,
-      description: type.description || "",
-      sortOrder: type.sortOrder || 0,
-      isActive: type.isActive,
+      documentType: doc.documentType,
+      expiryDate: doc.expiryDate ? new Date(doc.expiryDate.toString()).toISOString().split('T')[0] : undefined,
+    });
+  };
+
+  const onEditSubmit = (data: any) => {
+    if (editingDoc) {
+      updateMutation.mutate({ id: editingDoc.id, data });
+    }
+  };
+
+  const onSubmit = (data: UploadFormValues) => {
+    if (!data.documentType) {
+      toast({
+        title: "Validation error",
+        description: "Please select a document type",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (uploadedFiles.length === 0) {
+      toast({
+        title: "Validation error",
+        description: "Please upload at least one document",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    uploadMutation.mutate({
+      ...data,
+      documentUrls: uploadedFiles,
     });
   };
 
@@ -1066,69 +1166,106 @@ function ComplianceDocumentTypesPanel() {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-2xl">Compliance Document Types</CardTitle>
+            <CardTitle className="text-2xl">Compliance Documents</CardTitle>
             <CardDescription className="mt-2">
-              Manage custom document types for compliance documents. These will appear in the document type dropdown when uploading compliance documents.
+              Manage compliance documents. Documents added here will also appear in the Compliance section, and vice versa.
             </CardDescription>
           </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2" data-testid="button-create-document-type">
+              <Button className="gap-2">
                 <Plus className="w-4 h-4" />
-                Add Document Type
+                Upload Document
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Create Document Type</DialogTitle>
+                <DialogTitle>Upload Compliance Document</DialogTitle>
                 <DialogDescription>
-                  Add a new custom document type for compliance documents
+                  Upload a new compliance document
                 </DialogDescription>
               </DialogHeader>
-              <Form {...createForm}>
-                <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField
-                    control={createForm.control}
-                    name="name"
+                    control={form.control}
+                    name="documentType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Document Type Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., Asbestos Certificate, Legionella Certificate" {...field} data-testid="input-document-type-name" />
-                        </FormControl>
+                        <FormLabel>Document Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select document type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {allDocumentTypes.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {type}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                   <FormField
-                    control={createForm.control}
-                    name="description"
+                    control={form.control}
+                    name="expiryDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormLabel>Expiry Date (Optional)</FormLabel>
                         <FormControl>
-                          <Textarea placeholder="Brief description of this document type" {...field} value={field.value ?? ""} data-testid="input-document-type-description" />
+                          <Input type="date" {...field} value={field.value || ""} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={createForm.control}
-                    name="sortOrder"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Sort Order</FormLabel>
-                        <FormControl>
-                          <Input type="number" {...field} value={field.value ?? 0} data-testid="input-document-type-sort-order" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div>
+                    <Label>Upload File</Label>
+                    <div className="mt-2">
+                      <ObjectUploader
+                        maxNumberOfFiles={1}
+                        maxFileSize={10485760}
+                        onGetUploadParameters={async () => {
+                          const response = await fetch("/api/upload/generate-upload-url", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                          });
+                          if (!response.ok) throw new Error("Failed to get upload URL");
+                          const data = await response.json();
+                          let uploadURL = data.uploadUrl;
+                          if (uploadURL.startsWith('/')) {
+                            uploadURL = `${window.location.origin}${uploadURL}`;
+                          }
+                          return { method: "PUT" as const, url: uploadURL };
+                        }}
+                        onComplete={(result) => {
+                          if (result.successful && result.successful.length > 0) {
+                            const fileUrl = result.successful[0].uploadURL || result.successful[0].meta?.extractedFileUrl;
+                            if (fileUrl) {
+                              setUploadedFiles([fileUrl]);
+                            }
+                          }
+                        }}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Choose File
+                      </ObjectUploader>
+                      {uploadedFiles.length > 0 && (
+                        <p className="text-sm text-muted-foreground mt-2">
+                          {uploadedFiles.length} file(s) ready to upload
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   <DialogFooter>
-                    <Button type="submit" disabled={createMutation.isPending} data-testid="button-create-document-type-submit">
-                      {createMutation.isPending ? "Creating..." : "Create Document Type"}
+                    <Button type="submit" disabled={uploadMutation.isPending || uploadedFiles.length === 0}>
+                      {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -1140,115 +1277,96 @@ function ComplianceDocumentTypesPanel() {
       <CardContent>
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">Loading...</div>
-        ) : documentTypes.length === 0 ? (
+        ) : documents.length === 0 ? (
           <div className="text-center py-12">
             <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground/50" />
-            <p className="text-muted-foreground">No custom document types yet.</p>
+            <p className="text-muted-foreground">No compliance documents yet.</p>
             <p className="text-sm text-muted-foreground mt-2">
-              Create your first custom document type to get started.
+              Upload your first compliance document to get started.
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {documentTypes.map((type) => (
-              <Card key={type.id}>
+            {documents.map((doc) => (
+              <Card key={doc.id}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{type.name}</h3>
-                        {!type.isActive && (
-                          <Badge variant="secondary">Inactive</Badge>
-                        )}
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-semibold">{doc.documentType}</h3>
+                        {getStatusBadge(doc)}
                       </div>
-                      {type.description && (
-                        <p className="text-sm text-muted-foreground mt-1">{type.description}</p>
+                      {doc.expiryDate && (
+                        <p className="text-sm text-muted-foreground">
+                          Expires: {formatDate(new Date(doc.expiryDate.toString()), 'PPP')}
+                        </p>
                       )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Sort Order: {type.sortOrder || 0}
-                      </p>
+                      {doc.createdAt && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Uploaded: {formatDate(new Date(doc.createdAt.toString()), 'PPP')}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Dialog open={editingType?.id === type.id} onOpenChange={(open) => !open && setEditingType(null)}>
+                      <Dialog open={editingDoc?.id === doc.id} onOpenChange={(open) => !open && setEditingDoc(null)}>
                         <DialogTrigger asChild>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleEdit(type)}
-                            data-testid={`button-edit-document-type-${type.id}`}
+                            onClick={() => handleEdit(doc)}
                           >
-                            <Edit2 className="w-4 h-4" />
+                            <Pencil className="w-4 h-4" />
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
-                            <DialogTitle>Edit Document Type</DialogTitle>
+                            <DialogTitle>Edit Document</DialogTitle>
                             <DialogDescription>
-                              Update the document type details
+                              Update the document details
                             </DialogDescription>
                           </DialogHeader>
                           <Form {...editForm}>
                             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
                               <FormField
                                 control={editForm.control}
-                                name="name"
+                                name="documentType"
                                 render={({ field }) => (
                                   <FormItem>
-                                    <FormLabel>Document Type Name</FormLabel>
-                                    <FormControl>
-                                      <Input {...field} data-testid="input-edit-document-type-name" />
-                                    </FormControl>
+                                    <FormLabel>Document Type</FormLabel>
+                                    <Select onValueChange={field.onChange} value={field.value}>
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select document type" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {allDocumentTypes.map((type) => (
+                                          <SelectItem key={type} value={type}>
+                                            {type}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                     <FormMessage />
                                   </FormItem>
                                 )}
                               />
                               <FormField
                                 control={editForm.control}
-                                name="description"
+                                name="expiryDate"
                                 render={({ field }) => (
                                   <FormItem>
-                                    <FormLabel>Description (Optional)</FormLabel>
+                                    <FormLabel>Expiry Date (Optional)</FormLabel>
                                     <FormControl>
-                                      <Textarea {...field} value={field.value ?? ""} data-testid="input-edit-document-type-description" />
+                                      <Input type="date" {...field} value={field.value || ""} />
                                     </FormControl>
                                     <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={editForm.control}
-                                name="sortOrder"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Sort Order</FormLabel>
-                                    <FormControl>
-                                      <Input type="number" {...field} value={field.value ?? 0} data-testid="input-edit-document-type-sort-order" />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={editForm.control}
-                                name="isActive"
-                                render={({ field }) => (
-                                  <FormItem className="flex items-center gap-2">
-                                    <FormControl>
-                                      <input
-                                        type="checkbox"
-                                        checked={field.value ?? true}
-                                        onChange={(e) => field.onChange(e.target.checked)}
-                                        className="rounded"
-                                        data-testid="checkbox-edit-document-type-active"
-                                      />
-                                    </FormControl>
-                                    <FormLabel>Active</FormLabel>
                                   </FormItem>
                                 )}
                               />
                               <DialogFooter>
-                                <Button type="submit" disabled={updateMutation.isPending} data-testid="button-update-document-type">
-                                  {updateMutation.isPending ? "Updating..." : "Update Document Type"}
+                                <Button type="submit" disabled={updateMutation.isPending}>
+                                  {updateMutation.isPending ? "Updating..." : "Update Document"}
                                 </Button>
                               </DialogFooter>
                             </form>
@@ -1258,13 +1376,21 @@ function ComplianceDocumentTypesPanel() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        asChild
+                      >
+                        <a href={`/api/compliance/${doc.id}/view`} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
-                          if (confirm("Are you sure you want to delete this document type?")) {
-                            deleteMutation.mutate(type.id);
+                          if (confirm("Are you sure you want to delete this document?")) {
+                            deleteMutation.mutate(doc.id);
                           }
                         }}
                         disabled={deleteMutation.isPending}
-                        data-testid={`button-delete-document-type-${type.id}`}
                       >
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>

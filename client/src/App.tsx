@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { TenantSidebar } from "@/components/tenant-sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
@@ -57,12 +58,14 @@ import TenantRequests from "@/pages/TenantRequests";
 import TenantComparisonReports from "@/pages/TenantComparisonReports";
 import TenantComparisonReportDetail from "@/pages/TenantComparisonReportDetail";
 import TenantCommunity from "@/pages/TenantCommunity";
+import TenantProfile from "@/pages/TenantProfile";
 import CommunityModeration from "@/pages/CommunityModeration";
 import MyFeedback from "@/pages/MyFeedback";
 import BulkImport from "@/pages/BulkImport";
 import { Loader2 } from "lucide-react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { UserProfileMenu } from "@/components/UserProfileMenu";
+import { TenantProfileMenu } from "@/components/TenantProfileMenu";
 import { AIChatbot } from "@/components/AIChatbot";
 import { IvyChatbot } from "@/components/IvyChatbot";
 import { LocaleProvider } from "@/contexts/LocaleContext";
@@ -167,26 +170,36 @@ function AppContent() {
     );
   }
 
-  // Tenant role - show tenant portal (no sidebar)
+  // Tenant role - show tenant portal with sidebar
   // Check this BEFORE organization check since tenants may not have organizationId
   if (user && user.role === "tenant") {
     return (
       <TooltipProvider>
-        <div className="h-screen w-full flex flex-col">
-          <main className="flex-1 overflow-auto bg-background">
-            <Switch>
-              <Route path="/" component={TenantHome} />
-              <Route path="/tenant/home" component={TenantHome} />
-              <Route path="/tenant/maintenance" component={TenantMaintenance} />
-              <Route path="/tenant/requests" component={TenantRequests} />
-              <Route path="/tenant/comparison-reports/:id" component={TenantComparisonReportDetail} />
-              <Route path="/tenant/comparison-reports" component={TenantComparisonReports} />
-              <Route path="/tenant/community" component={TenantCommunity} />
-              <Route path="/dashboard" component={TenantHome} />
-              <Route component={NotFound} />
-            </Switch>
-          </main>
-        </div>
+        <SidebarProvider style={style as React.CSSProperties}>
+          <div className="flex h-screen w-full">
+            <TenantSidebar />
+            <div className="flex flex-col flex-1">
+              <header className="flex items-center justify-between p-4 border-b bg-card">
+                <SidebarTrigger data-testid="button-sidebar-toggle" />
+                <TenantProfileMenu />
+              </header>
+              <main className="flex-1 overflow-auto bg-background">
+                <Switch>
+                  <Route path="/" component={TenantHome} />
+                  <Route path="/tenant/home" component={TenantHome} />
+                  <Route path="/tenant/maintenance" component={TenantMaintenance} />
+                  <Route path="/tenant/requests" component={TenantRequests} />
+                  <Route path="/tenant/comparison-reports/:id" component={TenantComparisonReportDetail} />
+                  <Route path="/tenant/comparison-reports" component={TenantComparisonReports} />
+                  <Route path="/tenant/community" component={TenantCommunity} />
+                  <Route path="/tenant/profile" component={TenantProfile} />
+                  <Route path="/dashboard" component={TenantHome} />
+                  <Route component={NotFound} />
+                </Switch>
+              </main>
+            </div>
+          </div>
+        </SidebarProvider>
         <NotificationSystem />
         {/* Show AI Chatbot for tenants */}
         <AIChatbot />
@@ -249,6 +262,7 @@ function AppContent() {
                 <Route path="/inspections/:id/report" component={InspectionReport} />
                 <Route path="/inspections/:id" component={InspectionDetail} />
                 <Route path="/compliance" component={Compliance} />
+                <Route path="/maintenance/:id" component={Maintenance} />
                 <Route path="/maintenance" component={Maintenance} />
                 <Route path="/analytics" component={Analytics} />
                 <Route path="/reports/inspections" component={InspectionsReport} />

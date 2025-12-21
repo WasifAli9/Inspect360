@@ -178,12 +178,45 @@ export default function Profile() {
   };
 
   const getUploadParameters = async () => {
-    const response = await apiRequest("POST", "/api/upload/generate-upload-url");
-    const data = await response.json();
-    return {
-      method: "PUT" as const,
-      url: data.url,
-    };
+    try {
+      const response = await fetch("/api/upload/generate-upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get upload URL: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.uploadUrl) {
+        throw new Error("Invalid upload URL response");
+      }
+
+      // Ensure URL is absolute
+      let uploadURL = data.uploadUrl;
+      if (uploadURL.startsWith('/')) {
+        // Convert relative URL to absolute
+        uploadURL = `${window.location.origin}${uploadURL}`;
+      }
+
+      // Validate URL
+      try {
+        new URL(uploadURL);
+      } catch (e) {
+        throw new Error(`Invalid upload URL format: ${uploadURL}`);
+      }
+
+      return {
+        method: "PUT" as const,
+        url: uploadURL,
+      };
+    } catch (error: any) {
+      console.error("[Profile] Upload URL error:", error);
+      throw new Error(`Failed to get upload URL: ${error.message}`);
+    }
   };
 
   const handleProfilePhotoUpload = (result: any) => {

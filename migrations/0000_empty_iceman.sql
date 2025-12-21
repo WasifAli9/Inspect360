@@ -1134,4 +1134,176 @@ ALTER TABLE comparison_report_items ADD COLUMN IF NOT EXISTS disputed_at timesta
 ALTER TABLE comparison_report_items ADD COLUMN IF NOT EXISTS ai_cost_calculation_notes text;
 ALTER TABLE comparison_report_items ADD COLUMN IF NOT EXISTS cost_calculation_method varchar;
 ALTER TABLE comparison_report_items ADD COLUMN IF NOT EXISTS asset_inventory_id varchar;
+--> statement-breakpoint
+-- Community feature enums
+DO $$ BEGIN
+    CREATE TYPE "public"."community_group_status" AS ENUM('pending', 'approved', 'rejected', 'archived');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."community_post_status" AS ENUM('visible', 'hidden', 'flagged', 'removed');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."community_flag_reason" AS ENUM('spam', 'offensive', 'harassment', 'misinformation', 'other');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+DO $$ BEGIN
+    CREATE TYPE "public"."community_moderation_action" AS ENUM('approved', 'rejected', 'hidden', 'restored', 'removed', 'warned');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+-- Community tables
+CREATE TABLE IF NOT EXISTS "community_rules" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" varchar NOT NULL,
+	"version" integer DEFAULT 1 NOT NULL,
+	"rules_text" text NOT NULL,
+	"is_active" boolean DEFAULT true NOT NULL,
+	"created_by" varchar NOT NULL,
+	"created_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_rule_acceptances" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"tenant_id" varchar NOT NULL,
+	"organization_id" varchar NOT NULL,
+	"rule_version" integer NOT NULL,
+	"accepted_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_tenant_blocks" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" varchar NOT NULL,
+	"tenant_user_id" varchar NOT NULL,
+	"blocked_by_user_id" varchar NOT NULL,
+	"reason" text,
+	"created_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_groups" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" varchar NOT NULL,
+	"block_id" varchar NOT NULL,
+	"name" varchar(255) NOT NULL,
+	"description" text,
+	"cover_image_url" varchar,
+	"status" "community_group_status" DEFAULT 'pending' NOT NULL,
+	"created_by" varchar NOT NULL,
+	"rule_version_agreed_at" integer,
+	"approved_by" varchar,
+	"approved_at" timestamp,
+	"rejection_reason" text,
+	"member_count" integer DEFAULT 0,
+	"post_count" integer DEFAULT 0,
+	"created_at" timestamp DEFAULT now(),
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_group_members" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"group_id" varchar NOT NULL,
+	"tenant_id" varchar NOT NULL,
+	"joined_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_threads" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"group_id" varchar NOT NULL,
+	"title" varchar(255) NOT NULL,
+	"content" text NOT NULL,
+	"created_by" varchar NOT NULL,
+	"status" "community_post_status" DEFAULT 'visible' NOT NULL,
+	"is_pinned" boolean DEFAULT false,
+	"is_locked" boolean DEFAULT false,
+	"view_count" integer DEFAULT 0,
+	"reply_count" integer DEFAULT 0,
+	"last_activity_at" timestamp DEFAULT now(),
+	"created_at" timestamp DEFAULT now(),
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_posts" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"thread_id" varchar NOT NULL,
+	"content" text NOT NULL,
+	"created_by" varchar NOT NULL,
+	"status" "community_post_status" DEFAULT 'visible' NOT NULL,
+	"is_edited" boolean DEFAULT false,
+	"edited_at" timestamp,
+	"created_at" timestamp DEFAULT now(),
+	"updated_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_attachments" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"thread_id" varchar,
+	"post_id" varchar,
+	"file_url" varchar NOT NULL,
+	"file_name" varchar,
+	"mime_type" varchar,
+	"file_size" integer,
+	"created_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_post_flags" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"thread_id" varchar,
+	"post_id" varchar,
+	"flagged_by" varchar NOT NULL,
+	"reason" "community_flag_reason" NOT NULL,
+	"details" text,
+	"is_resolved" boolean DEFAULT false,
+	"resolved_by" varchar,
+	"resolution_notes" text,
+	"resolved_at" timestamp,
+	"created_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "community_moderation_log" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"organization_id" varchar NOT NULL,
+	"moderator_id" varchar NOT NULL,
+	"action" "community_moderation_action" NOT NULL,
+	"target_type" varchar NOT NULL,
+	"target_id" varchar NOT NULL,
+	"reason" text,
+	"created_at" timestamp DEFAULT now()
+);
+--> statement-breakpoint
+-- Community table indexes
+CREATE INDEX IF NOT EXISTS "idx_community_rules_org" ON "community_rules" USING btree ("organization_id");
+CREATE INDEX IF NOT EXISTS "idx_community_rules_active" ON "community_rules" USING btree ("organization_id","is_active");
+CREATE INDEX IF NOT EXISTS "idx_rule_acceptances_tenant" ON "community_rule_acceptances" USING btree ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_rule_acceptances_org" ON "community_rule_acceptances" USING btree ("organization_id");
+CREATE INDEX IF NOT EXISTS "idx_tenant_blocks_org" ON "community_tenant_blocks" USING btree ("organization_id");
+CREATE INDEX IF NOT EXISTS "idx_tenant_blocks_tenant" ON "community_tenant_blocks" USING btree ("tenant_user_id");
+CREATE INDEX IF NOT EXISTS "idx_community_groups_org" ON "community_groups" USING btree ("organization_id");
+CREATE INDEX IF NOT EXISTS "idx_community_groups_block" ON "community_groups" USING btree ("block_id");
+CREATE INDEX IF NOT EXISTS "idx_community_groups_status" ON "community_groups" USING btree ("status");
+CREATE INDEX IF NOT EXISTS "idx_community_groups_creator" ON "community_groups" USING btree ("created_by");
+CREATE INDEX IF NOT EXISTS "idx_group_members_group" ON "community_group_members" USING btree ("group_id");
+CREATE INDEX IF NOT EXISTS "idx_group_members_tenant" ON "community_group_members" USING btree ("tenant_id");
+CREATE INDEX IF NOT EXISTS "idx_community_threads_group" ON "community_threads" USING btree ("group_id");
+CREATE INDEX IF NOT EXISTS "idx_community_threads_creator" ON "community_threads" USING btree ("created_by");
+CREATE INDEX IF NOT EXISTS "idx_community_threads_status" ON "community_threads" USING btree ("status");
+CREATE INDEX IF NOT EXISTS "idx_community_threads_activity" ON "community_threads" USING btree ("last_activity_at");
+CREATE INDEX IF NOT EXISTS "idx_community_posts_thread" ON "community_posts" USING btree ("thread_id");
+CREATE INDEX IF NOT EXISTS "idx_community_posts_creator" ON "community_posts" USING btree ("created_by");
+CREATE INDEX IF NOT EXISTS "idx_community_posts_status" ON "community_posts" USING btree ("status");
+CREATE INDEX IF NOT EXISTS "idx_community_attachments_thread" ON "community_attachments" USING btree ("thread_id");
+CREATE INDEX IF NOT EXISTS "idx_community_attachments_post" ON "community_attachments" USING btree ("post_id");
+CREATE INDEX IF NOT EXISTS "idx_community_flags_thread" ON "community_post_flags" USING btree ("thread_id");
+CREATE INDEX IF NOT EXISTS "idx_community_flags_post" ON "community_post_flags" USING btree ("post_id");
+CREATE INDEX IF NOT EXISTS "idx_community_flags_resolved" ON "community_post_flags" USING btree ("is_resolved");
+CREATE INDEX IF NOT EXISTS "idx_moderation_log_org" ON "community_moderation_log" USING btree ("organization_id");
+CREATE INDEX IF NOT EXISTS "idx_moderation_log_moderator" ON "community_moderation_log" USING btree ("moderator_id");
+CREATE INDEX IF NOT EXISTS "idx_moderation_log_target" ON "community_moderation_log" USING btree ("target_type","target_id");
 ALTER TABLE users ADD COLUMN IF NOT EXISTS certificate_urls text[];

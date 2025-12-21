@@ -206,7 +206,7 @@ export default function TenantCommunity() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink className="cursor-pointer" onClick={() => navigate("/tenant")}>Home</BreadcrumbLink>
+              <BreadcrumbLink className="cursor-pointer" onClick={() => navigate("/dashboard")}>Home</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -409,7 +409,7 @@ export default function TenantCommunity() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink className="cursor-pointer" onClick={() => navigate("/tenant")}>Home</BreadcrumbLink>
+              <BreadcrumbLink className="cursor-pointer" onClick={() => navigate("/dashboard")}>Home</BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -568,7 +568,7 @@ export default function TenantCommunity() {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink className="cursor-pointer" onClick={() => navigate("/tenant")}>Home</BreadcrumbLink>
+            <BreadcrumbLink className="cursor-pointer" onClick={() => navigate("/dashboard")}>Home</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
@@ -642,6 +642,12 @@ export default function TenantCommunity() {
                     alt={group.name}
                     className="w-full h-full object-cover"
                     data-testid={`img-group-banner-${group.id}`}
+                    crossOrigin="anonymous"
+                    onError={(e) => {
+                      // Hide image on error (banner might be private or missing)
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
                 </div>
