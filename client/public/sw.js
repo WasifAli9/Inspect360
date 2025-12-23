@@ -1,5 +1,5 @@
-const CACHE_NAME = 'inspect360-v2';
-const RUNTIME_CACHE = 'inspect360-runtime-v2';
+const CACHE_NAME = 'inspect360-v3';
+const RUNTIME_CACHE = 'inspect360-runtime-v3';
 
 // App shell - essential files for offline functionality
 const APP_SHELL = [
@@ -48,26 +48,37 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => {
-      // Clear any API responses that might have been cached in the runtime cache
+      // Clear any API responses and HTML files that might have been cached
       return caches.open(RUNTIME_CACHE).then((cache) => {
         return cache.keys().then((keys) => {
-          const apiKeys = keys.filter((request) => {
+          const keysToDelete = keys.filter((request) => {
             try {
               const url = new URL(request.url);
-              return url.pathname.startsWith('/api/');
+              // Delete API responses and HTML files to ensure fresh content
+              return url.pathname.startsWith('/api/') || 
+                     url.pathname === '/' || 
+                     url.pathname === '/index.html' ||
+                     url.pathname.endsWith('.html');
             } catch {
               return false;
             }
           });
           return Promise.all(
-            apiKeys.map((key) => {
-              console.log('[Service Worker] Removing cached API response:', key.url);
+            keysToDelete.map((key) => {
+              console.log('[Service Worker] Removing cached file:', key.url);
               return cache.delete(key);
             })
           );
         });
       }).catch((err) => {
-        console.warn('[Service Worker] Error cleaning API cache:', err);
+        console.warn('[Service Worker] Error cleaning cache:', err);
+      });
+    }).then(() => {
+      // Also clear HTML from APP_SHELL cache
+      return caches.open(CACHE_NAME).then((cache) => {
+        return cache.delete('/') && cache.delete('/index.html');
+      }).catch((err) => {
+        console.warn('[Service Worker] Error cleaning app shell cache:', err);
       });
     }).then(() => self.clients.claim())
   );
@@ -125,7 +136,56 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For static assets (HTML, CSS, JS, images), use cache-first strategy
+  // Check if this is an HTML file (index.html or root path)
+  const isHtmlRequest = url.pathname === '/' || 
+                        url.pathname === '/index.html' || 
+                        url.pathname.endsWith('.html') ||
+                        event.request.headers.get('accept')?.includes('text/html');
+
+  if (isHtmlRequest) {
+    // For HTML files, use network-first strategy to always get the latest version
+    // This prevents blank screens from stale cached HTML
+    event.respondWith(
+      fetch(event.request, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        }
+      })
+        .then((networkResponse) => {
+          // If network succeeds, update cache and return fresh response
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type !== 'error') {
+            const responseClone = networkResponse.clone();
+            caches.open(RUNTIME_CACHE).then((cache) => {
+              // Cache the fresh HTML for offline use
+              if (responseClone.body) {
+                cache.put(event.request, responseClone).catch((err) => {
+                  console.warn('[Service Worker] Failed to cache HTML:', err);
+                });
+              }
+            }).catch((err) => {
+              console.warn('[Service Worker] Failed to open cache for HTML:', err);
+            });
+          }
+          return networkResponse;
+        })
+        .catch((error) => {
+          // Network failed - try cache as fallback for offline support
+          console.warn('[Service Worker] Network failed for HTML, trying cache:', event.request.url, error);
+          return caches.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+            // No cache either - throw error
+            throw error;
+          });
+        })
+    );
+    return;
+  }
+
+  // For other static assets (CSS, JS, images), use cache-first strategy
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
