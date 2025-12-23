@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -15,7 +16,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon, Building2, Upload, X, FileText, ClipboardList, ChevronUp, ChevronDown, Award, Image as ImageIcon, ExternalLink, Calendar, Pencil } from "lucide-react";
+import { Settings as SettingsIcon, Tags, Users, Plus, Edit2, Trash2, Plug, UsersIcon, Building2, Upload, X, FileText, ClipboardList, ChevronUp, ChevronDown, Award, Image as ImageIcon, ExternalLink, Calendar, Pencil, DoorOpen } from "lucide-react";
 import { Link } from "wouter";
 import { insertInspectionCategorySchema, insertComplianceDocumentTypeSchema, insertComplianceDocumentSchema, type InspectionCategory, type ComplianceDocumentType, type ComplianceDocument, type Organization, type User, type OrganizationTrademark } from "@shared/schema";
 import InspectionTemplatesContent from "./InspectionTemplates";
@@ -33,7 +34,7 @@ const categoryFormSchema = insertInspectionCategorySchema.extend({
 
 type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 
-type SettingsSection = 'branding' | 'templates' | 'categories' | 'document-types' | 'teams' | 'team' | 'integrations';
+type SettingsSection = 'branding' | 'templates' | 'categories' | 'document-types' | 'teams' | 'team' | 'integrations' | 'tenant-portal';
 
 const settingsMenuItems: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }>; href?: string }[] = [
   { id: 'branding', label: 'Company Branding', icon: Building2 },
@@ -42,6 +43,7 @@ const settingsMenuItems: { id: SettingsSection; label: string; icon: React.Compo
   { id: 'teams', label: 'Maintenance Team', icon: UsersIcon },
   { id: 'team', label: 'Team Members', icon: Users },
   { id: 'integrations', label: 'Integrations', icon: Plug },
+  { id: 'tenant-portal', label: 'Tenant Portal Configuration', icon: DoorOpen },
 ];
 
 export default function Settings() {
@@ -59,6 +61,11 @@ export default function Settings() {
   const [brandingWebsite, setBrandingWebsite] = useState("");
   const [financeEmail, setFinanceEmail] = useState("");
   const [comparisonAlertThreshold, setComparisonAlertThreshold] = useState(20);
+  const [tenantPortalCommunityEnabled, setTenantPortalCommunityEnabled] = useState(true);
+  const [tenantPortalComparisonEnabled, setTenantPortalComparisonEnabled] = useState(true);
+  const [tenantPortalChatbotEnabled, setTenantPortalChatbotEnabled] = useState(true);
+  const [tenantPortalMaintenanceEnabled, setTenantPortalMaintenanceEnabled] = useState(true);
+  const [checkInApprovalPeriodDays, setCheckInApprovalPeriodDays] = useState(5);
 
   const { data: user } = useQuery<User>({
     queryKey: ["/api/auth/user"],
@@ -80,6 +87,11 @@ export default function Settings() {
       setBrandingWebsite(organization.brandingWebsite || "");
       setFinanceEmail(organization.financeEmail || "");
       setComparisonAlertThreshold(organization.comparisonAlertThreshold ?? 20);
+      setTenantPortalCommunityEnabled(organization.tenantPortalCommunityEnabled ?? true);
+      setTenantPortalComparisonEnabled(organization.tenantPortalComparisonEnabled ?? true);
+      setTenantPortalChatbotEnabled(organization.tenantPortalChatbotEnabled ?? true);
+      setTenantPortalMaintenanceEnabled(organization.tenantPortalMaintenanceEnabled ?? true);
+      setCheckInApprovalPeriodDays(organization.checkInApprovalPeriodDays ?? 5);
     }
   }, [organization]);
 
@@ -936,9 +948,197 @@ export default function Settings() {
             {activeSection === 'integrations' && (
               <FixfloIntegrationSettings />
             )}
+
+            {activeSection === 'tenant-portal' && (
+              <TenantPortalConfiguration
+                organization={organization}
+                tenantPortalCommunityEnabled={tenantPortalCommunityEnabled}
+                tenantPortalComparisonEnabled={tenantPortalComparisonEnabled}
+                tenantPortalChatbotEnabled={tenantPortalChatbotEnabled}
+                tenantPortalMaintenanceEnabled={tenantPortalMaintenanceEnabled}
+                checkInApprovalPeriodDays={checkInApprovalPeriodDays}
+                onCommunityChange={setTenantPortalCommunityEnabled}
+                onComparisonChange={setTenantPortalComparisonEnabled}
+                onChatbotChange={setTenantPortalChatbotEnabled}
+                onMaintenanceChange={setTenantPortalMaintenanceEnabled}
+                onApprovalPeriodChange={setCheckInApprovalPeriodDays}
+              />
+            )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Tenant Portal Configuration Component
+function TenantPortalConfiguration({
+  organization,
+  tenantPortalCommunityEnabled,
+  tenantPortalComparisonEnabled,
+  tenantPortalChatbotEnabled,
+  tenantPortalMaintenanceEnabled,
+  checkInApprovalPeriodDays,
+  onCommunityChange,
+  onComparisonChange,
+  onChatbotChange,
+  onMaintenanceChange,
+  onApprovalPeriodChange,
+}: {
+  organization?: Organization;
+  tenantPortalCommunityEnabled: boolean;
+  tenantPortalComparisonEnabled: boolean;
+  tenantPortalChatbotEnabled: boolean;
+  tenantPortalMaintenanceEnabled: boolean;
+  checkInApprovalPeriodDays: number;
+  onCommunityChange: (value: boolean) => void;
+  onComparisonChange: (value: boolean) => void;
+  onChatbotChange: (value: boolean) => void;
+  onMaintenanceChange: (value: boolean) => void;
+  onApprovalPeriodChange: (value: number) => void;
+}) {
+  const { toast } = useToast();
+  const { data: user } = useQuery<User>({
+    queryKey: ["/api/auth/user"],
+  });
+
+  const updateTenantPortalConfigMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.organizationId) return null;
+      const response = await apiRequest("PATCH", `/api/organizations/${user.organizationId}/tenant-portal-config`, {
+        tenantPortalCommunityEnabled,
+        tenantPortalComparisonEnabled,
+        tenantPortalChatbotEnabled,
+        tenantPortalMaintenanceEnabled,
+        checkInApprovalPeriodDays,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations", user?.organizationId] });
+      toast({
+        title: "Success",
+        description: "Tenant portal configuration updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Failed to update tenant portal configuration",
+      });
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-2 rounded-2xl bg-card/80 backdrop-blur-xl shadow-lg">
+        <CardHeader>
+          <CardTitle className="text-2xl">Tenant Portal Configuration</CardTitle>
+          <CardDescription className="mt-2">
+            Enable or disable features available to tenants in the tenant portal. Disabled features will be hidden from the tenant interface.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex-1">
+                <Label className="text-base font-medium">Community</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Allow tenants to access the community feature where they can interact with other tenants
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={tenantPortalCommunityEnabled}
+                  onCheckedChange={onCommunityChange}
+                  data-testid="toggle-community"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex-1">
+                <Label className="text-base font-medium">Comparison Reports</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Allow tenants to view and sign comparison reports for their properties
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={tenantPortalComparisonEnabled}
+                  onCheckedChange={onComparisonChange}
+                  data-testid="toggle-comparison"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex-1">
+                <Label className="text-base font-medium">AI Chatbot</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Enable the AI chatbot assistant to help tenants with questions and maintenance issues
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={tenantPortalChatbotEnabled}
+                  onCheckedChange={onChatbotChange}
+                  data-testid="toggle-chatbot"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex-1">
+                <Label className="text-base font-medium">Maintenance Requests</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Allow tenants to create and manage maintenance requests through the portal
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={tenantPortalMaintenanceEnabled}
+                  onCheckedChange={onMaintenanceChange}
+                  data-testid="toggle-maintenance"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-6 space-y-4">
+            <div>
+              <Label className="text-base font-medium">Check-In Approval Period</Label>
+              <p className="text-sm text-muted-foreground mt-1 mb-3">
+                Number of days tenants have to review and approve check-in inspections (default: 5 days)
+              </p>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={checkInApprovalPeriodDays}
+                  onChange={(e) => onApprovalPeriodChange(parseInt(e.target.value) || 5)}
+                  className="w-32"
+                  data-testid="input-approval-period"
+                />
+                <span className="text-sm text-muted-foreground">days</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-6">
+            <Button 
+              onClick={() => updateTenantPortalConfigMutation.mutate()}
+              disabled={updateTenantPortalConfigMutation.isPending}
+              data-testid="button-save-tenant-portal-config"
+            >
+              {updateTenantPortalConfigMutation.isPending ? "Saving..." : "Save Configuration"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

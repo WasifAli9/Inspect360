@@ -3,7 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Home, Calendar, MapPin } from "lucide-react";
+import { Building2, Home, Calendar, MapPin, FileText } from "lucide-react";
+import { Link } from "wouter";
+import { format } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -24,6 +26,11 @@ export default function TenantHome() {
   // Fetch comparison reports to check for action required
   const { data: comparisonReports = [] } = useQuery<any[]>({
     queryKey: ["/api/tenant/comparison-reports"],
+  });
+
+  // Fetch pending check-in inspections
+  const { data: pendingCheckIns = [] } = useQuery<any[]>({
+    queryKey: ["/api/tenant/check-ins"],
   });
 
   // Check for reports that need signature (reports that are under review or awaiting signatures)
@@ -86,9 +93,47 @@ export default function TenantHome() {
         </p>
       </div>
 
-      {/* Action Required Banners - Only for reports requiring signature */}
-      {reportsNeedingSignature.length > 0 && (
+      {/* Action Required Banners - Check-in inspections and comparison reports */}
+      {(reportsNeedingSignature.length > 0 || pendingCheckIns.length > 0) && (
         <div className="space-y-3">
+          {/* Pending Check-In Inspections */}
+          {pendingCheckIns.map((inspection) => {
+            const deadline = inspection.tenantApprovalDeadline 
+              ? new Date(inspection.tenantApprovalDeadline)
+              : null;
+            const now = new Date();
+            const daysRemaining = deadline 
+              ? Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+              : null;
+            
+            const isExpiringSoon = daysRemaining !== null && daysRemaining <= 2 && daysRemaining > 0;
+            const message = isExpiringSoon
+              ? `Check-in inspection review expires in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Please review and approve.`
+              : "A check-in inspection requires your review and approval. Please review the details.";
+
+            return (
+              <Link key={inspection.id} href={`/tenant/check-in-review/${inspection.id}`}>
+                <div className="w-full rounded-lg border border-orange-500 bg-[#FFF8E7] p-4 cursor-pointer hover:bg-[#FFF5D6] transition-colors">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <FileText className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <h3 className="font-bold text-orange-600 text-base leading-tight">Action Required</h3>
+                      <p className="text-sm text-orange-600 leading-relaxed">{message}</p>
+                      {deadline && daysRemaining !== null && daysRemaining > 0 && (
+                        <p className="text-xs text-orange-500 mt-1">
+                          Deadline: {format(deadline, "PPpp")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+          
+          {/* Comparison Reports Needing Signature */}
           {reportsNeedingSignature.map((report) => (
             <ActionRequiredBanner
               key={report.id}

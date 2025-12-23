@@ -175,6 +175,11 @@ export const organizations = pgTable("organizations", {
   autoRenewLastRunAt: timestamp("auto_renew_last_run_at"), // Last auto-renewal execution
   autoRenewFailureCount: integer("auto_renew_failure_count").default(0), // Track consecutive failures
   comparisonAlertThreshold: integer("comparison_alert_threshold").default(20), // Percentage threshold for condition/cleanliness alerts in comparison reports
+  tenantPortalCommunityEnabled: boolean("tenant_portal_community_enabled").default(true), // Enable/disable Community feature in tenant portal
+  tenantPortalComparisonEnabled: boolean("tenant_portal_comparison_enabled").default(true), // Enable/disable Comparison Reports feature in tenant portal
+  tenantPortalChatbotEnabled: boolean("tenant_portal_chatbot_enabled").default(true), // Enable/disable Chatbot feature in tenant portal
+  tenantPortalMaintenanceEnabled: boolean("tenant_portal_maintenance_enabled").default(true), // Enable/disable Maintenance Request feature in tenant portal
+  checkInApprovalPeriodDays: integer("check_in_approval_period_days").default(5), // Number of days tenants have to review and approve check-in inspections
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -525,6 +530,12 @@ export const inspections = pgTable("inspections", {
   aiAnalysisProgress: integer("ai_analysis_progress").default(0), // Number of fields processed
   aiAnalysisTotalFields: integer("ai_analysis_total_fields").default(0), // Total fields with photos
   aiAnalysisError: text("ai_analysis_error"), // Error message if failed
+  // Tenant approval tracking (for check-in inspections)
+  tenantApprovalStatus: varchar("tenant_approval_status"), // null, pending, approved, disputed, expired
+  tenantApprovalDeadline: timestamp("tenant_approval_deadline"), // Deadline for tenant approval
+  tenantApprovedAt: timestamp("tenant_approved_at"), // When tenant approved
+  tenantApprovedBy: varchar("tenant_approved_by"), // Tenant user ID who approved
+  tenantComments: text("tenant_comments"), // Tenant comments/disputes
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { offlineQueue, useOnlineStatus } from "@/lib/offlineQueue";
+import { fileUploadSync } from "@/lib/fileUploadSync";
 import type { QuickAddMaintenance } from "@shared/schema";
 import { quickAddMaintenanceSchema } from "@shared/schema";
 import {
@@ -63,6 +64,7 @@ export function QuickAddMaintenanceSheet({
   const isOnline = useOnlineStatus();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoUrls, setPhotoUrls] = useState<string[]>(initialPhotos);
+  const [photoUrlMap, setPhotoUrlMap] = useState<Map<string, string>>(new Map()); // Map of display URLs to original URLs
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -82,7 +84,7 @@ export function QuickAddMaintenanceSheet({
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
-    const uploadPromises: Promise<string>[] = [];
+    const uploadPromises: Promise<{ url: string; isOffline: boolean }>[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -108,28 +110,27 @@ export function QuickAddMaintenanceSheet({
 
       const uploadPromise = (async () => {
         try {
-          const formData = new FormData();
-          formData.append('file', file);
-
-          const response = await fetch('/api/objects/upload-file', {
-            method: 'POST',
-            credentials: 'include',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Upload failed: ${response.status} ${errorText.substring(0, 100)}`);
-          }
-
-          const data = await response.json();
-          const photoUrl = data.url || data.path;
+          const result = await fileUploadSync.uploadFile(file, '/api/objects/upload-file', isOnline);
           
-          if (!photoUrl) {
-            throw new Error('Upload response missing URL');
+          if (!result.success) {
+            throw new Error(result.error || 'Upload failed');
           }
 
-          return photoUrl;
+          const originalUrl = result.url || '';
+          
+          // If offline, we get a temporary offline URL
+          // For display purposes, we'll use a blob URL
+          let displayUrl = originalUrl;
+          if (originalUrl.startsWith('offline://')) {
+            // Get blob URL for offline files
+            displayUrl = await fileUploadSync.getFileUrl(originalUrl) || originalUrl;
+          }
+
+          return { 
+            originalUrl, 
+            displayUrl, 
+            isOffline: originalUrl.startsWith('offline://') 
+          };
         } catch (error: any) {
           console.error('[QuickAddMaintenanceSheet] Upload error:', error);
           toast({
@@ -145,12 +146,30 @@ export function QuickAddMaintenanceSheet({
     }
 
     try {
-      const uploadedUrls = await Promise.all(uploadPromises);
-      setPhotoUrls(prev => [...prev, ...uploadedUrls]);
-      toast({
-        title: "Upload Successful",
-        description: `${uploadedUrls.length} photo(s) uploaded successfully`,
+      const results = await Promise.all(uploadPromises);
+      const displayUrls = results.map(r => r.displayUrl);
+      const hasOffline = results.some(r => r.isOffline);
+      
+      // Store mapping of display URLs to original URLs
+      const newMap = new Map(photoUrlMap);
+      results.forEach(r => {
+        newMap.set(r.displayUrl, r.originalUrl);
       });
+      setPhotoUrlMap(newMap);
+      
+      setPhotoUrls(prev => [...prev, ...displayUrls]);
+      
+      if (hasOffline) {
+        toast({
+          title: "Saved Offline",
+          description: `${displayUrls.length} photo(s) will upload when connection is restored`,
+        });
+      } else {
+        toast({
+          title: "Upload Successful",
+          description: `${displayUrls.length} photo(s) uploaded successfully`,
+        });
+      }
     } catch (error) {
       // Individual errors already handled above
     } finally {
@@ -163,7 +182,16 @@ export function QuickAddMaintenanceSheet({
   };
 
   const removePhoto = (index: number) => {
+    const urlToRemove = photoUrls[index];
+    // Clean up blob URL if it's a blob URL
+    if (urlToRemove && urlToRemove.startsWith('blob:')) {
+      fileUploadSync.revokeFileUrl(urlToRemove);
+    }
     setPhotoUrls(prev => prev.filter((_, i) => i !== index));
+    // Remove from map
+    const newMap = new Map(photoUrlMap);
+    newMap.delete(urlToRemove);
+    setPhotoUrlMap(newMap);
   };
 
   const form = useForm<QuickAddMaintenance>({
@@ -230,15 +258,22 @@ export function QuickAddMaintenanceSheet({
   const onSubmit = async (data: QuickAddMaintenance) => {
     setIsSubmitting(true);
 
+    // Convert display URLs back to original URLs for submission
+    const originalPhotoUrls = photoUrls.map(url => {
+      const originalUrl = photoUrlMap.get(url);
+      return originalUrl || url;
+    });
+
     const submissionData = {
       ...data,
-      photoUrls: photoUrls,
+      photoUrls: originalPhotoUrls,
     };
 
     try {
       if (isOnline) {
         await createMaintenanceMutation.mutateAsync(submissionData);
         setPhotoUrls([]);
+        setPhotoUrlMap(new Map());
       } else {
         offlineQueue.enqueueMaintenance(submissionData);
         toast({
@@ -247,6 +282,7 @@ export function QuickAddMaintenanceSheet({
         });
         form.reset();
         setPhotoUrls([]);
+        setPhotoUrlMap(new Map());
         onOpenChange(false);
       }
     } finally {

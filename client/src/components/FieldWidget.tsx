@@ -20,6 +20,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { extractFileUrlFromUploadResponse } from "@/lib/utils";
 import SignatureCanvas from "react-signature-canvas";
+import { useOnlineStatus } from "@/lib/offlineQueue";
+import { fileUploadSync } from "@/lib/fileUploadSync";
 
 interface TemplateField {
   id: string;
@@ -71,6 +73,7 @@ export function FieldWidget({
   onMarkedForReviewChange,
   onLogMaintenance
 }: FieldWidgetProps) {
+  const isOnline = useOnlineStatus();
   // Parse value - if field includes condition/cleanliness, value might be an object
   const parseValue = (val: any) => {
     if (val && typeof val === 'object' && (field.includeCondition || field.includeCleanliness)) {
@@ -453,6 +456,20 @@ export function FieldWidget({
       .use(AwsS3, {
         shouldUseMultipart: false,
         async getUploadParameters(file: any) {
+          // Check if offline - if so, we'll handle via before-upload hook
+          if (!navigator.onLine) {
+            // Store flag in file metadata for before-upload handler
+            uppy.setFileMeta(file.id, { isOffline: true });
+            // Return a dummy URL - the upload will be intercepted
+            return {
+              method: "PUT" as const,
+              url: "offline://placeholder",
+              headers: {
+                "Content-Type": file.type || "application/octet-stream",
+              },
+            };
+          }
+
           try {
             const response = await fetch("/api/objects/upload", {
               method: "POST",
@@ -509,6 +526,162 @@ export function FieldWidget({
           }
         },
       });
+
+    // Intercept uploads when offline
+    uppy.on("upload", async (data) => {
+      const file = data.file;
+      
+      // Check if this is an offline upload
+      if (file?.meta?.isOffline || !navigator.onLine) {
+        // Cancel the Uppy upload
+        uppy.cancelUpload(file.id);
+        
+        try {
+          console.log('[FieldWidget] Handling offline upload for:', file.name);
+          
+          // Get the file object
+          const fileData = file.data;
+          if (!fileData) {
+            throw new Error('File data not available');
+          }
+
+          // Use fileUploadSync to handle offline upload
+          const result = await fileUploadSync.uploadFile(
+            fileData,
+            '/api/objects/upload-file',
+            navigator.onLine
+          );
+
+          if (result.success && result.url) {
+            // Get display URL (blob URL for offline files)
+            let displayUrl = result.url;
+            if (displayUrl.startsWith('offline://')) {
+              displayUrl = await fileUploadSync.getFileUrl(displayUrl) || displayUrl;
+            }
+
+            // Convert to relative path if it's a full URL
+            let photoUrl = displayUrl;
+            if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+              try {
+                const urlObj = new URL(photoUrl);
+                photoUrl = urlObj.pathname;
+              } catch (e) {
+                // If parsing fails, use as is
+              }
+            } else if (photoUrl.startsWith('blob:')) {
+              // For blob URLs, we need to keep the original offline:// URL for syncing
+              // But we'll store it in metadata
+              const originalUrl = result.url;
+              photoUrl = originalUrl; // Store the offline:// URL
+            }
+
+            // Add photo with the URL (will be offline:// URL for offline files)
+            handlePhotoAdd(photoUrl);
+
+            // Mark upload as successful in Uppy
+            uppy.setFileState(file.id, {
+              progress: { uploadComplete: true, uploadStarted: true },
+              uploadURL: result.url,
+            });
+
+            toast({
+              title: navigator.onLine ? "Upload Successful" : "Saved Offline",
+              description: navigator.onLine 
+                ? "Photo uploaded successfully"
+                : "Photo will upload when connection is restored",
+            });
+          } else {
+            throw new Error(result.error || 'Upload failed');
+          }
+        } catch (offlineError: any) {
+          console.error('[FieldWidget] Offline upload failed:', offlineError);
+          toast({
+            title: "Upload Failed",
+            description: `Failed to save photo: ${offlineError.message}`,
+            variant: "destructive",
+          });
+        }
+      }
+    });
+
+    // Handle upload errors (for other error scenarios)
+    uppy.on("upload-error", async (file: any, error: any) => {
+      // Skip if this was already handled as offline upload
+      if (file?.meta?.isOffline) {
+        return;
+      }
+      // If offline or network error, use fileUploadSync
+      if (!navigator.onLine || error?.message?.includes('network') || error?.message?.includes('fetch')) {
+        try {
+          console.log('[FieldWidget] Handling offline upload for:', file.name);
+          
+          // Get the file object
+          const fileData = file.data;
+          if (!fileData) {
+            throw new Error('File data not available');
+          }
+
+          // Use fileUploadSync to handle offline upload
+          const result = await fileUploadSync.uploadFile(
+            fileData,
+            '/api/objects/upload-file',
+            navigator.onLine
+          );
+
+          if (result.success && result.url) {
+            // Get display URL (blob URL for offline files)
+            let displayUrl = result.url;
+            if (displayUrl.startsWith('offline://')) {
+              displayUrl = await fileUploadSync.getFileUrl(displayUrl) || displayUrl;
+            }
+
+            // Convert to relative path if it's a full URL
+            let photoUrl = displayUrl;
+            if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+              try {
+                const urlObj = new URL(photoUrl);
+                photoUrl = urlObj.pathname;
+              } catch (e) {
+                // If parsing fails, use as is
+              }
+            }
+
+            // Add photo with the URL (will be offline:// URL for offline files)
+            handlePhotoAdd(photoUrl);
+
+            // Mark upload as successful in Uppy
+            uppy.setFileState(file.id, {
+              progress: { uploadComplete: true, uploadStarted: true },
+              uploadURL: result.url,
+            });
+
+            toast({
+              title: navigator.onLine ? "Upload Successful" : "Saved Offline",
+              description: navigator.onLine 
+                ? "Photo uploaded successfully"
+                : "Photo will upload when connection is restored",
+            });
+          } else {
+            throw new Error(result.error || 'Upload failed');
+          }
+        } catch (offlineError: any) {
+          console.error('[FieldWidget] Offline upload failed:', offlineError);
+          toast({
+            title: "Upload Failed",
+            description: `Failed to save photo: ${offlineError.message}`,
+            variant: "destructive",
+          });
+        }
+        return;
+      }
+
+      // For other errors, show error message
+      toast({
+        title: "Upload Error",
+        description: error?.message || "Failed to upload photo",
+        variant: "destructive",
+      });
+    });
 
     uppy.on("upload-success", async (file: any, response: any) => {
       // Extract the file URL from the PUT response using the utility function

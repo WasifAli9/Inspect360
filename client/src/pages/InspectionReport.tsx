@@ -50,6 +50,7 @@ import {
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Progress } from "@/components/ui/progress";
+import { offlineQueue, useOnlineStatus } from "@/lib/offlineQueue";
 
 interface TemplateField {
   id: string;
@@ -114,6 +115,7 @@ export default function InspectionReport() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const isOnline = useOnlineStatus();
   
   // IMMEDIATE redirect check - redirect to login if not authenticated
   // This runs synchronously to prevent any blank page
@@ -504,7 +506,19 @@ export default function InspectionReport() {
       }
     });
     if (updates.length > 0) {
-      saveNotesMutation.mutate(updates);
+      if (isOnline) {
+        saveNotesMutation.mutate(updates);
+      } else {
+        // Queue note updates for offline sync
+        updates.forEach(({ entryId, note }) => {
+          offlineQueue.enqueueNoteUpdate(entryId, note);
+        });
+        toast({
+          title: "Saved Offline",
+          description: "Note updates will sync when connection is restored",
+        });
+        setEditMode(false);
+      }
     } else {
       setEditMode(false);
     }

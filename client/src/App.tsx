@@ -1,6 +1,6 @@
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -56,6 +56,7 @@ import TenantMaintenance from "@/pages/TenantMaintenance";
 import TenantRequests from "@/pages/TenantRequests";
 import TenantComparisonReports from "@/pages/TenantComparisonReports";
 import TenantComparisonReportDetail from "@/pages/TenantComparisonReportDetail";
+import TenantCheckInReview from "@/pages/TenantCheckInReview";
 import TenantCommunity from "@/pages/TenantCommunity";
 import TenantProfile from "@/pages/TenantProfile";
 import CommunityModeration from "@/pages/CommunityModeration";
@@ -87,6 +88,12 @@ function AppContent() {
   const { isAuthenticated, user, logoutMutation, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // Fetch organization for tenant portal settings - must be called unconditionally
+  const { data: tenantOrganization } = useQuery({
+    queryKey: ["/api/organizations", user?.organizationId],
+    enabled: !!(user?.role === "tenant" && user?.organizationId),
+  });
   
   // List of public routes that don't require authentication
   const publicRoutes = [
@@ -181,6 +188,11 @@ function AppContent() {
   // Tenant role - show tenant portal with sidebar
   // Check this BEFORE organization check since tenants may not have organizationId
   if (user && user.role === "tenant") {
+    const showChatbot = tenantOrganization?.tenantPortalChatbotEnabled ?? true;
+    const showMaintenance = tenantOrganization?.tenantPortalMaintenanceEnabled ?? true;
+    const showComparison = tenantOrganization?.tenantPortalComparisonEnabled ?? true;
+    const showCommunity = tenantOrganization?.tenantPortalCommunityEnabled ?? true;
+
     return (
       <TooltipProvider>
         <SidebarProvider style={style as React.CSSProperties}>
@@ -195,11 +207,12 @@ function AppContent() {
                 <Switch>
                   <Route path="/" component={TenantHome} />
                   <Route path="/tenant/home" component={TenantHome} />
-                  <Route path="/tenant/maintenance" component={TenantMaintenance} />
-                  <Route path="/tenant/requests" component={TenantRequests} />
-                  <Route path="/tenant/comparison-reports/:id" component={TenantComparisonReportDetail} />
-                  <Route path="/tenant/comparison-reports" component={TenantComparisonReports} />
-                  <Route path="/tenant/community" component={TenantCommunity} />
+                  {showMaintenance && <Route path="/tenant/maintenance" component={TenantMaintenance} />}
+                  {showMaintenance && <Route path="/tenant/requests" component={TenantRequests} />}
+                  {showComparison && <Route path="/tenant/comparison-reports/:id" component={TenantComparisonReportDetail} />}
+                  {showComparison && <Route path="/tenant/comparison-reports" component={TenantComparisonReports} />}
+                  {showCommunity && <Route path="/tenant/community" component={TenantCommunity} />}
+                  <Route path="/tenant/check-in-review/:id" component={TenantCheckInReview} />
                   <Route path="/tenant/profile" component={TenantProfile} />
                   <Route path="/dashboard" component={TenantHome} />
                   <Route component={NotFound} />
@@ -209,8 +222,8 @@ function AppContent() {
           </div>
         </SidebarProvider>
         <NotificationSystem />
-        {/* Show AI Chatbot for tenants */}
-        <AIChatbot />
+        {/* Show AI Chatbot for tenants only if enabled */}
+        {showChatbot && <AIChatbot />}
         <PWAInstallPrompt />
         <Toaster />
       </TooltipProvider>

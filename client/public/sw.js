@@ -1,5 +1,6 @@
-const CACHE_NAME = 'inspect360-v3';
-const RUNTIME_CACHE = 'inspect360-runtime-v3';
+const CACHE_NAME = 'inspect360-v4';
+const RUNTIME_CACHE = 'inspect360-runtime-v4';
+const API_CACHE = 'inspect360-api-v4';
 
 // App shell - essential files for offline functionality
 const APP_SHELL = [
@@ -41,7 +42,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           // Delete all old caches (including old versions)
-          if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE) {
+          if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE && cacheName !== API_CACHE) {
             console.log('[Service Worker] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
@@ -98,41 +99,64 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   
-  // CRITICAL: Never cache API requests - always fetch fresh from network
-  // This ensures credit balance, subscriptions, and other dynamic data are always up-to-date
+  // Handle API requests
   if (url.pathname.startsWith('/api/')) {
-    // For API requests, use network-first strategy (always fetch from network)
-    // Add cache-busting query parameter to ensure fresh data
-    const cacheBustUrl = new URL(event.request.url);
-    cacheBustUrl.searchParams.set('_t', Date.now().toString());
+    // For GET API requests, use network-first with cache fallback for offline support
+    // This allows users to view cached data when offline
+    if (event.request.method === 'GET') {
+      // List of API endpoints that should NOT be cached (dynamic data)
+      const noCacheEndpoints = [
+        '/api/auth/me',
+        '/api/organisations/current',
+        '/api/credits',
+        '/api/subscriptions',
+      ];
+      
+      const shouldCache = !noCacheEndpoints.some(endpoint => url.pathname.startsWith(endpoint));
+      
+      event.respondWith(
+        fetch(event.request)
+          .then((networkResponse) => {
+            // If network succeeds and response is OK, cache it for offline use
+            if (networkResponse && networkResponse.status === 200 && shouldCache) {
+              const responseClone = networkResponse.clone();
+              caches.open(API_CACHE).then((cache) => {
+                // Cache with a timestamp to track freshness
+                const cacheKey = new Request(event.request.url, {
+                  method: 'GET',
+                  headers: event.request.headers,
+                });
+                cache.put(cacheKey, responseClone).catch((err) => {
+                  console.warn('[Service Worker] Failed to cache API response:', err);
+                });
+              }).catch((err) => {
+                console.warn('[Service Worker] Failed to open API cache:', err);
+              });
+            }
+            return networkResponse;
+          })
+          .catch((error) => {
+            // Network failed - try cache for offline support
+            console.log('[Service Worker] Network failed for API, trying cache:', event.request.url);
+            return caches.open(API_CACHE).then((cache) => {
+              return cache.match(event.request).then((cachedResponse) => {
+                if (cachedResponse) {
+                  console.log('[Service Worker] Serving cached API response:', event.request.url);
+                  return cachedResponse;
+                }
+                // No cache - throw error
+                throw error;
+              });
+            }).catch(() => {
+              throw error;
+            });
+          })
+      );
+      return;
+    }
     
-    event.respondWith(
-      fetch(cacheBustUrl.toString(), {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        }
-      })
-        .then((networkResponse) => {
-          // Don't cache API responses - they need to be fresh
-          // Create a new response with no-cache headers
-          const headers = new Headers(networkResponse.headers);
-          headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-          headers.set('Pragma', 'no-cache');
-          headers.set('Expires', '0');
-          
-          return new Response(networkResponse.body, {
-            status: networkResponse.status,
-            statusText: networkResponse.statusText,
-            headers: headers,
-          });
-        })
-        .catch((error) => {
-          console.warn('[Service Worker] API fetch failed:', event.request.url, error);
-          throw error;
-        })
-    );
+    // For POST/PUT/DELETE requests, don't cache - these are mutations
+    // They will be handled by the offline queue system
     return;
   }
 
@@ -230,13 +254,59 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Background sync event - for future implementation
+// Background sync event - sync offline data when connection is restored
 self.addEventListener('sync', (event) => {
   console.log('[Service Worker] Background sync:', event.tag);
   if (event.tag === 'sync-inspections') {
     event.waitUntil(syncInspections());
+  } else if (event.tag === 'sync-files') {
+    event.waitUntil(syncFiles());
   }
 });
+
+// Sync file uploads
+async function syncFiles() {
+  console.log('[Service Worker] Syncing files...');
+  
+  try {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    
+    if (clients.length === 0) {
+      console.log('[Service Worker] No active clients for file sync');
+      return Promise.reject(new Error('No active clients available'));
+    }
+    
+    const messageChannel = new MessageChannel();
+    
+    const syncPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('File sync timeout'));
+      }, 60000); // 60 second timeout for file uploads
+      
+      messageChannel.port1.onmessage = (event) => {
+        clearTimeout(timeout);
+        
+        if (event.data && event.data.type === 'FILE_SYNC_RESULT') {
+          console.log(`[Service Worker] File sync complete: ${event.data.success} succeeded, ${event.data.failed} failed`);
+          resolve(event.data);
+        } else if (event.data && event.data.type === 'FILE_SYNC_ERROR') {
+          reject(new Error(event.data.error || 'File sync failed'));
+        } else {
+          reject(new Error('Invalid file sync response'));
+        }
+      };
+    });
+    
+    clients[0].postMessage({
+      type: 'REQUEST_FILE_SYNC'
+    }, [messageChannel.port2]);
+    
+    return await syncPromise;
+  } catch (error) {
+    console.error('[Service Worker] File sync error:', error);
+    return Promise.reject(error);
+  }
+}
 
 // Sync offline inspection queue
 async function syncInspections() {

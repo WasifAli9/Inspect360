@@ -49,28 +49,33 @@ export function TenantSidebar() {
       title: "Home",
       url: "/dashboard",
       icon: Home,
+      enabled: true, // Always enabled
     },
     {
       title: "AI Maintenance Help",
       url: "/tenant/maintenance",
       icon: MessageSquare,
+      enabled: organization?.tenantPortalMaintenanceEnabled ?? true,
     },
     {
       title: "My Requests",
       url: "/tenant/requests",
       icon: FileText,
+      enabled: organization?.tenantPortalMaintenanceEnabled ?? true,
     },
     {
       title: "Comparison Reports",
       url: "/tenant/comparison-reports",
       icon: FileCheck,
+      enabled: organization?.tenantPortalComparisonEnabled ?? true,
     },
     {
       title: "Community",
       url: "/tenant/community",
       icon: Users,
+      enabled: organization?.tenantPortalCommunityEnabled ?? true,
     },
-  ];
+  ].filter(item => item.enabled);
 
   // Dynamic active state styling based on organization's brand color
   const getActiveStyle = (isActive: boolean) => {
