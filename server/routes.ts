@@ -3451,7 +3451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "User not found" });
       }
 
-      const inspection = await storage.getInspection(id);
+      let inspection = await storage.getInspection(id);
 
       if (!inspection) {
         return res.status(404).json({ message: "Inspection not found" });
