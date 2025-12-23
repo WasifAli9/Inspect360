@@ -20478,7 +20478,9 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
             // Property data
             blocksSheet.getCell(row, 3).value = property.name || '';
             blocksSheet.getCell(row, 4).value = property.address || '';
-            blocksSheet.getCell(row, 5).value = property.propertyType || '';
+            // Property Type - access from property object
+            const propertyTypeValue = (property as any).propertyType || '';
+            blocksSheet.getCell(row, 5).value = propertyTypeValue;
             blocksSheet.getCell(row, 6).value = tenantAssignment ? 'Occupied' : 'Vacant';
             blocksSheet.getCell(row, 7).value = tenantAssignment?.monthlyRent || '';
             blocksSheet.getCell(row, 8).value = propertyInspections.length;

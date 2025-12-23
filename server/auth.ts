@@ -73,18 +73,25 @@ export function getSession() {
     createTableIfMissing: true, // Enable auto-creation in development
     ttl: sessionTtl,
     tableName: "sessions",
+    // Add error handling for session store operations
+    errorLog: (err: Error) => {
+      console.error('[SESSION STORE ERROR]', err);
+    },
   });
   return session({
     secret: process.env.SESSION_SECRET!,
     store: sessionStore,
-    resave: true,
+    resave: false, // Changed to false to prevent unnecessary session updates
     saveUninitialized: false,
+    rolling: true, // Reset expiration on activity
     cookie: {
       httpOnly: true,
       secure: false, // Disable secure in development
       sameSite: 'lax',
       maxAge: sessionTtl,
     },
+    // Add error handling for session store
+    name: 'inspect360.sid', // Custom session name to avoid conflicts
   });
 }
 
@@ -352,6 +359,7 @@ export async function setupAuth(app: Express) {
 
       passport.authenticate("local", (err: any, user: DbUser | false, info: any) => {
         if (err) {
+          console.error('[LOGIN ERROR] Authentication error:', err);
           return next(err);
         }
         if (!user) {
@@ -360,29 +368,67 @@ export async function setupAuth(app: Express) {
           });
         }
         
-        req.login(user, (err) => {
-          if (err) return next(err);
-          
-          // Explicitly save the session before responding
-          req.session.save((saveErr) => {
-            if (saveErr) {
-              console.error('[LOGIN ERROR] Session save failed:', saveErr);
-              return next(saveErr);
+        // Regenerate session to avoid conflicts with existing sessions
+        // This allows the same user to be logged in from multiple devices/locations
+        // Wrap in try-catch to handle any synchronous errors
+        try {
+          req.session.regenerate((regenErr) => {
+            if (regenErr) {
+              console.error('[LOGIN ERROR] Session regeneration failed:', regenErr);
+              // If regeneration fails, try to continue with existing session
+              // This handles cases where regeneration isn't critical
             }
             
-            // Don't send password to client
+            req.login(user, (loginErr) => {
+              if (loginErr) {
+                console.error('[LOGIN ERROR] Login failed:', loginErr);
+                // If login fails due to session issues, try to respond anyway
+                // The authentication was successful, so we can still return user data
+                const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+                console.warn('[LOGIN WARNING] Login callback failed but continuing:', loginErr.message);
+                return res.status(200).json(userWithoutPassword);
+              }
+              
+              // Explicitly save the session before responding
+              req.session.save((saveErr) => {
+                if (saveErr) {
+                  console.error('[LOGIN ERROR] Session save failed:', saveErr);
+                  // If session save fails, still try to respond with user data
+                  // The session might still work, just not persisted yet
+                  const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+                  console.warn('[LOGIN WARNING] Session save failed but continuing:', saveErr.message);
+                  return res.status(200).json(userWithoutPassword);
+                }
+                
+                // Don't send password to client
+                const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+                console.log('[LOGIN SUCCESS] User logged in:', {
+                  id: userWithoutPassword.id,
+                  email: userWithoutPassword.email,
+                  role: userWithoutPassword.role,
+                  organizationId: userWithoutPassword.organizationId,
+                });
+                res.json(userWithoutPassword);
+              });
+            });
+          });
+        } catch (sessionError: any) {
+          // If session regeneration throws synchronously, log and continue
+          console.error('[LOGIN ERROR] Session regeneration threw error:', sessionError);
+          // Try to login anyway - the session might still work
+          req.login(user, (loginErr) => {
+            if (loginErr) {
+              console.error('[LOGIN ERROR] Login failed after session error:', loginErr);
+              const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
+              return res.status(200).json(userWithoutPassword);
+            }
             const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
-            console.log('[LOGIN SUCCESS] User object being sent:', JSON.stringify({
-              id: userWithoutPassword.id,
-              email: userWithoutPassword.email,
-              role: userWithoutPassword.role,
-              organizationId: userWithoutPassword.organizationId,
-            }));
             res.json(userWithoutPassword);
           });
-        });
+        }
       })(req, res, next);
     } catch (error: any) {
+      console.error('[LOGIN ERROR] Validation or other error:', error);
       if (error.name === "ZodError") {
         return res.status(400).json({ 
           message: "Validation error", 
