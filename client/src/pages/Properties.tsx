@@ -23,7 +23,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft, Pencil, Tag as TagIcon, Wrench } from "lucide-react";
+import { Plus, Building2, MapPin, Search, Package, ClipboardCheck, Users, FileText, ArrowLeft, Pencil, Tag as TagIcon, Wrench, Filter, X } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { QuickAddMaintenanceSheet } from "@/components/QuickAddMaintenanceSheet";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -422,25 +423,80 @@ export default function Properties() {
         </Dialog>
       </div>
 
-      {/* Search and Tag Filter */}
+      {/* Search and Tag Filter - Desktop */}
       {properties.length > 0 && (
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              placeholder="Search properties by name or address..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-              data-testid="input-search-properties"
+        <>
+          <div className="hidden md:flex items-center gap-4">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="Search properties by name or address..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="input-search-properties"
+              />
+            </div>
+            <TagFilter
+              selectedTags={filterTags}
+              onTagsChange={setFilterTags}
+              placeholder="Filter by tags..."
             />
           </div>
-          <TagFilter
-            selectedTags={filterTags}
-            onTagsChange={setFilterTags}
-            placeholder="Filter by tags..."
-          />
-        </div>
+
+          {/* Search and Filter - Mobile */}
+          <div className="flex md:hidden gap-2 items-center mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="Search properties..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="input-search-properties-mobile"
+              />
+            </div>
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon" className="shrink-0">
+                  <Filter className="w-4 h-4" />
+                  {filterTags.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>Filters</SheetTitle>
+                  <SheetDescription>
+                    Filter properties by tags
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="space-y-4 mt-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Tags</label>
+                    <TagFilter
+                      selectedTags={filterTags}
+                      onTagsChange={setFilterTags}
+                      placeholder="Filter by tags..."
+                    />
+                  </div>
+
+                  {filterTags.length > 0 && (
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => setFilterTags([])}
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Clear All Filters
+                    </Button>
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
+        </>
       )}
 
       {properties.length === 0 ? (

@@ -132,18 +132,19 @@ export default function Comparisons() {
     : null;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="heading-comparisons">Comparison Reports</h1>
-          <p className="text-muted-foreground">AI-powered check-in vs check-out analysis</p>
+          <h1 className="text-2xl md:text-3xl font-bold" data-testid="heading-comparisons">Comparison Reports</h1>
+          <p className="text-sm md:text-base text-muted-foreground mt-1">AI-powered check-in vs check-out analysis</p>
         </div>
         <Dialog open={isGenerateOpen} onOpenChange={setIsGenerateOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="button-generate-comparison">
+            <Button data-testid="button-generate-comparison" className="w-full sm:w-auto">
               <Plus className="w-4 h-4 mr-2" />
-              Generate Report
+              <span className="hidden sm:inline">Generate Report</span>
+              <span className="sm:hidden">Generate</span>
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
@@ -263,13 +264,13 @@ export default function Comparisons() {
 
             return (
               <Card key={report.id} data-testid={`card-report-${report.id}`}>
-                <CardHeader>
-                  <div className="flex items-start justify-between gap-4">
+                <CardHeader className="p-4 md:p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                     <div className="flex-1">
-                      <CardTitle className="text-lg mb-2" data-testid={`text-unit-${report.id}`}>
+                      <CardTitle className="text-base md:text-lg mb-2" data-testid={`text-unit-${report.id}`}>
                         Unit {unit?.unitNumber || "Unknown"}
                       </CardTitle>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
                         <span>Generated {format(new Date(report.createdAt?.toString() || Date.now()), 'PPP')}</span>
                       </div>
                     </div>
@@ -278,6 +279,7 @@ export default function Comparisons() {
                       size="sm"
                       onClick={() => setSelectedReportId(isExpanded ? null : report.id)}
                       data-testid={`button-toggle-${report.id}`}
+                      className="w-full sm:w-auto"
                     >
                       {isExpanded ? "Hide Details" : "View Details"}
                     </Button>
@@ -285,7 +287,7 @@ export default function Comparisons() {
                 </CardHeader>
 
                 {isExpanded && (
-                  <CardContent className="space-y-6">
+                  <CardContent className="space-y-4 md:space-y-6 p-4 md:p-6 pt-0">
                     {/* AI Summary */}
                     <div>
                       <h3 className="font-semibold mb-2">AI Summary</h3>
@@ -299,10 +301,10 @@ export default function Comparisons() {
                     {/* Item Comparisons */}
                     {itemComparisons && (
                       <div>
-                        <h3 className="font-semibold mb-4">Item-by-Item Comparison</h3>
+                        <h3 className="text-sm md:text-base font-semibold mb-3 md:mb-4">Item-by-Item Comparison</h3>
                         <div className="space-y-4">
                           {itemComparisons.checkIn && itemComparisons.checkIn.length > 0 && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                               {/* Check-in Column */}
                               <div>
                                 <div className="flex items-center gap-2 mb-3">

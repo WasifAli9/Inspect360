@@ -26,8 +26,10 @@ import {
   ArrowLeft, 
   Calendar,
   Filter,
-  Loader2
+  Loader2,
+  X
 } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -194,8 +196,8 @@ export default function InspectionsReport() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card className="glass-card">
+      {/* Filters - Desktop */}
+      <Card className="glass-card hidden md:block">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Filter className="h-5 w-5 text-primary" />
@@ -306,11 +308,137 @@ export default function InspectionsReport() {
               }}
               data-testid="button-clear-filters"
             >
+              <X className="w-4 h-4 mr-2" />
               Clear All Filters
             </Button>
           )}
         </CardContent>
       </Card>
+
+      {/* Filters - Mobile */}
+      <div className="flex md:hidden gap-2 items-center mb-4">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="shrink-0">
+              <Filter className="w-4 h-4" />
+              {(filterStatus !== "all" || filterType !== "all" || filterProperty !== "all" || filterBlock !== "all" || dateFrom || dateTo) && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Filters</SheetTitle>
+              <SheetDescription>
+                Customize your report by applying filters
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 mt-6">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="check-in">Check-In</SelectItem>
+                    <SelectItem value="check-out">Check-Out</SelectItem>
+                    <SelectItem value="periodic">Periodic</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Block</Label>
+                <Select value={filterBlock} onValueChange={setFilterBlock}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All blocks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block: any) => (
+                      <SelectItem key={block.id} value={block.id}>
+                        {block.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Property</Label>
+                <Select value={filterProperty} onValueChange={setFilterProperty}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {properties.map((property: any) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Date From</Label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Date To</Label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+
+              {(filterStatus !== "all" || filterType !== "all" || filterProperty !== "all" || filterBlock !== "all" || dateFrom || dateTo) && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setFilterStatus("all");
+                    setFilterType("all");
+                    setFilterProperty("all");
+                    setFilterBlock("all");
+                    setDateFrom("");
+                    setDateTo("");
+                  }}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All Filters
+                </Button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       {/* Summary Statistics */}
       <div className="grid gap-4 md:grid-cols-4">

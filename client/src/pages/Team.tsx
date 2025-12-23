@@ -13,6 +13,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, Mail, Phone, MapPin, Plus, Upload, X, GraduationCap, Briefcase, Tag, FileText, Search, Filter, Eye, EyeOff } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import type { User } from "@shared/schema";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { AddressInput } from "@/components/AddressInput";
@@ -447,8 +448,8 @@ export default function Team() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card className="p-6">
+      {/* Filters - Desktop */}
+      <Card className="p-6 hidden md:block">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-primary" />
           <h2 className="text-lg font-semibold">Filter Team Members</h2>
@@ -460,6 +461,7 @@ export default function Team() {
               className="ml-auto"
               data-testid="button-clear-filters"
             >
+              <X className="w-4 h-4 mr-1" />
               Clear Filters
             </Button>
           )}
@@ -538,6 +540,92 @@ export default function Team() {
           {hasActiveFilters && " (filtered)"}
         </div>
       </Card>
+
+      {/* Filters - Mobile */}
+      <div className="flex md:hidden gap-2 items-center mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search team members..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+            data-testid="input-search-team-mobile"
+          />
+        </div>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="shrink-0">
+              <Filter className="w-4 h-4" />
+              {hasActiveFilters && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Filters</SheetTitle>
+              <SheetDescription>
+                Filter team members by role, skills, or education
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 mt-6">
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={roleFilter} onValueChange={setRoleFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Roles" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="owner">Owner/Operator</SelectItem>
+                    <SelectItem value="clerk">Inventory Clerk</SelectItem>
+                    <SelectItem value="compliance">Compliance Officer</SelectItem>
+                    <SelectItem value="contractor">Contractor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Skills</Label>
+                <div className="relative">
+                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="e.g., Property Inspector"
+                    value={skillsFilter}
+                    onChange={(e) => setSkillsFilter(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Education</Label>
+                <div className="relative">
+                  <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="e.g., MBA, Bachelor"
+                    value={educationFilter}
+                    onChange={(e) => setEducationFilter(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={clearFilters}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All Filters
+                </Button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       {/* Team Members List */}
       <div className="grid gap-6">

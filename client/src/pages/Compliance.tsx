@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { FileText, Upload, AlertTriangle, ExternalLink, Calendar, ShieldAlert, Tag as TagIcon, X, Plus, Building2, Home, Check, CalendarIcon, Pencil, Filter, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { SheetTrigger } from "@/components/ui/sheet";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { format as formatDate, differenceInDays, isPast } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -970,8 +971,8 @@ export default function Compliance() {
         </Dialog>
       </div>
 
-      {/* Filter and Sort Controls */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+      {/* Filter and Sort Controls - Desktop */}
+      <div className="hidden md:flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         {/* Search Bar */}
         <div className="flex-1 w-full sm:max-w-md">
           <Input
@@ -1122,6 +1123,153 @@ export default function Compliance() {
           </PopoverContent>
         </Popover>
       </div>
+
+      {/* Filter and Sort Controls - Mobile */}
+      <div className="flex md:hidden gap-2 items-center mb-4">
+        {/* Search Bar */}
+        <div className="relative flex-1">
+          <Input
+            placeholder="Search..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full"
+          />
+        </div>
+        
+        {/* Filter Button */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="shrink-0">
+              <Filter className="w-4 h-4" />
+              {(filterType !== "all" || filterStatus !== "all" || filterProperty !== "all" || filterBlock !== "all" || sortBy !== "expiry" || sortOrder !== "asc") && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Filters & Sort</SheetTitle>
+              <SheetDescription>
+                Filter compliance documents by type, status, property, block, or sort order
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 mt-6">
+              {/* Filter by Type */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Document Type</Label>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {documentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Filter by Status */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="current">Current</SelectItem>
+                    <SelectItem value="expiring">Expiring Soon</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Filter by Property */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Property</Label>
+                <Select value={filterProperty} onValueChange={setFilterProperty}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {properties.map((property) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Filter by Block */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Block</Label>
+                <Select value={filterBlock} onValueChange={setFilterBlock}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Blocks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block) => (
+                      <SelectItem key={block.id} value={block.id}>
+                        {block.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Sort */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Sort By</Label>
+                <div className="flex gap-2">
+                  <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date">Date</SelectItem>
+                      <SelectItem value="type">Type</SelectItem>
+                      <SelectItem value="status">Status</SelectItem>
+                      <SelectItem value="expiry">Expiry Date</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                    title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                  >
+                    {sortOrder === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Clear Filters */}
+              {(filterType !== "all" || filterStatus !== "all" || filterProperty !== "all" || filterBlock !== "all" || sortBy !== "expiry" || sortOrder !== "asc") && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setFilterType("all");
+                    setFilterStatus("all");
+                    setFilterProperty("all");
+                    setFilterBlock("all");
+                    setSortBy("expiry");
+                    setSortOrder("asc");
+                  }}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All Filters
+                </Button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
       
       {/* Active Filters Display */}
       {(filterType !== "all" || filterStatus !== "all" || filterProperty !== "all" || filterBlock !== "all") && (
@@ -1174,59 +1322,59 @@ export default function Compliance() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card className="border-l-4 border-l-destructive">
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Overdue</p>
-                <p className="text-2xl font-bold text-destructive" data-testid="stat-overdue">{expiredDocs.length}</p>
+                <p className="text-xs md:text-sm font-medium text-muted-foreground">Overdue</p>
+                <p className="text-xl md:text-2xl font-bold text-destructive" data-testid="stat-overdue">{expiredDocs.length}</p>
               </div>
-              <div className="p-2 bg-destructive/10 rounded-full">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
+              <div className="p-1.5 md:p-2 bg-destructive/10 rounded-full">
+                <AlertTriangle className="h-4 w-4 md:h-5 md:w-5 text-destructive" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-yellow-500">
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Due Soon</p>
-                <p className="text-2xl font-bold text-yellow-600" data-testid="stat-due-soon">{dueSoonDocs.length}</p>
-                <p className="text-xs text-muted-foreground">Within 30 days</p>
+                <p className="text-xs md:text-sm font-medium text-muted-foreground">Due Soon</p>
+                <p className="text-xl md:text-2xl font-bold text-yellow-600" data-testid="stat-due-soon">{dueSoonDocs.length}</p>
+                <p className="text-xs text-muted-foreground hidden md:block">Within 30 days</p>
               </div>
-              <div className="p-2 bg-yellow-500/10 rounded-full">
-                <Calendar className="h-5 w-5 text-yellow-600" />
+              <div className="p-1.5 md:p-2 bg-yellow-500/10 rounded-full">
+                <Calendar className="h-4 w-4 md:h-5 md:w-5 text-yellow-600" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-green-500">
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Valid</p>
-                <p className="text-2xl font-bold text-green-600" data-testid="stat-valid">{validDocs.length}</p>
+                <p className="text-xs md:text-sm font-medium text-muted-foreground">Valid</p>
+                <p className="text-xl md:text-2xl font-bold text-green-600" data-testid="stat-valid">{validDocs.length}</p>
               </div>
-              <div className="p-2 bg-green-500/10 rounded-full">
-                <Check className="h-5 w-5 text-green-600" />
+              <div className="p-1.5 md:p-2 bg-green-500/10 rounded-full">
+                <Check className="h-4 w-4 md:h-5 md:w-5 text-green-600" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Documents</p>
-                <p className="text-2xl font-bold" data-testid="stat-total">{filteredAndSortedDocs.length}</p>
+                <p className="text-xs md:text-sm font-medium text-muted-foreground">Total Documents</p>
+                <p className="text-xl md:text-2xl font-bold" data-testid="stat-total">{filteredAndSortedDocs.length}</p>
               </div>
-              <div className="p-2 bg-primary/10 rounded-full">
-                <FileText className="h-5 w-5 text-primary" />
+              <div className="p-1.5 md:p-2 bg-primary/10 rounded-full">
+                <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary" />
               </div>
             </div>
           </CardContent>
@@ -1257,8 +1405,8 @@ export default function Compliance() {
       {expiredDocs.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-destructive" />
-            <h2 className="text-xl font-semibold text-destructive" data-testid="heading-expired">
+            <AlertTriangle className="w-4 h-4 md:w-5 md:h-5 text-destructive" />
+            <h2 className="text-lg md:text-xl font-semibold text-destructive" data-testid="heading-expired">
               Expired Documents ({expiredDocs.length})
             </h2>
           </div>
@@ -1286,7 +1434,7 @@ export default function Compliance() {
       )}
 
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold" data-testid="heading-current">
+        <h2 className="text-lg md:text-xl font-semibold" data-testid="heading-current">
           {expiredDocs.length > 0 ? 'Current Documents' : 'All Documents'} ({currentDocs.length})
         </h2>
         
@@ -1563,20 +1711,20 @@ function DocumentCard({
 
   return (
     <Card className="hover-elevate" data-testid={`card-document-${doc.id}`}>
-      <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+      <CardHeader className="p-4 md:p-6">
+        <div className="flex flex-col gap-4">
           <div className="flex-1 space-y-2">
             <CardTitle className="text-base md:text-lg flex items-center gap-2 flex-wrap">
-              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+              <FileText className="w-4 h-4 md:w-5 md:h-5 text-primary flex-shrink-0" />
               <span data-testid={`text-document-type-${doc.id}`} className="break-words">
                 {doc.documentType}
               </span>
             </CardTitle>
             
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm text-muted-foreground">
               {doc.expiryDate && (
                 <div className="flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4" />
+                  <Calendar className="w-3 h-3 md:w-4 md:h-4" />
                   <span data-testid={`text-expiry-date-${doc.id}`}>
                     {formatDate(new Date(doc.expiryDate.toString()), 'PPP')}
                   </span>
@@ -1585,15 +1733,15 @@ function DocumentCard({
               
               {propertyName && (
                 <div className="flex items-center gap-1.5">
-                  <Home className="w-4 h-4" />
-                  <span>{propertyName}</span>
+                  <Home className="w-3 h-3 md:w-4 md:h-4" />
+                  <span className="truncate max-w-[150px] md:max-w-none">{propertyName}</span>
                 </div>
               )}
               
               {blockName && (
                 <div className="flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4" />
-                  <span>{blockName}</span>
+                  <Building2 className="w-3 h-3 md:w-4 md:h-4" />
+                  <span className="truncate max-w-[150px] md:max-w-none">{blockName}</span>
                 </div>
               )}
             </div>
@@ -1608,7 +1756,7 @@ function DocumentCard({
                     backgroundColor: tag.color ? `${tag.color}15` : undefined,
                     color: tag.color || undefined
                   } as React.CSSProperties}
-                  className="gap-1"
+                  className="gap-1 text-xs"
                   data-testid={`badge-tag-${tag.id}`}
                 >
                   {tag.name}
@@ -1685,26 +1833,28 @@ function DocumentCard({
               size="sm"
               onClick={() => onEdit(doc)}
               data-testid={`button-edit-document-${doc.id}`}
+              className="text-xs md:text-sm"
             >
-              <Pencil className="w-4 h-4 mr-1" />
-              Edit
+              <Pencil className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+              <span className="hidden sm:inline">Edit</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               asChild
               data-testid={`button-view-document-${doc.id}`}
+              className="text-xs md:text-sm"
             >
               <a href={`/api/compliance/${doc.id}/view`} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-4 h-4 mr-1" />
-                View
+                <ExternalLink className="w-3 h-3 md:w-4 md:h-4 mr-1" />
+                <span className="hidden sm:inline">View</span>
               </a>
             </Button>
           </div>
         </div>
       </CardHeader>
       {doc.createdAt && (
-        <CardContent className="pt-0">
+        <CardContent className="pt-0 px-4 md:px-6 pb-4 md:pb-6">
           <p className="text-xs md:text-sm text-muted-foreground">
             Uploaded {formatDate(new Date(doc.createdAt.toString()), 'PPP')}
           </p>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { inspectionsCache } from "@/lib/inspectionsCache";
+import { useOnlineStatus } from "@/lib/offlineQueue";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +35,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ClipboardList, Calendar, MapPin, User, Play, FileText, Filter, Sparkles, Users, Copy } from "lucide-react";
+import { Plus, ClipboardList, Calendar, MapPin, User, Play, FileText, Filter, Sparkles, Users, Copy, X } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
@@ -162,9 +165,52 @@ export default function Inspections() {
   const [filterDueSoon, setFilterDueSoon] = useState<boolean>(urlDueSoon === "true");
   const [filterTenantId, setFilterTenantId] = useState<string>("");
 
+  const isOnline = useOnlineStatus();
+  const [cachedInspections, setCachedInspections] = useState<any[]>([]);
+  const [isLoadingCache, setIsLoadingCache] = useState(false);
+
+  // Fetch inspections from API
   const { data: inspections = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/inspections/my"],
+    enabled: isOnline,
+    onSuccess: async (data) => {
+      // Cache all inspections when loaded
+      if (data && data.length > 0) {
+        try {
+          await inspectionsCache.cacheInspections(data);
+          console.log('[Inspections] Cached inspections for offline access');
+        } catch (error) {
+          console.error('[Inspections] Failed to cache inspections:', error);
+        }
+      }
+    },
   });
+
+  // Load cached inspections when offline
+  useEffect(() => {
+    const loadCachedInspections = async () => {
+      if (!isOnline) {
+        setIsLoadingCache(true);
+        try {
+          const cached = await inspectionsCache.getCachedInspections();
+          setCachedInspections(cached);
+          console.log('[Inspections] Loaded cached inspections for offline access');
+        } catch (error) {
+          console.error('[Inspections] Failed to load cached inspections:', error);
+        } finally {
+          setIsLoadingCache(false);
+        }
+      } else {
+        setCachedInspections([]);
+      }
+    };
+
+    loadCachedInspections();
+  }, [isOnline]);
+
+  // Use cached inspections when offline, API data when online
+  const displayInspections = isOnline ? inspections : cachedInspections;
+  const displayIsLoading = isOnline ? isLoading : isLoadingCache;
 
   const { data: properties = [] } = useQuery<any[]>({
     queryKey: ["/api/properties"],
@@ -311,7 +357,7 @@ export default function Inspections() {
 
   // Filter inspections based on all criteria
   const filteredInspections = useMemo(() => {
-    let filtered = inspections;
+    let filtered = displayInspections;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const sevenDaysFromNow = new Date(today);
@@ -368,7 +414,7 @@ export default function Inspections() {
     }
 
     return filtered;
-  }, [inspections, filterBlockId, filterPropertyId, filterStatus, filterOverdue, filterDueSoon, filterTenantId]);
+  }, [displayInspections, filterBlockId, filterPropertyId, filterStatus, filterOverdue, filterDueSoon, filterTenantId, properties]);
 
   // Clear property filter when block filter changes
   useEffect(() => {
@@ -836,8 +882,8 @@ export default function Inspections() {
         </Dialog>
       </div>
 
-      {/* Filters */}
-      <Card>
+      {/* Filters - Desktop */}
+      <Card className="hidden md:block">
         <CardContent className="pt-6">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -956,15 +1002,158 @@ export default function Inspections() {
         </CardContent>
       </Card>
 
-      {filteredInspections.length === 0 ? (
+      {/* Filters - Mobile */}
+      <div className="flex md:hidden gap-2 items-center mb-4">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="shrink-0">
+              <Filter className="w-4 h-4" />
+              {(filterBlockId || filterPropertyId || filterStatus || filterOverdue || filterDueSoon || filterTenantId) && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Filters</SheetTitle>
+              <SheetDescription>
+                Filter inspections by block, property, status, tenant, or date
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 mt-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Block</label>
+                <Select value={filterBlockId || "__all__"} onValueChange={(value) => setFilterBlockId(value === "__all__" ? "" : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All blocks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All blocks</SelectItem>
+                    {blocks.map((block: any) => (
+                      <SelectItem key={block.id} value={block.id}>
+                        {block.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Property</label>
+                <Select 
+                  value={filterPropertyId || "__all__"} 
+                  onValueChange={(value) => setFilterPropertyId(value === "__all__" ? "" : value)}
+                  disabled={!filterBlockId && filteredProperties.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All properties</SelectItem>
+                    {filteredProperties.map((property: any) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Status</label>
+                <Select value={filterStatus || "__all__"} onValueChange={(value) => setFilterStatus(value === "__all__" ? "" : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All statuses</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tenant</label>
+                <Select value={filterTenantId || "__all__"} onValueChange={(value) => setFilterTenantId(value === "__all__" ? "" : value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All tenants" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All tenants</SelectItem>
+                    {sortedActiveTenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-medium">Options</label>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="filter-overdue-mobile"
+                    checked={filterOverdue}
+                    onCheckedChange={(checked) => setFilterOverdue(checked === true)}
+                  />
+                  <label htmlFor="filter-overdue-mobile" className="text-sm font-medium cursor-pointer">
+                    Overdue
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="filter-due-soon-mobile"
+                    checked={filterDueSoon}
+                    onCheckedChange={(checked) => setFilterDueSoon(checked === true)}
+                  />
+                  <label htmlFor="filter-due-soon-mobile" className="text-sm font-medium cursor-pointer">
+                    Due Soon
+                  </label>
+                </div>
+              </div>
+
+              {(filterBlockId || filterPropertyId || filterStatus || filterOverdue || filterDueSoon || filterTenantId) && (
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => {
+                    setFilterBlockId("");
+                    setFilterPropertyId("");
+                    setFilterStatus("");
+                    setFilterTenantId("");
+                    setFilterOverdue(false);
+                    setFilterDueSoon(false);
+                  }}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All Filters
+                </Button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {displayIsLoading ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <ClipboardList className="w-12 h-12 text-muted-foreground mb-4 animate-pulse" />
+            <p className="text-lg font-medium">Loading inspections...</p>
+          </CardContent>
+        </Card>
+      ) : filteredInspections.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <ClipboardList className="w-12 h-12 text-muted-foreground mb-4" />
             <p className="text-lg font-medium" data-testid="text-empty-state">
-              {inspections.length === 0 ? "No inspections yet" : "No inspections match your filters"}
+              {displayInspections.length === 0 ? "No inspections yet" : "No inspections match your filters"}
             </p>
             <p className="text-sm text-muted-foreground mb-4">
-              {inspections.length === 0 
+              {displayInspections.length === 0 
                 ? "Create your first inspection to get started"
                 : "Try adjusting your filters or create a new inspection"
               }

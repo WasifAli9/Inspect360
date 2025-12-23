@@ -29,8 +29,10 @@ import {
   Building2,
   Home,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  X
 } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Link } from "wouter";
 import { format, differenceInDays, isPast } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -264,8 +266,8 @@ export default function ComplianceReport() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card>
+      {/* Filters - Desktop */}
+      <Card className="hidden md:block">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Filter className="h-5 w-5" />
@@ -352,6 +354,120 @@ export default function ComplianceReport() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Filters - Mobile */}
+      <div className="flex md:hidden gap-2 items-center mb-4">
+        <div className="relative flex-1">
+          <Input
+            placeholder="Search..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full"
+            data-testid="input-search-mobile"
+          />
+        </div>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="shrink-0">
+              <Filter className="w-4 h-4" />
+              {(filterBlock !== "all" || filterProperty !== "all" || filterType !== "all" || filterStatus !== "all") && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+              )}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Filters</SheetTitle>
+              <SheetDescription>
+                Filter compliance documents by block, property, type, or status
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 mt-6">
+              <div className="space-y-2">
+                <Label>Block</Label>
+                <Select value={filterBlock} onValueChange={setFilterBlock}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All blocks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block) => (
+                      <SelectItem key={block.id} value={block.id}>
+                        {block.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Property</Label>
+                <Select value={filterProperty} onValueChange={setFilterProperty}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {properties.map((property) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.unitNumber || property.address}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Document Type</Label>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {documentTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="current">Current</SelectItem>
+                    <SelectItem value="expiring-soon">Expiring Soon (30 days)</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(filterBlock !== "all" || filterProperty !== "all" || filterType !== "all" || filterStatus !== "all") && (
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={() => {
+                    setFilterBlock("all");
+                    setFilterProperty("all");
+                    setFilterType("all");
+                    setFilterStatus("all");
+                  }}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Clear All Filters
+                </Button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       {/* Documents Table */}
       <Card>

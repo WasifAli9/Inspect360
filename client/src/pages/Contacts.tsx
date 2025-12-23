@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit, Tag, X, Home } from "lucide-react";
+import { Users, Plus, Search, Mail, Phone, Building2, Briefcase, Globe, MapPin, Trash2, Edit, Tag, X, Home, Filter } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import type { Contact, Tag as TagType, Block, Property, TenantAssignment } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AddressInput } from "@/components/AddressInput";
@@ -824,25 +825,25 @@ export default function Contacts() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
             {filteredContacts.map((contact) => (
               <Card key={contact.id} className="hover-elevate" data-testid={`card-contact-${contact.id}`}>
-                <CardContent className="p-6 space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <Avatar>
+                <CardContent className="p-3 md:p-6 space-y-3 md:space-y-4">
+                  <div className="flex items-start justify-between gap-2 md:gap-3">
+                    <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
+                      <Avatar className="w-10 h-10 md:w-12 md:h-12">
                         <AvatarImage src={contact.profileImageUrl || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary">
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs md:text-sm">
                           {getInitials(contact.firstName, contact.lastName)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold truncate" data-testid={`text-name-${contact.id}`}>
+                        <h3 className="font-semibold truncate text-sm md:text-base" data-testid={`text-name-${contact.id}`}>
                           {contact.firstName} {contact.lastName}
                         </h3>
                         <Badge
                           variant={contactTypeBadgeVariants[contact.type]}
-                          className="mt-1"
+                          className="mt-1 text-xs"
                           data-testid={`badge-type-${contact.id}`}
                         >
                           {contactTypeLabels[contact.type]}
@@ -850,10 +851,11 @@ export default function Contacts() {
                       </div>
                     </div>
 
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 shrink-0">
                       <Button
                         size="icon"
                         variant="ghost"
+                        className="h-8 w-8 md:h-10 md:w-10"
                         onClick={() => {
                           setEditingContact(contact);
                           setSelectedTags(contact.tags?.map(t => t.id) || []);
@@ -867,11 +869,12 @@ export default function Contacts() {
                         }}
                         data-testid={`button-edit-${contact.id}`}
                       >
-                        <Edit className="w-4 h-4" />
+                        <Edit className="w-3 h-3 md:w-4 md:h-4" />
                       </Button>
                       <Button
                         size="icon"
                         variant="ghost"
+                        className="h-8 w-8 md:h-10 md:w-10"
                         onClick={() => {
                           if (confirm("Are you sure you want to delete this contact?")) {
                             deleteMutation.mutate(contact.id);
@@ -879,29 +882,29 @@ export default function Contacts() {
                         }}
                         data-testid={`button-delete-${contact.id}`}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
                       </Button>
                     </div>
                   </div>
 
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-1.5 md:space-y-2 text-xs md:text-sm">
                     {contact.companyName && (
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <Building2 className="w-4 h-4 shrink-0" />
+                        <Building2 className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
                         <span className="truncate">{contact.companyName}</span>
                       </div>
                     )}
 
                     {contact.jobTitle && (
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <Briefcase className="w-4 h-4 shrink-0" />
+                        <Briefcase className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
                         <span className="truncate">{contact.jobTitle}</span>
                       </div>
                     )}
 
                     {contact.email && (
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <Mail className="w-4 h-4 shrink-0" />
+                        <Mail className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
                         <span className="truncate" data-testid={`text-email-${contact.id}`}>
                           {contact.email}
                         </span>
@@ -910,7 +913,7 @@ export default function Contacts() {
 
                     {contact.phone && (
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <Phone className="w-4 h-4 shrink-0" />
+                        <Phone className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
                         <span className="truncate" data-testid={`text-phone-${contact.id}`}>
                           {contact.phone}
                         </span>
@@ -928,7 +931,7 @@ export default function Contacts() {
 
                     {contact.website && (
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <Globe className="w-4 h-4 shrink-0" />
+                        <Globe className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
                         <a
                           href={contact.website}
                           target="_blank"

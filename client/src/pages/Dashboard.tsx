@@ -33,8 +33,11 @@ import {
   ChevronRight,
   RefreshCw,
   Download,
-  Loader2
+  Loader2,
+  Filter
 } from "lucide-react";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
 import { Link } from "wouter";
 import { TagSearch } from "@/components/TagSearch";
 import ComplianceCalendar from "@/components/ComplianceCalendar";
@@ -495,8 +498,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Filter Row */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Filter Row - Desktop */}
+        <div className="hidden md:flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-muted-foreground" />
             <Select value={filterBlockId} onValueChange={(val) => setFilterBlockId(val === "__all__" ? "" : val)}>
@@ -565,6 +568,93 @@ export default function Dashboard() {
               Filtered View
             </Badge>
           )}
+        </div>
+
+        {/* Filter Row - Mobile */}
+        <div className="flex md:hidden gap-2 items-center mb-4">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="shrink-0">
+                <Filter className="w-4 h-4" />
+                {hasActiveFilters && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Filters</SheetTitle>
+                <SheetDescription>
+                  Filter dashboard by block or property
+                </SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4 mt-6">
+                <div className="space-y-2">
+                  <Label>Block</Label>
+                  <Select value={filterBlockId} onValueChange={(val) => setFilterBlockId(val === "__all__" ? "" : val)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Blocks" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Blocks</SelectItem>
+                      {blocks.map((block) => (
+                        <SelectItem key={block.id} value={block.id}>
+                          {block.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Property</Label>
+                  <Select value={filterPropertyId} onValueChange={(val) => setFilterPropertyId(val === "__all__" ? "" : val)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Properties" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Properties</SelectItem>
+                      {filteredProperties.map((property) => (
+                        <SelectItem key={property.id} value={property.id}>
+                          {property.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {hasActiveFilters && (
+                  <Button 
+                    variant="outline" 
+                    className="w-full"
+                    onClick={() => {
+                      setFilterBlockId("");
+                      setFilterPropertyId("");
+                    }}
+                  >
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Clear All Filters
+                  </Button>
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+          <Button
+            onClick={handleExportReport}
+            disabled={isExporting}
+            variant="outline"
+            className="flex-1"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </>
+            )}
+          </Button>
         </div>
       </div>
 

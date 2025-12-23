@@ -51,6 +51,7 @@ import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Progress } from "@/components/ui/progress";
 import { offlineQueue, useOnlineStatus } from "@/lib/offlineQueue";
+import { inspectionsCache } from "@/lib/inspectionsCache";
 
 interface TemplateField {
   id: string;
@@ -120,6 +121,9 @@ export default function InspectionReport() {
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const isOnline = useOnlineStatus();
+  const [cachedInspection, setCachedInspection] = useState<Inspection | null>(null);
+  const [cachedEntries, setCachedEntries] = useState<any[]>([]);
+  const [isLoadingCache, setIsLoadingCache] = useState(false);
   
   // IMMEDIATE redirect check - redirect to login if not authenticated
   // This runs synchronously to prevent any blank page
@@ -199,43 +203,97 @@ export default function InspectionReport() {
   // Fetch inspection data - refetch on mount to ensure fresh data
   const { data: inspection, isLoading: inspectionLoading, refetch: refetchInspection } = useQuery<Inspection>({
     queryKey: ["/api/inspections", id],
-    enabled: !!id && isAuthenticated && !authLoading, // Only fetch if authenticated
+    enabled: !!id && isAuthenticated && !authLoading && isOnline, // Only fetch if authenticated and online
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     staleTime: 0, // Always consider data stale
     gcTime: 0, // Don't cache (gcTime replaces cacheTime in newer versions)
-    // Poll for updates every 1 second for real-time updates
-    refetchInterval: 1000,
+    // Poll for updates every 1 second for real-time updates (only when online)
+    refetchInterval: isOnline ? 1000 : false,
     refetchIntervalInBackground: true, // Continue polling even when tab is in background
+    onSuccess: async (data) => {
+      // Cache inspection when loaded
+      if (data && id) {
+        try {
+          await inspectionsCache.cacheInspection(data);
+        } catch (error) {
+          console.error('[InspectionReport] Failed to cache inspection:', error);
+        }
+      }
+    },
   });
 
   // Fetch all inspection entries - refetch on mount to ensure fresh data including new photos and AI notes
   const { data: entries = [], isLoading: entriesLoading, refetch: refetchEntries } = useQuery<any[]>({
     queryKey: [`/api/inspections/${id}/entries`],
-    enabled: !!id && isAuthenticated && !authLoading, // Only fetch if authenticated
+    enabled: !!id && isAuthenticated && !authLoading && isOnline, // Only fetch if authenticated and online
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     staleTime: 0, // Always consider data stale
     gcTime: 0, // Don't cache (gcTime replaces cacheTime in newer versions)
-    // Poll for updates every 1 second for real-time updates
-    refetchInterval: 1000,
+    // Poll for updates every 1 second for real-time updates (only when online)
+    refetchInterval: isOnline ? 1000 : false,
     refetchIntervalInBackground: true, // Continue polling even when tab is in background
+    onSuccess: async (data) => {
+      // Cache entries when loaded
+      if (data && id) {
+        try {
+          await inspectionsCache.cacheInspectionEntries(id, data);
+        } catch (error) {
+          console.error('[InspectionReport] Failed to cache entries:', error);
+        }
+      }
+    },
   });
+
+  // Load cached inspection and entries when offline
+  useEffect(() => {
+    const loadCachedData = async () => {
+      if (!id) return;
+      
+      if (!isOnline) {
+        setIsLoadingCache(true);
+        try {
+          const cached = await inspectionsCache.getCachedInspection(id);
+          if (cached) {
+            setCachedInspection(cached);
+            const cachedEntriesData = await inspectionsCache.getCachedInspectionEntries(id);
+            setCachedEntries(cachedEntriesData);
+            console.log('[InspectionReport] Loaded cached inspection and entries for offline access');
+          }
+        } catch (error) {
+          console.error('[InspectionReport] Failed to load cached inspection:', error);
+        } finally {
+          setIsLoadingCache(false);
+        }
+      } else {
+        setCachedInspection(null);
+        setCachedEntries([]);
+      }
+    };
+
+    loadCachedData();
+  }, [id, isOnline]);
+
+  // Use cached inspection when offline, API data when online
+  const displayInspection = isOnline ? inspection : cachedInspection;
+  const displayEntries = isOnline ? entries : cachedEntries;
+  const displayIsLoading = isOnline ? (inspectionLoading || entriesLoading) : isLoadingCache;
 
   // Fetch check-in reference data for Check-Out inspections
   const { data: checkInData } = useQuery<{
     inspection: Inspection;
     entries: any[];
   } | null>({
-    queryKey: [`/api/properties/${inspection?.propertyId}/most-recent-checkin`],
-    enabled: !!inspection?.propertyId && inspection?.type === "check_out" && isAuthenticated && !authLoading,
+    queryKey: [`/api/properties/${displayInspection?.propertyId}/most-recent-checkin`],
+    enabled: !!displayInspection?.propertyId && displayInspection?.type === "check_out" && isAuthenticated && !authLoading && isOnline,
     retry: false,
   });
 
   // Fetch tenant assignment for the property
   const { data: tenantAssignment } = useQuery<any>({
-    queryKey: [`/api/properties/${inspection?.propertyId}/tenant-assignment`],
-    enabled: !!inspection?.propertyId && isAuthenticated && !authLoading,
+    queryKey: [`/api/properties/${displayInspection?.propertyId}/tenant-assignment`],
+    enabled: !!displayInspection?.propertyId && isAuthenticated && !authLoading && isOnline,
   });
 
   // Redirect to login if not authenticated - use hard redirect to prevent blank page
@@ -365,7 +423,7 @@ export default function InspectionReport() {
   // Auto-create comparison report mutation
   const autoCreateComparisonMutation = useMutation({
     mutationFn: async (context: { inspectionId: string; fieldKey: string }) => {
-      if (!inspection?.propertyId) {
+      if (!displayInspection?.propertyId) {
         throw new Error("This inspection must be assigned to a property before creating a comparison report");
       }
 
@@ -377,7 +435,7 @@ export default function InspectionReport() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          propertyId: inspection.propertyId,
+          propertyId: displayInspection.propertyId,
           checkOutInspectionId: context.inspectionId,
           fieldKey: context.fieldKey
         }),
@@ -461,7 +519,7 @@ export default function InspectionReport() {
     }
   }, [autoCreateComparisonMutation.isPending]);
 
-  const templateStructure = inspection?.templateSnapshotJson as { sections: TemplateSection[] } | null;
+  const templateStructure = displayInspection?.templateSnapshotJson as { sections: TemplateSection[] } | null;
   const sections = templateStructure?.sections || [];
 
   // Initialize edited notes from entries - update when entries change
@@ -551,24 +609,24 @@ export default function InspectionReport() {
   };
 
   const handleSubmitMaintenance = () => {
-    if (!inspection || !selectedEntryForMaintenance) return;
+    if (!displayInspection || !selectedEntryForMaintenance) return;
 
     createMaintenanceMutation.mutate({
       title: maintenanceForm.title,
       description: maintenanceForm.description,
       priority: maintenanceForm.priority,
       status: "open",
-      propertyId: inspection.propertyId,
-      organizationId: inspection.organizationId,
+      propertyId: displayInspection.propertyId,
+      organizationId: displayInspection.organizationId,
       reportedBy: currentUser?.id,
       source: "inspection",
-      inspectionId: inspection.id,
+      inspectionId: displayInspection.id,
       inspectionEntryId: selectedEntryForMaintenance.entryId,
     });
   };
 
   const handlePrint = async () => {
-    if (!inspection) return;
+    if (!displayInspection) return;
 
     try {
       toast({
@@ -576,7 +634,7 @@ export default function InspectionReport() {
         description: "Please wait while we create your inspection report...",
       });
 
-      const response = await fetch(`/api/inspections/${inspection.id}/pdf`, {
+      const response = await fetch(`/api/inspections/${displayInspection.id}/pdf`, {
         method: "GET",
         credentials: "include",
       });
@@ -589,7 +647,7 @@ export default function InspectionReport() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${inspection.property?.name?.replace(/[^a-zA-Z0-9]/g, "_") || "inspection"}_report.pdf`;
+      a.download = `${displayInspection.property?.name?.replace(/[^a-zA-Z0-9]/g, "_") || "inspection"}_report.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -742,7 +800,7 @@ export default function InspectionReport() {
     return degradations;
   };
 
-  const degradations = inspection?.type === 'check_out' ? calculateDegradations() : [];
+  const degradations = displayInspection?.type === 'check_out' ? calculateDegradations() : [];
 
   const renderFieldValue = (value: any, field: TemplateField) => {
     if (value === null || value === undefined) {
@@ -892,7 +950,20 @@ export default function InspectionReport() {
     );
   }
 
-  if (!inspection) {
+  if (displayIsLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Loader2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground animate-spin" />
+            <h2 className="text-2xl font-semibold mb-2">Loading inspection report...</h2>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!displayInspection) {
     return (
       <div className="p-6 max-w-6xl mx-auto">
         <Card>
@@ -904,12 +975,12 @@ export default function InspectionReport() {
     );
   }
 
-  const inspectorName = inspection.inspector
-    ? `${inspection.inspector.firstName || ''} ${inspection.inspector.lastName || ''}`.trim() || inspection.inspector.email
+  const inspectorName = displayInspection.inspector
+    ? `${displayInspection.inspector.firstName || ''} ${displayInspection.inspector.lastName || ''}`.trim() || displayInspection.inspector.email
     : "Unknown Inspector";
 
-  const propertyName = inspection.property?.name || inspection.block?.name || "Unknown Property";
-  const propertyAddress = inspection.property?.address || inspection.block?.address || "No address";
+  const propertyName = displayInspection.property?.name || displayInspection.block?.name || "Unknown Property";
+  const propertyAddress = displayInspection.property?.address || displayInspection.block?.address || "No address";
 
   return (
     <div className="min-h-screen bg-background">

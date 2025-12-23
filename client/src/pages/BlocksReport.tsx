@@ -20,7 +20,8 @@ import {
   Filter,
   Loader2,
   Home,
-  Users
+  Users,
+  Search
 } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -167,8 +168,8 @@ export default function BlocksReport() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card className="glass-card">
+      {/* Filters - Desktop */}
+      <Card className="glass-card hidden md:block">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Filter className="h-5 w-5 text-primary" />
@@ -187,6 +188,20 @@ export default function BlocksReport() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Filters - Mobile */}
+      <div className="flex md:hidden gap-2 items-center mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search blocks..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+            data-testid="input-search-blocks-mobile"
+          />
+        </div>
+      </div>
 
       {/* Summary Statistics */}
       <div className="grid gap-4 md:grid-cols-4">

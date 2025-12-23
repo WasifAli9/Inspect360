@@ -396,8 +396,15 @@ export default function TenantCheckInReview() {
                           <div className="bg-muted p-3 rounded">
                             <Label className="text-xs text-muted-foreground">Value</Label>
                             <div className="mt-1">
-                              {typeof entry.valueJson === "object" ? (
-                                <pre className="text-sm">{JSON.stringify(entry.valueJson, null, 2)}</pre>
+                              {typeof entry.valueJson === "object" && entry.valueJson !== null ? (
+                                <ul className="list-disc list-inside space-y-1 text-sm">
+                                  {Object.entries(entry.valueJson).map(([key, value]) => (
+                                    <li key={key}>
+                                      <span className="font-medium">{key}:</span>{" "}
+                                      <span>{String(value)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
                               ) : (
                                 <span>{String(entry.valueJson)}</span>
                               )}
