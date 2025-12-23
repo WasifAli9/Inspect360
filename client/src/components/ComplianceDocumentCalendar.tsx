@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, CheckCircle2, Clock, Circle, ChevronLeft, ChevronRight, Loader2, ExternalLink } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Circle, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 interface ComplianceDocument {
   id: string;
@@ -51,12 +50,9 @@ function getDocumentStatus(expiryDate: string | null): DocumentStatus {
 
 interface StatusCellProps {
   data: MonthData;
-  onNavigate?: () => void;
 }
 
 function StatusCell({ data, onNavigate }: StatusCellProps) {
-  const isNavigable = (data.status === 'expired' || data.status === 'expiring_soon') && data.hasDocument && onNavigate;
-  
   const getStatusIcon = () => {
     if (!data.hasDocument) {
       return <Circle className="h-4 w-4 text-muted-foreground/30" />;
@@ -96,24 +92,19 @@ function StatusCell({ data, onNavigate }: StatusCellProps) {
   };
 
   const statusText = !data.hasDocument ? 'Missing' : data.status.replace('_', ' ');
-  const title = isNavigable 
-    ? `${data.month}: ${statusText} - Click to view compliance` 
-    : `${data.month}: ${statusText}`;
+  const title = `${data.month}: ${statusText}`;
 
   return (
     <div 
-      className={`flex items-center justify-center p-2 rounded-md border ${getStatusColor()} transition-all ${isNavigable ? 'cursor-pointer hover-elevate' : ''}`}
+      className={`flex items-center justify-center p-2 rounded-md border ${getStatusColor()} transition-all`}
       title={title}
-      onClick={isNavigable ? onNavigate : undefined}
     >
       {getStatusIcon()}
-      {isNavigable && <ExternalLink className="h-3 w-3 ml-1 opacity-60" />}
     </div>
   );
 }
 
 export default function ComplianceDocumentCalendar({ entityType, entityId, documents: externalDocs, isLoading: externalLoading }: ComplianceDocumentCalendarProps) {
-  const [, navigate] = useLocation();
   const monthAbbreviations = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth();
@@ -343,12 +334,6 @@ export default function ComplianceDocumentCalendar({ entityType, entityId, docum
                     <StatusCell 
                       key={monthData.month} 
                       data={monthData}
-                      onNavigate={entityType && entityId ? () => {
-                        const target = entityType === 'property' 
-                          ? `/properties/${entityId}` 
-                          : `/blocks/${entityId}`;
-                        navigate(target);
-                      } : undefined}
                     />
                   ))}
 

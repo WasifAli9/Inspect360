@@ -1279,7 +1279,7 @@ export default function Maintenance() {
           )}
 
       {/* Maintenance Requests List */}
-      <div className="grid gap-4">
+      <div className="space-y-4">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Loading...</div>
         ) : filteredRequests.length === 0 ? (

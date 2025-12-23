@@ -340,7 +340,7 @@ import { setupAuth, isAuthenticated, requireRole, hashPassword, comparePasswords
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission, getObjectAclPolicy } from "./objectAcl";
 import { db } from "./db";
-import { eq, and, lt, gt, desc, inArray } from "drizzle-orm";
+import { eq, and, lt, gt, desc, inArray, or, sql } from "drizzle-orm";
 import { getUncachableStripeClient, getStripeSecretKey } from "./stripeClient";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
@@ -407,7 +407,10 @@ import {
   creditBatches,
   subscriptions,
   tenantAssignments,
-  properties
+  properties,
+  inspections,
+  comparisonReports,
+  comparisonReportItems
 } from "@shared/schema";
 
 // Initialize OpenAI using Replit AI Integrations (lazy initialization)
@@ -10341,8 +10344,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       }
 
       // Security: Validate contractorId belongs to organization if provided
+      // Contractors are stored in the contacts table, not users table
       if (validatedData.contractorId) {
-        const contractor = await storage.getUser(validatedData.contractorId);
+        const contractor = await storage.getContact(validatedData.contractorId);
         if (!contractor || contractor.organizationId !== user.organizationId) {
           return res.status(403).json({ error: "Contractor not found or access denied" });
         }
@@ -10399,9 +10403,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       }
 
       // Send email notification to contractor if contractorId is provided (best-effort, non-blocking)
+      // Contractors are stored in the contacts table, not users table
       if (validatedData.contractorId) {
         try {
-          const contractor = await storage.getUser(validatedData.contractorId);
+          const contractor = await storage.getContact(validatedData.contractorId);
           const maintenanceRequest = await db
             .select()
             .from(maintenanceRequests)
@@ -10419,7 +10424,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
             const contractorName = contractor.firstName
               ? `${contractor.firstName}${contractor.lastName ? ' ' + contractor.lastName : ''}`
-              : contractor.username;
+              : contractor.companyName || 'Contractor';
 
             await sendContractorWorkOrderNotification(
               contractor.email,

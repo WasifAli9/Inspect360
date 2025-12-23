@@ -74,6 +74,15 @@ import { useState, useEffect, useLayoutEffect } from "react";
 import { useNotifications } from "@/hooks/useNotifications";
 import { NotificationPopup } from "@/components/NotificationPopup";
 
+// Component to redirect clerks to inspections page
+function ClerkRedirect({ to }: { to: string }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation(to);
+  }, [to, setLocation]);
+  return null;
+}
+
 function AppContent() {
   // Always call hooks at the top level
   const { isAuthenticated, user, logoutMutation, isLoading } = useAuth();
@@ -245,8 +254,21 @@ function AppContent() {
             </header>
             <main className="flex-1 overflow-auto bg-background">
               <Switch>
-                <Route path="/" component={Dashboard} />
-                <Route path="/dashboard" component={Dashboard} />
+                {user?.role === "clerk" ? (
+                  <>
+                    <Route path="/">
+                      {() => <ClerkRedirect to="/inspections" />}
+                    </Route>
+                    <Route path="/dashboard">
+                      {() => <ClerkRedirect to="/inspections" />}
+                    </Route>
+                  </>
+                ) : (
+                  <>
+                    <Route path="/" component={Dashboard} />
+                    <Route path="/dashboard" component={Dashboard} />
+                  </>
+                )}
                 <Route path="/blocks/:id/tenants" component={BlockTenants} />
                 <Route path="/blocks/:id" component={BlockDetail} />
               <Route path="/blocks" component={Blocks} />

@@ -61,13 +61,13 @@ export function AppSidebar() {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboard,
-      roles: ["owner", "clerk", "compliance", "tenant", "contractor"],
+      roles: ["owner", "compliance", "tenant", "contractor"],
     },
     {
       title: "Contacts",
       url: "/contacts",
       icon: Contact,
-      roles: ["owner", "clerk", "compliance"],
+      roles: ["owner", "compliance"],
     },
     {
       title: "Blocks",
@@ -127,7 +127,7 @@ export function AppSidebar() {
       title: "Community",
       url: "/community-moderation",
       icon: Shield,
-      roles: ["owner", "clerk"],
+      roles: ["owner"],
     },
     {
       title: "Billing & Credits",
@@ -199,31 +199,33 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {(() => {
-                const isActive = location.startsWith("/settings");
-                return (
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      data-active={isActive}
-                      className={!organization?.brandingPrimaryColor ? "data-[active=true]:bg-sidebar-accent" : ""}
-                      style={getActiveStyle(isActive)}
-                      data-testid="link-settings"
-                    >
-                      <Link href="/settings">
-                        <Settings className="w-4 h-4" />
-                        <span>Settings</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })()}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {user?.role !== "clerk" && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {(() => {
+                  const isActive = location.startsWith("/settings");
+                  return (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        data-active={isActive}
+                        className={!organization?.brandingPrimaryColor ? "data-[active=true]:bg-sidebar-accent" : ""}
+                        style={getActiveStyle(isActive)}
+                        data-testid="link-settings"
+                      >
+                        <Link href="/settings">
+                          <Settings className="w-4 h-4" />
+                          <span>Settings</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })()}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

@@ -971,7 +971,7 @@ export default function Inspections() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-4">
           {filteredInspections.map((inspection: any) => (
             <Card key={inspection.id} className="hover-elevate" data-testid={`card-inspection-${inspection.id}`}>
               <CardHeader>

@@ -76,8 +76,15 @@ export default function Auth() {
       });
       
       if (result) {
-        // Redirect to return URL if provided, otherwise go to dashboard
-        const redirectPath = returnUrl ? decodeURIComponent(returnUrl) : "/dashboard";
+        // Redirect to return URL if provided
+        if (returnUrl) {
+          window.location.href = decodeURIComponent(returnUrl);
+          return;
+        }
+        
+        // For clerks (inspectors), redirect to inspections page
+        // For other roles, go to dashboard
+        const redirectPath = result.role === "clerk" ? "/inspections" : "/dashboard";
         // Use window.location for reliable redirect after login
         window.location.href = redirectPath;
       }

@@ -34,6 +34,8 @@ import {
   Pencil,
   ImageIcon,
   ExternalLink,
+  Mail,
+  Phone,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -606,7 +608,7 @@ export default function PropertyDetail() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {inspections.map((inspection) => (
                 <Link key={inspection.id} href={`/inspections/${inspection.id}`}>
                   <Card className="hover-elevate cursor-pointer" data-testid={`card-inspection-${inspection.id}`}>
@@ -660,26 +662,31 @@ export default function PropertyDetail() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {tenants.map((tenant) => (
-                <Card key={tenant.id} data-testid={`card-tenant-${tenant.id}`} className="hover-elevate">
-                  <CardHeader>
-                    <div className="flex items-start gap-3">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <User className="h-5 w-5 text-primary" />
+                <Link key={tenant.id} href={`/tenants/${tenant.id}`}>
+                  <Card 
+                    data-testid={`card-tenant-${tenant.id}`} 
+                    className="hover-elevate cursor-pointer"
+                  >
+                    <CardHeader>
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <User className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-base mb-1">
+                            {tenant.firstName} {tenant.lastName}
+                          </CardTitle>
+                          <CardDescription className="text-sm break-all">
+                            {tenant.email}
+                          </CardDescription>
+                          <Badge variant="outline" className="mt-2 text-xs">
+                            Tenant
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <CardTitle className="text-base mb-1">
-                          {tenant.firstName} {tenant.lastName}
-                        </CardTitle>
-                        <CardDescription className="text-sm break-all">
-                          {tenant.email}
-                        </CardDescription>
-                        <Badge variant="outline" className="mt-2 text-xs">
-                          Tenant
-                        </Badge>
-                      </div>
-                    </div>
-                  </CardHeader>
-                </Card>
+                    </CardHeader>
+                  </Card>
+                </Link>
               ))}
             </div>
           )}
@@ -1152,6 +1159,7 @@ export default function PropertyDetail() {
           )}
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }
