@@ -337,6 +337,7 @@ export function QuickAddMaintenanceSheet({
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
+                capture="environment"
                 multiple
                 onChange={handleFileUpload}
                 disabled={isUploading}

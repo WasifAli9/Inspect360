@@ -447,7 +447,8 @@ export function FieldWidget({
     })
       .use(Webcam, {
         modes: ['picture'],
-        facingMode: 'environment',
+        facingMode: 'environment', // Default to back camera
+        showVideoSourceDropdown: true, // Enable camera switching on mobile
       } as any)
       .use(AwsS3, {
         shouldUseMultipart: false,

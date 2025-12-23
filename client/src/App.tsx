@@ -8,7 +8,6 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { TenantSidebar } from "@/components/tenant-sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
-import Landing from "@/pages/Landing";
 import Auth from "@/pages/Auth";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -152,7 +151,7 @@ function AppContent() {
     return (
       <TooltipProvider>
         <Switch>
-          <Route path="/" component={Landing} />
+          <Route path="/" component={Auth} />
           <Route path="/auth" component={Auth} />
           <Route path="/forgot-password" component={ForgotPassword} />
           <Route path="/reset-password" component={ResetPassword} />

@@ -513,9 +513,10 @@ export default function Inspections() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="button-create-inspection">
-              <Plus className="w-4 h-4 mr-2" />
-              New Inspection
+            <Button data-testid="button-create-inspection" size="sm" className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4">
+              <Plus className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
+              <span className="hidden sm:inline">New Inspection</span>
+              <span className="sm:hidden">New</span>
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">

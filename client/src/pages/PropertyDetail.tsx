@@ -593,9 +593,10 @@ export default function PropertyDetail() {
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Inspections</h2>
             <Link href={`/inspections?propertyId=${propertyId}&create=true`}>
-              <Button data-testid="button-new-inspection">
-                <ClipboardCheck className="mr-2 h-4 w-4" />
-                New Inspection
+              <Button data-testid="button-new-inspection" size="sm" className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4">
+                <ClipboardCheck className="mr-1 md:mr-2 h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">New Inspection</span>
+                <span className="sm:hidden">New</span>
               </Button>
             </Link>
           </div>
@@ -697,9 +698,10 @@ export default function PropertyDetail() {
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Asset Inventory</h2>
             <Link href={`/asset-inventory?propertyId=${propertyId}`}>
-              <Button data-testid="button-new-inventory">
-                <Package className="mr-2 h-4 w-4" />
-                Add Item
+              <Button data-testid="button-new-inventory" size="sm" className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4">
+                <Package className="mr-1 md:mr-2 h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Add Item</span>
+                <span className="sm:hidden">Add</span>
               </Button>
             </Link>
           </div>
@@ -777,9 +779,10 @@ export default function PropertyDetail() {
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Compliance Documents</h2>
             <Link href={`/compliance?propertyId=${propertyId}&create=true`}>
-              <Button data-testid="button-new-compliance">
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Document
+              <Button data-testid="button-new-compliance" size="sm" className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4">
+                <Upload className="mr-1 md:mr-2 h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Upload Document</span>
+                <span className="sm:hidden">Upload</span>
               </Button>
             </Link>
           </div>
@@ -855,9 +858,10 @@ export default function PropertyDetail() {
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">Maintenance Requests</h2>
             <Link href={`/maintenance?propertyId=${propertyId}&create=true`}>
-              <Button data-testid="button-new-maintenance">
-                <Wrench className="mr-2 h-4 w-4" />
-                New Request
+              <Button data-testid="button-new-maintenance" size="sm" className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4">
+                <Wrench className="mr-1 md:mr-2 h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">New Request</span>
+                <span className="sm:hidden">New</span>
               </Button>
             </Link>
           </div>

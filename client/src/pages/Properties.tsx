@@ -329,9 +329,10 @@ export default function Properties() {
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button style={{ backgroundColor: '#00D2BD' }} className="hover:opacity-90" data-testid="button-create-property" onClick={handleOpenCreate}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Property
+            <Button style={{ backgroundColor: '#00D2BD' }} className="hover:opacity-90 text-xs md:text-sm h-8 md:h-10 px-2 md:px-4" data-testid="button-create-property" onClick={handleOpenCreate} size="sm">
+              <Plus className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
+              <span className="hidden sm:inline">Add Property</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </DialogTrigger>
           <DialogContent>

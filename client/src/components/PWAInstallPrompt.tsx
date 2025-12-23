@@ -102,6 +102,11 @@ export function PWAInstallPrompt() {
     return null;
   }
 
+  // Hide on mobile devices to save space
+  if (deviceType === 'ios' || deviceType === 'android') {
+    return null;
+  }
+
   const getDeviceIcon = () => {
     if (deviceType === 'desktop') return <Monitor className="w-4 h-4" />;
     return <Smartphone className="w-4 h-4" />;
