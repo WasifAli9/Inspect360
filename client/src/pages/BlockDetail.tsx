@@ -217,7 +217,7 @@ export default function BlockDetail() {
 
   if (blockLoading || propertiesLoading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="text-center py-12">Loading...</div>
       </div>
     );
@@ -225,7 +225,7 @@ export default function BlockDetail() {
 
   if (!block) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="text-center py-12">
           <p className="text-muted-foreground">Block not found</p>
           <Link href="/blocks">
@@ -240,7 +240,7 @@ export default function BlockDetail() {
   }
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="container mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
       <div className="mb-6">
         <Link href="/blocks">
@@ -250,18 +250,18 @@ export default function BlockDetail() {
           </Button>
         </Link>
         
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <Building2 className="h-8 w-8 text-primary" />
-              {block.name}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl md:text-2xl lg:text-3xl font-bold flex items-center gap-2">
+              <Building2 className="h-5 w-5 md:h-6 md:w-6 lg:h-8 lg:w-8 text-primary shrink-0" />
+              <span className="truncate">{block.name}</span>
             </h1>
-            <p className="text-muted-foreground mt-2 flex items-center gap-2">
-              <MapPin className="h-4 w-4" />
-              {block.address}
+            <p className="text-xs md:text-sm text-muted-foreground mt-2 flex items-center gap-2">
+              <MapPin className="h-3 w-3 md:h-4 md:w-4 shrink-0" />
+              <span className="truncate">{block.address}</span>
             </p>
             {block.notes && (
-              <p className="text-sm text-muted-foreground mt-3 bg-muted p-3 rounded-md">
+              <p className="text-xs md:text-sm text-muted-foreground mt-3 bg-muted p-2 md:p-3 rounded-md">
                 {block.notes}
               </p>
             )}

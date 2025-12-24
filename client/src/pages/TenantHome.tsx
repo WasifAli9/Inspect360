@@ -48,9 +48,9 @@ export default function TenantHome() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <Skeleton className="h-12 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+        <Skeleton className="h-8 md:h-12 w-48 md:w-64" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <Skeleton className="h-48" />
           <Skeleton className="h-48" />
           <Skeleton className="h-48" />
@@ -62,7 +62,7 @@ export default function TenantHome() {
 
   if (!tenancyData) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <Card>
           <CardHeader>
             <CardTitle>No Tenancy Found</CardTitle>
@@ -78,7 +78,7 @@ export default function TenantHome() {
   const { tenancy, property, block } = tenancyData;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -87,10 +87,10 @@ export default function TenantHome() {
         </BreadcrumbList>
       </Breadcrumb>
       <div>
-        <h1 className="text-3xl font-bold" data-testid="text-welcome">
+        <h1 className="text-xl md:text-2xl lg:text-3xl font-bold" data-testid="text-welcome">
           Welcome Home
         </h1>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-sm md:text-base text-muted-foreground mt-1">
           Manage your property and maintenance requests
         </p>
       </div>

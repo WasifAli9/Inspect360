@@ -469,103 +469,105 @@ export default function Analytics() {
         </div>
       </div>
 
-      {/* Distribution Charts */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {/* Priority Distribution */}
-        <Card data-testid="card-priority-distribution">
-          <CardHeader>
-            <CardTitle className="text-lg">Priority Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {Object.entries(analytics.priorityDistribution || {}).map(([priority, count]) => (
-                <div key={priority} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        priority === "urgent"
-                          ? "bg-red-500"
-                          : priority === "high"
-                          ? "bg-orange-500"
-                          : priority === "medium"
-                          ? "bg-yellow-500"
-                          : "bg-green-500"
-                      }`}
-                    />
-                    <span className="capitalize text-sm" data-testid={`text-priority-${priority}`}>
-                      {priority}
-                    </span>
+      {/* Distribution Charts - Hidden on mobile */}
+      <div className="hidden md:block">
+        <div className="grid gap-4 md:grid-cols-3">
+          {/* Priority Distribution */}
+          <Card data-testid="card-priority-distribution">
+            <CardHeader>
+              <CardTitle className="text-lg">Priority Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {Object.entries(analytics.priorityDistribution || {}).map(([priority, count]) => (
+                  <div key={priority} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          priority === "urgent"
+                            ? "bg-red-500"
+                            : priority === "high"
+                            ? "bg-orange-500"
+                            : priority === "medium"
+                            ? "bg-yellow-500"
+                            : "bg-green-500"
+                        }`}
+                      />
+                      <span className="capitalize text-sm" data-testid={`text-priority-${priority}`}>
+                        {priority}
+                      </span>
+                    </div>
+                    <Badge variant="outline" data-testid={`text-priority-${priority}-count`}>
+                      {count as number}
+                    </Badge>
                   </div>
-                  <Badge variant="outline" data-testid={`text-priority-${priority}-count`}>
-                    {count as number}
-                  </Badge>
-                </div>
-              ))}
-              {Object.keys(analytics.priorityDistribution || {}).length === 0 && (
-                <p className="text-sm text-muted-foreground">No priority data available</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Category Distribution */}
-        <Card data-testid="card-category-distribution">
-          <CardHeader>
-            <CardTitle className="text-lg">Category Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {Object.entries(analytics.categoryDistribution || {}).map(([category, count]) => (
-                <div key={category} className="flex items-center justify-between">
-                  <span className="capitalize text-sm" data-testid={`text-category-${category}`}>
-                    {category}
-                  </span>
-                  <Badge variant="outline" data-testid={`text-category-${category}-count`}>
-                    {count as number}
-                  </Badge>
-                </div>
-              ))}
-              {Object.keys(analytics.categoryDistribution || {}).length === 0 && (
-                <p className="text-sm text-muted-foreground">No categories assigned yet</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Average Resolution Time */}
-        <Card data-testid="card-avg-resolution-time">
-          <CardHeader>
-            <CardTitle className="text-lg">Performance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Average Resolution Time</p>
-                <p className="text-2xl font-bold" data-testid="text-avg-resolution-time">
-                  {analytics.averageResolutionTimeMinutes > 0
-                    ? (() => {
-                        const hours = Math.floor(analytics.averageResolutionTimeMinutes / 60);
-                        const minutes = Math.round(analytics.averageResolutionTimeMinutes % 60);
-                        return hours > 0 && minutes > 0
-                          ? `${hours}h ${minutes}m`
-                          : hours > 0
-                          ? `${hours}h`
-                          : `${minutes}m`;
-                      })()
-                    : "N/A"}
-                </p>
+                ))}
+                {Object.keys(analytics.priorityDistribution || {}).length === 0 && (
+                  <p className="text-sm text-muted-foreground">No priority data available</p>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Completion Rate</p>
-                <p className="text-2xl font-bold">
-                  {analytics.total > 0 
-                    ? `${Math.round(((analytics.statusDistribution?.completed || 0) / analytics.total) * 100)}%`
-                    : "N/A"}
-                </p>
+            </CardContent>
+          </Card>
+
+          {/* Category Distribution */}
+          <Card data-testid="card-category-distribution">
+            <CardHeader>
+              <CardTitle className="text-lg">Category Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {Object.entries(analytics.categoryDistribution || {}).map(([category, count]) => (
+                  <div key={category} className="flex items-center justify-between">
+                    <span className="capitalize text-sm" data-testid={`text-category-${category}`}>
+                      {category}
+                    </span>
+                    <Badge variant="outline" data-testid={`text-category-${category}-count`}>
+                      {count as number}
+                    </Badge>
+                  </div>
+                ))}
+                {Object.keys(analytics.categoryDistribution || {}).length === 0 && (
+                  <p className="text-sm text-muted-foreground">No categories assigned yet</p>
+                )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Average Resolution Time */}
+          <Card data-testid="card-avg-resolution-time">
+            <CardHeader>
+              <CardTitle className="text-lg">Performance</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Average Resolution Time</p>
+                  <p className="text-2xl font-bold" data-testid="text-avg-resolution-time">
+                    {analytics.averageResolutionTimeMinutes > 0
+                      ? (() => {
+                          const hours = Math.floor(analytics.averageResolutionTimeMinutes / 60);
+                          const minutes = Math.round(analytics.averageResolutionTimeMinutes % 60);
+                          return hours > 0 && minutes > 0
+                            ? `${hours}h ${minutes}m`
+                            : hours > 0
+                            ? `${hours}h`
+                            : `${minutes}m`;
+                        })()
+                      : "N/A"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Completion Rate</p>
+                  <p className="text-2xl font-bold">
+                    {analytics.total > 0 
+                      ? `${Math.round(((analytics.statusDistribution?.completed || 0) / analytics.total) * 100)}%`
+                      : "N/A"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Edit Work Order Dialog */}

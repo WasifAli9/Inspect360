@@ -374,14 +374,14 @@ export default function Contacts() {
   }
 
   return (
-    <div className="p-8">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Users className="w-8 h-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-semibold">Contacts</h1>
-              <p className="text-muted-foreground">
+    <div className="p-4 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-4 md:space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
+            <Users className="w-6 h-6 md:w-8 md:h-8 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-xl md:text-3xl font-semibold">Contacts</h1>
+              <p className="text-xs md:text-base text-muted-foreground">
                 Manage internal team members and external contacts
               </p>
             </div>
@@ -394,6 +394,7 @@ export default function Contacts() {
                   setEditingContact(null);
                   setPhoneValue("");
                 }}
+                className="w-full sm:w-auto shrink-0"
                 data-testid="button-add-contact"
               >
                 <Plus className="w-4 h-4 mr-2" />
@@ -704,7 +705,8 @@ export default function Contacts() {
           </Dialog>
         </div>
 
-        <div className="flex gap-4 items-center">
+        {/* Desktop Filters */}
+        <div className="hidden md:flex gap-4 items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -748,7 +750,7 @@ export default function Contacts() {
           </Select>
         </div>
 
-        <div className="flex gap-4 items-center flex-wrap">
+        <div className="hidden md:flex gap-4 items-center flex-wrap">
           <Select 
             value={filterBlock} 
             onValueChange={(value) => {
@@ -802,6 +804,134 @@ export default function Contacts() {
               Clear location filters
             </Button>
           )}
+        </div>
+
+        {/* Mobile Filters - Search and Filter Button */}
+        <div className="flex md:hidden gap-2 items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search contacts..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-contacts-mobile"
+            />
+          </div>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="shrink-0 relative">
+                <Filter className="w-4 h-4" />
+                {(filterType !== "all" || filterTag !== "all" || filterBlock !== "all" || filterProperty !== "all") && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="h-[85vh] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Filters</SheetTitle>
+                <SheetDescription>
+                  Filter contacts by type, tag, block, or property
+                </SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4 mt-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Contact Type</Label>
+                  <Select value={filterType} onValueChange={setFilterType}>
+                    <SelectTrigger data-testid="select-filter-type-mobile">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="internal">Internal</SelectItem>
+                      <SelectItem value="contractor">Contractor</SelectItem>
+                      <SelectItem value="lead">Lead</SelectItem>
+                      <SelectItem value="company">Company</SelectItem>
+                      <SelectItem value="partner">Partner</SelectItem>
+                      <SelectItem value="vendor">Vendor</SelectItem>
+                      <SelectItem value="tenant">Tenant</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Tag</Label>
+                  <Select value={filterTag} onValueChange={setFilterTag}>
+                    <SelectTrigger data-testid="select-filter-tag-mobile">
+                      <SelectValue placeholder="All Tags" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Tags</SelectItem>
+                      {allTags?.map((tag) => (
+                        <SelectItem key={tag.id} value={tag.id}>
+                          {tag.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Block</Label>
+                  <Select 
+                    value={filterBlock} 
+                    onValueChange={(value) => {
+                      setFilterBlock(value);
+                      if (value !== filterBlock) {
+                        setFilterProperty("all");
+                      }
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-filter-block-mobile">
+                      <SelectValue placeholder="All Blocks" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Blocks</SelectItem>
+                      {blocks.map((block) => (
+                        <SelectItem key={block.id} value={block.id}>
+                          {block.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Property</Label>
+                  <Select value={filterProperty} onValueChange={setFilterProperty}>
+                    <SelectTrigger data-testid="select-filter-property-mobile">
+                      <SelectValue placeholder="All Properties" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Properties</SelectItem>
+                      {filteredProperties.map((property) => (
+                        <SelectItem key={property.id} value={property.id}>
+                          {property.name || property.address}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {(filterType !== "all" || filterTag !== "all" || filterBlock !== "all" || filterProperty !== "all") && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setFilterType("all");
+                      setFilterTag("all");
+                      setFilterBlock("all");
+                      setFilterProperty("all");
+                    }}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Clear All Filters
+                  </Button>
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
 
         {!filteredContacts || filteredContacts.length === 0 ? (

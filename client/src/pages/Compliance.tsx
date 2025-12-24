@@ -630,7 +630,7 @@ export default function Compliance() {
                           <Home className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-[400px] p-0 z-[100]" align="start">
+                      <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[400px] p-0 z-[100]" align="start">
                         <Command>
                           <CommandInput 
                             placeholder="Search properties..." 
@@ -1390,17 +1390,19 @@ export default function Compliance() {
         </Alert>
       )}
 
-      {/* Annual Compliance Summary */}
-      <ComplianceDocumentCalendar
-        documents={filteredAndSortedDocs.map(doc => ({
-          id: String(doc.id),
-          documentType: doc.documentType,
-          expiryDate: doc.expiryDate,
-          documentUrl: doc.documentUrl || '',
-          createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString(),
-        }))}
-        isLoading={isLoading}
-      />
+      {/* Annual Compliance Summary - Hidden on mobile */}
+      <div className="hidden md:block">
+        <ComplianceDocumentCalendar
+          documents={filteredAndSortedDocs.map(doc => ({
+            id: String(doc.id),
+            documentType: doc.documentType,
+            expiryDate: doc.expiryDate,
+            documentUrl: doc.documentUrl || '',
+            createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString(),
+          }))}
+          isLoading={isLoading}
+        />
+      </div>
 
       {expiredDocs.length > 0 && (
         <div className="space-y-4">

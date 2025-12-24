@@ -275,25 +275,25 @@ export default function ComparisonReports() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 space-y-6" data-testid="page-comparison-reports">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-bold flex items-center gap-3" data-testid="heading-comparison-reports">
-            <FileText className="w-10 h-10 text-primary" />
-            Comparison Reports
+    <div className="container mx-auto px-4 py-4 md:py-8 space-y-4 md:space-y-6" data-testid="page-comparison-reports">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl md:text-4xl font-bold flex items-center gap-2 md:gap-3" data-testid="heading-comparison-reports">
+            <FileText className="w-6 h-6 md:w-10 md:h-10 text-primary shrink-0" />
+            <span className="truncate">Comparison Reports</span>
           </h1>
-          <p className="text-muted-foreground mt-2">
+          <p className="text-sm md:text-base text-muted-foreground mt-1 md:mt-2">
             AI-powered check-in vs check-out analysis with cost estimation and signatures
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button data-testid="button-generate-report">
+            <Button className="w-full sm:w-auto shrink-0" data-testid="button-generate-report">
               <Plus className="w-4 h-4 mr-2" />
               Generate Report
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Generate Comparison Report</DialogTitle>
               <DialogDescription>
@@ -466,57 +466,57 @@ export default function ComparisonReports() {
                 className="hover-elevate transition-all duration-150"
                 data-testid={`card-report-${report.id}`}
               >
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 space-y-3">
+                <CardContent className="p-4 md:p-6">
+                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                    <div className="flex-1 space-y-3 w-full min-w-0">
                       {/* Status and Date */}
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <Badge className={`${statusInfo.color} text-white`}>
+                      <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+                        <Badge className={`${statusInfo.color} text-white text-xs`}>
                           {statusInfo.label}
                         </Badge>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="w-4 h-4" />
-                          {format(new Date(report.createdAt), "MMM d, yyyy")}
+                        <div className="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm text-muted-foreground">
+                          <Calendar className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
+                          <span>{format(new Date(report.createdAt), "MMM d, yyyy")}</span>
                         </div>
                       </div>
 
                       {/* Property */}
                       <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-medium">{getPropertyName(report.propertyId)}</span>
+                        <Building2 className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground shrink-0" />
+                        <span className="font-medium text-sm md:text-base truncate">{getPropertyName(report.propertyId)}</span>
                       </div>
 
                       {/* Cost */}
-                      <div className="flex items-center gap-2">
-                        <span className="w-4 h-4 text-muted-foreground flex items-center justify-center font-semibold">£</span>
-                        <span className="text-lg font-semibold">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground flex items-center justify-center font-semibold text-sm md:text-base shrink-0">£</span>
+                        <span className="text-base md:text-lg font-semibold">
                           £{totalCost.toFixed(2)}
                         </span>
-                        <span className="text-sm text-muted-foreground">estimated tenant liability</span>
+                        <span className="text-xs md:text-sm text-muted-foreground">estimated tenant liability</span>
                       </div>
 
                       {/* Signatures */}
-                      <div className="flex items-center gap-6 text-sm">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-6 text-xs md:text-sm">
                         <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
+                          <User className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground shrink-0" />
                           <span className="text-muted-foreground">Operator:</span>
                           {report.operatorSignature ? (
-                            <Badge variant="outline" className="text-green-600 border-green-600">
+                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
                               Signed
                             </Badge>
                           ) : (
-                            <Badge variant="outline">Pending</Badge>
+                            <Badge variant="outline" className="text-xs">Pending</Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-muted-foreground" />
+                          <User className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground shrink-0" />
                           <span className="text-muted-foreground">Tenant:</span>
                           {report.tenantSignature ? (
-                            <Badge variant="outline" className="text-green-600 border-green-600">
+                            <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
                               Signed
                             </Badge>
                           ) : (
-                            <Badge variant="outline">Pending</Badge>
+                            <Badge variant="outline" className="text-xs">Pending</Badge>
                           )}
                         </div>
                       </div>
@@ -526,12 +526,12 @@ export default function ComparisonReports() {
                     </div>
 
                     {/* View Button */}
-                    <Link href={`/comparisons/${report.id}`} className="inline-block">
+                    <Link href={`/comparisons/${report.id}`} className="inline-block w-full sm:w-auto">
                       <Button 
                         variant="outline" 
                         size="sm" 
                         data-testid={`button-view-${report.id}`}
-                        className="cursor-pointer"
+                        className="cursor-pointer w-full sm:w-auto"
                       >
                         View Details
                         <ArrowRight className="w-4 h-4 ml-2" />

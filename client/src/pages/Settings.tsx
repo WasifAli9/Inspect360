@@ -372,23 +372,23 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-8 bg-background min-h-screen">
+    <div className="p-4 md:p-6 lg:p-8 bg-background min-h-screen">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="p-3 rounded-2xl bg-primary/10 backdrop-blur-xl">
-            <SettingsIcon className="w-8 h-8 text-primary" />
+        <div className="flex items-center gap-2 md:gap-3 mb-4 md:mb-8">
+          <div className="p-2 md:p-3 rounded-xl md:rounded-2xl bg-primary/10 backdrop-blur-xl shrink-0">
+            <SettingsIcon className="w-6 h-6 md:w-8 md:h-8 text-primary" />
           </div>
-          <div>
-            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
               Settings
             </h1>
-            <p className="text-muted-foreground mt-1">Manage your organization configuration</p>
+            <p className="text-xs md:text-sm text-muted-foreground mt-1">Manage your organization configuration</p>
           </div>
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-col lg:flex-row gap-4 md:gap-6">
           {/* Vertical Sidebar Menu */}
-          <div className="w-64 shrink-0">
+          <div className="w-full lg:w-64 shrink-0">
             <Card className="sticky top-8">
               <CardContent className="p-2">
                 <nav className="space-y-1">

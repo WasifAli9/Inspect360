@@ -495,7 +495,7 @@ export default function Inspections() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="flex justify-center items-center h-64">
           <p className="text-muted-foreground">Loading inspections...</p>
         </div>
@@ -504,11 +504,11 @@ export default function Inspections() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-page-title">Inspections</h1>
-          <p className="text-muted-foreground">
+    <div className="container mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl md:text-2xl lg:text-3xl font-bold" data-testid="text-page-title">Inspections</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
             Manage and conduct property inspections
           </p>
         </div>

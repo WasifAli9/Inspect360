@@ -229,7 +229,7 @@ export default function InspectionDetail() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="flex justify-center items-center h-64">
           <p className="text-muted-foreground">Loading inspection...</p>
         </div>
@@ -239,7 +239,7 @@ export default function InspectionDetail() {
 
   if (!inspection) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <p className="text-lg font-medium">Inspection not found</p>
@@ -288,18 +288,18 @@ export default function InspectionDetail() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center gap-4">
+    <div className="container mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex items-center gap-2 md:gap-4">
         <Link href="/inspections">
           <Button variant="ghost" size="icon" data-testid="button-back">
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </Link>
-        <div className="flex-1">
-          <h1 className="text-3xl font-bold" data-testid="text-page-title">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl md:text-2xl lg:text-3xl font-bold truncate" data-testid="text-page-title">
             Inspection Details
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-xs md:text-sm text-muted-foreground truncate">
             {inspection.property?.name || inspection.block?.name}
           </p>
         </div>

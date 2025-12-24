@@ -82,10 +82,10 @@ export default function WorkOrders() {
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Work Orders</h1>
-        <p className="text-muted-foreground">
+    <div className="container mx-auto p-4 md:p-6">
+      <div className="mb-4 md:mb-6">
+        <h1 className="text-xl md:text-2xl lg:text-3xl font-bold">Work Orders</h1>
+        <p className="text-sm md:text-base text-muted-foreground">
           {user?.role === "contractor" 
             ? "View and manage your assigned work orders" 
             : "Manage contractor work orders and assignments"}

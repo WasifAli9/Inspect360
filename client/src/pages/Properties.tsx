@@ -298,14 +298,14 @@ export default function Properties() {
 
   if (isLoading) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-4 md:space-y-6">
       {urlBlockId && selectedBlock && (
         <Link href={`/blocks/${urlBlockId}`}>
           <Button variant="ghost" className="mb-4" data-testid="button-back-to-block">
@@ -315,12 +315,12 @@ export default function Properties() {
         </Link>
       )}
       
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl md:text-2xl lg:text-3xl font-bold text-foreground">
             {urlBlockId && selectedBlock ? `${selectedBlock.name} - Properties` : "Properties"}
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm md:text-base text-muted-foreground">
             {urlBlockId && selectedBlock 
               ? `Properties in ${selectedBlock.name}` 
               : "Manage your building portfolio"

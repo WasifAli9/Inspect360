@@ -301,7 +301,7 @@ export default function PropertyDetail() {
 
   if (propertyLoading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="text-center py-12">Loading...</div>
       </div>
     );
@@ -309,7 +309,7 @@ export default function PropertyDetail() {
 
   if (!property) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto p-4 md:p-6">
         <div className="text-center py-12">
           <p className="text-muted-foreground">Property not found</p>
           <Link href="/properties">
@@ -324,28 +324,29 @@ export default function PropertyDetail() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4">
         <Link href={property.blockId ? `/blocks/${property.blockId}` : "/properties"}>
-          <Button variant="ghost" size="sm" data-testid="button-back">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            {property.blockId && property.blockName ? `Back to ${property.blockName}` : "Back to Properties"}
+          <Button variant="ghost" size="sm" className="text-xs md:text-sm" data-testid="button-back">
+            <ArrowLeft className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <span className="hidden sm:inline">{property.blockId && property.blockName ? `Back to ${property.blockName}` : "Back to Properties"}</span>
+            <span className="sm:hidden">Back</span>
           </Button>
         </Link>
       </div>
 
       {/* Property Header */}
       <div className="space-y-4">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold flex items-center gap-3" data-testid="heading-property-name">
-              <Building2 className="h-8 w-8 text-primary" />
-              {property.name}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-2 flex-1 min-w-0">
+            <h1 className="text-xl md:text-2xl lg:text-3xl font-bold flex items-center gap-2 md:gap-3" data-testid="heading-property-name">
+              <Building2 className="h-5 w-5 md:h-6 md:w-6 lg:h-8 lg:w-8 text-primary shrink-0" />
+              <span className="truncate">{property.name}</span>
             </h1>
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-4 w-4" />
-              <span data-testid="text-property-address">{property.address}</span>
+            <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
+              <MapPin className="h-3 w-3 md:h-4 md:w-4 shrink-0" />
+              <span className="truncate" data-testid="text-property-address">{property.address}</span>
             </div>
             {property.blockName && (
               <div className="flex items-center gap-2">

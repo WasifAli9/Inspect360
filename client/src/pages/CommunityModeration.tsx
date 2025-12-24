@@ -398,7 +398,7 @@ export default function CommunityModeration() {
   // Thread view - loading state
   if (viewMode === 'thread' && threadLoading) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -441,7 +441,7 @@ export default function CommunityModeration() {
   // Thread view - error state (no data after loading)
   if (viewMode === 'thread' && !threadLoading && !threadData) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -476,7 +476,7 @@ export default function CommunityModeration() {
   // Thread view
   if (viewMode === 'thread' && threadData) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -499,21 +499,21 @@ export default function CommunityModeration() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={handleBackToGroup} data-testid="button-back-to-group">
-            <ArrowLeft className="h-5 w-5" />
+        <div className="flex items-center gap-2 md:gap-4">
+          <Button variant="ghost" size="icon" onClick={handleBackToGroup} className="shrink-0" data-testid="button-back-to-group">
+            <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold" data-testid="text-thread-title">{threadData.title}</h1>
-            <p className="text-muted-foreground text-sm">
-              Started by {threadData.authorName} {threadData.isOperator && <Badge variant="outline" className="ml-1">Staff</Badge>}
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl md:text-2xl font-bold truncate" data-testid="text-thread-title">{threadData.title}</h1>
+            <p className="text-xs md:text-sm text-muted-foreground">
+              Started by {threadData.authorName} {threadData.isOperator && <Badge variant="outline" className="ml-1 text-xs">Staff</Badge>}
             </p>
           </div>
         </div>
 
         <Card>
-          <CardContent className="pt-6">
-            <ScrollArea className="h-[400px]">
+          <CardContent className="pt-4 md:pt-6">
+            <ScrollArea className="h-[300px] md:h-[400px]">
               <div className="space-y-4">
                 {/* Original post */}
                 <div className="flex gap-4">
@@ -590,7 +590,7 @@ export default function CommunityModeration() {
   // Group view - loading state
   if (viewMode === 'group' && groupsLoading) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -630,7 +630,7 @@ export default function CommunityModeration() {
   // Group view - error state (no group found)
   if (viewMode === 'group' && !groupsLoading && !currentGroup) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -665,7 +665,7 @@ export default function CommunityModeration() {
   // Group view (threads list)
   if (viewMode === 'group' && currentGroup) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-4 md:space-y-6">
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
@@ -684,17 +684,17 @@ export default function CommunityModeration() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={handleBackToList} data-testid="button-back-to-list">
-              <ArrowLeft className="h-5 w-5" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+            <Button variant="ghost" size="icon" onClick={handleBackToList} className="shrink-0" data-testid="button-back-to-list">
+              <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold" data-testid="text-group-name">{currentGroup.name}</h1>
-              <p className="text-muted-foreground text-sm">{currentGroup.blockName}</p>
+            <div className="min-w-0">
+              <h1 className="text-xl md:text-2xl font-bold truncate" data-testid="text-group-name">{currentGroup.name}</h1>
+              <p className="text-xs md:text-sm text-muted-foreground truncate">{currentGroup.blockName}</p>
             </div>
           </div>
-          <Button onClick={() => setShowCreateThread(true)} data-testid="button-new-thread">
+          <Button onClick={() => setShowCreateThread(true)} className="w-full sm:w-auto shrink-0" data-testid="button-new-thread">
             <Plus className="h-4 w-4 mr-2" />
             New Thread
           </Button>
@@ -803,7 +803,7 @@ export default function CommunityModeration() {
 
   // Main list view
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
@@ -818,81 +818,81 @@ export default function CommunityModeration() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-            <Shield className="h-6 w-6 text-primary" />
-            Community Moderation
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
+            <Shield className="h-5 w-5 md:h-6 md:w-6 text-primary shrink-0" />
+            <span className="truncate">Community Moderation</span>
           </h1>
-          <p className="text-muted-foreground">Manage community groups and moderate content</p>
+          <p className="text-sm md:text-base text-muted-foreground">Manage community groups and moderate content</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setShowCreateGroup(true)} data-testid="button-create-group">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button variant="outline" onClick={() => setShowCreateGroup(true)} className="w-full sm:w-auto" data-testid="button-create-group">
             <Plus className="h-4 w-4 mr-2" />
             Create Group
           </Button>
           <Button onClick={() => {
             setRulesText(currentRules?.rulesText || "");
             setShowRulesEditor(true);
-          }} data-testid="button-edit-rules">
+          }} className="w-full sm:w-auto" data-testid="button-edit-rules">
             <Settings className="h-4 w-4 mr-2" />
             Edit Community Rules
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Pending Groups</CardDescription>
-            <CardTitle className="text-3xl" data-testid="text-pending-count">{pendingCount.count}</CardTitle>
+            <CardDescription className="text-xs md:text-sm">Pending Groups</CardDescription>
+            <CardTitle className="text-2xl md:text-3xl" data-testid="text-pending-count">{pendingCount.count}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Active Groups</CardDescription>
-            <CardTitle className="text-3xl" data-testid="text-approved-count">{approvedGroups.length}</CardTitle>
+            <CardDescription className="text-xs md:text-sm">Active Groups</CardDescription>
+            <CardTitle className="text-2xl md:text-3xl" data-testid="text-approved-count">{approvedGroups.length}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Open Flags</CardDescription>
-            <CardTitle className="text-3xl" data-testid="text-flags-count">{unresolvedFlags.length}</CardTitle>
+            <CardDescription className="text-xs md:text-sm">Open Flags</CardDescription>
+            <CardTitle className="text-2xl md:text-3xl" data-testid="text-flags-count">{unresolvedFlags.length}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Rules Version</CardDescription>
-            <CardTitle className="text-3xl" data-testid="text-rules-version">{currentRules?.version || 0}</CardTitle>
+            <CardDescription className="text-xs md:text-sm">Rules Version</CardDescription>
+            <CardTitle className="text-2xl md:text-3xl" data-testid="text-rules-version">{currentRules?.version || 0}</CardTitle>
           </CardHeader>
         </Card>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="groups" data-testid="tab-groups">
-            <Users className="h-4 w-4 mr-2" />
-            Groups
+        <TabsList className="w-full sm:w-auto flex-wrap">
+          <TabsTrigger value="groups" className="flex-1 sm:flex-initial" data-testid="tab-groups">
+            <Users className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">Groups</span>
             {pendingCount.count > 0 && (
-              <Badge variant="destructive" className="ml-2">{pendingCount.count}</Badge>
+              <Badge variant="destructive" className="ml-1 md:ml-2 text-xs">{pendingCount.count}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="flags" data-testid="tab-flags">
-            <Flag className="h-4 w-4 mr-2" />
-            Flagged Content
+          <TabsTrigger value="flags" className="flex-1 sm:flex-initial" data-testid="tab-flags">
+            <Flag className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">Flagged</span>
             {unresolvedFlags.length > 0 && (
-              <Badge variant="destructive" className="ml-2">{unresolvedFlags.length}</Badge>
+              <Badge variant="destructive" className="ml-1 md:ml-2 text-xs">{unresolvedFlags.length}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="log" data-testid="tab-log">
-            <FileText className="h-4 w-4 mr-2" />
-            Moderation Log
+          <TabsTrigger value="log" className="flex-1 sm:flex-initial" data-testid="tab-log">
+            <FileText className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">Log</span>
           </TabsTrigger>
-          <TabsTrigger value="blocked" data-testid="tab-blocked">
-            <Ban className="h-4 w-4 mr-2" />
-            Blocked Tenants
+          <TabsTrigger value="blocked" className="flex-1 sm:flex-initial" data-testid="tab-blocked">
+            <Ban className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <span className="text-xs md:text-sm">Blocked</span>
             {blockedTenants.length > 0 && (
-              <Badge variant="secondary" className="ml-2">{blockedTenants.length}</Badge>
+              <Badge variant="secondary" className="ml-1 md:ml-2 text-xs">{blockedTenants.length}</Badge>
             )}
           </TabsTrigger>
         </TabsList>
@@ -918,48 +918,50 @@ export default function CommunityModeration() {
             <div className="space-y-4">
               {pendingGroups.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-amber-500" />
-                    Pending Approval ({pendingGroups.length})
+                  <h3 className="text-base md:text-lg font-semibold mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4 md:h-5 md:w-5 text-amber-500 shrink-0" />
+                    <span>Pending Approval ({pendingGroups.length})</span>
                   </h3>
                   <div className="space-y-3">
                     {pendingGroups.map((group) => (
                       <Card key={group.id} className="border-amber-200 dark:border-amber-800" data-testid={`card-pending-group-${group.id}`}>
-                        <CardHeader>
-                          <div className="flex items-start justify-between gap-4 flex-wrap">
-                            <div>
-                              <CardTitle className="text-base" data-testid={`text-group-name-${group.id}`}>
+                        <CardHeader className="p-4 md:p-6">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <CardTitle className="text-sm md:text-base" data-testid={`text-group-name-${group.id}`}>
                                 {group.name}
                               </CardTitle>
-                              <CardDescription>
+                              <CardDescription className="text-xs md:text-sm">
                                 {group.blockName} | Created by {group.creatorName} | {format(new Date(group.createdAt), "PP")}
                               </CardDescription>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 w-full sm:w-auto">
                               <Button
                                 size="sm"
                                 onClick={() => approveGroupMutation.mutate(group.id)}
                                 disabled={approveGroupMutation.isPending}
+                                className="flex-1 sm:flex-initial"
                                 data-testid={`button-approve-${group.id}`}
                               >
-                                <Check className="h-4 w-4 mr-1" />
+                                <Check className="h-3 w-3 md:h-4 md:w-4 mr-1" />
                                 Approve
                               </Button>
                               <Button
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => setSelectedGroupForReject(group)}
+                                className="flex-1 sm:flex-initial"
                                 data-testid={`button-reject-${group.id}`}
                               >
-                                <X className="h-4 w-4 mr-1" />
+                                <X className="h-3 w-3 md:h-4 md:w-4 mr-1" />
                                 Reject
                               </Button>
                             </div>
                           </div>
                         </CardHeader>
                         {group.description && (
-                          <CardContent className="pt-0">
-                            <p className="text-sm text-muted-foreground">{group.description}</p>
+                          <CardContent className="pt-0 px-4 md:px-6 pb-4 md:pb-6">
+                            <p className="text-xs md:text-sm text-muted-foreground">{group.description}</p>
                           </CardContent>
                         )}
                       </Card>
@@ -970,11 +972,11 @@ export default function CommunityModeration() {
 
               {approvedGroups.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                    Active Groups ({approvedGroups.length})
+                  <h3 className="text-base md:text-lg font-semibold mb-3 flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 md:h-5 md:w-5 text-green-500 shrink-0" />
+                    <span>Active Groups ({approvedGroups.length})</span>
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                     {approvedGroups.map((group) => (
                       <Card 
                         key={group.id} 
@@ -993,17 +995,17 @@ export default function CommunityModeration() {
                             <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
                           </div>
                         )}
-                        <CardHeader className={group.coverImageUrl ? "pt-3 pb-2" : "pb-2"}>
-                          <CardTitle className="text-base">{group.name}</CardTitle>
-                          <CardDescription>{group.blockName}</CardDescription>
+                        <CardHeader className={group.coverImageUrl ? "pt-3 pb-2 px-3 md:px-6" : "pb-2 px-3 md:px-6"}>
+                          <CardTitle className="text-sm md:text-base">{group.name}</CardTitle>
+                          <CardDescription className="text-xs md:text-sm">{group.blockName}</CardDescription>
                         </CardHeader>
-                        <CardContent className="flex gap-4 text-sm text-muted-foreground">
+                        <CardContent className="flex gap-4 text-xs md:text-sm text-muted-foreground px-3 md:px-6 pb-3 md:pb-6">
                           <span className="flex items-center gap-1">
-                            <Users className="h-3 w-3" />
+                            <Users className="h-3 w-3 shrink-0" />
                             {group.memberCount}
                           </span>
                           <span className="flex items-center gap-1">
-                            <MessageSquare className="h-3 w-3" />
+                            <MessageSquare className="h-3 w-3 shrink-0" />
                             {group.postCount}
                           </span>
                         </CardContent>
@@ -1015,18 +1017,18 @@ export default function CommunityModeration() {
 
               {rejectedGroups.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <X className="h-5 w-5 text-destructive" />
-                    Rejected Groups ({rejectedGroups.length})
+                  <h3 className="text-base md:text-lg font-semibold mb-3 flex items-center gap-2">
+                    <X className="h-4 w-4 md:h-5 md:w-5 text-destructive shrink-0" />
+                    <span>Rejected Groups ({rejectedGroups.length})</span>
                   </h3>
                   <div className="space-y-2">
                     {rejectedGroups.map((group) => (
                       <Card key={group.id} className="opacity-75" data-testid={`card-rejected-group-${group.id}`}>
-                        <CardHeader className="py-3">
-                          <div className="flex items-center gap-4">
-                            <div className="flex-1">
-                              <CardTitle className="text-base">{group.name}</CardTitle>
-                              <CardDescription>
+                        <CardHeader className="py-3 px-4 md:px-6">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                            <div className="flex-1 min-w-0">
+                              <CardTitle className="text-sm md:text-base">{group.name}</CardTitle>
+                              <CardDescription className="text-xs md:text-sm">
                                 {group.blockName} | Reason: {group.rejectionReason || "Not specified"}
                               </CardDescription>
                             </div>
@@ -1059,45 +1061,46 @@ export default function CommunityModeration() {
             <div className="space-y-4">
               {unresolvedFlags.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5 text-amber-500" />
-                    Needs Review ({unresolvedFlags.length})
+                  <h3 className="text-base md:text-lg font-semibold mb-3 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 md:h-5 md:w-5 text-amber-500 shrink-0" />
+                    <span>Needs Review ({unresolvedFlags.length})</span>
                   </h3>
                   <div className="space-y-3">
                     {unresolvedFlags.map((flag) => (
                       <Card key={flag.id} className="border-amber-200 dark:border-amber-800" data-testid={`card-flag-${flag.id}`}>
-                        <CardHeader>
-                          <div className="flex items-start justify-between gap-4 flex-wrap">
-                            <div>
-                              <CardTitle className="text-base flex items-center gap-2">
-                                <Badge variant="outline">{flag.content?.type}</Badge>
-                                {flag.content?.title || "Reply"}
+                        <CardHeader className="p-4 md:p-6">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <CardTitle className="text-sm md:text-base flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className="text-xs">{flag.content?.type}</Badge>
+                                <span className="truncate">{flag.content?.title || "Reply"}</span>
                               </CardTitle>
-                              <CardDescription>
+                              <CardDescription className="text-xs md:text-sm">
                                 Reported by {flag.reporterName} | {format(new Date(flag.createdAt), "PPp")}
                               </CardDescription>
                             </div>
                             <Button
                               size="sm"
                               onClick={() => setSelectedFlag(flag)}
+                              className="w-full sm:w-auto"
                               data-testid={`button-review-flag-${flag.id}`}
                             >
-                              <Eye className="h-4 w-4 mr-1" />
+                              <Eye className="h-3 w-3 md:h-4 md:w-4 mr-1" />
                               Review
                             </Button>
                           </div>
                         </CardHeader>
-                        <CardContent className="pt-0">
-                          <div className="text-sm mb-2">
+                        <CardContent className="pt-0 px-4 md:px-6 pb-4 md:pb-6">
+                          <div className="text-xs md:text-sm mb-2">
                             <span className="font-medium">Reason:</span> {flag.reason}
                           </div>
                           {flag.details && (
-                            <div className="text-sm text-muted-foreground">
+                            <div className="text-xs md:text-sm text-muted-foreground">
                               <span className="font-medium">Details:</span> {flag.details}
                             </div>
                           )}
                           <Separator className="my-3" />
-                          <div className="text-sm p-3 bg-muted/50 rounded-md">
+                          <div className="text-xs md:text-sm p-3 bg-muted/50 rounded-md">
                             <p className="line-clamp-3">{flag.content?.content}</p>
                           </div>
                         </CardContent>
@@ -1109,22 +1112,22 @@ export default function CommunityModeration() {
 
               {flags.filter(f => f.isResolved).length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                    Resolved ({flags.filter(f => f.isResolved).length})
+                  <h3 className="text-base md:text-lg font-semibold mb-3 flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 md:h-5 md:w-5 text-green-500 shrink-0" />
+                    <span>Resolved ({flags.filter(f => f.isResolved).length})</span>
                   </h3>
                   <div className="space-y-2">
                     {flags.filter(f => f.isResolved).map((flag) => (
                       <Card key={flag.id} className="opacity-75">
-                        <CardHeader className="py-3">
-                          <div className="flex items-center gap-4">
-                            <div className="flex-1">
-                              <CardTitle className="text-base">{flag.content?.title || flag.content?.type}</CardTitle>
-                              <CardDescription>
+                        <CardHeader className="py-3 px-4 md:px-6">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                            <div className="flex-1 min-w-0">
+                              <CardTitle className="text-sm md:text-base">{flag.content?.title || flag.content?.type}</CardTitle>
+                              <CardDescription className="text-xs md:text-sm">
                                 {flag.reason} | Resolved {format(new Date(flag.createdAt), "PP")}
                               </CardDescription>
                             </div>
-                            <Badge variant="secondary">Resolved</Badge>
+                            <Badge variant="secondary" className="text-xs">Resolved</Badge>
                           </div>
                         </CardHeader>
                       </Card>
@@ -1174,12 +1177,12 @@ export default function CommunityModeration() {
         </TabsContent>
 
         <TabsContent value="blocked" className="mt-6">
-          <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
-            <div>
-              <h3 className="text-lg font-semibold">Blocked Tenants</h3>
-              <p className="text-sm text-muted-foreground">Tenants who are blocked cannot post or reply in the community</p>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base md:text-lg font-semibold">Blocked Tenants</h3>
+              <p className="text-xs md:text-sm text-muted-foreground">Tenants who are blocked cannot post or reply in the community</p>
             </div>
-            <Button onClick={() => setShowBlockTenantDialog(true)} data-testid="button-block-tenant">
+            <Button onClick={() => setShowBlockTenantDialog(true)} className="w-full sm:w-auto" data-testid="button-block-tenant">
               <Ban className="h-4 w-4 mr-2" />
               Block Tenant
             </Button>
@@ -1198,17 +1201,17 @@ export default function CommunityModeration() {
             <div className="space-y-3">
               {blockedTenants.map((block) => (
                 <Card key={block.id} data-testid={`blocked-tenant-${block.tenantUserId}`}>
-                  <CardHeader className="py-4">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback>
+                  <CardHeader className="py-4 px-4 md:px-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <Avatar className="shrink-0">
+                          <AvatarFallback className="text-xs">
                             {block.tenantName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
                           </AvatarFallback>
                         </Avatar>
-                        <div>
-                          <CardTitle className="text-base">{block.tenantName}</CardTitle>
-                          <CardDescription>
+                        <div className="min-w-0 flex-1">
+                          <CardTitle className="text-sm md:text-base truncate">{block.tenantName}</CardTitle>
+                          <CardDescription className="text-xs md:text-sm">
                             {block.tenantEmail} | Blocked by {block.blockedByName} on {format(new Date(block.createdAt), "PP")}
                           </CardDescription>
                         </div>
@@ -1218,13 +1221,14 @@ export default function CommunityModeration() {
                         size="sm"
                         onClick={() => unblockTenantMutation.mutate(block.tenantUserId)}
                         disabled={unblockTenantMutation.isPending}
+                        className="w-full sm:w-auto"
                         data-testid={`button-unblock-${block.tenantUserId}`}
                       >
                         Unblock
                       </Button>
                     </div>
                     {block.reason && (
-                      <p className="text-sm text-muted-foreground mt-2 ml-12">
+                      <p className="text-xs md:text-sm text-muted-foreground mt-2 ml-0 sm:ml-12">
                         Reason: {block.reason}
                       </p>
                     )}
