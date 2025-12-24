@@ -1,6 +1,6 @@
-const CACHE_NAME = 'inspect360-v4';
-const RUNTIME_CACHE = 'inspect360-runtime-v4';
-const API_CACHE = 'inspect360-api-v4';
+const CACHE_NAME = 'inspect360-v5';
+const RUNTIME_CACHE = 'inspect360-runtime-v5';
+const API_CACHE = 'inspect360-api-v4'; // Legacy - will be deleted on activate
 
 // App shell - essential files for offline functionality
 const APP_SHELL = [
@@ -48,6 +48,13 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
+    }).then(() => {
+      // Delete API cache completely to remove all cached API responses
+      return caches.delete(API_CACHE).then(() => {
+        console.log('[Service Worker] Deleted API cache');
+      }).catch((err) => {
+        console.warn('[Service Worker] Error deleting API cache:', err);
+      });
     }).then(() => {
       // Clear any API responses and HTML files that might have been cached
       return caches.open(RUNTIME_CACHE).then((cache) => {
@@ -99,64 +106,18 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   
-  // Handle API requests
+  // Handle API requests - never cache, always fetch fresh from network
   if (url.pathname.startsWith('/api/')) {
-    // For GET API requests, use network-first with cache fallback for offline support
-    // This allows users to view cached data when offline
-    if (event.request.method === 'GET') {
-      // List of API endpoints that should NOT be cached (dynamic data)
-      const noCacheEndpoints = [
-        '/api/auth/me',
-        '/api/organisations/current',
-        '/api/credits',
-        '/api/subscriptions',
-      ];
-      
-      const shouldCache = !noCacheEndpoints.some(endpoint => url.pathname.startsWith(endpoint));
-      
-      event.respondWith(
-        fetch(event.request)
-          .then((networkResponse) => {
-            // If network succeeds and response is OK, cache it for offline use
-            if (networkResponse && networkResponse.status === 200 && shouldCache) {
-              const responseClone = networkResponse.clone();
-              caches.open(API_CACHE).then((cache) => {
-                // Cache with a timestamp to track freshness
-                const cacheKey = new Request(event.request.url, {
-                  method: 'GET',
-                  headers: event.request.headers,
-                });
-                cache.put(cacheKey, responseClone).catch((err) => {
-                  console.warn('[Service Worker] Failed to cache API response:', err);
-                });
-              }).catch((err) => {
-                console.warn('[Service Worker] Failed to open API cache:', err);
-              });
-            }
-            return networkResponse;
-          })
-          .catch((error) => {
-            // Network failed - try cache for offline support
-            console.log('[Service Worker] Network failed for API, trying cache:', event.request.url);
-            return caches.open(API_CACHE).then((cache) => {
-              return cache.match(event.request).then((cachedResponse) => {
-                if (cachedResponse) {
-                  console.log('[Service Worker] Serving cached API response:', event.request.url);
-                  return cachedResponse;
-                }
-                // No cache - throw error
-                throw error;
-              });
-            }).catch(() => {
-              throw error;
-            });
-          })
-      );
-      return;
-    }
-    
-    // For POST/PUT/DELETE requests, don't cache - these are mutations
-    // They will be handled by the offline queue system
+    // For all API requests, fetch directly from network without caching
+    event.respondWith(
+      fetch(event.request, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        }
+      })
+    );
     return;
   }
 

@@ -4,6 +4,7 @@ import "./index.css";
 import { offlineQueue } from "./lib/offlineQueue";
 import { apiRequest } from "./lib/queryClient";
 import { fileUploadSync } from "./lib/fileUploadSync";
+import { offlineStorage } from "./lib/offlineStorage";
 
 // Listen for messages from service worker
 if ('serviceWorker' in navigator) {
@@ -68,6 +69,16 @@ if ('serviceWorker' in navigator) {
     }
   });
 }
+
+// Clear legacy API cache on app load
+(async () => {
+  try {
+    await offlineStorage.clearLegacyApiCache();
+    console.log('[Client] Cleared legacy API cache on app load');
+  } catch (error) {
+    console.warn('[Client] Failed to clear legacy API cache:', error);
+  }
+})();
 
 // Auto-sync when coming online
 window.addEventListener('online', async () => {

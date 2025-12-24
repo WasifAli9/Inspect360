@@ -1,12 +1,11 @@
-// IndexedDB storage for offline file storage and API response caching
+// IndexedDB storage for offline file storage (API caching removed)
 
 const DB_NAME = 'inspect360_offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented to remove API cache store
 
 // Store names
 const STORES = {
   FILES: 'files',
-  API_CACHE: 'api_cache',
   UPLOAD_QUEUE: 'upload_queue',
 } as const;
 
@@ -19,12 +18,7 @@ interface FileRecord {
   metadata?: Record<string, any>;
 }
 
-interface ApiCacheRecord {
-  url: string;
-  response: any;
-  timestamp: number;
-  expiresAt?: number;
-}
+// API cache removed - no longer caching API responses
 
 interface UploadQueueItem {
   id: string;
@@ -58,9 +52,26 @@ export class OfflineStorage {
         reject(request.error);
       };
 
-      request.onsuccess = () => {
+      request.onsuccess = async () => {
         this.db = request.result;
         console.log('[OfflineStorage] Database opened successfully');
+        // Clear any legacy API cache on initialization
+        if (this.db.objectStoreNames.contains('api_cache')) {
+          try {
+            const transaction = this.db.transaction(['api_cache'], 'readwrite');
+            const store = transaction.objectStore('api_cache');
+            await new Promise<void>((resolve, reject) => {
+              const clearRequest = store.clear();
+              clearRequest.onsuccess = () => {
+                console.log('[OfflineStorage] Cleared legacy API cache on init');
+                resolve();
+              };
+              clearRequest.onerror = () => reject(clearRequest.error);
+            });
+          } catch (err) {
+            console.warn('[OfflineStorage] Failed to clear legacy API cache:', err);
+          }
+        }
         resolve();
       };
 
@@ -73,11 +84,9 @@ export class OfflineStorage {
           filesStore.createIndex('timestamp', 'timestamp', { unique: false });
         }
 
-        // API cache store
-        if (!db.objectStoreNames.contains(STORES.API_CACHE)) {
-          const apiStore = db.createObjectStore(STORES.API_CACHE, { keyPath: 'url' });
-          apiStore.createIndex('timestamp', 'timestamp', { unique: false });
-          apiStore.createIndex('expiresAt', 'expiresAt', { unique: false });
+        // Remove API cache store if it exists (legacy cleanup)
+        if (db.objectStoreNames.contains('api_cache')) {
+          db.deleteObjectStore('api_cache');
         }
 
         // Upload queue store
@@ -179,108 +188,7 @@ export class OfflineStorage {
     return new File([record.file], record.fileName, { type: record.mimeType });
   }
 
-  // API cache methods
-  async cacheApiResponse(url: string, response: any, ttl?: number): Promise<void> {
-    const db = await this.ensureDb();
-
-    const record: ApiCacheRecord = {
-      url,
-      response,
-      timestamp: Date.now(),
-      expiresAt: ttl ? Date.now() + ttl : undefined,
-    };
-
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.API_CACHE], 'readwrite');
-      const store = transaction.objectStore(STORES.API_CACHE);
-      const request = store.put(record);
-
-      request.onsuccess = () => {
-        resolve();
-      };
-
-      request.onerror = () => {
-        reject(request.error);
-      };
-    });
-  }
-
-  async getCachedApiResponse(url: string): Promise<any | null> {
-    const db = await this.ensureDb();
-
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.API_CACHE], 'readonly');
-      const store = transaction.objectStore(STORES.API_CACHE);
-      const request = store.get(url);
-
-      request.onsuccess = () => {
-        const record = request.result as ApiCacheRecord | undefined;
-        if (!record) {
-          resolve(null);
-          return;
-        }
-
-        // Check if expired
-        if (record.expiresAt && Date.now() > record.expiresAt) {
-          // Delete expired record
-          this.deleteCachedApiResponse(url).catch(console.error);
-          resolve(null);
-          return;
-        }
-
-        resolve(record.response);
-      };
-
-      request.onerror = () => {
-        reject(request.error);
-      };
-    });
-  }
-
-  async deleteCachedApiResponse(url: string): Promise<void> {
-    const db = await this.ensureDb();
-
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.API_CACHE], 'readwrite');
-      const store = transaction.objectStore(STORES.API_CACHE);
-      const request = store.delete(url);
-
-      request.onsuccess = () => {
-        resolve();
-      };
-
-      request.onerror = () => {
-        reject(request.error);
-      };
-    });
-  }
-
-  async clearExpiredApiCache(): Promise<void> {
-    const db = await this.ensureDb();
-
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.API_CACHE], 'readwrite');
-      const store = transaction.objectStore(STORES.API_CACHE);
-      const index = store.index('expiresAt');
-      const now = Date.now();
-
-      const request = index.openCursor(IDBKeyRange.upperBound(now));
-
-      request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor) {
-          cursor.delete();
-          cursor.continue();
-        } else {
-          resolve();
-        }
-      };
-
-      request.onerror = () => {
-        reject(request.error);
-      };
-    });
-  }
+  // API cache methods removed - no longer caching API responses
 
   // Upload queue methods
   async queueFileUpload(
@@ -412,12 +320,12 @@ export class OfflineStorage {
 
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(
-        [STORES.FILES, STORES.API_CACHE, STORES.UPLOAD_QUEUE],
+        [STORES.FILES, STORES.UPLOAD_QUEUE],
         'readwrite'
       );
 
       let completed = 0;
-      const total = 3;
+      const total = 2;
 
       const checkComplete = () => {
         completed++;
@@ -427,11 +335,33 @@ export class OfflineStorage {
       };
 
       transaction.objectStore(STORES.FILES).clear().onsuccess = checkComplete;
-      transaction.objectStore(STORES.API_CACHE).clear().onsuccess = checkComplete;
       transaction.objectStore(STORES.UPLOAD_QUEUE).clear().onsuccess = checkComplete;
 
       transaction.onerror = () => reject(transaction.error);
     });
+  }
+
+  // Clear any legacy API cache store if it exists
+  async clearLegacyApiCache(): Promise<void> {
+    const db = await this.ensureDb();
+    
+    // Check if the old API cache store still exists
+    if (db.objectStoreNames.contains('api_cache')) {
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['api_cache'], 'readwrite');
+        const store = transaction.objectStore('api_cache');
+        const request = store.clear();
+        
+        request.onsuccess = () => {
+          console.log('[OfflineStorage] Cleared legacy API cache');
+          resolve();
+        };
+        
+        request.onerror = () => {
+          reject(request.error);
+        };
+      });
+    }
   }
 
   async getStorageSize(): Promise<number> {
