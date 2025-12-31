@@ -38,6 +38,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link, useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
 
@@ -184,6 +185,13 @@ export default function Inspections() {
   const { data: activeTenants = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ["/api/tenants/active"],
   });
+
+  // Fetch inspection credit balance
+  const { data: creditBalance } = useQuery<{ totalAvailable: number }>({
+    queryKey: ["/api/billing/inspection-balance"],
+  });
+
+  const hasCredits = (creditBalance?.totalAvailable ?? 0) >= 1;
 
   const form = useForm<CreateInspectionData>({
     resolver: zodResolver(createInspectionSchema),
@@ -521,14 +529,47 @@ export default function Inspections() {
             Manage and conduct property inspections
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-create-inspection" size="sm" className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4">
-              <Plus className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
-              <span className="hidden sm:inline">New Inspection</span>
-              <span className="sm:hidden">New</span>
-            </Button>
-          </DialogTrigger>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          if (!hasCredits && open) {
+            toast({
+              title: "No credits available",
+              description: "No credits to add inspection. Please subscribe to any plan to get credits.",
+              variant: "destructive",
+            });
+            return;
+          }
+          setDialogOpen(open);
+        }}>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-block">
+                  <DialogTrigger asChild>
+                    <Button 
+                      data-testid="button-create-inspection" 
+                      size="sm" 
+                      className="text-xs md:text-sm h-8 md:h-10 px-2 md:px-4"
+                      disabled={!hasCredits}
+                      onClick={(e) => {
+                        if (!hasCredits) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      <Plus className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
+                      <span className="hidden sm:inline">New Inspection</span>
+                      <span className="sm:hidden">New</span>
+                    </Button>
+                  </DialogTrigger>
+                </span>
+              </TooltipTrigger>
+              {!hasCredits && (
+                <TooltipContent>
+                  <p>No credits to add inspection. Please subscribe to any plan to get credits.</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Create New Inspection</DialogTitle>

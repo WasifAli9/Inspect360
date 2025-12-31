@@ -17,6 +17,7 @@ import PropertyDetail from "@/pages/PropertyDetail";
 import Credits from "@/pages/Credits";
 import Billing from "@/pages/Billing";
 import Profile from "@/pages/Profile";
+import Marketplace from "@/pages/Marketplace";
 import Inspections from "@/pages/Inspections";
 import InspectionDetail from "@/pages/InspectionDetail";
 import Compliance from "@/pages/Compliance";
@@ -62,6 +63,7 @@ import TenantProfile from "@/pages/TenantProfile";
 import CommunityModeration from "@/pages/CommunityModeration";
 import MyFeedback from "@/pages/MyFeedback";
 import BulkImport from "@/pages/BulkImport";
+import DisputeResolution from "@/pages/DisputeResolution";
 import { Loader2 } from "lucide-react";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { UserProfileMenu } from "@/components/UserProfileMenu";
@@ -88,13 +90,13 @@ function AppContent() {
   const { isAuthenticated, user, logoutMutation, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
   const [showOnboarding, setShowOnboarding] = useState(false);
-  
+
   // Fetch organization for tenant portal settings - must be called unconditionally
-  const { data: tenantOrganization } = useQuery({
+  const { data: tenantOrganization } = useQuery<any>({
     queryKey: ["/api/organizations", user?.organizationId],
     enabled: !!(user?.role === "tenant" && user?.organizationId),
   });
-  
+
   // List of public routes that don't require authentication
   const publicRoutes = [
     "/",
@@ -253,7 +255,7 @@ function AppContent() {
       </TooltipProvider>
     );
   }
-  
+
   return (
     <TooltipProvider>
       <SidebarProvider style={style as React.CSSProperties}>
@@ -283,7 +285,7 @@ function AppContent() {
                 )}
                 <Route path="/blocks/:id/tenants" component={BlockTenants} />
                 <Route path="/blocks/:id" component={BlockDetail} />
-              <Route path="/blocks" component={Blocks} />
+                <Route path="/blocks" component={Blocks} />
                 <Route path="/properties/:id/tenants" component={PropertyTenants} />
                 <Route path="/tenants/:id" component={TenantDetail} />
                 <Route path="/properties/:id" component={PropertyDetail} />
@@ -311,11 +313,15 @@ function AppContent() {
                 <Route path="/team" component={Team} />
                 <Route path="/contacts" component={Contacts} />
                 <Route path="/asset-inventory" component={AssetInventory} />
-                <Route path="/inspection-templates" component={InspectionTemplates} />
+                <Route path="/inspection-templates">
+                  {(params) => <InspectionTemplates />}
+                </Route>
                 <Route path="/billing" component={Billing} />
                 <Route path="/settings" component={Settings} />
                 <Route path="/bulk-import" component={BulkImport} />
+                <Route path="/marketplace" component={Marketplace} />
                 <Route path="/community-moderation" component={CommunityModeration} />
+                <Route path="/disputes" component={DisputeResolution} />
                 <Route path="/my-feedback" component={MyFeedback} />
                 <Route component={NotFound} />
               </Switch>

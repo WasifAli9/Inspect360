@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Server } from "http";
 import type { DatabaseStorage } from "./storage";
-import { getSession } from "./auth";
+import { getUserIdFromRequest } from "./auth";
 
 export interface NotificationMessage {
   type: "notification";
@@ -30,14 +30,11 @@ export function setupWebSocketServer(server: Server, storage: DatabaseStorage) {
   });
 
   wss.on("connection", async (ws: WebSocket, req) => {
-    // Extract session from cookies
+    // Extract user ID from session cookies
     let userId: string | null = null;
     
     try {
-      const session = await getSession(req);
-      if (session && session.user && session.user.id) {
-        userId = session.user.id;
-      }
+      userId = await getUserIdFromRequest(req);
     } catch (error) {
       console.error("[WebSocket] Error getting session:", error);
       try {

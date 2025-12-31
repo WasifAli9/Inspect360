@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Shield, Search, Building2, LogOut, Users, CreditCard, AlertCircle, CheckCircle, XCircle, BookOpen, Settings } from "lucide-react";
+import { Shield, Search, Building2, LogOut, Users, CreditCard, AlertCircle, CheckCircle, XCircle, BookOpen, Settings, DollarSign, History } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -32,6 +32,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiRequest } from "@/lib/queryClient";
+import { format } from "date-fns";
 
 export default function AdminDashboard() {
   const [, navigate] = useLocation();
@@ -40,9 +44,16 @@ export default function AdminDashboard() {
   const [selectedInstance, setSelectedInstance] = useState<any>(null);
   const [editDialog, setEditDialog] = useState(false);
   const [editFormData, setEditFormData] = useState({
-    subscriptionLevel: "",
+    tierId: "",
     creditsRemaining: 0,
     isActive: true,
+  });
+  const [pricingOverrideDialog, setPricingOverrideDialog] = useState(false);
+  const [selectedInstanceForOverride, setSelectedInstanceForOverride] = useState<any>(null);
+  const [overrideFormData, setOverrideFormData] = useState({
+    overrideMonthlyFee: "",
+    overrideAnnualFee: "",
+    overrideReason: "",
   });
 
   // Fetch admin user
@@ -57,6 +68,12 @@ export default function AdminDashboard() {
     retry: false,
   });
 
+  // Fetch available tiers for the dropdown
+  const { data: tiers = [] } = useQuery<any[]>({
+    queryKey: ["/api/pricing/config"],
+    select: (data: any) => data?.tiers || [],
+  });
+
   // Logout mutation
   const logoutMutation = useMutation({
     mutationFn: async () => {
@@ -68,6 +85,47 @@ export default function AdminDashboard() {
     onSuccess: () => {
       navigate("/admin/login");
     },
+  });
+
+  // Pricing override mutations
+  const pricingOverrideMutation = useMutation({
+    mutationFn: async ({ organizationId, data }: { organizationId: string; data: any }) => {
+      const res = await apiRequest("POST", `/api/admin/instances/${organizationId}/pricing-override`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/instances"] });
+      toast({ title: "Pricing override updated successfully" });
+      setPricingOverrideDialog(false);
+      setOverrideFormData({ overrideMonthlyFee: "", overrideAnnualFee: "", overrideReason: "" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update pricing override", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const moduleOverrideMutation = useMutation({
+    mutationFn: async ({ organizationId, moduleId, data }: { organizationId: string; moduleId: string; data: any }) => {
+      const res = await apiRequest("POST", `/api/admin/instances/${organizationId}/modules/${moduleId}/override`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/instances"] });
+      toast({ title: "Module override updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update module override", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const { data: overrideHistory = [] } = useQuery({
+    queryKey: ["/api/admin/instances", selectedInstanceForOverride?.id, "override-history"],
+    queryFn: async () => {
+      if (!selectedInstanceForOverride?.id) return [];
+      const res = await apiRequest("GET", `/api/admin/instances/${selectedInstanceForOverride.id}/override-history`);
+      return res.json();
+    },
+    enabled: !!selectedInstanceForOverride?.id && pricingOverrideDialog,
   });
 
   // Update instance mutation
@@ -130,7 +188,7 @@ export default function AdminDashboard() {
   const handleEditClick = (instance: any) => {
     setSelectedInstance(instance);
     setEditFormData({
-      subscriptionLevel: instance.subscriptionLevel || "free",
+      tierId: instance.subscription?.currentTierId || "",
       creditsRemaining: instance.creditsRemaining || 0,
       isActive: instance.isActive !== false,
     });
@@ -292,7 +350,7 @@ export default function AdminDashboard() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
-                          {instance.subscriptionLevel || "free"}
+                          {instance.tierName || instance.tierCode || "No Plan"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -356,21 +414,22 @@ export default function AdminDashboard() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Subscription Level</Label>
+              <Label>Subscription Tier</Label>
               <Select
-                value={editFormData.subscriptionLevel}
+                value={editFormData.tierId}
                 onValueChange={(value) =>
-                  setEditFormData({ ...editFormData, subscriptionLevel: value })
+                  setEditFormData({ ...editFormData, tierId: value })
                 }
               >
                 <SelectTrigger data-testid="select-subscription-level">
-                  <SelectValue />
+                  <SelectValue placeholder="Select tier" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="free">Free</SelectItem>
-                  <SelectItem value="starter">Starter</SelectItem>
-                  <SelectItem value="professional">Professional</SelectItem>
-                  <SelectItem value="enterprise">Enterprise</SelectItem>
+                  {tiers.map((tier: any) => (
+                    <SelectItem key={tier.id} value={tier.id}>
+                      {tier.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -414,6 +473,144 @@ export default function AdminDashboard() {
               {updateInstanceMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pricing Override Dialog */}
+      <Dialog open={pricingOverrideDialog} onOpenChange={setPricingOverrideDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pricing Override - {selectedInstanceForOverride?.name}</DialogTitle>
+            <DialogDescription>
+              Set custom pricing overrides for this instance. These will override the standard tier pricing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs defaultValue="subscription" className="mt-4">
+            <TabsList>
+              <TabsTrigger value="subscription">Subscription Override</TabsTrigger>
+              <TabsTrigger value="modules">Module Overrides</TabsTrigger>
+              <TabsTrigger value="history">Override History</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="subscription" className="space-y-4 mt-4">
+              <div className="space-y-4">
+                <div>
+                  <Label>Current Tier</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedInstanceForOverride?.tierName || "No tier assigned"}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="overrideMonthlyFee">Override Monthly Fee</Label>
+                    <Input
+                      id="overrideMonthlyFee"
+                      type="number"
+                      step="0.01"
+                      placeholder="Leave empty to use standard pricing"
+                      value={overrideFormData.overrideMonthlyFee}
+                      onChange={(e) => setOverrideFormData({ ...overrideFormData, overrideMonthlyFee: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter amount in major currency units (e.g., 500.00 for £500)
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="overrideAnnualFee">Override Annual Fee</Label>
+                    <Input
+                      id="overrideAnnualFee"
+                      type="number"
+                      step="0.01"
+                      placeholder="Leave empty to use standard pricing"
+                      value={overrideFormData.overrideAnnualFee}
+                      onChange={(e) => setOverrideFormData({ ...overrideFormData, overrideAnnualFee: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter amount in major currency units (e.g., 5000.00 for £5000)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="overrideReason">Reason for Override</Label>
+                  <Textarea
+                    id="overrideReason"
+                    placeholder="e.g., Annual contract negotiation - 28% discount"
+                    value={overrideFormData.overrideReason}
+                    onChange={(e) => setOverrideFormData({ ...overrideFormData, overrideReason: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setPricingOverrideDialog(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      pricingOverrideMutation.mutate({
+                        organizationId: selectedInstanceForOverride?.id,
+                        data: {
+                          overrideMonthlyFee: overrideFormData.overrideMonthlyFee ? parseFloat(overrideFormData.overrideMonthlyFee) : null,
+                          overrideAnnualFee: overrideFormData.overrideAnnualFee ? parseFloat(overrideFormData.overrideAnnualFee) : null,
+                          overrideReason: overrideFormData.overrideReason || null,
+                        },
+                      });
+                    }}
+                    disabled={pricingOverrideMutation.isPending}
+                  >
+                    {pricingOverrideMutation.isPending ? "Saving..." : "Save Override"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="modules" className="mt-4">
+              <p className="text-sm text-muted-foreground mb-4">
+                Module override management coming soon. Use subscription override for now.
+              </p>
+            </TabsContent>
+
+            <TabsContent value="history" className="mt-4">
+              <div className="space-y-2">
+                {overrideHistory.length > 0 ? (
+                  <div className="space-y-2">
+                    {overrideHistory.map((entry: any) => (
+                      <Card key={entry.id}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <p className="font-semibold text-sm">{entry.overrideType} Override</p>
+                              <p className="text-xs text-muted-foreground">{entry.reason || "No reason provided"}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {entry.changeDate ? format(new Date(entry.changeDate), "PPP p") : "Unknown date"}
+                              </p>
+                            </div>
+                            <div className="text-right text-sm">
+                              {entry.newPriceMonthly && (
+                                <p>Monthly: {entry.oldPriceMonthly ? `£${(entry.oldPriceMonthly / 100).toFixed(2)}` : "N/A"} → £{(entry.newPriceMonthly / 100).toFixed(2)}</p>
+                              )}
+                              {entry.newPriceAnnual && (
+                                <p>Annual: {entry.oldPriceAnnual ? `£${(entry.oldPriceAnnual / 100).toFixed(2)}` : "N/A"} → £{(entry.newPriceAnnual / 100).toFixed(2)}</p>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No override history found</p>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>

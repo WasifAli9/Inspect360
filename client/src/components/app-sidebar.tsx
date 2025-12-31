@@ -16,6 +16,7 @@ import {
   FileBarChart,
   CreditCard,
   Shield,
+  Layout,
 } from "lucide-react";
 import {
   Sidebar,
@@ -29,6 +30,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
+import { useModules } from "@/hooks/use-modules";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { Organization } from "@shared/schema";
@@ -49,14 +51,16 @@ export function AppSidebar() {
     if (!organization?.logoUrl) return defaultLogoUrl;
     const separator = organization.logoUrl.includes('?') ? '&' : '?';
     // Use organization updatedAt timestamp as cache buster
-    const cacheBuster = organization.updatedAt 
-      ? new Date(organization.updatedAt).getTime() 
+    const cacheBuster = organization.updatedAt
+      ? new Date(organization.updatedAt).getTime()
       : Date.now();
     return `${organization.logoUrl}${separator}v=${cacheBuster}`;
   };
-  
+
   const logoSrc = getLogoSrc();
   const companyName = organization?.brandingName || organization?.name || "Inspect360";
+
+  const { isModuleEnabled } = useModules();
 
   const mainMenuItems = [
     {
@@ -137,6 +141,12 @@ export function AppSidebar() {
       icon: CreditCard,
       roles: ["owner"],
     },
+    {
+      title: "Marketplace",
+      url: "/marketplace",
+      icon: Layout,
+      roles: ["owner"],
+    },
   ];
 
   const filteredMainMenu = mainMenuItems.filter((item) =>
@@ -159,11 +169,11 @@ export function AppSidebar() {
     <Sidebar data-testid="sidebar-main">
       <SidebarHeader className="p-4 border-b">
         <div className="flex items-center gap-2">
-          <img 
+          <img
             key={organization?.logoUrl || 'default'}
             src={logoSrc}
-            alt={companyName} 
-            className="h-8 max-w-[180px] object-contain" 
+            alt={companyName}
+            className="h-8 max-w-[180px] object-contain"
             data-testid="img-sidebar-logo"
             onError={(e) => {
               // Fallback to default logo if image fails to load

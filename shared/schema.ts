@@ -46,9 +46,12 @@ export const maintenanceSourceEnum = pgEnum("maintenance_source", ["manual", "in
 export const comparisonReportStatusEnum = pgEnum("comparison_report_status", ["draft", "under_review", "awaiting_signatures", "signed", "filed"]);
 export const comparisonItemStatusEnum = pgEnum("comparison_item_status", ["pending", "reviewed", "disputed", "resolved", "waived"]);
 export const currencyEnum = pgEnum("currency", ["GBP", "USD", "AED"]);
-export const planCodeEnum = pgEnum("plan_code", ["starter", "professional", "enterprise", "enterprise_plus", "freelancer", "btr", "pbsa", "housing_association", "council"]);
-export const creditSourceEnum = pgEnum("credit_source", ["plan_inclusion", "topup", "admin_grant", "refund", "adjustment", "consumption", "expiry"]);
+export const planCodeEnum = pgEnum("plan_code", ["starter", "growth", "professional", "enterprise", "enterprise_plus", "freelancer", "btr", "pbsa", "housing_association", "council"]);
+export const creditSourceEnum = pgEnum("credit_source", ["plan_inclusion", "topup", "admin_grant", "refund", "adjustment", "consumption", "expiry", "addon_pack"]);
 export const topupStatusEnum = pgEnum("topup_status", ["pending", "paid", "failed", "refunded"]);
+export const overrideTypeEnum = pgEnum("override_type", ["subscription", "module", "addon"]);
+export const limitTypeEnum = pgEnum("limit_type", ["active_tenants", "work_orders", "disputes"]);
+export const billingIntervalEnum = pgEnum("billing_interval", ["monthly", "annual"]);
 
 // User storage table
 export const users = pgTable("users", {
@@ -536,6 +539,10 @@ export const inspections = pgTable("inspections", {
   tenantApprovedAt: timestamp("tenant_approved_at"), // When tenant approved
   tenantApprovedBy: varchar("tenant_approved_by"), // Tenant user ID who approved
   tenantComments: text("tenant_comments"), // Tenant comments/disputes
+  // Credit tracking
+  creditsConsumed: integer("credits_consumed"), // Total credits consumed for this inspection
+  imagesCount: integer("images_count"), // Total images in inspection (for audit)
+  extensiveInspectionTypeId: varchar("extensive_inspection_type_id"), // Link to extensive_inspection_config if this is an extensive inspection
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -1874,8 +1881,6 @@ export const insertBundleTierPricingSchema = createInsertSchema(bundleTierPricin
 export type BundleTierPricing = typeof bundleTierPricing.$inferSelect;
 export type InsertBundleTierPricing = z.infer<typeof insertBundleTierPricingSchema>;
 
-// Billing interval for subscriptions
-export const billingIntervalEnum = pgEnum("billing_interval", ["monthly", "annual"]);
 
 // Cancellation reason for subscriptions
 export const cancellationReasonEnum = pgEnum("cancellation_reason", [
@@ -2524,3 +2529,320 @@ export const insertCommunityModerationLogSchema = createInsertSchema(communityMo
 
 export type CommunityModerationLog = typeof communityModerationLog.$inferSelect;
 export type InsertCommunityModerationLog = z.infer<typeof insertCommunityModerationLogSchema>;
+
+// ==================== SUBSCRIPTION MODEL 2026 TABLES ====================
+
+// 1.1 Currency Management
+export const currencyConfig = pgTable("currency_config", {
+  code: varchar("code", { length: 3 }).primaryKey(), // ISO 4217: GBP, USD, EUR, etc.
+  symbol: varchar("symbol", { length: 5 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  defaultForRegion: varchar("default_for_region", { length: 50 }),
+  conversionRate: numeric("conversion_rate", { precision: 10, scale: 4 }).default("1.0000"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// 1.2 Subscription Tier Configuration
+export const subscriptionTiersTable = pgTable("subscription_tiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  code: planCodeEnum("code").notNull().unique(),
+  description: text("description"),
+  tierOrder: integer("tier_order").notNull(),
+  includedInspections: integer("included_inspections").notNull(),
+  basePriceMonthly: integer("base_price_monthly").notNull(), // Master currency (GBP) in pence
+  basePriceAnnual: integer("base_price_annual").notNull(), // Master currency (GBP) in pence
+  annualDiscountPercentage: numeric("annual_discount_percentage", { precision: 5, scale: 2 }).default("16.70"),
+  isActive: boolean("is_active").notNull().default(true),
+  requiresCustomPricing: boolean("requires_custom_pricing").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const tierPricing = pgTable("tier_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tierId: varchar("tier_id").references(() => subscriptionTiersTable.id).notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  priceMonthly: integer("price_monthly").notNull(),
+  priceAnnual: integer("price_annual").notNull(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+// 1.3 Add-On Inspection Pack Configuration
+export const addonPackConfig = pgTable("addon_pack_config", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  inspectionQuantity: integer("inspection_quantity").notNull(),
+  packOrder: integer("pack_order").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const addonPackPricing = pgTable("addon_pack_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  packId: varchar("pack_id").references(() => addonPackConfig.id).notNull(),
+  tierId: varchar("tier_id").references(() => subscriptionTiersTable.id).notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  pricePerInspection: integer("price_per_inspection").notNull(),
+  totalPackPrice: integer("total_pack_price").notNull(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+// 1.4 Extensive Inspection Configuration
+export const extensiveInspectionConfig = pgTable("extensive_inspection_config", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  imageCount: integer("image_count").default(800),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+export const extensiveInspectionPricing = pgTable("extensive_inspection_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  extensiveTypeId: varchar("extensive_type_id").references(() => extensiveInspectionConfig.id).notNull(),
+  tierId: varchar("tier_id").references(() => subscriptionTiersTable.id).notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  pricePerInspection: integer("price_per_inspection").notNull(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+// 1.5 Module Configuration
+export const marketplaceModules = pgTable("marketplace_modules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  moduleKey: varchar("module_key", { length: 50 }).notNull().unique(),
+  description: text("description"),
+  iconName: varchar("icon_name", { length: 50 }),
+  isAvailableGlobally: boolean("is_available_globally").notNull().default(true),
+  defaultEnabled: boolean("default_enabled").notNull().default(false),
+  displayOrder: integer("display_order").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const modulePricing = pgTable("module_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  moduleId: varchar("module_id").references(() => marketplaceModules.id).notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  priceMonthly: integer("price_monthly").notNull(),
+  priceAnnual: integer("price_annual").notNull(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+export const moduleLimits = pgTable("module_limits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  moduleId: varchar("module_id").references(() => marketplaceModules.id).notNull(),
+  limitType: limitTypeEnum("limit_type").notNull(),
+  includedQuantity: integer("included_quantity").notNull(),
+  overagePrice: integer("overage_price").notNull(),
+  overageCurrency: varchar("overage_currency", { length: 3 }).references(() => currencyConfig.code).notNull(),
+});
+
+// 1.6 Bundle Configuration
+export const moduleBundlesTable = pgTable("module_bundles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  discountPercentage: numeric("discount_percentage", { precision: 5, scale: 2 }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const bundleModulesJunction = pgTable("bundle_modules_junction", {
+  bundleId: varchar("bundle_id").references(() => moduleBundlesTable.id).notNull(),
+  moduleId: varchar("module_id").references(() => marketplaceModules.id).notNull(),
+});
+
+export const bundlePricingTable = pgTable("bundle_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bundleId: varchar("bundle_id").references(() => moduleBundlesTable.id).notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  priceMonthly: integer("price_monthly").notNull(),
+  priceAnnual: integer("price_annual").notNull(),
+  savingsMonthly: integer("savings_monthly"),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+// 2.1 Instance Configuration
+export const instanceSubscriptions = pgTable("instance_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id).notNull().unique(),
+  registrationCurrency: varchar("registration_currency", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  currentTierId: varchar("current_tier_id").references(() => subscriptionTiersTable.id),
+  inspectionQuotaIncluded: integer("inspection_quota_included").notNull(),
+  billingCycle: billingIntervalEnum("billing_cycle").notNull().default("monthly"),
+  subscriptionStartDate: timestamp("subscription_start_date").defaultNow(),
+  subscriptionRenewalDate: timestamp("subscription_renewal_date"),
+  subscriptionStatus: varchar("subscription_status", { length: 20 }).default("active"),
+  // Pricing overrides
+  overrideMonthlyFee: integer("override_monthly_fee"),
+  overrideAnnualFee: integer("override_annual_fee"),
+  overrideReason: text("override_reason"),
+  overrideSetBy: varchar("override_set_by").references(() => adminUsers.id),
+  overrideDate: timestamp("override_date"),
+});
+
+// 2.4 Module Subscription Management
+export const instanceModules = pgTable("instance_modules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").references(() => instanceSubscriptions.id).notNull(),
+  moduleId: varchar("module_id").references(() => marketplaceModules.id).notNull(),
+  isEnabled: boolean("is_enabled").notNull().default(false),
+  enabledDate: timestamp("enabled_date"),
+  disabledDate: timestamp("disabled_date"),
+  billingStartDate: timestamp("billing_start_date"),
+  monthlyPrice: integer("monthly_price"),
+  annualPrice: integer("annual_price"),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code),
+  usageLimit: integer("usage_limit"),
+  currentUsage: integer("current_usage").default(0),
+  overageCharges: integer("overage_charges").default(0),
+});
+
+// 2.2 Instance Bundles
+export const instanceBundles = pgTable("instance_bundles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").references(() => instanceSubscriptions.id).notNull(),
+  bundleId: varchar("bundle_id").references(() => moduleBundlesTable.id).notNull(),
+  purchaseDate: timestamp("purchase_date").defaultNow(),
+  isActive: boolean("is_active").default(true),
+  startDate: timestamp("start_date").defaultNow(),
+  endDate: timestamp("end_date"),
+  bundlePriceMonthly: integer("bundle_price_monthly"),
+  bundlePriceAnnual: integer("bundle_price_annual"),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code),
+});
+
+// 2.3 Add-On Bundle Purchase Interface
+export const instanceAddonPurchases = pgTable("instance_addon_purchases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").references(() => instanceSubscriptions.id).notNull(),
+  packId: varchar("pack_id").references(() => addonPackConfig.id).notNull(),
+  tierIdAtPurchase: varchar("tier_id_at_purchase").references(() => subscriptionTiersTable.id).notNull(),
+  quantity: integer("quantity").notNull(),
+  pricePerInspection: integer("price_per_inspection").notNull(),
+  totalPrice: integer("total_price").notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  purchaseDate: timestamp("purchase_date").defaultNow(),
+  expiryDate: timestamp("expiry_date"),
+  inspectionsUsed: integer("inspections_used").default(0),
+  inspectionsRemaining: integer("inspections_remaining").notNull(),
+  status: varchar("status", { length: 20 }).default("active"), // active, depleted, expired
+});
+
+// 2.5 Instance-Level Pricing Overrides
+export const instanceModuleOverrides = pgTable("instance_module_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").references(() => instanceSubscriptions.id).notNull(),
+  moduleId: varchar("module_id").references(() => marketplaceModules.id).notNull(),
+  overrideMonthlyPrice: integer("override_monthly_price"),
+  overrideAnnualPrice: integer("override_annual_price"),
+  reason: text("override_reason"),
+  setBy: varchar("override_set_by").references(() => adminUsers.id),
+  date: timestamp("override_date"),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+export const pricingOverrideHistory = pgTable("pricing_override_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instanceId: varchar("instance_id").references(() => instanceSubscriptions.id).notNull(),
+  overrideType: overrideTypeEnum("override_type").notNull(),
+  targetId: varchar("target_id").notNull(), // tierId or moduleId
+  oldPriceMonthly: integer("old_price_monthly"),
+  newPriceMonthly: integer("new_price_monthly"),
+  oldPriceAnnual: integer("old_price_annual"),
+  newPriceAnnual: integer("new_price_annual"),
+  reason: text("reason"),
+  changedBy: varchar("changed_by").references(() => adminUsers.id),
+  changeDate: timestamp("change_date").defaultNow(),
+});
+
+// 3.1 Invoice Storage
+export const invoices = pgTable("invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  instanceSubscriptionId: varchar("instance_subscription_id").references(() => instanceSubscriptions.id).notNull(),
+  invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  billingCycle: billingIntervalEnum("billing_cycle").notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  lineItems: jsonb("line_items").notNull(),
+  subtotal: integer("subtotal").notNull(),
+  discount: integer("discount").default(0),
+  total: integer("total").notNull(),
+  status: varchar("status", { length: 20 }).default("draft"), // draft, sent, paid, overdue, cancelled
+  stripeInvoiceId: varchar("stripe_invoice_id"),
+  pdfUrl: varchar("pdf_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  paidAt: timestamp("paid_at"),
+  dueDate: timestamp("due_date"),
+});
+
+// 3.2 Credit Notes
+export const creditNotes = pgTable("credit_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  invoiceId: varchar("invoice_id").references(() => invoices.id),
+  creditNoteNumber: varchar("credit_note_number", { length: 50 }).notNull().unique(),
+  reason: varchar("reason", { length: 50 }).notNull(), // downgrade, refund, adjustment, etc.
+  amount: integer("amount").notNull(),
+  currencyCode: varchar("currency_code", { length: 3 }).references(() => currencyConfig.code).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).default("issued"), // issued, applied, cancelled
+  appliedToInvoiceId: varchar("applied_to_invoice_id").references(() => invoices.id),
+  createdBy: varchar("created_by").references(() => adminUsers.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  appliedAt: timestamp("applied_at"),
+});
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+export type CreditNote = typeof creditNotes.$inferSelect;
+export type InsertCreditNote = typeof creditNotes.$inferInsert;
+
+// Export Zod schemas for validation
+export const insertCurrencyConfigSchema = createInsertSchema(currencyConfig);
+export const insertSubscriptionTierSchema = createInsertSchema(subscriptionTiersTable);
+export const insertTierPricingSchema = createInsertSchema(tierPricing);
+export const insertAddonPackConfigSchema = createInsertSchema(addonPackConfig);
+export const insertAddonPackPricingSchema = createInsertSchema(addonPackPricing);
+export const insertExtensiveInspectionConfigSchema = createInsertSchema(extensiveInspectionConfig);
+export const insertExtensiveInspectionPricingSchema = createInsertSchema(extensiveInspectionPricing);
+export const insertMarketplaceModuleSchema = createInsertSchema(marketplaceModules);
+export const insertModulePricingSchema = createInsertSchema(modulePricing);
+export const insertModuleLimitSchema = createInsertSchema(moduleLimits);
+export const insertModuleBundleSchema = createInsertSchema(moduleBundlesTable);
+export const insertInstanceSubscriptionSchema = createInsertSchema(instanceSubscriptions);
+export const insertInstanceModuleSchema = createInsertSchema(instanceModules);
+export const insertInstanceAddonPurchaseSchema = createInsertSchema(instanceAddonPurchases);
+export const insertBundlePricingSchema = createInsertSchema(bundlePricingTable);
+export const insertInstanceBundleSchema = createInsertSchema(instanceBundles);
+
+export const bundlePricing = bundlePricingTable;
+
+
+export type CurrencyConfig = typeof currencyConfig.$inferSelect;
+export type SubscriptionTier = typeof subscriptionTiersTable.$inferSelect;
+export type MarketplaceModule = typeof marketplaceModules.$inferSelect;
+export type InstanceSubscription = typeof instanceSubscriptions.$inferSelect;
+export type InstanceModule = typeof instanceModules.$inferSelect;
+export type InstanceAddonPurchase = typeof instanceAddonPurchases.$inferSelect;
+export type InstanceModuleOverride = typeof instanceModuleOverrides.$inferSelect;
+export type PricingOverrideHistory = typeof pricingOverrideHistory.$inferSelect;
+export type ModuleBundle = typeof moduleBundlesTable.$inferSelect;
+export type InsertInstanceSubscription = typeof instanceSubscriptions.$inferInsert;
+export type InsertInstanceModule = typeof instanceModules.$inferInsert;
+export type InsertInstanceAddonPurchase = typeof instanceAddonPurchases.$inferInsert;
+export type InsertInstanceModuleOverride = typeof instanceModuleOverrides.$inferInsert;
+export type InsertPricingOverrideHistory = typeof pricingOverrideHistory.$inferInsert;
+export type InstanceBundle = typeof instanceBundles.$inferSelect;
+export type BundlePricing = typeof bundlePricingTable.$inferSelect;
+export type TierPricing = typeof tierPricing.$inferSelect;
+export type ModulePricing = typeof modulePricing.$inferSelect;
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+export type CreditNote = typeof creditNotes.$inferSelect;
+export type InsertCreditNote = typeof creditNotes.$inferInsert;

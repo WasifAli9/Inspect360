@@ -6,9 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, User, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Calendar, User, AlertCircle, CheckCircle2, Clock, Clipboard, Wrench } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useLocale } from "@/contexts/LocaleContext";
+import { useModules } from "@/hooks/use-modules";
+import { useEffect } from "react";
 
 interface WorkOrder {
   id: string;
@@ -50,8 +52,19 @@ export default function WorkOrders() {
   const { toast } = useToast();
   const locale = useLocale();
 
+  const { isModuleEnabled, isLoading: isLoadingModules } = useModules();
+  const isMaintenanceEnabled = isModuleEnabled("maintenance");
+  // Work orders are part of the maintenance module
+  const isWorkOrdersEnabled = isMaintenanceEnabled;
+
+  // Refetch module data when component mounts to ensure we have the latest status
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/marketplace/my-modules"] });
+  }, []);
+
   const { data: workOrders = [], isLoading } = useQuery<WorkOrder[]>({
     queryKey: ["/api/work-orders"],
+    enabled: isWorkOrdersEnabled !== false,
   });
 
   const updateStatusMutation = useMutation({
@@ -80,6 +93,27 @@ export default function WorkOrders() {
         return <User className="h-4 w-4" />;
     }
   };
+
+  if (!isLoadingModules && !isWorkOrdersEnabled) {
+    return (
+      <div className="container mx-auto p-4 md:p-6 flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+        <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center">
+          <Clipboard className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold">Maintenance Module Required</h1>
+          <p className="text-muted-foreground max-w-md">
+            Maintenance & Work Orders features are not enabled for your organization.
+            <br />
+            Please enable this feature from the marketplace to continue.
+          </p>
+        </div>
+        <Button variant="default" onClick={() => window.location.href = "/settings?tab=marketplace"}>
+          Go to Marketplace
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 md:p-6">

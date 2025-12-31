@@ -62,6 +62,8 @@ import AwsS3 from "@uppy/aws-s3";
 import { Dashboard } from "@uppy/react";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { cn } from "@/lib/utils";
+import { useModules } from "@/hooks/use-modules";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 type MaintenanceRequestWithDetails = MaintenanceRequest & {
   property?: { name: string; address: string };
@@ -142,76 +144,68 @@ export default function Maintenance() {
   const [formBlockFilter, setFormBlockFilter] = useState<string>("all");
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<string>("");
+
+  const { isModuleEnabled, isLoading: isLoadingModules } = useModules();
+  // We can't do early return here because other hooks (like useQuery below) might be called conditionally if we don't watch out.
+  // Actually, 'Maintenance' component uses useQuery LATER.
+  // React rule: Hooks must be called in the same order.
+  // If we return early here, all subsequent hooks will NOT optionally run, causing "Rendered fewer hooks than expected".
+  // SOLUTION: Move all Hooks to the top, before any early return.
+
+  const isMaintenanceEnabled = isModuleEnabled("maintenance");
+  const isAiEnabled = isModuleEnabled("ai_preventative");
+  const isWorkOrdersEnabled = isModuleEnabled("work_orders");
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState<"form" | "images" | "suggestions" | "review">("form");
   const uppyRef = useRef<Uppy | null>(null);
   const processedMaintenanceIdRef = useRef<string | null>(null);
-  
+
   // Work order creation state
   const [isWorkOrderDialogOpen, setIsWorkOrderDialogOpen] = useState(false);
   const [selectedRequestForWorkOrder, setSelectedRequestForWorkOrder] = useState<MaintenanceRequestWithDetails | null>(null);
 
-  // Handle dialog state change
-  const handleDialogChange = (open: boolean) => {
-    setIsCreateOpen(open);
-    if (open && !editingRequest && !isAutoOpening) {
-      // Reset form when opening dialog for a new request (unless auto-opening from URL)
-      form.reset();
-      setCurrentStep("form");
-      setUploadedImages([]);
-      setAiSuggestions("");
-      setFormBlockFilter("all");
-    }
-    if (!open) {
-      // Clear editing state when closing
-      setEditingRequest(null);
-      setUploadedImages([]);
-      setAiSuggestions("");
-      setIsAutoOpening(false);
-      setFormBlockFilter("all");
-    }
-    // Don't reset when closing - it would cancel any pending form submission
-    // Form will be reset in the mutation onSuccess callback after successful submission
-  };
-
   // Fetch maintenance requests
   const { data: requests = [], isLoading } = useQuery<MaintenanceRequestWithDetails[]>({
     queryKey: ["/api/maintenance"],
+    enabled: isMaintenanceEnabled !== false // Only fetch if we're not sure it's disabled, or if it is enabled. Actually better to fetch if enabled.
   });
 
 
   // Fetch properties
   const { data: properties = [] } = useQuery<Property[]>({
     queryKey: ["/api/properties"],
+    enabled: isMaintenanceEnabled !== false
   });
 
   // Fetch blocks
   const { data: blocks = [] } = useQuery<{ id: string; name: string }[]>({
     queryKey: ["/api/blocks"],
+    enabled: isMaintenanceEnabled !== false
   });
 
   // Fetch organization clerks (for assignment)
   const { data: clerks = [] } = useQuery<User[]>({
     queryKey: ["/api/users/clerks"],
-    enabled: user?.role === "owner",
+    enabled: user?.role === "owner" && isMaintenanceEnabled !== false,
   });
 
   // Fetch work orders (only for owners and contractors)
   const { data: workOrders = [], isLoading: workOrdersLoading } = useQuery<WorkOrder[]>({
     queryKey: ["/api/work-orders"],
-    enabled: user?.role === "owner" || user?.role === "contractor",
+    enabled: (user?.role === "owner" || user?.role === "contractor") && isMaintenanceEnabled !== false,
   });
 
   // Fetch teams for work order assignment
   const { data: teams = [] } = useQuery<any[]>({
     queryKey: ["/api/teams"],
-    enabled: user?.role === "owner",
+    enabled: user?.role === "owner" && isMaintenanceEnabled !== false,
   });
 
   // Fetch contractors for work order assignment
   const { data: contractors = [] } = useQuery<any[]>({
     queryKey: ["/api/contacts"],
-    enabled: user?.role === "owner",
+    enabled: user?.role === "owner" && isMaintenanceEnabled !== false,
   });
 
   // Work order creation mutation
@@ -245,136 +239,6 @@ export default function Maintenance() {
     },
   });
 
-  // Initialize Uppy for image uploads
-  useEffect(() => {
-    if (isCreateOpen && user?.role === "tenant" && !uppyRef.current) {
-      const uppy = new Uppy({
-        restrictions: {
-          maxFileSize: 10 * 1024 * 1024, // 10MB
-          maxNumberOfFiles: 5,
-          allowedFileTypes: ["image/*"],
-        },
-        autoProceed: false,
-      });
-
-      uppy.use(AwsS3, {
-        shouldUseMultipart: false,
-        async getUploadParameters(file) {
-          try {
-            const response = await fetch("/api/objects/upload", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to get upload URL: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            
-            if (!data.uploadURL) {
-              throw new Error("Invalid upload URL response");
-            }
-
-            // Ensure URL is absolute
-            let uploadURL = data.uploadURL;
-            if (uploadURL.startsWith('/')) {
-              // Convert relative URL to absolute
-              uploadURL = `${window.location.origin}${uploadURL}`;
-            }
-
-            // Validate URL
-            try {
-              new URL(uploadURL);
-            } catch (e) {
-              throw new Error(`Invalid upload URL format: ${uploadURL}`);
-            }
-
-            // Extract objectId from upload URL and store in metadata
-            try {
-              const urlObj = new URL(uploadURL);
-              const objectId = urlObj.searchParams.get('objectId');
-              if (objectId) {
-                uppy.setFileMeta(file.id, { 
-                  originalUploadURL: uploadURL,
-                  objectId: objectId,
-                });
-              } else {
-                uppy.setFileMeta(file.id, { 
-                  originalUploadURL: uploadURL,
-                });
-              }
-            } catch (e) {
-              uppy.setFileMeta(file.id, { 
-                originalUploadURL: uploadURL,
-              });
-            }
-            
-            return {
-              method: "PUT" as const,
-              url: uploadURL,
-              headers: {
-                "Content-Type": file.type || "application/octet-stream",
-              },
-              fields: {},
-            };
-          } catch (error: any) {
-            console.error("[Maintenance] Upload URL error:", error);
-            throw new Error(`Failed to get upload URL: ${error.message}`);
-          }
-        },
-      });
-
-      uppy.on("upload-success", async (file, response) => {
-        // Import the helper function
-        const { extractFileUrlFromUploadResponse } = await import("@/lib/utils");
-        let fileUrl = extractFileUrlFromUploadResponse(file, response);
-        
-        // If extraction failed, try to use objectId from metadata as fallback
-        if (!fileUrl && file?.meta?.objectId) {
-          fileUrl = `/objects/${file.meta.objectId}`;
-          console.log('[Maintenance] Using objectId fallback:', fileUrl);
-        }
-        
-        if (fileUrl) {
-          // Convert relative path to absolute URL for display
-          const absoluteUrl = fileUrl.startsWith('/') 
-            ? `${window.location.origin}${fileUrl}`
-            : fileUrl;
-          
-          setUploadedImages((prev) => {
-            if (prev.includes(absoluteUrl)) {
-              return prev; // Avoid duplicates
-            }
-            return [...prev, absoluteUrl];
-          });
-          
-          // Set ACL in background
-          fetch('/api/objects/set-acl', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ photoUrl: absoluteUrl }),
-          }).catch(error => {
-            console.error('[Maintenance] Error setting ACL:', error);
-          });
-        } else {
-          console.error('[Maintenance] No upload URL found in response:', { file, response });
-        }
-      });
-
-      uppyRef.current = uppy;
-    }
-
-    return () => {
-      if (uppyRef.current) {
-        uppyRef.current.clear();
-        uppyRef.current = null;
-      }
-    };
-  }, [isCreateOpen, user?.role]);
-
   // AI analyze image mutation
   const analyzeMutation = useMutation({
     mutationFn: async ({ imageUrl, description }: { imageUrl: string; description: string }) => {
@@ -403,8 +267,8 @@ export default function Maintenance() {
 
   // Create maintenance request mutation
   const createMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof createMaintenanceSchema> & { 
-      photoUrls?: string[]; 
+    mutationFn: async (data: z.infer<typeof createMaintenanceSchema> & {
+      photoUrls?: string[];
       aiSuggestedFixes?: string;
     }) => {
       const res = await apiRequest("POST", "/api/maintenance", data);
@@ -413,25 +277,25 @@ export default function Maintenance() {
     onSuccess: async () => {
       try {
         console.log("[Maintenance] Request created successfully, refetching queries...");
-        
+
         // Explicitly refetch to ensure we get the latest data
         await queryClient.refetchQueries({ queryKey: ["/api/maintenance"] });
-        
+
         console.log("[Maintenance] Refetch complete, showing toast...");
-        
+
         toast({
           title: "Success",
           description: "Maintenance request created successfully",
         });
-        
+
         console.log("[Maintenance] Cleaning up form state...");
-        
+
         setIsCreateOpen(false);
         form.reset();
         setUploadedImages([]);
         setAiSuggestions("");
         setCurrentStep("form");
-        
+
         console.log("[Maintenance] Form cleanup complete");
       } catch (error) {
         console.error("[Maintenance] Error in onSuccess:", error);
@@ -464,7 +328,7 @@ export default function Maintenance() {
         title: "Success",
         description: "Maintenance request updated successfully",
       });
-      
+
       setIsCreateOpen(false);
       setEditingRequest(null);
       form.reset();
@@ -516,14 +380,144 @@ export default function Maintenance() {
     },
   });
 
+  // Initialize Uppy for image uploads
+  useEffect(() => {
+    if (isCreateOpen && user?.role === "tenant" && !uppyRef.current) {
+      const uppy = new Uppy({
+        restrictions: {
+          maxFileSize: 10 * 1024 * 1024, // 10MB
+          maxNumberOfFiles: 5,
+          allowedFileTypes: ["image/*"],
+        },
+        autoProceed: false,
+      });
+
+      uppy.use(AwsS3, {
+        shouldUseMultipart: false,
+        async getUploadParameters(file) {
+          try {
+            const response = await fetch("/api/objects/upload", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to get upload URL: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.uploadURL) {
+              throw new Error("Invalid upload URL response");
+            }
+
+            // Ensure URL is absolute
+            let uploadURL = data.uploadURL;
+            if (uploadURL.startsWith('/')) {
+              // Convert relative URL to absolute
+              uploadURL = `${window.location.origin}${uploadURL}`;
+            }
+
+            // Validate URL
+            try {
+              new URL(uploadURL);
+            } catch (e) {
+              throw new Error(`Invalid upload URL format: ${uploadURL}`);
+            }
+
+            // Extract objectId from upload URL and store in metadata
+            try {
+              const urlObj = new URL(uploadURL);
+              const objectId = urlObj.searchParams.get('objectId');
+              if (objectId) {
+                uppy.setFileMeta(file.id, {
+                  originalUploadURL: uploadURL,
+                  objectId: objectId,
+                });
+              } else {
+                uppy.setFileMeta(file.id, {
+                  originalUploadURL: uploadURL,
+                });
+              }
+            } catch (e) {
+              uppy.setFileMeta(file.id, {
+                originalUploadURL: uploadURL,
+              });
+            }
+
+            return {
+              method: "PUT" as const,
+              url: uploadURL,
+              headers: {
+                "Content-Type": file.type || "application/octet-stream",
+              },
+              fields: {},
+            };
+          } catch (error: any) {
+            console.error("[Maintenance] Upload URL error:", error);
+            throw new Error(`Failed to get upload URL: ${error.message}`);
+          }
+        },
+      });
+
+      uppy.on("upload-success", async (file, response) => {
+        // Import the helper function
+        const { extractFileUrlFromUploadResponse } = await import("@/lib/utils");
+        let fileUrl = extractFileUrlFromUploadResponse(file, response);
+
+        // If extraction failed, try to use objectId from metadata as fallback
+        if (!fileUrl && file?.meta?.objectId) {
+          fileUrl = `/objects/${file.meta.objectId}`;
+          console.log('[Maintenance] Using objectId fallback:', fileUrl);
+        }
+
+        if (fileUrl) {
+          // Convert relative path to absolute URL for display
+          const absoluteUrl = fileUrl.startsWith('/')
+            ? `${window.location.origin}${fileUrl}`
+            : fileUrl;
+
+          setUploadedImages((prev) => {
+            if (prev.includes(absoluteUrl)) {
+              return prev; // Avoid duplicates
+            }
+            return [...prev, absoluteUrl];
+          });
+
+          // Set ACL in background
+          fetch('/api/objects/set-acl', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ photoUrl: absoluteUrl }),
+          }).catch(error => {
+            console.error('[Maintenance] Error setting ACL:', error);
+          });
+        } else {
+          console.error('[Maintenance] No upload URL found in response:', { file, response });
+        }
+      });
+
+      uppyRef.current = uppy;
+    }
+
+    return () => {
+      if (uppyRef.current) {
+        uppyRef.current.clear();
+        uppyRef.current = null;
+      }
+    };
+  }, [isCreateOpen, user?.role]);
+
   // Auto-open maintenance request when ID is in URL (must be after form initialization)
   useEffect(() => {
     // Only process if we have an ID, haven't processed it yet, have requests loaded, and dialog isn't already open
-    if (maintenanceId && 
-        maintenanceId !== processedMaintenanceIdRef.current && 
-        requests.length > 0 && 
-        !editingRequest && 
-        !isCreateOpen) {
+    if (maintenanceId &&
+      maintenanceId !== processedMaintenanceIdRef.current &&
+      requests.length > 0 &&
+      !editingRequest &&
+      !isCreateOpen) {
       const request = requests.find(r => r.id === maintenanceId);
       if (request) {
         processedMaintenanceIdRef.current = maintenanceId;
@@ -537,17 +531,17 @@ export default function Maintenance() {
           priority: request.priority as "low" | "medium" | "high",
           reportedBy: request.reportedBy || "",
           dueDate: request.dueDate ? (() => {
-        try {
-          // Parse the date and convert to ISO string format
-          const date = typeof request.dueDate === 'string' ? new Date(request.dueDate) : request.dueDate;
-          if (isNaN(date.getTime())) return undefined;
-          // Extract just the date part (YYYY-MM-DD) and add time to make it a valid ISO string for the form
-          const datePart = date.toISOString().split('T')[0];
-          return datePart ? `${datePart}T00:00:00.000Z` : undefined;
-        } catch {
-          return undefined;
-        }
-      })() : undefined,
+            try {
+              // Parse the date and convert to ISO string format
+              const date = typeof request.dueDate === 'string' ? new Date(request.dueDate) : request.dueDate;
+              if (isNaN(date.getTime())) return undefined;
+              // Extract just the date part (YYYY-MM-DD) and add time to make it a valid ISO string for the form
+              const datePart = date.toISOString().split('T')[0];
+              return datePart ? `${datePart}T00:00:00.000Z` : undefined;
+            } catch {
+              return undefined;
+            }
+          })() : undefined,
         });
         setUploadedImages(request.photoUrls || []);
         setAiSuggestions(request.aiSuggestedFixes || "");
@@ -567,7 +561,7 @@ export default function Maintenance() {
         navigate("/maintenance", { replace: true });
       }
     }
-    
+
     // Reset processed ID when maintenanceId changes or becomes null
     if (!maintenanceId && processedMaintenanceIdRef.current) {
       processedMaintenanceIdRef.current = null;
@@ -588,6 +582,50 @@ export default function Maintenance() {
     }
   }, [urlPropertyId, shouldCreate, properties, navigate]);
 
+  // Handle dialog state change
+  const handleDialogChange = (open: boolean) => {
+    setIsCreateOpen(open);
+    if (open && !editingRequest && !isAutoOpening) {
+      // Reset form when opening dialog for a new request (unless auto-opening from URL)
+      form.reset();
+      setCurrentStep("form");
+      setUploadedImages([]);
+      setAiSuggestions("");
+      setFormBlockFilter("all");
+    }
+    if (!open) {
+      // Clear editing state when closing
+      setEditingRequest(null);
+      setUploadedImages([]);
+      setAiSuggestions("");
+      setIsAutoOpening(false);
+      setFormBlockFilter("all");
+    }
+    // Don't reset when closing - it would cancel any pending form submission
+    // Form will be reset in the mutation onSuccess callback after successful submission
+  };
+
+  if (!isLoadingModules && !isMaintenanceEnabled) {
+    return (
+      <div className="container mx-auto p-4 md:p-6 flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+        <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center">
+          <Wrench className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold">Maintenance Module Required</h1>
+          <p className="text-muted-foreground max-w-md">
+            Maintenance & Work Orders features are not enabled for your organization.
+            <br />
+            Please enable this feature from the marketplace to continue.
+          </p>
+        </div>
+        <Button variant="default" onClick={() => window.location.href = "/settings?tab=marketplace"}>
+          Go to Marketplace
+        </Button>
+      </div>
+    );
+  }
+
   const handleImageStep = async () => {
     if (uploadedImages.length === 0) {
       toast({
@@ -595,6 +633,12 @@ export default function Maintenance() {
         description: "Please upload at least one image of the issue",
         variant: "destructive",
       });
+      return;
+    }
+
+    if (!isAiEnabled) {
+      setAiSuggestions("");
+      setCurrentStep("suggestions");
       return;
     }
 
@@ -618,13 +662,13 @@ export default function Maintenance() {
     }
 
     // Submit with images and AI suggestions
-    const payload = { 
-      ...data, 
+    const payload = {
+      ...data,
       reportedBy: user?.id || "",
       photoUrls: uploadedImages.length > 0 ? uploadedImages : undefined,
       aiSuggestedFixes: aiSuggestions || undefined,
     };
-    
+
     if (editingRequest) {
       updateMutation.mutate({ id: editingRequest.id, data: payload });
     } else {
@@ -678,21 +722,21 @@ export default function Maintenance() {
   };
 
   // Filter by status, property, block, and tenant (if tenant user)
-  let filteredRequests = selectedStatus === "all" 
-    ? requests 
+  let filteredRequests = selectedStatus === "all"
+    ? requests
     : requests.filter(r => r.status === selectedStatus);
-  
+
   // Filter by property
   if (filterProperty !== "all") {
     filteredRequests = filteredRequests.filter(r => r.propertyId === filterProperty);
   }
-  
+
   // Filter by block (find properties in block first)
   if (filterBlock !== "all") {
     const blockPropertyIds = properties.filter(p => p.blockId === filterBlock).map(p => p.id);
     filteredRequests = filteredRequests.filter(r => r.propertyId && blockPropertyIds.includes(r.propertyId));
   }
-  
+
   // Tenants should only see their own requests
   if (user?.role === "tenant") {
     filteredRequests = filteredRequests.filter(r => r.reportedBy === user.id);
@@ -727,13 +771,13 @@ export default function Maintenance() {
             Maintenance
           </h1>
           <p className="text-sm md:text-base text-muted-foreground">
-            {user?.role === "tenant" 
-              ? "Submit and track your maintenance requests" 
+            {user?.role === "tenant"
+              ? "Submit and track your maintenance requests"
               : "Manage maintenance requests and contractor work orders"}
           </p>
           <p className="text-sm md:text-base text-muted-foreground mt-1">
-            {user?.role === "tenant" 
-              ? "Submit and track your maintenance requests" 
+            {user?.role === "tenant"
+              ? "Submit and track your maintenance requests"
               : "Manage maintenance requests and contractor work orders"}
           </p>
         </div>
@@ -748,16 +792,16 @@ export default function Maintenance() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingRequest 
-                  ? "Edit Maintenance Request" 
+                {editingRequest
+                  ? "Edit Maintenance Request"
                   : user?.role === "tenant" ? "Report Maintenance Issue" : "Create Maintenance Request"}
               </DialogTitle>
               <DialogDescription>
-                {user?.role === "tenant" && currentStep === "images" 
+                {user?.role === "tenant" && currentStep === "images"
                   ? "Upload photos of the issue for AI analysis"
                   : user?.role === "tenant" && currentStep === "suggestions"
-                  ? "Review AI-suggested fixes before submitting"
-                  : "Submit a new maintenance request for a property"}
+                    ? "Review AI-suggested fixes before submitting"
+                    : "Submit a new maintenance request for a property"}
               </DialogDescription>
             </DialogHeader>
 
@@ -871,25 +915,55 @@ export default function Maintenance() {
 
                 {/* Step 3: AI Suggestions */}
                 {currentStep === "suggestions" && (
-                  <div className="space-y-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <Sparkles className="w-5 h-5 text-primary" />
-                          AI-Suggested Fixes
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <p className="text-sm whitespace-pre-wrap">{aiSuggestions}</p>
-                      </CardContent>
-                    </Card>
-                    <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => setCurrentStep("images")} className="flex-1" data-testid="button-back-to-images">Back</Button>
-                      <Button onClick={form.handleSubmit(onSubmit)} disabled={createMutation.isPending} className="flex-1" data-testid="button-submit-final">
-                        {createMutation.isPending ? "Submitting..." : "Submit Request"}
-                      </Button>
+                  !isAiEnabled ? (
+                    <div className="space-y-4">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-muted-foreground" />
+                            AI Suggestions
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4 text-center py-6">
+                          <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-2">
+                            <span className="text-xl font-bold">Ivy</span>
+                          </div>
+                          <h3 className="font-semibold">AI Preventative Maintenance is disabled</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Predictive maintenance and auto-diagnosis are available in the Premium plan.
+                            <br />
+                            You can still ask <strong>Ivy</strong> for help!
+                          </p>
+                        </CardContent>
+                      </Card>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setCurrentStep("images")} className="flex-1">Back</Button>
+                        <Button onClick={form.handleSubmit(onSubmit)} className="flex-1">
+                          Skip & Submit
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-primary" />
+                            AI-Suggested Fixes
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <p className="text-sm whitespace-pre-wrap">{aiSuggestions}</p>
+                        </CardContent>
+                      </Card>
+                      <div className="flex gap-2">
+                        <Button variant="outline" onClick={() => setCurrentStep("images")} className="flex-1" data-testid="button-back-to-images">Back</Button>
+                        <Button onClick={form.handleSubmit(onSubmit)} disabled={createMutation.isPending} className="flex-1" data-testid="button-submit-final">
+                          {createMutation.isPending ? "Submitting..." : "Submit Request"}
+                        </Button>
+                      </div>
+                    </div>
+                  )
                 )}
               </div>
             ) : (
@@ -916,8 +990,8 @@ export default function Maintenance() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Block (Optional)</FormLabel>
-                        <Select 
-                          value={field.value || "none"} 
+                        <Select
+                          value={field.value || "none"}
                           onValueChange={(value) => {
                             const blockValue = value === "none" ? "" : value;
                             field.onChange(blockValue);
@@ -953,8 +1027,8 @@ export default function Maintenance() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Property (Optional if block selected)</FormLabel>
-                        <Select 
-                          onValueChange={(value) => field.onChange(value === "none" ? "" : value)} 
+                        <Select
+                          onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
                           value={field.value || "none"}
                         >
                           <FormControl>
@@ -1060,7 +1134,7 @@ export default function Maintenance() {
                             const newPaths: string[] = [];
                             for (const file of result.successful) {
                               let uploadURL = file.uploadURL;
-                              
+
                               // Normalize URL: if absolute, extract pathname; if relative, use as is
                               if (uploadURL && (uploadURL.startsWith('http://') || uploadURL.startsWith('https://'))) {
                                 try {
@@ -1071,13 +1145,13 @@ export default function Maintenance() {
                                   continue; // Skip this file
                                 }
                               }
-                              
+
                               // Ensure it's a relative path starting with /objects/
                               if (!uploadURL || !uploadURL.startsWith('/objects/')) {
                                 console.error('[Maintenance] Invalid file URL format:', uploadURL);
                                 continue; // Skip this file
                               }
-                              
+
                               // Convert to absolute URL for ACL call
                               const absoluteUrl = `${window.location.origin}${uploadURL}`;
                               const response = await fetch('/api/objects/set-acl', {
@@ -1086,15 +1160,15 @@ export default function Maintenance() {
                                 credentials: 'include',
                                 body: JSON.stringify({ photoUrl: absoluteUrl }),
                               });
-                              
+
                               if (!response.ok) {
                                 throw new Error('Failed to set photo permissions');
                               }
-                              
+
                               const { objectPath } = await response.json();
                               newPaths.push(objectPath);
                             }
-                            
+
                             if (newPaths.length > 0) {
                               setUploadedImages(prev => [...prev, ...newPaths]);
                             } else {
@@ -1123,9 +1197,9 @@ export default function Maintenance() {
                       <div className="flex flex-wrap gap-2 mt-2">
                         {uploadedImages.map((img, idx) => (
                           <div key={idx} className="relative" data-testid={`photo-preview-${idx}`}>
-                            <img 
-                              src={img} 
-                              alt={`Upload ${idx + 1}`} 
+                            <img
+                              src={img}
+                              alt={`Upload ${idx + 1}`}
                               className="h-20 w-20 object-cover rounded border"
                             />
                             <Button
@@ -1188,8 +1262,8 @@ export default function Maintenance() {
                   )}
 
                   <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-submit-request">
-                    {createMutation.isPending || updateMutation.isPending 
-                      ? editingRequest ? "Updating..." : "Creating..." 
+                    {createMutation.isPending || updateMutation.isPending
+                      ? editingRequest ? "Updating..." : "Creating..."
                       : editingRequest ? "Update Request" : "Create Request"}
                   </Button>
                 </form>
@@ -1207,7 +1281,7 @@ export default function Maintenance() {
             Requests
           </TabsTrigger>
           {(user?.role === "owner" || user?.role === "contractor") && (
-            <TabsTrigger value="work-orders" data-testid="tab-work-orders">
+            <TabsTrigger value="work-orders" data-testid="tab-work-orders" disabled={!isWorkOrdersEnabled}>
               <Clipboard className="w-4 h-4 mr-2" />
               Work Orders
             </TabsTrigger>
@@ -1220,68 +1294,68 @@ export default function Maintenance() {
           {user?.role !== "tenant" && (
             <>
               <div className="hidden md:flex flex-wrap gap-4 items-center">
-              {/* Status Filter Buttons */}
-              <div className="flex gap-2 flex-wrap">
-                {["all", "open", "in_progress", "completed", "closed"].map((status) => (
-                  <Button
-                    key={status}
-                    variant={selectedStatus === status ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedStatus(status)}
-                    data-testid={`button-filter-${status}`}
-                  >
-                    {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1).replace("_", " ")}
-                  </Button>
-                ))}
-              </div>
-
-              {/* Block Filter */}
-              <Select value={filterBlock} onValueChange={setFilterBlock}>
-                <SelectTrigger className="w-[180px]" data-testid="select-filter-block">
-                  <SelectValue placeholder="All Blocks" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Blocks</SelectItem>
-                  {blocks.map((block) => (
-                    <SelectItem key={block.id} value={block.id}>
-                      {block.name}
-                    </SelectItem>
+                {/* Status Filter Buttons */}
+                <div className="flex gap-2 flex-wrap">
+                  {["all", "open", "in_progress", "completed", "closed"].map((status) => (
+                    <Button
+                      key={status}
+                      variant={selectedStatus === status ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedStatus(status)}
+                      data-testid={`button-filter-${status}`}
+                    >
+                      {status === "all" ? "All" : status.charAt(0).toUpperCase() + status.slice(1).replace("_", " ")}
+                    </Button>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
 
-              {/* Property Filter */}
-              <Select value={filterProperty} onValueChange={setFilterProperty}>
-                <SelectTrigger className="w-[180px]" data-testid="select-filter-property">
-                  <SelectValue placeholder="All Properties" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Properties</SelectItem>
-                  {properties
-                    .filter(p => filterBlock === "all" || p.blockId === filterBlock)
-                    .map((property) => (
-                      <SelectItem key={property.id} value={property.id}>
-                        {property.name}
+                {/* Block Filter */}
+                <Select value={filterBlock} onValueChange={setFilterBlock}>
+                  <SelectTrigger className="w-[180px]" data-testid="select-filter-block">
+                    <SelectValue placeholder="All Blocks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Blocks</SelectItem>
+                    {blocks.map((block) => (
+                      <SelectItem key={block.id} value={block.id}>
+                        {block.name}
                       </SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
+                  </SelectContent>
+                </Select>
 
-              {/* Clear Filters */}
-              {(filterBlock !== "all" || filterProperty !== "all") && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setFilterBlock("all");
-                    setFilterProperty("all");
-                  }}
-                  data-testid="button-clear-filters"
-                >
-                  <X className="w-4 h-4 mr-1" />
-                  Clear
-                </Button>
-              )}
+                {/* Property Filter */}
+                <Select value={filterProperty} onValueChange={setFilterProperty}>
+                  <SelectTrigger className="w-[180px]" data-testid="select-filter-property">
+                    <SelectValue placeholder="All Properties" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Properties</SelectItem>
+                    {properties
+                      .filter(p => filterBlock === "all" || p.blockId === filterBlock)
+                      .map((property) => (
+                        <SelectItem key={property.id} value={property.id}>
+                          {property.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Clear Filters */}
+                {(filterBlock !== "all" || filterProperty !== "all") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setFilterBlock("all");
+                      setFilterProperty("all");
+                    }}
+                    data-testid="button-clear-filters"
+                  >
+                    <X className="w-4 h-4 mr-1" />
+                    Clear
+                  </Button>
+                )}
               </div>
 
               {/* Filters - Mobile */}
@@ -1357,8 +1431,8 @@ export default function Maintenance() {
                       </div>
 
                       {(selectedStatus !== "all" || filterBlock !== "all" || filterProperty !== "all") && (
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           className="w-full"
                           onClick={() => {
                             setSelectedStatus("all");
@@ -1377,176 +1451,190 @@ export default function Maintenance() {
             </>
           )}
 
-      {/* Maintenance Requests List */}
-      <div className="space-y-4">
-        {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">Loading...</div>
-        ) : filteredRequests.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Wrench className="w-12 h-12 text-muted-foreground mb-4" />
-              <p className="text-lg font-semibold mb-2" data-testid="text-no-requests">No maintenance requests</p>
-              <p className="text-sm text-muted-foreground">
-                {selectedStatus === "all" 
-                  ? "Create your first maintenance request to get started"
-                  : `No ${selectedStatus.replace("-", " ")} requests found`}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredRequests.map((request) => (
-            <Card key={request.id} data-testid={`card-request-${request.id}`}>
-              <CardHeader className="p-4 md:p-6">
-                <div className="flex flex-col gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <CardTitle className="text-base md:text-lg flex-1" data-testid={`text-title-${request.id}`}>
-                        {request.title}
-                      </CardTitle>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {(user?.role === "owner" || user?.role === "clerk") && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handleEdit(request)}
-                            data-testid={`button-edit-${request.id}`}
-                            className="h-8 w-8"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                        )}
-                        <div className="flex flex-col gap-1">
-                          {getPriorityBadge(request.priority)}
-                          {getStatusBadge(request.status)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
-                      <span data-testid={`text-property-${request.id}`}>
-                        {request.property?.name || "Unknown"}
-                      </span>
-                      {request.property?.address && (
-                        <span className="hidden sm:inline">• {request.property.address}</span>
-                      )}
-                      {request.dueDate ? (
-                        <span>• Due {format(new Date(request.dueDate), 'PPP')}</span>
-                      ) : (
-                        <span>• Created {format(new Date(request.createdAt?.toString() || Date.now()), 'PPP')}</span>
-                      )}
-                    </div>
-                    {(user?.role === "owner" || user?.role === "clerk") && (
-                      <div className="mt-2">
-                        <FixfloSyncButton
-                          requestId={request.id}
-                          propertyId={request.propertyId}
-                          fixfloIssueId={request.fixfloIssueId}
-                          fixfloStatus={request.fixfloStatus}
-                          fixfloContractorName={request.fixfloContractorName}
-                          title={request.title}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4 p-4 md:p-6 pt-0">
-                {request.description && (
-                  <p className="text-sm text-muted-foreground" data-testid={`text-description-${request.id}`}>
-                    {request.description}
+          {/* Maintenance Requests List */}
+          <div className="space-y-4">
+            {isLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            ) : filteredRequests.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Wrench className="w-12 h-12 text-muted-foreground mb-4" />
+                  <p className="text-lg font-semibold mb-2" data-testid="text-no-requests">No maintenance requests</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedStatus === "all"
+                      ? "Create your first maintenance request to get started"
+                      : `No ${selectedStatus.replace("-", " ")} requests found`}
                   </p>
-                )}
-                
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t">
-                  <div className="text-xs md:text-sm">
-                    <span className="text-muted-foreground">Reported by: </span>
-                    <span data-testid={`text-reporter-${request.id}`}>
-                      {request.reportedByUser 
-                        ? `${request.reportedByUser.firstName} ${request.reportedByUser.lastName}`
-                        : "Unknown"}
-                    </span>
-                    {request.assignedToUser && (
-                      <>
-                        <span className="text-muted-foreground"> • Assigned to: </span>
-                        <span data-testid={`text-assignee-${request.id}`}>
-                          {request.assignedToUser.firstName} {request.assignedToUser.lastName}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  
-                  {user?.role === "owner" && request.status !== "completed" && (
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <Select
-                        value={request.status}
-                        onValueChange={(status) => 
-                          updateStatusMutation.mutate({ id: request.id, status })
-                        }
-                      >
-                        <SelectTrigger className="w-full sm:w-40" data-testid={`select-status-${request.id}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="open" data-testid={`option-status-open-${request.id}`}>Open</SelectItem>
-                          <SelectItem value="in_progress" data-testid={`option-status-progress-${request.id}`}>In Progress</SelectItem>
-                          <SelectItem value="completed" data-testid={`option-status-completed-${request.id}`}>Completed</SelectItem>
-                          <SelectItem value="closed" data-testid={`option-status-closed-${request.id}`}>Closed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      
-                      {!request.assignedTo && clerks.length > 0 && (
-                        <Select
-                          onValueChange={(assignedTo) =>
-                            updateStatusMutation.mutate({ 
-                              id: request.id, 
-                              status: "in_progress",
-                              assignedTo 
-                            })
-                          }
-                        >
-                          <SelectTrigger className="w-full sm:w-40" data-testid={`select-assign-${request.id}`}>
-                            <SelectValue placeholder="Assign to..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {clerks.map((clerk) => (
-                                <SelectItem 
-                                  key={clerk.id} 
-                                  value={clerk.id}
-                                  data-testid={`option-clerk-${clerk.id}`}
-                                >
-                                  {clerk.firstName} {clerk.lastName}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedRequestForWorkOrder(request);
-                          setIsWorkOrderDialogOpen(true);
-                        }}
-                        data-testid={`button-create-work-order-${request.id}`}
-                        className="w-full sm:w-auto"
-                      >
-                        <Clipboard className="w-4 h-4 mr-2" />
-                        <span className="hidden sm:inline">Create Work Order</span>
-                        <span className="sm:hidden">Work Order</span>
-                      </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              filteredRequests.map((request) => (
+                <Card key={request.id} data-testid={`card-request-${request.id}`}>
+                  <CardHeader className="p-4 md:p-6">
+                    <div className="flex flex-col gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <CardTitle className="text-base md:text-lg flex-1" data-testid={`text-title-${request.id}`}>
+                            {request.title}
+                          </CardTitle>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {(user?.role === "owner" || user?.role === "clerk") && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleEdit(request)}
+                                data-testid={`button-edit-${request.id}`}
+                                className="h-8 w-8"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <div className="flex flex-col gap-1">
+                              {getPriorityBadge(request.priority)}
+                              {getStatusBadge(request.status)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs md:text-sm text-muted-foreground">
+                          <span data-testid={`text-property-${request.id}`}>
+                            {request.property?.name || "Unknown"}
+                          </span>
+                          {request.property?.address && (
+                            <span className="hidden sm:inline">• {request.property.address}</span>
+                          )}
+                          {request.dueDate ? (
+                            <span>• Due {format(new Date(request.dueDate), 'PPP')}</span>
+                          ) : (
+                            <span>• Created {format(new Date(request.createdAt?.toString() || Date.now()), 'PPP')}</span>
+                          )}
+                        </div>
+                        {(user?.role === "owner" || user?.role === "clerk") && (
+                          <div className="mt-2">
+                            <FixfloSyncButton
+                              requestId={request.id}
+                              propertyId={request.propertyId}
+                              fixfloIssueId={request.fixfloIssueId}
+                              fixfloStatus={request.fixfloStatus}
+                              fixfloContractorName={request.fixfloContractorName}
+                              title={request.title}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-4 md:p-6 pt-0">
+                    {request.description && (
+                      <p className="text-sm text-muted-foreground" data-testid={`text-description-${request.id}`}>
+                        {request.description}
+                      </p>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t">
+                      <div className="text-xs md:text-sm">
+                        <span className="text-muted-foreground">Reported by: </span>
+                        <span data-testid={`text-reporter-${request.id}`}>
+                          {request.reportedByUser
+                            ? `${request.reportedByUser.firstName} ${request.reportedByUser.lastName}`
+                            : "Unknown"}
+                        </span>
+                        {request.assignedToUser && (
+                          <>
+                            <span className="text-muted-foreground"> • Assigned to: </span>
+                            <span data-testid={`text-assignee-${request.id}`}>
+                              {request.assignedToUser.firstName} {request.assignedToUser.lastName}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {user?.role === "owner" && request.status !== "completed" && (
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <Select
+                            value={request.status}
+                            onValueChange={(status) =>
+                              updateStatusMutation.mutate({ id: request.id, status })
+                            }
+                          >
+                            <SelectTrigger className="w-full sm:w-40" data-testid={`select-status-${request.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="open" data-testid={`option-status-open-${request.id}`}>Open</SelectItem>
+                              <SelectItem value="in_progress" data-testid={`option-status-progress-${request.id}`}>In Progress</SelectItem>
+                              <SelectItem value="completed" data-testid={`option-status-completed-${request.id}`}>Completed</SelectItem>
+                              <SelectItem value="closed" data-testid={`option-status-closed-${request.id}`}>Closed</SelectItem>
+                            </SelectContent>
+                          </Select>
+
+                          {!request.assignedTo && clerks.length > 0 && (
+                            <Select
+                              onValueChange={(assignedTo) =>
+                                updateStatusMutation.mutate({
+                                  id: request.id,
+                                  status: "in_progress",
+                                  assignedTo
+                                })
+                              }
+                            >
+                              <SelectTrigger className="w-full sm:w-40" data-testid={`select-assign-${request.id}`}>
+                                <SelectValue placeholder="Assign to..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {clerks.map((clerk) => (
+                                  <SelectItem
+                                    key={clerk.id}
+                                    value={clerk.id}
+                                    data-testid={`option-clerk-${clerk.id}`}
+                                  >
+                                    {clerk.firstName} {clerk.lastName}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedRequestForWorkOrder(request);
+                              setIsWorkOrderDialogOpen(true);
+                            }}
+                            data-testid={`button-create-work-order-${request.id}`}
+                            className="w-full sm:w-auto"
+                          >
+                            <Clipboard className="w-4 h-4 mr-2" />
+                            <span className="hidden sm:inline">Create Work Order</span>
+                            <span className="sm:hidden">Work Order</span>
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         </TabsContent>
 
         {/* WORK ORDERS TAB */}
         <TabsContent value="work-orders" className="space-y-6">
-          {workOrdersLoading ? (
+          {!isWorkOrdersEnabled ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <Clipboard className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Work Orders Module Locked</h3>
+                <p className="text-muted-foreground text-center">
+                  The Work Orders feature is not enabled for your organization.<br />
+                  Please purchase it from the Marketplace to unlock access.
+                </p>
+                <Button variant="default" className="mt-6" onClick={() => window.location.href = "/marketplace"}>
+                  Go to Marketplace
+                </Button>
+              </CardContent>
+            </Card>
+          ) : workOrdersLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading work orders...</div>
           ) : workOrders.length === 0 ? (
             <Card>
@@ -1629,7 +1717,7 @@ export default function Maintenance() {
                           <div>
                             <p className="font-medium">Cost</p>
                             <p className="text-muted-foreground">
-                              {workOrder.costActual 
+                              {workOrder.costActual
                                 ? `Actual: ${formatCurrency(workOrder.costActual)}`
                                 : `Est: ${formatCurrency(workOrder.costEstimate)}`}
                             </p>
@@ -1743,7 +1831,7 @@ function WorkOrderForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     onSubmit({
       maintenanceRequestId: maintenanceRequest.id,
       teamId: selectedTeamId && selectedTeamId !== "none" ? selectedTeamId : undefined,
@@ -1855,7 +1943,7 @@ function WorkOrderForm({
         <Button
           type="button"
           variant="outline"
-          onClick={() => {}}
+          onClick={() => { }}
           disabled={isSubmitting}
           data-testid="button-cancel-work-order"
         >

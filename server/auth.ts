@@ -6,12 +6,13 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import connectPg from "connect-pg-simple";
+import * as cookieSignature from "cookie-signature";
 import { storage } from "./storage";
 import { User as DbUser, registerUserSchema, loginUserSchema } from "@shared/schema";
 
 declare global {
   namespace Express {
-    interface User extends DbUser {}
+    interface User extends DbUser { }
   }
 }
 
@@ -65,19 +66,29 @@ export async function comparePasswords(
   return false;
 }
 
+let sessionStoreInstance: session.Store | null = null;
+
+function getSessionStore(): session.Store {
+  if (!sessionStoreInstance) {
+    const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
+    const pgStore = connectPg(session);
+    sessionStoreInstance = new pgStore({
+      conString: process.env.DATABASE_URL,
+      createTableIfMissing: true, // Enable auto-creation in development
+      ttl: sessionTtl,
+      tableName: "sessions",
+      // Add error handling for session store operations
+      errorLog: (err: Error) => {
+        console.error('[SESSION STORE ERROR]', err);
+      },
+    });
+  }
+  return sessionStoreInstance;
+}
+
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
-  const pgStore = connectPg(session);
-  const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
-    createTableIfMissing: true, // Enable auto-creation in development
-    ttl: sessionTtl,
-    tableName: "sessions",
-    // Add error handling for session store operations
-    errorLog: (err: Error) => {
-      console.error('[SESSION STORE ERROR]', err);
-    },
-  });
+  const sessionStore = getSessionStore();
   return session({
     secret: process.env.SESSION_SECRET!,
     store: sessionStore,
@@ -93,6 +104,73 @@ export function getSession() {
     // Add error handling for session store
     name: 'inspect360.sid', // Custom session name to avoid conflicts
   });
+}
+
+// Helper function to extract user ID from a request-like object (for WebSocket)
+export async function getUserIdFromRequest(req: { headers: { cookie?: string } }): Promise<string | null> {
+  try {
+    const cookieHeader = req.headers.cookie;
+    if (!cookieHeader) {
+      return null;
+    }
+
+    // Parse cookies
+    const cookies: Record<string, string> = {};
+    cookieHeader.split(';').forEach(cookie => {
+      const [name, ...rest] = cookie.trim().split('=');
+      if (name) {
+        cookies[name] = decodeURIComponent(rest.join('='));
+      }
+    });
+
+    // Get session ID from cookie
+    let sessionId = cookies['inspect360.sid'];
+    if (!sessionId) {
+      return null;
+    }
+
+    // Unsign the session ID (express-session signs session IDs in cookies)
+    // Format is typically "s:unsignedSessionId.signature"
+    const secret = process.env.SESSION_SECRET;
+    if (!secret) {
+      console.error('[getUserIdFromRequest] SESSION_SECRET not set');
+      return null;
+    }
+
+    // Try to unsign the session ID
+    let unsignedSessionId: string | false;
+    if (sessionId.startsWith('s:')) {
+      unsignedSessionId = cookieSignature.unsign(sessionId.slice(2), secret);
+    } else {
+      unsignedSessionId = cookieSignature.unsign(sessionId, secret);
+    }
+    if (!unsignedSessionId || typeof unsignedSessionId !== 'string') {
+      // Invalid signature
+      return null;
+    }
+
+    // Get session from store using the unsigned session ID
+    const store = getSessionStore();
+    const sessionData = await new Promise<any>((resolve, reject) => {
+      store.get(unsignedSessionId as string, (err, session) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(session);
+        }
+      });
+    });
+
+    if (!sessionData || !sessionData.passport || !sessionData.passport.user) {
+      return null;
+    }
+
+    // passport.serializeUser stores just the user ID
+    return sessionData.passport.user;
+  } catch (error) {
+    console.error('[getUserIdFromRequest] Error extracting user ID:', error);
+    return null;
+  }
 }
 
 export async function setupAuth(app: Express) {
@@ -113,23 +191,23 @@ export async function setupAuth(app: Express) {
           if (!user) {
             return done(null, false, { message: "Invalid email or password" });
           }
-          
+
           // Check if user has a password set
           if (!user.password) {
             console.warn(`User ${user.id} (${user.email}) has no password set`);
             return done(null, false, { message: "Invalid email or password" });
           }
-          
+
           const isValid = await comparePasswords(password, user.password);
           if (!isValid) {
             return done(null, false, { message: "Invalid email or password" });
           }
-          
+
           // Check if user account is active
           if (!user.isActive) {
             return done(null, false, { message: "Account has been disabled. Please contact your administrator." });
           }
-          
+
           return done(null, user);
         } catch (error) {
           console.error("Authentication error:", error);
@@ -149,21 +227,21 @@ export async function setupAuth(app: Express) {
         console.warn('[Deserialize] No user ID provided in session');
         return done(null, false);
       }
-      
+
       const user = await storage.getUser(id);
-      
+
       if (!user) {
         console.warn(`[Deserialize] User not found for ID: ${id}`);
         // Clear the invalid session by returning false
         return done(null, false);
       }
-      
+
       // Check if user is still active
       if (!user.isActive) {
         console.warn(`[Deserialize] User ${id} is inactive`);
         return done(null, false);
       }
-      
+
       done(null, user);
     } catch (error) {
       console.error('[Deserialize] Error deserializing user:', error);
@@ -208,14 +286,14 @@ export async function setupAuth(app: Express) {
           // Get and validate country code from registration or default to GB
           const { COMMON_COUNTRIES } = await import('../shared/countryUtils');
           let countryCode = validatedData.countryCode || "GB";
-          
+
           // Validate country code against supported countries
           const isValidCountry = COMMON_COUNTRIES.some(c => c.code === countryCode);
           if (!isValidCountry) {
             console.warn(`Invalid country code ${countryCode} provided, defaulting to GB`);
             countryCode = "GB";
           }
-          
+
           // Create organization using username as company name
           const organization = await storage.createOrganization({
             name: validatedData.username, // Company name from registration form
@@ -263,7 +341,7 @@ export async function setupAuth(app: Express) {
           // Create sample data (Block A, Property A, Joe Bloggs tenant)
           try {
             const uniqueSuffix = Date.now().toString(36);
-            
+
             // Create Block A
             const blockA = await storage.createBlock({
               organizationId: organization.id,
@@ -315,7 +393,7 @@ export async function setupAuth(app: Express) {
           // Log user in after registration with updated user data
           req.login(updatedUser, (err) => {
             if (err) return next(err);
-            
+
             // Don't send password to client
             const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = updatedUser;
             res.status(201).json(userWithoutPassword);
@@ -333,7 +411,7 @@ export async function setupAuth(app: Express) {
         // For non-owner roles, just log them in normally
         req.login(user, (err) => {
           if (err) return next(err);
-          
+
           // Don't send password to client
           const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
           res.status(201).json(userWithoutPassword);
@@ -341,9 +419,9 @@ export async function setupAuth(app: Express) {
       }
     } catch (error: any) {
       if (error.name === "ZodError") {
-        return res.status(400).json({ 
-          message: "Validation error", 
-          errors: error.errors 
+        return res.status(400).json({
+          message: "Validation error",
+          errors: error.errors
         });
       }
       console.error("Registration error:", error);
@@ -363,11 +441,11 @@ export async function setupAuth(app: Express) {
           return next(err);
         }
         if (!user) {
-          return res.status(401).json({ 
-            message: info?.message || "Invalid email or password" 
+          return res.status(401).json({
+            message: info?.message || "Invalid email or password"
           });
         }
-        
+
         // Regenerate session to avoid conflicts with existing sessions
         // This allows the same user to be logged in from multiple devices/locations
         // Wrap in try-catch to handle any synchronous errors
@@ -378,7 +456,7 @@ export async function setupAuth(app: Express) {
               // If regeneration fails, try to continue with existing session
               // This handles cases where regeneration isn't critical
             }
-            
+
             req.login(user, (loginErr) => {
               if (loginErr) {
                 console.error('[LOGIN ERROR] Login failed:', loginErr);
@@ -388,7 +466,7 @@ export async function setupAuth(app: Express) {
                 console.warn('[LOGIN WARNING] Login callback failed but continuing:', loginErr.message);
                 return res.status(200).json(userWithoutPassword);
               }
-              
+
               // Explicitly save the session before responding
               req.session.save((saveErr) => {
                 if (saveErr) {
@@ -399,7 +477,7 @@ export async function setupAuth(app: Express) {
                   console.warn('[LOGIN WARNING] Session save failed but continuing:', saveErr.message);
                   return res.status(200).json(userWithoutPassword);
                 }
-                
+
                 // Don't send password to client
                 const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
                 console.log('[LOGIN SUCCESS] User logged in:', {
@@ -430,9 +508,9 @@ export async function setupAuth(app: Express) {
     } catch (error: any) {
       console.error('[LOGIN ERROR] Validation or other error:', error);
       if (error.name === "ZodError") {
-        return res.status(400).json({ 
-          message: "Validation error", 
-          errors: error.errors 
+        return res.status(400).json({
+          message: "Validation error",
+          errors: error.errors
         });
       }
       res.status(401).json({ message: "Invalid username or password" });
@@ -452,7 +530,7 @@ export async function setupAuth(app: Express) {
     if (!req.isAuthenticated() || !req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    
+
     // Fetch organization to get country code
     let organizationCountryCode = "GB"; // Default
     if (req.user.organizationId) {
@@ -461,7 +539,7 @@ export async function setupAuth(app: Express) {
         organizationCountryCode = org.countryCode || "GB";
       }
     }
-    
+
     // Don't send password to client, add organizationCountryCode
     const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = req.user;
     res.json({ ...userWithoutPassword, organizationCountryCode });
@@ -471,7 +549,7 @@ export async function setupAuth(app: Express) {
   app.post("/api/forgot-password", async (req, res) => {
     try {
       const { email } = req.body;
-      
+
       if (!email) {
         return res.status(400).json({ message: "Email is required" });
       }
@@ -481,7 +559,7 @@ export async function setupAuth(app: Express) {
       const user = await storage.getUserByEmail(normalizedEmail);
       if (!user) {
         // Email not found - tell user to sign up
-        return res.status(404).json({ 
+        return res.status(404).json({
           message: "Email not found. Please sign up to create an account.",
           emailSent: false,
           emailNotFound: true
@@ -498,7 +576,7 @@ export async function setupAuth(app: Express) {
       let emailSent = false;
       try {
         const { sendPasswordResetEmail } = await import('./resend');
-        const displayName = user.firstName 
+        const displayName = user.firstName
           ? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
           : user.username;
         await sendPasswordResetEmail(
@@ -510,14 +588,14 @@ export async function setupAuth(app: Express) {
       } catch (emailError) {
         console.error('Failed to send password reset email:', emailError);
         // If email fails, still return success but indicate email wasn't sent
-        return res.status(500).json({ 
+        return res.status(500).json({
           message: "Failed to send reset email. Please try again later.",
           emailSent: false
         });
       }
-      
+
       // Return success with email sent indicator
-      res.json({ 
+      res.json({
         message: "Password reset code has been sent to your email",
         emailSent: true
       });
@@ -575,7 +653,7 @@ export function isAuthenticated(req: any, res: any, next: any) {
     });
     return res.status(401).json({ message: "Unauthorized" });
   }
-  
+
   if (req.isAuthenticated()) {
     return next();
   }
@@ -590,8 +668,8 @@ export function requireRole(...allowedRoles: string[]) {
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        message: "Forbidden: Insufficient permissions" 
+      return res.status(403).json({
+        message: "Forbidden: Insufficient permissions"
       });
     }
 

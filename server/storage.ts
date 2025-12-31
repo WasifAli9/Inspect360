@@ -210,6 +210,40 @@ import {
   communityTenantBlocks,
   type CommunityTenantBlock,
   type InsertCommunityTenantBlock,
+  instanceSubscriptions,
+  type InstanceSubscription,
+  type InsertInstanceSubscription,
+  instanceModules,
+  type InstanceModule,
+  type InsertInstanceModule,
+  marketplaceModules,
+  type MarketplaceModule,
+  currencyConfig,
+  type CurrencyConfig,
+  subscriptionTiersTable,
+  type SubscriptionTier,
+  tierPricing,
+  modulePricing,
+  instanceAddonPurchases,
+  type InstanceAddonPurchase,
+  type InsertInstanceAddonPurchase,
+  instanceModuleOverrides,
+  type InstanceModuleOverride,
+  type InsertInstanceModuleOverride,
+  pricingOverrideHistory,
+  type PricingOverrideHistory,
+  type InsertPricingOverrideHistory,
+  addonPackConfig,
+  addonPackPricing,
+  extensiveInspectionConfig,
+  extensiveInspectionPricing,
+  moduleLimits,
+  instanceBundles,
+  type InstanceBundle,
+  bundlePricing,
+  type BundlePricing,
+  bundleModulesJunction,
+  moduleBundlesTable,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, gte, lte, ne, isNull, or } from "drizzle-orm";
@@ -644,11 +678,11 @@ export interface IStorage {
   getCommunityRules(organizationId: string): Promise<CommunityRules | undefined>;
   createCommunityRules(rules: InsertCommunityRules): Promise<CommunityRules>;
   getActiveRuleVersion(organizationId: string): Promise<number>;
-  
+
   // Rule Acceptances
   hasAcceptedLatestRules(tenantId: string, organizationId: string): Promise<boolean>;
   acceptCommunityRules(acceptance: InsertCommunityRuleAcceptance): Promise<CommunityRuleAcceptance>;
-  
+
   // Groups
   getCommunityGroups(blockId: string, status?: string): Promise<CommunityGroup[]>;
   getCommunityGroupsByOrganization(organizationId: string, status?: string): Promise<CommunityGroup[]>;
@@ -657,13 +691,13 @@ export interface IStorage {
   updateCommunityGroup(id: string, updates: UpdateCommunityGroup): Promise<CommunityGroup>;
   deleteCommunityGroup(id: string): Promise<void>;
   getPendingGroupsCount(organizationId: string): Promise<number>;
-  
+
   // Group Members
   getGroupMembers(groupId: string): Promise<CommunityGroupMember[]>;
   isGroupMember(groupId: string, tenantId: string): Promise<boolean>;
   joinGroup(membership: InsertCommunityGroupMember): Promise<CommunityGroupMember>;
   leaveGroup(groupId: string, tenantId: string): Promise<void>;
-  
+
   // Threads
   getCommunityThreads(groupId: string): Promise<CommunityThread[]>;
   getCommunityThread(id: string): Promise<CommunityThread | undefined>;
@@ -671,35 +705,124 @@ export interface IStorage {
   updateCommunityThread(id: string, updates: UpdateCommunityThread): Promise<CommunityThread>;
   deleteCommunityThread(id: string): Promise<void>;
   incrementThreadViewCount(id: string): Promise<void>;
-  
+
   // Posts
   getCommunityPosts(threadId: string): Promise<CommunityPost[]>;
   getCommunityPost(id: string): Promise<CommunityPost | undefined>;
   createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost>;
   updateCommunityPost(id: string, updates: UpdateCommunityPost): Promise<CommunityPost>;
   deleteCommunityPost(id: string): Promise<void>;
-  
+
   // Attachments
   getThreadAttachments(threadId: string): Promise<CommunityAttachment[]>;
   getPostAttachments(postId: string): Promise<CommunityAttachment[]>;
   createCommunityAttachment(attachment: InsertCommunityAttachment): Promise<CommunityAttachment>;
   deleteCommunityAttachment(id: string): Promise<void>;
-  
+
   // Flags
   getCommunityFlags(organizationId: string, unresolvedOnly?: boolean): Promise<CommunityPostFlag[]>;
   createCommunityFlag(flag: InsertCommunityPostFlag): Promise<CommunityPostFlag>;
   resolveCommunityFlag(id: string, resolvedBy: string, notes: string): Promise<CommunityPostFlag>;
-  
+
   // Moderation Log
   getCommunityModerationLog(organizationId: string): Promise<CommunityModerationLog[]>;
   createCommunityModerationLog(log: InsertCommunityModerationLog): Promise<CommunityModerationLog>;
-  
+
   // Tenant Blocks
   getCommunityTenantBlocks(organizationId: string): Promise<CommunityTenantBlock[]>;
   getCommunityTenantBlock(organizationId: string, tenantUserId: string): Promise<CommunityTenantBlock | undefined>;
   createCommunityTenantBlock(block: InsertCommunityTenantBlock): Promise<CommunityTenantBlock>;
   deleteCommunityTenantBlock(organizationId: string, tenantUserId: string): Promise<void>;
   isTenantBlocked(organizationId: string, tenantUserId: string): Promise<boolean>;
+
+  // Marketplace & Pricing 2026
+  // Currency Management
+  getCurrencyConfig(): Promise<CurrencyConfig[]>;
+  createCurrencyConfig(data: { code: string; symbol: string; isActive?: boolean; defaultForRegion?: string | null; conversionRate?: string }): Promise<CurrencyConfig>;
+  updateCurrencyConfig(code: string, updates: Partial<CurrencyConfig>): Promise<CurrencyConfig>;
+  deleteCurrencyConfig(code: string): Promise<void>;
+  
+  // Subscription Tier Management
+  getSubscriptionTiers(): Promise<SubscriptionTier[]>;
+  createSubscriptionTier(data: any): Promise<SubscriptionTier>;
+  updateSubscriptionTier(id: string, updates: Partial<SubscriptionTier>): Promise<SubscriptionTier>;
+  deleteSubscriptionTier(id: string): Promise<void>;
+  getTierPricing(tierId: string, currencyCode: string): Promise<any>;
+  getAllTierPricing(tierId: string): Promise<any[]>;
+  createTierPricing(data: { tierId: string; currencyCode: string; priceMonthly: number; priceAnnual: number }): Promise<any>;
+  updateTierPricing(id: string, updates: { priceMonthly?: number; priceAnnual?: number }): Promise<any>;
+  deleteTierPricing(id: string): Promise<void>;
+  
+  // Add-On Pack Management
+  getAddonPacks(): Promise<any[]>;
+  createAddonPackConfig(data: { name: string; inspectionQuantity: number; packOrder: number; isActive?: boolean }): Promise<any>;
+  updateAddonPackConfig(id: string, updates: Partial<any>): Promise<any>;
+  deleteAddonPackConfig(id: string): Promise<void>;
+  getAddonPackPricing(packId: string, tierId: string, currencyCode: string): Promise<any>;
+  getAllAddonPackPricing(packId: string): Promise<any[]>;
+  createAddonPackPricing(data: { packId: string; tierId: string; currencyCode: string; pricePerInspection: number; totalPackPrice: number }): Promise<any>;
+  updateAddonPackPricing(id: string, updates: { pricePerInspection?: number; totalPackPrice?: number }): Promise<any>;
+  deleteAddonPackPricing(id: string): Promise<void>;
+  
+  // Extensive Inspection Management
+  getExtensiveInspectionConfig(): Promise<any[]>;
+  createExtensiveInspectionConfig(data: { name: string; imageCount?: number; description?: string; isActive?: boolean }): Promise<any>;
+  updateExtensiveInspectionConfig(id: string, updates: Partial<any>): Promise<any>;
+  deleteExtensiveInspectionConfig(id: string): Promise<void>;
+  getExtensiveInspectionPricing(typeId: string, tierId: string, currencyCode: string): Promise<any>;
+  getAllExtensiveInspectionPricing(typeId: string): Promise<any[]>;
+  createExtensiveInspectionPricing(data: { extensiveTypeId: string; tierId: string; currencyCode: string; pricePerInspection: number }): Promise<any>;
+  updateExtensiveInspectionPricing(id: string, updates: { pricePerInspection?: number }): Promise<any>;
+  deleteExtensiveInspectionPricing(id: string): Promise<void>;
+  
+  // Module Management
+  getMarketplaceModules(): Promise<MarketplaceModule[]>;
+  createMarketplaceModule(data: { name: string; moduleKey: string; description?: string; iconName?: string; isAvailableGlobally?: boolean; defaultEnabled?: boolean; displayOrder: number }): Promise<MarketplaceModule>;
+  updateMarketplaceModule(id: string, updates: Partial<MarketplaceModule>): Promise<MarketplaceModule>;
+  deleteMarketplaceModule(id: string): Promise<void>;
+  getModulePricing(moduleId: string, currencyCode: string): Promise<any>;
+  getAllModulePricing(moduleId: string): Promise<any[]>;
+  createModulePricing(data: { moduleId: string; currencyCode: string; priceMonthly: number; priceAnnual: number }): Promise<any>;
+  updateModulePricing(id: string, updates: { priceMonthly?: number; priceAnnual?: number }): Promise<any>;
+  deleteModulePricing(id: string): Promise<void>;
+  getModuleLimits(moduleId: string): Promise<any[]>;
+  createModuleLimit(data: { moduleId: string; limitType: string; includedQuantity: number; overagePrice: number; overageCurrency: string }): Promise<any>;
+  updateModuleLimit(id: string, updates: Partial<any>): Promise<any>;
+  deleteModuleLimit(id: string): Promise<void>;
+  
+  // Module Bundle Management
+  getModuleBundles(): Promise<any[]>;
+  createModuleBundle(data: { name: string; description?: string; discountPercentage?: string; isActive?: boolean }): Promise<any>;
+  updateModuleBundle(id: string, updates: Partial<any>): Promise<any>;
+  deleteModuleBundle(id: string): Promise<void>;
+  getBundleModules(bundleId: string): Promise<{ bundleId: string; moduleId: string }[]>;
+  addModuleToBundle(bundleId: string, moduleId: string): Promise<void>;
+  removeModuleFromBundle(bundleId: string, moduleId: string): Promise<void>;
+  getBundlePricing(bundleId: string, currencyCode: string): Promise<BundlePricing | undefined>;
+  getAllBundlePricing(bundleId: string): Promise<BundlePricing[]>;
+  createBundlePricing(data: { bundleId: string; currencyCode: string; priceMonthly: number; priceAnnual: number; savingsMonthly?: number }): Promise<BundlePricing>;
+  updateBundlePricing(id: string, updates: { priceMonthly?: number; priceAnnual?: number; savingsMonthly?: number }): Promise<BundlePricing>;
+  deleteBundlePricing(id: string): Promise<void>;
+  
+  // Instance Management
+  getInstanceModules(instanceId: string): Promise<InstanceModule[]>;
+  toggleInstanceModule(instanceId: string, moduleId: string, enable: boolean): Promise<InstanceModule>;
+  updateModuleUsage(instanceModuleId: string, usage: number): Promise<InstanceModule>;
+  calculateModuleUsage(organizationId: string, moduleKey: string): Promise<number>;
+  getInstanceSubscription(organizationId: string): Promise<InstanceSubscription | undefined>;
+  createInstanceSubscription(data: InsertInstanceSubscription): Promise<InstanceSubscription>;
+  updateInstanceSubscription(id: string, updates: Partial<InsertInstanceSubscription>): Promise<InstanceSubscription>;
+  createInstanceAddonPurchase(data: InsertInstanceAddonPurchase): Promise<InstanceAddonPurchase>;
+  updateInstanceAddonPurchase(id: string, updates: Partial<InsertInstanceAddonPurchase>): Promise<InstanceAddonPurchase>;
+  getInstanceAddonPurchases(instanceId: string): Promise<InstanceAddonPurchase[]>;
+  createInstanceModuleOverride(data: InsertInstanceModuleOverride): Promise<InstanceModuleOverride>;
+  getInstanceModuleOverrides(instanceId: string): Promise<InstanceModuleOverride[]>;
+  createPricingOverrideHistory(data: InsertPricingOverrideHistory): Promise<PricingOverrideHistory>;
+  getInspectionImageCount(inspectionId: string): Promise<number>;
+  getMarketplaceModuleByKey(moduleKey: string): Promise<MarketplaceModule | undefined>;
+  getInstanceModuleByModuleKey(instanceId: string, moduleKey: string): Promise<InstanceModule | undefined>;
+  getInstanceBundles(instanceId: string): Promise<InstanceBundle[]>;
+  addInstanceBundle(instanceId: string, bundleId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1903,7 +2026,7 @@ export class DatabaseStorage implements IStorage {
       .from(tenantAssignments)
       .innerJoin(users, eq(tenantAssignments.tenantId, users.id))
       .where(eq(tenantAssignments.organizationId, organizationId));
-    
+
     // Map to include status field based on isActive
     return assignments.map(a => ({
       ...a,
@@ -4194,15 +4317,15 @@ export class DatabaseStorage implements IStorage {
       .update(communityRules)
       .set({ isActive: false })
       .where(eq(communityRules.organizationId, rules.organizationId));
-    
+
     // Get next version number
     const existing = await db
       .select({ maxVersion: sql<number>`COALESCE(MAX(${communityRules.version}), 0)` })
       .from(communityRules)
       .where(eq(communityRules.organizationId, rules.organizationId));
-    
+
     const nextVersion = (existing[0]?.maxVersion || 0) + 1;
-    
+
     const [created] = await db
       .insert(communityRules)
       .values({ ...rules, version: nextVersion, isActive: true })
@@ -4219,7 +4342,7 @@ export class DatabaseStorage implements IStorage {
   async hasAcceptedLatestRules(tenantId: string, organizationId: string): Promise<boolean> {
     const latestVersion = await this.getActiveRuleVersion(organizationId);
     if (latestVersion === 0) return true; // No rules set up yet
-    
+
     const [acceptance] = await db
       .select()
       .from(communityRuleAcceptances)
@@ -4335,13 +4458,13 @@ export class DatabaseStorage implements IStorage {
       .insert(communityGroupMembers)
       .values(membership)
       .returning();
-    
+
     // Update member count
     await db
       .update(communityGroups)
       .set({ memberCount: sql`${communityGroups.memberCount} + 1` })
       .where(eq(communityGroups.id, membership.groupId));
-    
+
     return member;
   }
 
@@ -4349,7 +4472,7 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(communityGroupMembers)
       .where(and(eq(communityGroupMembers.groupId, groupId), eq(communityGroupMembers.tenantId, tenantId)));
-    
+
     // Update member count
     await db
       .update(communityGroups)
@@ -4379,13 +4502,13 @@ export class DatabaseStorage implements IStorage {
       .insert(communityThreads)
       .values(thread)
       .returning();
-    
+
     // Update group post count
     await db
       .update(communityGroups)
       .set({ postCount: sql`${communityGroups.postCount} + 1` })
       .where(eq(communityGroups.id, thread.groupId));
-    
+
     return created;
   }
 
@@ -4439,16 +4562,16 @@ export class DatabaseStorage implements IStorage {
       .insert(communityPosts)
       .values(post)
       .returning();
-    
+
     // Update thread reply count and last activity
     await db
       .update(communityThreads)
-      .set({ 
+      .set({
         replyCount: sql`${communityThreads.replyCount} + 1`,
         lastActivityAt: new Date()
       })
       .where(eq(communityThreads.id, post.threadId));
-    
+
     return created;
   }
 
@@ -4514,7 +4637,7 @@ export class DatabaseStorage implements IStorage {
         eq(communityGroups.organizationId, organizationId),
         unresolvedOnly ? eq(communityPostFlags.isResolved, false) : undefined
       ));
-    
+
     const flaggedPosts = await db
       .select({ flag: communityPostFlags })
       .from(communityPostFlags)
@@ -4525,7 +4648,7 @@ export class DatabaseStorage implements IStorage {
         eq(communityGroups.organizationId, organizationId),
         unresolvedOnly ? eq(communityPostFlags.isResolved, false) : undefined
       ));
-    
+
     const allFlags = [...flaggedThreads.map(f => f.flag), ...flaggedPosts.map(f => f.flag)];
     return allFlags.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
   }
@@ -4604,6 +4727,527 @@ export class DatabaseStorage implements IStorage {
   async isTenantBlocked(organizationId: string, tenantUserId: string): Promise<boolean> {
     const block = await this.getCommunityTenantBlock(organizationId, tenantUserId);
     return !!block;
+  }
+
+  // Marketplace & Pricing 2026
+  async getMarketplaceModules(): Promise<MarketplaceModule[]> {
+    return await db.select().from(marketplaceModules).orderBy(marketplaceModules.displayOrder);
+  }
+
+  async getInstanceModules(instanceId: string): Promise<InstanceModule[]> {
+    return await db.select().from(instanceModules).where(eq(instanceModules.instanceId, instanceId));
+  }
+
+  async toggleInstanceModule(instanceId: string, moduleId: string, enable: boolean): Promise<InstanceModule> {
+    const [existing] = await db.select()
+      .from(instanceModules)
+      .where(and(eq(instanceModules.instanceId, instanceId), eq(instanceModules.moduleId, moduleId)));
+
+    if (existing) {
+      const [updated] = await db.update(instanceModules)
+        .set({
+          isEnabled: enable,
+          enabledDate: enable ? new Date() : existing.enabledDate,
+          disabledDate: enable ? null : new Date()
+        })
+        .where(eq(instanceModules.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [inserted] = await db.insert(instanceModules)
+        .values({
+          instanceId,
+          moduleId,
+          isEnabled: enable,
+          enabledDate: enable ? new Date() : null,
+        })
+        .returning();
+      return inserted;
+    }
+  }
+
+  async updateModuleUsage(instanceModuleId: string, usage: number): Promise<InstanceModule> {
+    const [updated] = await db.update(instanceModules)
+      .set({ currentUsage: usage })
+      .where(eq(instanceModules.id, instanceModuleId))
+      .returning();
+    if (!updated) {
+      throw new Error(`Instance module ${instanceModuleId} not found`);
+    }
+    return updated;
+  }
+
+  async calculateModuleUsage(organizationId: string, moduleKey: string): Promise<number> {
+    // Calculate usage based on module type
+    switch (moduleKey) {
+      case 'tenant_portal':
+        // Count active tenants (users with role 'tenant')
+        const tenants = await this.getUsersByOrganizationAndRole(organizationId, 'tenant');
+        return tenants.length;
+      
+      case 'white_label':
+        // For white labelling, we could track:
+        // - Number of branded reports generated
+        // - Number of custom domains configured
+        // For now, return 0 or count of branding fields configured
+        // This could be enhanced to track actual report generation
+        return 0; // Placeholder - can be enhanced to track reports/domains
+      
+      default:
+        // For other modules, return 0 or implement specific tracking
+        return 0;
+    }
+  }
+
+  async getCurrencyConfig(): Promise<CurrencyConfig[]> {
+    return await db.select().from(currencyConfig).where(eq(currencyConfig.isActive, true));
+  }
+
+  async getSubscriptionTiers(): Promise<SubscriptionTier[]> {
+    return await db.select().from(subscriptionTiersTable).where(eq(subscriptionTiersTable.isActive, true)).orderBy(subscriptionTiersTable.tierOrder);
+  }
+
+  async getInstanceSubscription(organizationId: string): Promise<InstanceSubscription | undefined> {
+    const [sub] = await db.select().from(instanceSubscriptions).where(eq(instanceSubscriptions.organizationId, organizationId));
+    return sub;
+  }
+
+  async createInstanceSubscription(data: InsertInstanceSubscription): Promise<InstanceSubscription> {
+    const [sub] = await db.insert(instanceSubscriptions).values(data).returning();
+    return sub;
+  }
+
+  async updateInstanceSubscription(id: string, updates: Partial<InsertInstanceSubscription>): Promise<InstanceSubscription> {
+    const [sub] = await db.update(instanceSubscriptions).set(updates).where(eq(instanceSubscriptions.id, id)).returning();
+    return sub;
+  }
+
+  async getTierPricing(tierId: string, currencyCode: string): Promise<any> {
+    const [price] = await db.select()
+      .from(tierPricing)
+      .where(and(eq(tierPricing.tierId, tierId), eq(tierPricing.currencyCode, currencyCode)));
+    return price;
+  }
+
+  async getModulePricing(moduleId: string, currencyCode: string): Promise<any> {
+    const [price] = await db.select()
+      .from(modulePricing)
+      .where(and(eq(modulePricing.moduleId, moduleId), eq(modulePricing.currencyCode, currencyCode)));
+    return price;
+  }
+
+  async getAddonPacks(): Promise<any[]> {
+    return await db.select().from(addonPackConfig).where(eq(addonPackConfig.isActive, true)).orderBy(addonPackConfig.packOrder);
+  }
+
+  async getAddonPackPricing(packId: string, tierId: string, currencyCode: string): Promise<any> {
+    const [price] = await db.select()
+      .from(addonPackPricing)
+      .where(and(
+        eq(addonPackPricing.packId, packId),
+        eq(addonPackPricing.tierId, tierId),
+        eq(addonPackPricing.currencyCode, currencyCode)
+      ));
+    return price;
+  }
+
+  async getExtensiveInspectionConfig(): Promise<any[]> {
+    return await db.select().from(extensiveInspectionConfig).where(eq(extensiveInspectionConfig.isActive, true));
+  }
+
+  async getModuleBundles(): Promise<any[]> {
+    return await db.select().from(moduleBundlesTable).where(eq(moduleBundlesTable.isActive, true));
+  }
+
+  async createInstanceAddonPurchase(data: InsertInstanceAddonPurchase): Promise<InstanceAddonPurchase> {
+    const [purchase] = await db.insert(instanceAddonPurchases).values(data).returning();
+    return purchase;
+  }
+
+  async updateInstanceAddonPurchase(id: string, updates: Partial<InsertInstanceAddonPurchase>): Promise<InstanceAddonPurchase> {
+    const [updated] = await db.update(instanceAddonPurchases)
+      .set(updates)
+      .where(eq(instanceAddonPurchases.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getInstanceAddonPurchases(instanceId: string): Promise<InstanceAddonPurchase[]> {
+    return await db.select()
+      .from(instanceAddonPurchases)
+      .where(eq(instanceAddonPurchases.instanceId, instanceId))
+      .orderBy(desc(instanceAddonPurchases.purchaseDate));
+  }
+
+  async createInstanceModuleOverride(data: InsertInstanceModuleOverride): Promise<InstanceModuleOverride> {
+    const [override] = await db.insert(instanceModuleOverrides).values(data).returning();
+    return override;
+  }
+
+  async getInstanceModuleOverrides(instanceId: string): Promise<InstanceModuleOverride[]> {
+    return await db.select()
+      .from(instanceModuleOverrides)
+      .where(and(
+        eq(instanceModuleOverrides.instanceId, instanceId),
+        eq(instanceModuleOverrides.isActive, true)
+      ));
+  }
+
+  async createPricingOverrideHistory(data: InsertPricingOverrideHistory): Promise<PricingOverrideHistory> {
+    const [history] = await db.insert(pricingOverrideHistory).values(data).returning();
+    return history;
+  }
+
+  async getInspectionImageCount(inspectionId: string): Promise<number> {
+    const entries = await this.getInspectionEntries(inspectionId);
+    let totalImages = 0;
+    for (const entry of entries) {
+      if (entry.photos && Array.isArray(entry.photos)) {
+        totalImages += entry.photos.length;
+      }
+    }
+    return totalImages;
+  }
+
+  async getMarketplaceModuleByKey(moduleKey: string): Promise<MarketplaceModule | undefined> {
+    const [module] = await db.select()
+      .from(marketplaceModules)
+      .where(eq(marketplaceModules.moduleKey, moduleKey));
+    return module;
+  }
+
+  async getInstanceModuleByModuleKey(instanceId: string, moduleKey: string): Promise<InstanceModule | undefined> {
+    const [module] = await db.select()
+      .from(marketplaceModules)
+      .where(eq(marketplaceModules.moduleKey, moduleKey));
+
+    if (!module) return undefined;
+
+    const [instanceModule] = await db.select()
+      .from(instanceModules)
+      .where(and(
+        eq(instanceModules.instanceId, instanceId),
+        eq(instanceModules.moduleId, module.id)
+      ));
+
+    return instanceModule;
+  }
+
+  async getInstanceBundles(instanceId: string): Promise<InstanceBundle[]> {
+    return await db.select().from(instanceBundles).where(eq(instanceBundles.instanceId, instanceId));
+  }
+
+  async getBundlePricing(bundleId: string, currencyCode: string): Promise<BundlePricing | undefined> {
+    const [price] = await db.select()
+      .from(bundlePricing)
+      .where(and(eq(bundlePricing.bundleId, bundleId), eq(bundlePricing.currencyCode, currencyCode)));
+    return price;
+  }
+
+  async getBundleModules(bundleId: string): Promise<{ bundleId: string; moduleId: string }[]> {
+    return await db.select().from(bundleModulesJunction).where(eq(bundleModulesJunction.bundleId, bundleId));
+  }
+
+  async addInstanceBundle(instanceId: string, bundleId: string): Promise<void> {
+    await db.insert(instanceBundles).values({ instanceId, bundleId });
+  }
+
+  // Currency Management CRUD
+  async createCurrencyConfig(data: { code: string; symbol: string; isActive?: boolean; defaultForRegion?: string | null; conversionRate?: string }): Promise<CurrencyConfig> {
+    const [currency] = await db.insert(currencyConfig).values({
+      code: data.code,
+      symbol: data.symbol,
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      defaultForRegion: data.defaultForRegion || null,
+      conversionRate: data.conversionRate || "1.0000"
+    }).returning();
+    return currency;
+  }
+
+  async updateCurrencyConfig(code: string, updates: Partial<CurrencyConfig>): Promise<CurrencyConfig> {
+    const [updated] = await db.update(currencyConfig)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(currencyConfig.code, code))
+      .returning();
+    if (!updated) throw new Error(`Currency ${code} not found`);
+    return updated;
+  }
+
+  async deleteCurrencyConfig(code: string): Promise<void> {
+    await db.delete(currencyConfig).where(eq(currencyConfig.code, code));
+  }
+
+  // Subscription Tier CRUD
+  async createSubscriptionTier(data: any): Promise<SubscriptionTier> {
+    const [tier] = await db.insert(subscriptionTiersTable).values(data).returning();
+    return tier;
+  }
+
+  async updateSubscriptionTier(id: string, updates: Partial<SubscriptionTier>): Promise<SubscriptionTier> {
+    const [updated] = await db.update(subscriptionTiersTable)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(subscriptionTiersTable.id, id))
+      .returning();
+    if (!updated) throw new Error(`Subscription tier ${id} not found`);
+    return updated;
+  }
+
+  async deleteSubscriptionTier(id: string): Promise<void> {
+    await db.delete(subscriptionTiersTable).where(eq(subscriptionTiersTable.id, id));
+  }
+
+  async getAllTierPricing(tierId: string): Promise<any[]> {
+    return await db.select().from(tierPricing).where(eq(tierPricing.tierId, tierId));
+  }
+
+  async createTierPricing(data: { tierId: string; currencyCode: string; priceMonthly: number; priceAnnual: number }): Promise<any> {
+    const [pricing] = await db.insert(tierPricing).values(data).returning();
+    return pricing;
+  }
+
+  async updateTierPricing(id: string, updates: { priceMonthly?: number; priceAnnual?: number }): Promise<any> {
+    const [updated] = await db.update(tierPricing)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(tierPricing.id, id))
+      .returning();
+    if (!updated) throw new Error(`Tier pricing ${id} not found`);
+    return updated;
+  }
+
+  async deleteTierPricing(id: string): Promise<void> {
+    await db.delete(tierPricing).where(eq(tierPricing.id, id));
+  }
+
+  // Add-On Pack CRUD
+  async createAddonPackConfig(data: { name: string; inspectionQuantity: number; packOrder: number; isActive?: boolean }): Promise<any> {
+    const [pack] = await db.insert(addonPackConfig).values({
+      name: data.name,
+      inspectionQuantity: data.inspectionQuantity,
+      packOrder: data.packOrder,
+      isActive: data.isActive !== undefined ? data.isActive : true
+    }).returning();
+    return pack;
+  }
+
+  async updateAddonPackConfig(id: string, updates: Partial<any>): Promise<any> {
+    const [updated] = await db.update(addonPackConfig)
+      .set(updates)
+      .where(eq(addonPackConfig.id, id))
+      .returning();
+    if (!updated) throw new Error(`Addon pack ${id} not found`);
+    return updated;
+  }
+
+  async deleteAddonPackConfig(id: string): Promise<void> {
+    await db.delete(addonPackConfig).where(eq(addonPackConfig.id, id));
+  }
+
+  async getAllAddonPackPricing(packId: string): Promise<any[]> {
+    return await db.select().from(addonPackPricing).where(eq(addonPackPricing.packId, packId));
+  }
+
+  async createAddonPackPricing(data: { packId: string; tierId: string; currencyCode: string; pricePerInspection: number; totalPackPrice: number }): Promise<any> {
+    const [pricing] = await db.insert(addonPackPricing).values(data).returning();
+    return pricing;
+  }
+
+  async updateAddonPackPricing(id: string, updates: { pricePerInspection?: number; totalPackPrice?: number }): Promise<any> {
+    const [updated] = await db.update(addonPackPricing)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(addonPackPricing.id, id))
+      .returning();
+    if (!updated) throw new Error(`Addon pack pricing ${id} not found`);
+    return updated;
+  }
+
+  async deleteAddonPackPricing(id: string): Promise<void> {
+    await db.delete(addonPackPricing).where(eq(addonPackPricing.id, id));
+  }
+
+  // Extensive Inspection CRUD
+  async createExtensiveInspectionConfig(data: { name: string; imageCount?: number; description?: string; isActive?: boolean }): Promise<any> {
+    const [config] = await db.insert(extensiveInspectionConfig).values({
+      name: data.name,
+      imageCount: data.imageCount || 800,
+      description: data.description || null,
+      isActive: data.isActive !== undefined ? data.isActive : true
+    }).returning();
+    return config;
+  }
+
+  async updateExtensiveInspectionConfig(id: string, updates: Partial<any>): Promise<any> {
+    const [updated] = await db.update(extensiveInspectionConfig)
+      .set(updates)
+      .where(eq(extensiveInspectionConfig.id, id))
+      .returning();
+    if (!updated) throw new Error(`Extensive inspection config ${id} not found`);
+    return updated;
+  }
+
+  async deleteExtensiveInspectionConfig(id: string): Promise<void> {
+    await db.delete(extensiveInspectionConfig).where(eq(extensiveInspectionConfig.id, id));
+  }
+
+  async getExtensiveInspectionPricing(typeId: string, tierId: string, currencyCode: string): Promise<any> {
+    const [price] = await db.select()
+      .from(extensiveInspectionPricing)
+      .where(and(
+        eq(extensiveInspectionPricing.extensiveTypeId, typeId),
+        eq(extensiveInspectionPricing.tierId, tierId),
+        eq(extensiveInspectionPricing.currencyCode, currencyCode)
+      ));
+    return price;
+  }
+
+  async getAllExtensiveInspectionPricing(typeId: string): Promise<any[]> {
+    return await db.select().from(extensiveInspectionPricing).where(eq(extensiveInspectionPricing.extensiveTypeId, typeId));
+  }
+
+  async createExtensiveInspectionPricing(data: { extensiveTypeId: string; tierId: string; currencyCode: string; pricePerInspection: number }): Promise<any> {
+    const [pricing] = await db.insert(extensiveInspectionPricing).values(data).returning();
+    return pricing;
+  }
+
+  async updateExtensiveInspectionPricing(id: string, updates: { pricePerInspection?: number }): Promise<any> {
+    const [updated] = await db.update(extensiveInspectionPricing)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(extensiveInspectionPricing.id, id))
+      .returning();
+    if (!updated) throw new Error(`Extensive inspection pricing ${id} not found`);
+    return updated;
+  }
+
+  async deleteExtensiveInspectionPricing(id: string): Promise<void> {
+    await db.delete(extensiveInspectionPricing).where(eq(extensiveInspectionPricing.id, id));
+  }
+
+  // Module CRUD
+  async createMarketplaceModule(data: { name: string; moduleKey: string; description?: string; iconName?: string; isAvailableGlobally?: boolean; defaultEnabled?: boolean; displayOrder: number }): Promise<MarketplaceModule> {
+    const [module] = await db.insert(marketplaceModules).values({
+      name: data.name,
+      moduleKey: data.moduleKey,
+      description: data.description || null,
+      iconName: data.iconName || null,
+      isAvailableGlobally: data.isAvailableGlobally !== undefined ? data.isAvailableGlobally : true,
+      defaultEnabled: data.defaultEnabled !== undefined ? data.defaultEnabled : false,
+      displayOrder: data.displayOrder
+    }).returning();
+    return module;
+  }
+
+  async updateMarketplaceModule(id: string, updates: Partial<MarketplaceModule>): Promise<MarketplaceModule> {
+    const [updated] = await db.update(marketplaceModules)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(marketplaceModules.id, id))
+      .returning();
+    if (!updated) throw new Error(`Marketplace module ${id} not found`);
+    return updated;
+  }
+
+  async deleteMarketplaceModule(id: string): Promise<void> {
+    await db.delete(marketplaceModules).where(eq(marketplaceModules.id, id));
+  }
+
+  async getAllModulePricing(moduleId: string): Promise<any[]> {
+    return await db.select().from(modulePricing).where(eq(modulePricing.moduleId, moduleId));
+  }
+
+  async createModulePricing(data: { moduleId: string; currencyCode: string; priceMonthly: number; priceAnnual: number }): Promise<any> {
+    const [pricing] = await db.insert(modulePricing).values(data).returning();
+    return pricing;
+  }
+
+  async updateModulePricing(id: string, updates: { priceMonthly?: number; priceAnnual?: number }): Promise<any> {
+    const [updated] = await db.update(modulePricing)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(modulePricing.id, id))
+      .returning();
+    if (!updated) throw new Error(`Module pricing ${id} not found`);
+    return updated;
+  }
+
+  async deleteModulePricing(id: string): Promise<void> {
+    await db.delete(modulePricing).where(eq(modulePricing.id, id));
+  }
+
+  async getModuleLimits(moduleId: string): Promise<any[]> {
+    return await db.select().from(moduleLimits).where(eq(moduleLimits.moduleId, moduleId));
+  }
+
+  async createModuleLimit(data: { moduleId: string; limitType: string; includedQuantity: number; overagePrice: number; overageCurrency: string }): Promise<any> {
+    const [limit] = await db.insert(moduleLimits).values(data).returning();
+    return limit;
+  }
+
+  async updateModuleLimit(id: string, updates: Partial<any>): Promise<any> {
+    const [updated] = await db.update(moduleLimits)
+      .set(updates)
+      .where(eq(moduleLimits.id, id))
+      .returning();
+    if (!updated) throw new Error(`Module limit ${id} not found`);
+    return updated;
+  }
+
+  async deleteModuleLimit(id: string): Promise<void> {
+    await db.delete(moduleLimits).where(eq(moduleLimits.id, id));
+  }
+
+  // Module Bundle CRUD
+  async createModuleBundle(data: { name: string; description?: string; discountPercentage?: string; isActive?: boolean }): Promise<any> {
+    const [bundle] = await db.insert(moduleBundlesTable).values({
+      name: data.name,
+      description: data.description || null,
+      discountPercentage: data.discountPercentage || null,
+      isActive: data.isActive !== undefined ? data.isActive : true
+    }).returning();
+    return bundle;
+  }
+
+  async updateModuleBundle(id: string, updates: Partial<any>): Promise<any> {
+    const [updated] = await db.update(moduleBundlesTable)
+      .set(updates)
+      .where(eq(moduleBundlesTable.id, id))
+      .returning();
+    if (!updated) throw new Error(`Module bundle ${id} not found`);
+    return updated;
+  }
+
+  async deleteModuleBundle(id: string): Promise<void> {
+    await db.delete(moduleBundlesTable).where(eq(moduleBundlesTable.id, id));
+  }
+
+  async addModuleToBundle(bundleId: string, moduleId: string): Promise<void> {
+    await db.insert(bundleModulesJunction).values({ bundleId, moduleId }).onConflictDoNothing();
+  }
+
+  async removeModuleFromBundle(bundleId: string, moduleId: string): Promise<void> {
+    await db.delete(bundleModulesJunction)
+      .where(and(
+        eq(bundleModulesJunction.bundleId, bundleId),
+        eq(bundleModulesJunction.moduleId, moduleId)
+      ));
+  }
+
+  async getAllBundlePricing(bundleId: string): Promise<BundlePricing[]> {
+    return await db.select().from(bundlePricing).where(eq(bundlePricing.bundleId, bundleId));
+  }
+
+  async createBundlePricing(data: { bundleId: string; currencyCode: string; priceMonthly: number; priceAnnual: number; savingsMonthly?: number }): Promise<BundlePricing> {
+    const [pricing] = await db.insert(bundlePricing).values(data).returning();
+    return pricing;
+  }
+
+  async updateBundlePricing(id: string, updates: { priceMonthly?: number; priceAnnual?: number; savingsMonthly?: number }): Promise<BundlePricing> {
+    const [updated] = await db.update(bundlePricing)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(bundlePricing.id, id))
+      .returning();
+    if (!updated) throw new Error(`Bundle pricing ${id} not found`);
+    return updated;
+  }
+
+  async deleteBundlePricing(id: string): Promise<void> {
+    await db.delete(bundlePricing).where(eq(bundlePricing.id, id));
   }
 }
 

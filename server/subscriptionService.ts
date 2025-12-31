@@ -1,7 +1,51 @@
 import { storage } from "./storage";
-import type { Organization, CreditBatch, InsertCreditBatch, InsertCreditLedger } from "@shared/schema";
+import type { Organization, CreditBatch, InsertCreditBatch, InsertCreditLedger, InstanceSubscription, InstanceAddonPurchase } from "@shared/schema";
 
 export class SubscriptionService {
+  /**
+   * Calculate credits needed for an inspection based on image count
+   * Formula: 1 base credit + 1 credit per 250 images
+   * @param imageCount - Total number of images in the inspection
+   * @returns Number of credits needed
+   */
+  calculateInspectionCredits(imageCount: number): number {
+    const baseCredits = 1;
+    const additionalCredits = Math.floor(imageCount / 250);
+    return baseCredits + additionalCredits;
+  }
+
+  /**
+   * Consume inspection credits using tier quota first, then addon packs (FIFO)
+   * @param organizationId - Organization consuming credits
+   * @param creditsNeeded - Number of credits to consume
+   * @param inspectionId - ID of the inspection
+   * @returns true if successful, throws error if insufficient credits
+   */
+  async consumeInspectionCredits(
+    organizationId: string,
+    creditsNeeded: number,
+    inspectionId: string
+  ): Promise<void> {
+    if (creditsNeeded <= 0) {
+      throw new Error("Credits needed must be positive");
+    }
+
+    const instanceSub = await storage.getInstanceSubscription(organizationId);
+    if (!instanceSub) {
+      throw new Error("No subscription found for organization");
+    }
+
+    // For now, use the existing credit batch system
+    // In the future, we might want to track tier quota usage separately
+    // This implementation uses credit batches which should include tier quota grants
+    await this.consumeCredits(
+      organizationId,
+      creditsNeeded,
+      "inspection",
+      inspectionId,
+      `Inspection credits consumed (${creditsNeeded} credits)`
+    );
+  }
   /**
    * Consume credits using FIFO logic from available batches
    * @param organizationId - Organization consuming credits
@@ -157,6 +201,8 @@ export class SubscriptionService {
 
   /**
    * Handle rollover logic at billing cycle start
+   * NOTE: Changed to expire all unused credits instead of rolling them over
+   * Unused credits from previous cycle are reset to zero - no rollover
    * @param organizationId - Organization to process
    * @param currentPeriodEnd - End of the current billing period
    */
@@ -166,12 +212,13 @@ export class SubscriptionService {
     // Get all batches for the organization
     const allBatches = await storage.getCreditBatchesByOrganization(organizationId);
 
-    // Expire old rolled batches (from previous cycle)
-    const oldRolledBatches = allBatches.filter(
-      b => b.rolled && b.expiresAt && b.expiresAt < now && b.remainingQuantity > 0
+    // Expire ALL expired batches (both rolled and non-rolled) - NO rollover
+    // All unused credits from previous cycle will be reset to zero
+    const expiredBatches = allBatches.filter(
+      b => b.remainingQuantity > 0 && b.expiresAt && b.expiresAt <= now
     );
 
-    for (const batch of oldRolledBatches) {
+    for (const batch of expiredBatches) {
       await storage.expireCreditBatch(batch.id);
       
       // Record expiry in ledger
@@ -180,44 +227,11 @@ export class SubscriptionService {
         source: "expiry" as any,
         quantity: -batch.remainingQuantity,
         batchId: batch.id,
-        notes: `Expired ${batch.remainingQuantity} rolled credits from previous cycle`,
+        notes: `Expired ${batch.remainingQuantity} unused credits from previous cycle (no rollover - credits reset to zero)`,
       });
     }
 
-    // Find last cycle's main batch (non-rolled, with remaining credits)
-    const lastCycleBatch = allBatches.find(
-      b => !b.rolled && b.remainingQuantity > 0 && b.expiresAt && b.expiresAt <= now
-    );
-
-    if (lastCycleBatch && lastCycleBatch.remainingQuantity > 0) {
-      // Roll over remaining credits to new batch
-      const rolledBatch = await storage.createCreditBatch({
-        organizationId,
-        grantedQuantity: lastCycleBatch.remainingQuantity,
-        remainingQuantity: lastCycleBatch.remainingQuantity,
-        grantSource: "plan_inclusion" as any,
-        grantedAt: new Date(),
-        expiresAt: currentPeriodEnd,
-        rolled: true,
-        metadataJson: {
-          originalBatchId: lastCycleBatch.id,
-        } as any,
-      });
-
-      // Record rollover in ledger
-      await storage.createCreditLedgerEntry({
-        organizationId,
-        source: "plan_inclusion" as any,
-        quantity: lastCycleBatch.remainingQuantity,
-        batchId: rolledBatch.id,
-        notes: `Rolled over ${lastCycleBatch.remainingQuantity} credits from previous cycle`,
-      });
-
-      // Mark original batch as consumed (set to 0)
-      await storage.updateCreditBatch(lastCycleBatch.id, {
-        remainingQuantity: 0,
-      });
-    }
+    console.log(`[Rollover] Expired ${expiredBatches.length} batches with unused credits for org ${organizationId} (no rollover - credits reset to zero)`);
   }
 
   /**

@@ -9,11 +9,20 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2, Settings, Gift, Info, MessageSquarePlus, Bug, Lightbulb, TrendingUp, Clock, Eye, CheckCircle2, XCircle, AlertCircle, Filter } from "lucide-react";
+import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2, Settings, Gift, Info, MessageSquarePlus, Bug, Lightbulb, TrendingUp, Clock, Eye, CheckCircle2, XCircle, AlertCircle, Filter, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
 import type { Plan, CreditBundle, CountryPricingOverride } from "@shared/schema";
+import { 
+  CurrencyManagement, 
+  SubscriptionTierManagement, 
+  AddonPackManagement, 
+  ExtensiveInspectionManagement, 
+  ModuleManagement, 
+  ModuleBundleManagement, 
+  PricingPreview 
+} from "./EcoAdminComponents";
 
 export default function EcoAdmin() {
   const { toast } = useToast();
@@ -54,28 +63,76 @@ export default function EcoAdmin() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-10">
+          <TabsTrigger value="currencies" data-testid="tab-currencies">
+            <Globe className="h-4 w-4 mr-2" />
+            Currencies
+          </TabsTrigger>
+          <TabsTrigger value="tiers" data-testid="tab-tiers">
+            <Package className="h-4 w-4 mr-2" />
+            Tiers
+          </TabsTrigger>
+          <TabsTrigger value="addon-packs" data-testid="tab-addon-packs">
+            <CreditCard className="h-4 w-4 mr-2" />
+            Add-On Packs
+          </TabsTrigger>
+          <TabsTrigger value="extensive" data-testid="tab-extensive">
+            <Info className="h-4 w-4 mr-2" />
+            Extensive
+          </TabsTrigger>
+          <TabsTrigger value="modules" data-testid="tab-modules">
+            <Settings className="h-4 w-4 mr-2" />
+            Modules
+          </TabsTrigger>
+          <TabsTrigger value="module-bundles" data-testid="tab-module-bundles">
+            <Gift className="h-4 w-4 mr-2" />
+            Module Bundles
+          </TabsTrigger>
+          <TabsTrigger value="pricing-preview" data-testid="tab-pricing-preview">
+            <Eye className="h-4 w-4 mr-2" />
+            Preview
+          </TabsTrigger>
           <TabsTrigger value="plans" data-testid="tab-plans">
             <Package className="h-4 w-4 mr-2" />
-            Plans
+            Legacy Plans
           </TabsTrigger>
           <TabsTrigger value="bundles" data-testid="tab-bundles">
             <CreditCard className="h-4 w-4 mr-2" />
-            Bundles
+            Legacy Bundles
           </TabsTrigger>
           <TabsTrigger value="pricing" data-testid="tab-pricing">
             <Globe className="h-4 w-4 mr-2" />
-            Pricing
-          </TabsTrigger>
-          <TabsTrigger value="feedback" data-testid="tab-feedback">
-            <MessageSquarePlus className="h-4 w-4 mr-2" />
-            Feedback
-          </TabsTrigger>
-          <TabsTrigger value="settings" data-testid="tab-settings">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
+            Country Pricing
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="currencies" className="mt-6">
+          <CurrencyManagement />
+        </TabsContent>
+
+        <TabsContent value="tiers" className="mt-6">
+          <SubscriptionTierManagement />
+        </TabsContent>
+
+        <TabsContent value="addon-packs" className="mt-6">
+          <AddonPackManagement />
+        </TabsContent>
+
+        <TabsContent value="extensive" className="mt-6">
+          <ExtensiveInspectionManagement />
+        </TabsContent>
+
+        <TabsContent value="modules" className="mt-6">
+          <ModuleManagement />
+        </TabsContent>
+
+        <TabsContent value="module-bundles" className="mt-6">
+          <ModuleBundleManagement />
+        </TabsContent>
+
+        <TabsContent value="pricing-preview" className="mt-6">
+          <PricingPreview />
+        </TabsContent>
 
         <TabsContent value="plans" className="mt-6">
           <PlansManagement />
@@ -87,14 +144,6 @@ export default function EcoAdmin() {
 
         <TabsContent value="pricing" className="mt-6">
           <CountryPricingManagement />
-        </TabsContent>
-
-        <TabsContent value="feedback" className="mt-6">
-          <FeedbackManagement />
-        </TabsContent>
-
-        <TabsContent value="settings" className="mt-6">
-          <RegistrationSettings />
         </TabsContent>
       </Tabs>
     </div>

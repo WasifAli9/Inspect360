@@ -4,7 +4,15 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
-app.use(express.json());
+
+// Use JSON parser for all routes except Stripe webhook which needs raw body
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/webhooks/stripe') {
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
 app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
@@ -64,7 +72,7 @@ app.use((req, res, next) => {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 5000;
   // Use localhost on Windows, 0.0.0.0 on Unix systems (for Replit compatibility)
   const host = process.env.HOST || (process.platform === "win32" ? "localhost" : "0.0.0.0");
-  
+
   // Use traditional listen format for better Windows compatibility
   // Windows doesn't support reusePort option
   if (process.platform === "win32") {
