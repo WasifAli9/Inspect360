@@ -2076,9 +2076,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/billing/inspection-balance", isAuthenticated, async (req: any, res) => {
     try {
       const organizationId = req.user.organizationId;
+      
+      // Get credit balance first (includes signup rewards, topups, plan credits, etc.)
+      // This is the source of truth for all available credits
+      const creditBalance = await storage.getCreditBalance(organizationId);
+      
       const sub = await storage.getInstanceSubscription(organizationId);
 
       if (!sub) {
+        // User has no subscription, but may have signup reward credits
         return res.json({
           tierQuotaIncluded: 0,
           tierQuotaUsed: 0,
@@ -2086,30 +2092,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           addonCreditsPurchased: 0,
           addonCreditsUsed: 0,
           addonCreditsRemaining: 0,
-          totalAvailable: 0,
+          totalAvailable: creditBalance.total, // Include signup reward credits
           totalUsed: 0
         });
       }
 
       // Get tier quota info
       const tierQuotaIncluded = sub.inspectionQuotaIncluded || 0;
-
-      // Get credit balance from ledger
-      const creditBalance = await storage.getCreditBalance(organizationId);
-      const totalCreditsUsed = tierQuotaIncluded - creditBalance.total;
-
-      // Simple calculation: assume tier quota is used first
-      const tierQuotaUsed = Math.min(totalCreditsUsed, tierQuotaIncluded);
-      const tierQuotaRemaining = Math.max(0, tierQuotaIncluded - tierQuotaUsed);
-
-      // Get addon purchases
+      
+      // Get addon purchases (these are tracked separately in instance_addon_purchases)
       const addonPurchases = await storage.getInstanceAddonPurchases(sub.id);
       const activeAddonPurchases = addonPurchases.filter(p => p.status === "active");
       const addonCreditsPurchased = activeAddonPurchases.reduce((sum, p) => sum + (p.inspectionsRemaining || p.quantity), 0);
       const addonCreditsUsed = activeAddonPurchases.reduce((sum, p) => sum + (p.inspectionsUsed || 0), 0);
       const addonCreditsRemaining = addonCreditsPurchased - addonCreditsUsed;
 
-      const totalAvailable = tierQuotaRemaining + addonCreditsRemaining;
+      // Calculate tier quota usage (for display purposes)
+      // The credit balance includes all credits (signup, plan, topup, addon)
+      // We estimate tier quota usage by comparing total credits to tier quota
+      let tierQuotaUsed = 0;
+      let tierQuotaRemaining = 0;
+      
+      if (tierQuotaIncluded > 0) {
+        // If we have more credits than tier quota, assume tier quota is fully available
+        // If we have less, assume the difference was used
+        const creditsFromBatches = creditBalance.total - addonCreditsRemaining;
+        if (creditsFromBatches >= tierQuotaIncluded) {
+          tierQuotaRemaining = tierQuotaIncluded;
+          tierQuotaUsed = 0;
+        } else {
+          tierQuotaRemaining = Math.max(0, creditsFromBatches);
+          tierQuotaUsed = tierQuotaIncluded - tierQuotaRemaining;
+        }
+      }
+
+      // Total available = all credits from credit batches (includes signup rewards!)
+      // The creditBalance.total already includes all types: signup rewards, plan credits, topups, etc.
+      const totalAvailable = creditBalance.total;
       const totalUsed = tierQuotaUsed + addonCreditsUsed;
 
       // Check and send quota alerts
@@ -3760,8 +3779,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Minimum 1 credit is required (base credit for an inspection)
       try {
         const creditBalance = await storage.getCreditBalance(currentUser.organizationId);
-        console.log(`[Create Inspection] Credit check for org ${currentUser.organizationId}: total=${creditBalance.total}`);
-        if (creditBalance.total < 1) {
+        console.log(`[Create Inspection] Credit check for org ${currentUser.organizationId}: total=${creditBalance.total}, current=${creditBalance.current}, rolled=${creditBalance.rolled}`);
+        
+        // If no credits in batches but organization has creditsRemaining, grant them as a batch
+        if (creditBalance.total === 0) {
+          const org = await storage.getOrganization(currentUser.organizationId);
+          const legacyCredits = org?.creditsRemaining ?? 0;
+          if (org && legacyCredits > 0) {
+            console.log(`[Create Inspection] No credit batches found but org has ${legacyCredits} creditsRemaining, granting as batch`);
+            const { subscriptionService } = await import("./subscriptionService");
+            await subscriptionService.grantCredits(
+              currentUser.organizationId,
+              legacyCredits,
+              "admin_grant",
+              undefined,
+              {
+                adminNotes: "Migrated from legacy creditsRemaining field",
+                createdBy: currentUser.id,
+              }
+            );
+            // Re-check balance after granting
+            const newBalance = await storage.getCreditBalance(currentUser.organizationId);
+            console.log(`[Create Inspection] After migration: total=${newBalance.total}`);
+            if (newBalance.total < 1) {
+              return res.status(402).json({ 
+                message: "No credits available for inspection. Please subscribe to a plan to get inspection credits.",
+                error: "insufficient_credits"
+              });
+            }
+          } else {
+            console.log(`[Create Inspection] BLOCKED: Insufficient credits (${creditBalance.total} < 1)`);
+            return res.status(402).json({ 
+              message: "No credits available for inspection. Please subscribe to a plan to get inspection credits.",
+              error: "insufficient_credits"
+            });
+          }
+        } else if (creditBalance.total < 1) {
           console.log(`[Create Inspection] BLOCKED: Insufficient credits (${creditBalance.total} < 1)`);
           return res.status(402).json({ 
             message: "No credits available for inspection. Please subscribe to a plan to get inspection credits.",
@@ -4733,7 +4786,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // Check credits BEFORE allowing completion
           const creditBalance = await storage.getCreditBalance(ownerOrgId);
-          console.log(`[Complete Inspection] Credit check for org ${ownerOrgId}: total=${creditBalance.total}`);
+          console.log(`[Complete Inspection] Credit check for org ${ownerOrgId}: total=${creditBalance.total}, current=${creditBalance.current}, rolled=${creditBalance.rolled}`);
+          
+          // Debug: Get all batches to see what's available
+          const allBatches = await storage.getCreditBatchesByOrganization(ownerOrgId);
+          console.log(`[Complete Inspection] All credit batches for org ${ownerOrgId}:`, allBatches.map(b => ({
+            id: b.id,
+            source: b.grantSource,
+            remaining: b.remainingQuantity,
+            expiresAt: b.expiresAt,
+            metadata: b.metadataJson
+          })));
           
           // Get image count
           const imageCount = await storage.getInspectionImageCount(id);
@@ -4743,11 +4806,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const creditsNeeded = subscriptionService.calculateInspectionCredits(imageCount);
           console.log(`[Complete Inspection] Credits needed: ${creditsNeeded} (images: ${imageCount})`);
 
+          // If no credits in batches but organization has creditsRemaining, grant them as a batch
+          let finalBalance = creditBalance;
+          if (creditBalance.total === 0) {
+            const org = await storage.getOrganization(ownerOrgId);
+            const legacyCredits = org?.creditsRemaining ?? 0;
+            if (org && legacyCredits > 0) {
+              console.log(`[Complete Inspection] No credit batches found but org has ${legacyCredits} creditsRemaining, granting as batch`);
+              await subscriptionService.grantCredits(
+                ownerOrgId,
+                legacyCredits,
+                "admin_grant",
+                undefined,
+                {
+                  adminNotes: "Migrated from legacy creditsRemaining field",
+                  createdBy: inspection.inspectorId,
+                }
+              );
+              // Re-check balance after granting
+              finalBalance = await storage.getCreditBalance(ownerOrgId);
+              console.log(`[Complete Inspection] After migration: total=${finalBalance.total}`);
+            }
+          }
+
           // Check if organization has sufficient credits BEFORE attempting to consume
-          if (creditBalance.total < creditsNeeded) {
-            console.log(`[Complete Inspection] BLOCKED: Insufficient credits (${creditBalance.total} < ${creditsNeeded})`);
+          if (finalBalance.total < creditsNeeded) {
+            console.log(`[Complete Inspection] BLOCKED: Insufficient credits (${finalBalance.total} < ${creditsNeeded})`);
+            console.log(`[Complete Inspection] Available batches: ${allBatches.length}, Total remaining: ${allBatches.reduce((sum, b) => sum + b.remainingQuantity, 0)}`);
             return res.status(402).json({
-              message: `No credits available for inspection. You need ${creditsNeeded} credits but only have ${creditBalance.total} available. Please subscribe to a plan to get inspection credits.`,
+              message: `No credits available for inspection. You need ${creditsNeeded} credits but only have ${finalBalance.total} available. Please subscribe to a plan to get inspection credits.`,
               error: "insufficient_credits"
             });
           }

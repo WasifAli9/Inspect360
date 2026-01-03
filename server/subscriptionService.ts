@@ -30,14 +30,15 @@ export class SubscriptionService {
       throw new Error("Credits needed must be positive");
     }
 
-    const instanceSub = await storage.getInstanceSubscription(organizationId);
-    if (!instanceSub) {
-      throw new Error("No subscription found for organization");
+    // Check if organization has sufficient credits (from batches, signup rewards, etc.)
+    // This works even without a subscription - users can have signup reward credits
+    const creditBalance = await storage.getCreditBalance(organizationId);
+    if (creditBalance.total < creditsNeeded) {
+      throw new Error(`Insufficient credits: need ${creditsNeeded}, have ${creditBalance.total}`);
     }
 
-    // For now, use the existing credit batch system
-    // In the future, we might want to track tier quota usage separately
-    // This implementation uses credit batches which should include tier quota grants
+    // Use the existing credit batch system to consume credits
+    // This works for all credit sources: signup rewards, plan inclusion, topups, addon packs
     await this.consumeCredits(
       organizationId,
       creditsNeeded,

@@ -280,8 +280,8 @@ export async function setupAuth(app: Express) {
       });
 
       // Automatically create organization using the username (company name) field
-      // Only create organization for owner role
-      if (user.role === "owner") {
+      // Create organization for owner role, or if user doesn't have an organization yet
+      if (user.role === "owner" || !user.organizationId) {
         try {
           // Get and validate country code from registration or default to GB
           const { COMMON_COUNTRIES } = await import('../shared/countryUtils');
@@ -302,27 +302,40 @@ export async function setupAuth(app: Express) {
             creditsRemaining: 5, // Initial credits (will be granted via credit system)
           });
 
-          // Update user with organization ID and set role to owner
+          // Update user with organization ID
           const updatedUser = await storage.upsertUser({
             ...user,
             organizationId: organization.id,
-            role: "owner",
+            role: user.role === "owner" ? "owner" : user.role, // Keep original role
           });
 
           // Grant 5 free inspection credits as signup reward using the new credit system
+          // Check if organization already has signup credits to avoid duplicates
           try {
-            const { subscriptionService } = await import("./subscriptionService");
-            await subscriptionService.grantCredits(
-              organization.id,
-              5,
-              "admin_grant",
-              undefined, // No expiration date for signup credits
-              {
-                adminNotes: "Signup reward - Welcome bonus for new user registration",
-                createdBy: user.id,
-              }
+            const batches = await storage.getCreditBatchesByOrganization(organization.id);
+            const hasSignupCredits = batches.some(batch => 
+              batch.grantSource === 'admin_grant' && 
+              batch.metadataJson && 
+              typeof batch.metadataJson === 'object' &&
+              (batch.metadataJson as any)?.adminNotes?.toLowerCase().includes('signup reward')
             );
-            console.log(`✓ Granted 5 signup reward credits to new organization ${organization.id}`);
+
+            if (!hasSignupCredits) {
+              const { subscriptionService } = await import("./subscriptionService");
+              await subscriptionService.grantCredits(
+                organization.id,
+                5,
+                "admin_grant",
+                undefined, // No expiration date for signup credits
+                {
+                  adminNotes: "Signup reward - Welcome bonus for new user registration",
+                  createdBy: user.id,
+                }
+              );
+              console.log(`✓ Granted 5 signup reward credits to new organization ${organization.id}`);
+            } else {
+              console.log(`✓ Organization ${organization.id} already has signup credits, skipping`);
+            }
           } catch (creditError: any) {
             console.error("Warning: Failed to grant signup credits:", creditError);
             // Fallback: Update organization credits directly if credit system fails
