@@ -489,10 +489,10 @@ export default function Billing() {
                 <div className="flex flex-col items-center" style={{ position: 'absolute', left: '2%', transform: 'translateX(-50%)', minWidth: '60px' }}>
                   <span className="text-xs font-medium text-foreground whitespace-nowrap">Starter</span>
                 </div>
-                <div className="flex flex-col items-center" style={{ position: 'absolute', left: '6%', transform: 'translateX(-50%)', minWidth: '60px' }}>
+                <div className="flex flex-col items-center" style={{ position: 'absolute', left: '9%', transform: 'translateX(-50%)', minWidth: '60px' }}>
                   <span className="text-xs font-medium text-foreground whitespace-nowrap">Growth</span>
                 </div>
-                <div className="flex flex-col items-center" style={{ position: 'absolute', left: '15%', transform: 'translateX(-50%)', minWidth: '80px' }}>
+                <div className="flex flex-col items-center" style={{ position: 'absolute', left: '18%', transform: 'translateX(-50%)', minWidth: '80px' }}>
                   <span className="text-xs font-medium text-foreground whitespace-nowrap">Professional</span>
                 </div>
                 <div className="flex flex-col items-center" style={{ position: 'absolute', left: '40%', transform: 'translateX(-50%)', minWidth: '70px' }}>

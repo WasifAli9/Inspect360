@@ -1,249 +1,296 @@
 import "dotenv/config";
 import { db } from "./db";
-import { plans, creditBundles, bundleTierPricing } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { 
+  subscriptionTiersTable, 
+  tierPricing, 
+  addonPackConfig, 
+  addonPackPricing,
+  currencyConfig,
+  adminUsers 
+} from "@shared/schema";
+import { eq, and } from "drizzle-orm";
+import { hashPassword } from "./auth";
 
 async function seedEcoAdmin() {
   console.log("🌱 Seeding Eco Admin data...");
 
   try {
-    // Seed NEW Subscription Plans (per specification)
-    console.log("📦 Seeding subscription plans...");
-    
-    const planData = [
-      {
-        code: "freelancer" as const,
-        name: "Freelancer",
-        monthlyPriceGbp: 7900, // £79/mo
-        annualPriceGbp: 94800, // £948/yr
-        monthlyPriceUsd: 9900, // $99/mo
-        annualPriceUsd: 118800, // $1,188/yr
-        monthlyPriceAed: 36500, // 365 AED/mo
-        annualPriceAed: 438000, // 4,380 AED/yr
-        includedInspections: 10,
-        includedCredits: 10, // Backward compatibility
-        topupPricePerInspectionGbp: 600, // £6 per inspection
-        topupPricePerInspectionUsd: 760,
-        topupPricePerInspectionAed: 2800,
-        softCap: 1000,
-        isCustom: false,
-        isActive: true,
-        sortOrder: 0,
-      },
-      {
-        code: "btr" as const,
-        name: "BTR / Lettings",
-        monthlyPriceGbp: 34900, // £349/mo
-        annualPriceGbp: 418800, // £4,188/yr
-        monthlyPriceUsd: 44900, // $449/mo
-        annualPriceUsd: 538800, // $5,388/yr
-        monthlyPriceAed: 165000, // 1,650 AED/mo
-        annualPriceAed: 1980000, // 19,800 AED/yr
-        includedInspections: 50,
-        includedCredits: 50,
-        topupPricePerInspectionGbp: 500, // £5 per inspection
-        topupPricePerInspectionUsd: 640,
-        topupPricePerInspectionAed: 2350,
-        softCap: 5000,
-        isCustom: false,
-        isActive: true,
-        sortOrder: 1,
-      },
-      {
-        code: "pbsa" as const,
-        name: "PBSA",
-        monthlyPriceGbp: 125000, // £1,250/mo
-        annualPriceGbp: 1500000, // £15,000/yr
-        monthlyPriceUsd: 159000, // $1,590/mo
-        annualPriceUsd: 1908000, // $19,080/yr
-        monthlyPriceAed: 595000, // 5,950 AED/mo
-        annualPriceAed: 7140000, // 71,400 AED/yr
-        includedInspections: 250,
-        includedCredits: 250,
-        topupPricePerInspectionGbp: 400, // £4 per inspection
-        topupPricePerInspectionUsd: 510,
-        topupPricePerInspectionAed: 1900,
-        softCap: 10000,
-        isCustom: false,
-        isActive: true,
-        sortOrder: 2,
-      },
-      {
-        code: "housing_association" as const,
-        name: "Housing Association",
-        monthlyPriceGbp: 350000, // £3,500/mo
-        annualPriceGbp: 4200000, // £42,000/yr
-        monthlyPriceUsd: 445000, // $4,450/mo
-        annualPriceUsd: 5340000, // $53,400/yr
-        monthlyPriceAed: 1650000, // 16,500 AED/mo
-        annualPriceAed: 19800000, // 198,000 AED/yr
-        includedInspections: 833, // ~10,000/yr
-        includedCredits: 833,
-        topupPricePerInspectionGbp: 300, // £3 per inspection
-        topupPricePerInspectionUsd: 380,
-        topupPricePerInspectionAed: 1400,
-        softCap: 20000,
-        isCustom: false,
-        isActive: true,
-        sortOrder: 3,
-      },
-      {
-        code: "council" as const,
-        name: "Council / Enterprise",
-        monthlyPriceGbp: 625000, // £6,250/mo
-        annualPriceGbp: 7500000, // £75,000/yr
-        monthlyPriceUsd: 799000, // $7,990/mo
-        annualPriceUsd: 9588000, // $95,880/yr
-        monthlyPriceAed: 2950000, // 29,500 AED/mo
-        annualPriceAed: 35400000, // 354,000 AED/yr
-        includedInspections: 2083, // ~25,000/yr
-        includedCredits: 2083,
-        topupPricePerInspectionGbp: 200, // £2 per inspection
-        topupPricePerInspectionUsd: 260,
-        topupPricePerInspectionAed: 950,
-        softCap: 50000,
-        isCustom: false,
-        isActive: true,
-        sortOrder: 4,
-      },
+    // Ensure currencies exist first
+    console.log("💱 Ensuring currencies exist...");
+    const currencies = [
+      { code: "GBP", symbol: "£", isActive: true, conversionRate: "1.0000" },
+      { code: "USD", symbol: "$", isActive: true, conversionRate: "1.2700" },
+      { code: "AED", symbol: "د.إ", isActive: true, conversionRate: "4.6500" },
     ];
 
-    for (const plan of planData) {
-      const existing = await db.select().from(plans).where(eq(plans.code, plan.code));
-      
+    for (const currency of currencies) {
+      const existing = await db.select().from(currencyConfig).where(eq(currencyConfig.code, currency.code)).limit(1);
       if (existing.length === 0) {
-        await db.insert(plans).values(plan);
-        console.log(`✅ Created plan: ${plan.name}`);
+        await db.insert(currencyConfig).values(currency);
+        console.log(`✅ Created currency: ${currency.code}`);
       } else {
-        const [existingPlan] = existing;
-        await db.update(plans)
-          .set(plan)
-          .where(eq(plans.id, existingPlan.id));
-        console.log(`✅ Updated plan: ${plan.name}`);
+        console.log(`⏭️  Currency ${currency.code} already exists, skipping`);
       }
     }
 
-    // Seed Credit Bundles (100, 500, 1000 inspections)
-    console.log("\n💳 Seeding inspection bundles...");
+    // Seed Subscription Tiers (2026 Model)
+    console.log("\n📦 Seeding subscription tiers...");
     
-    const bundleData = [
+    const tierData = [
       {
-        name: "100 Inspections Bundle",
-        credits: 100,
-        priceGbp: 55000, // £550 (Freelancer tier base price)
-        priceUsd: 69000, // $690
-        priceAed: 255000, // 2,550 AED
-        sortOrder: 0,
-        isPopular: false,
-        discountLabel: null,
+        id: "626bee64-a380-4a5f-8377-fe864d083045",
+        name: "Starter",
+        code: "starter" as const,
+        description: "Perfect for small property portfolios",
+        tierOrder: 1,
+        includedInspections: 10,
+        basePriceMonthly: 4900, // £49/mo in pence
+        basePriceAnnual: 49000, // £490/yr in pence
+        annualDiscountPercentage: "16.70",
         isActive: true,
+        requiresCustomPricing: false,
       },
       {
-        name: "500 Inspections Bundle",
-        credits: 500,
-        priceGbp: 265000, // £2,650 (Freelancer tier base price)
-        priceUsd: 335000, // $3,350
-        priceAed: 1225000, // 12,250 AED
-        sortOrder: 1,
-        isPopular: true,
-        discountLabel: "Popular",
+        id: "d0d7af4e-7d6f-46d8-9a5a-3adef9c9c220",
+        name: "Growth",
+        code: "growth" as const,
+        description: "Ideal for growing property businesses",
+        tierOrder: 2,
+        includedInspections: 30,
+        basePriceMonthly: 12900, // £129/mo in pence
+        basePriceAnnual: 129000, // £1,290/yr in pence
+        annualDiscountPercentage: "16.70",
         isActive: true,
+        requiresCustomPricing: false,
       },
       {
-        name: "1000 Inspections Bundle",
-        credits: 1000,
-        priceGbp: 500000, // £5,000 (Freelancer tier base price)
-        priceUsd: 635000, // $6,350
-        priceAed: 2300000, // 23,000 AED
-        sortOrder: 2,
-        isPopular: false,
-        discountLabel: "Best Value",
+        id: "b266846d-96b0-4e74-a2b4-03e307b28a08",
+        name: "Professional",
+        code: "professional" as const,
+        description: "For established property management companies",
+        tierOrder: 3,
+        includedInspections: 75,
+        basePriceMonthly: 29900, // £299/mo in pence
+        basePriceAnnual: 299000, // £2,990/yr in pence
+        annualDiscountPercentage: "16.70",
         isActive: true,
+        requiresCustomPricing: false,
+      },
+      {
+        id: "eda7e5ba-0f5e-4ed4-9215-67a91310becb",
+        name: "Enterprise",
+        code: "enterprise" as const,
+        description: "For large-scale property operations",
+        tierOrder: 4,
+        includedInspections: 200,
+        basePriceMonthly: 69900, // £699/mo in pence
+        basePriceAnnual: 699000, // £6,990/yr in pence
+        annualDiscountPercentage: "16.70",
+        isActive: true,
+        requiresCustomPricing: false,
+      },
+      {
+        id: "6c79daec-9645-4fe8-baf1-5584ec5b8a17",
+        name: "Enterprise Plus",
+        code: "enterprise_plus" as const,
+        description: "Custom pricing for enterprise clients",
+        tierOrder: 5,
+        includedInspections: 500,
+        basePriceMonthly: 0, // Custom pricing
+        basePriceAnnual: 0, // Custom pricing
+        annualDiscountPercentage: "16.70",
+        isActive: true,
+        requiresCustomPricing: true,
       },
     ];
 
-    const createdBundles: Array<{ id: string; credits: number }> = [];
+    const createdTiers: Array<{ id: string; code: string }> = [];
 
-    for (const bundle of bundleData) {
+    for (const tier of tierData) {
       const existing = await db
         .select()
-        .from(creditBundles)
-        .where(eq(creditBundles.credits, bundle.credits));
+        .from(subscriptionTiersTable)
+        .where(eq(subscriptionTiersTable.code, tier.code))
+        .limit(1);
       
       if (existing.length === 0) {
-        const [created] = await db.insert(creditBundles).values(bundle).returning();
-        console.log(`✅ Created bundle: ${bundle.name}`);
-        createdBundles.push({ id: created.id, credits: bundle.credits });
+        await db.insert(subscriptionTiersTable).values(tier);
+        console.log(`✅ Created tier: ${tier.name}`);
+        createdTiers.push({ id: tier.id, code: tier.code });
       } else {
-        await db.update(creditBundles)
-          .set(bundle)
-          .where(eq(creditBundles.id, existing[0].id));
-        console.log(`✅ Updated bundle: ${bundle.name}`);
-        createdBundles.push({ id: existing[0].id, credits: bundle.credits });
+        console.log(`⏭️  Tier ${tier.name} already exists, skipping`);
+        createdTiers.push({ id: existing[0].id, code: tier.code });
       }
     }
 
-    // Seed tier-based pricing for each bundle
-    console.log("\n💰 Seeding tier-based bundle pricing...");
+    // Seed Tier Pricing (Multi-currency)
+    console.log("\n💰 Seeding tier pricing (multi-currency)...");
     
-    const tierPricing = {
-      100: {
-        freelancer: { gbp: 55000, usd: 69000, aed: 255000 },
-        btr: { gbp: 45000, usd: 59000, aed: 210000 },
-        pbsa: { gbp: 36000, usd: 47000, aed: 170000 },
-        housing_association: { gbp: 27000, usd: 35000, aed: 125000 },
-        council: { gbp: 18000, usd: 24000, aed: 85000 },
+    const tierPricingData = [
+      // Starter tier pricing
+      { tierCode: "starter", gbp: { monthly: 4900, annual: 49000 }, usd: { monthly: 6125, annual: 61250 }, aed: { monthly: 22540, annual: 225400 } },
+      // Growth tier pricing
+      { tierCode: "growth", gbp: { monthly: 12900, annual: 129000 }, usd: { monthly: 16125, annual: 161250 }, aed: { monthly: 59340, annual: 593400 } },
+      // Professional tier pricing
+      { tierCode: "professional", gbp: { monthly: 29900, annual: 299000 }, usd: { monthly: 37375, annual: 373750 }, aed: { monthly: 137540, annual: 1375400 } },
+      // Enterprise tier pricing
+      { tierCode: "enterprise", gbp: { monthly: 69900, annual: 699000 }, usd: { monthly: 87375, annual: 873750 }, aed: { monthly: 321540, annual: 3215400 } },
+      // Enterprise Plus (custom pricing - set to 0)
+      { tierCode: "enterprise_plus", gbp: { monthly: 0, annual: 0 }, usd: { monthly: 0, annual: 0 }, aed: { monthly: 0, annual: 0 } },
+    ];
+
+    for (const pricing of tierPricingData) {
+      const tier = createdTiers.find(t => t.code === pricing.tierCode);
+      if (!tier) continue;
+
+      for (const [currency, prices] of Object.entries({ GBP: pricing.gbp, USD: pricing.usd, AED: pricing.aed })) {
+        const existing = await db
+          .select()
+          .from(tierPricing)
+          .where(and(
+            eq(tierPricing.tierId, tier.id),
+            eq(tierPricing.currencyCode, currency)
+          ))
+          .limit(1);
+
+        if (existing.length === 0) {
+          await db.insert(tierPricing).values({
+            tierId: tier.id,
+            currencyCode: currency,
+            priceMonthly: prices.monthly,
+            priceAnnual: prices.annual,
+          });
+          console.log(`✅ Created ${currency} pricing for ${pricing.tierCode}`);
+        } else {
+          console.log(`⏭️  ${currency} pricing for ${pricing.tierCode} already exists, skipping`);
+        }
+      }
+    }
+
+    // Seed Add-On Pack Configuration
+    console.log("\n📦 Seeding add-on pack configuration...");
+    
+    const addonPackData = [
+      {
+        id: "083d8cc3-c37e-48b5-a9be-4c6016f9d847",
+        name: "20 Pack",
+        inspectionQuantity: 20,
+        packOrder: 1,
+        isActive: true,
       },
-      500: {
-        freelancer: { gbp: 265000, usd: 335000, aed: 1225000 },
-        btr: { gbp: 215000, usd: 275000, aed: 995000 },
-        pbsa: { gbp: 170000, usd: 215000, aed: 785000 },
-        housing_association: { gbp: 125000, usd: 159000, aed: 575000 },
-        council: { gbp: 85000, usd: 110000, aed: 395000 },
+      {
+        id: "a80b5f94-577a-4eee-ad5d-3c0b2d0e5943",
+        name: "50 Pack",
+        inspectionQuantity: 50,
+        packOrder: 2,
+        isActive: true,
       },
-      1000: {
-        freelancer: { gbp: 500000, usd: 635000, aed: 2300000 },
-        btr: { gbp: 400000, usd: 510000, aed: 1840000 },
-        pbsa: { gbp: 310000, usd: 395000, aed: 1425000 },
-        housing_association: { gbp: 225000, usd: 285000, aed: 1035000 },
-        council: { gbp: 150000, usd: 190000, aed: 690000 },
+      {
+        id: "bebaf571-d683-4112-b8d3-f4c6b6318272",
+        name: "100 Pack",
+        inspectionQuantity: 100,
+        packOrder: 3,
+        isActive: true,
       },
+    ];
+
+    const createdPacks: Array<{ id: string; quantity: number }> = [];
+
+    for (const pack of addonPackData) {
+      const existing = await db
+        .select()
+        .from(addonPackConfig)
+        .where(eq(addonPackConfig.inspectionQuantity, pack.inspectionQuantity))
+        .limit(1);
+      
+      if (existing.length === 0) {
+        await db.insert(addonPackConfig).values(pack);
+        console.log(`✅ Created addon pack: ${pack.name}`);
+        createdPacks.push({ id: pack.id, quantity: pack.inspectionQuantity });
+      } else {
+        console.log(`⏭️  Addon pack ${pack.name} already exists, skipping`);
+        createdPacks.push({ id: existing[0].id, quantity: pack.inspectionQuantity });
+      }
+    }
+
+    // Seed Add-On Pack Pricing (tier-based pricing)
+    console.log("\n💳 Seeding add-on pack pricing (tier-based)...");
+    
+    // Pricing per inspection by tier (in pence/cents/fils)
+    // Format: { tierCode: { gbp: pricePerInspection, usd: ..., aed: ... } }
+    const addonPricingByTier: Record<string, { gbp: number; usd: number; aed: number }> = {
+      starter: { gbp: 550, usd: 690, aed: 2540 },      // £5.50 per inspection
+      growth: { gbp: 550, usd: 690, aed: 2540 },        // £5.50 per inspection
+      professional: { gbp: 550, usd: 690, aed: 2540 },  // £5.50 per inspection
+      enterprise: { gbp: 550, usd: 690, aed: 2540 },   // £5.50 per inspection
+      enterprise_plus: { gbp: 550, usd: 690, aed: 2540 }, // £5.50 per inspection
     };
 
-    for (const bundle of createdBundles) {
-      const bundleCredits = bundle.credits as 100 | 500 | 1000;
-      const pricing = tierPricing[bundleCredits];
-      
-      if (pricing) {
-        for (const [planCode, prices] of Object.entries(pricing)) {
+    for (const pack of createdPacks) {
+      for (const tier of createdTiers) {
+        const pricing = addonPricingByTier[tier.code];
+        if (!pricing) continue;
+
+        for (const [currency, pricePerInspection] of Object.entries({
+          GBP: pricing.gbp,
+          USD: pricing.usd,
+          AED: pricing.aed,
+        })) {
+          const totalPackPrice = pricePerInspection * pack.quantity;
+
           const existing = await db
             .select()
-            .from(bundleTierPricing)
-            .where(eq(bundleTierPricing.bundleId, bundle.id));
-          
-          const existingForPlan = existing.find(e => e.planCode === planCode);
-          
-          if (!existingForPlan) {
-            await db.insert(bundleTierPricing).values({
-              bundleId: bundle.id,
-              planCode: planCode as any,
-              priceGbp: prices.gbp,
-              priceUsd: prices.usd,
-              priceAed: prices.aed,
+            .from(addonPackPricing)
+            .where(and(
+              eq(addonPackPricing.packId, pack.id),
+              eq(addonPackPricing.tierId, tier.id),
+              eq(addonPackPricing.currencyCode, currency)
+            ))
+            .limit(1);
+
+          if (existing.length === 0) {
+            await db.insert(addonPackPricing).values({
+              packId: pack.id,
+              tierId: tier.id,
+              currencyCode: currency,
+              pricePerInspection: pricePerInspection,
+              totalPackPrice: totalPackPrice,
             });
-            console.log(`✅ Created tier pricing: ${bundleCredits} bundle for ${planCode}`);
+            console.log(`✅ Created ${currency} pricing for ${pack.quantity} pack (${tier.code} tier)`);
           } else {
-            await db.update(bundleTierPricing)
-              .set({
-                priceGbp: prices.gbp,
-                priceUsd: prices.usd,
-                priceAed: prices.aed,
-              })
-              .where(eq(bundleTierPricing.id, existingForPlan.id));
-            console.log(`✅ Updated tier pricing: ${bundleCredits} bundle for ${planCode}`);
+            console.log(`⏭️  ${currency} pricing for ${pack.quantity} pack (${tier.code} tier) already exists, skipping`);
           }
         }
       }
+    }
+
+    // Seed Eco Admin User
+    console.log("\n👤 Seeding Eco Admin user...");
+    const adminEmail = "nadeem.mohammed@deffinity.com";
+    const adminPassword = "Nadeem123#!";
+    
+    try {
+      const existingAdmin = await db
+        .select()
+        .from(adminUsers)
+        .where(eq(adminUsers.email, adminEmail))
+        .limit(1);
+      
+      if (existingAdmin.length === 0) {
+        const hashedPassword = await hashPassword(adminPassword);
+        await db.insert(adminUsers).values({
+          email: adminEmail,
+          password: hashedPassword,
+          firstName: "Nadeem",
+          lastName: "Mohammed",
+        });
+        console.log(`✅ Created Eco Admin user: ${adminEmail}`);
+      } else {
+        console.log(`✓ Eco Admin user already exists: ${adminEmail}`);
+      }
+    } catch (adminError: any) {
+      console.error("⚠️ Warning: Failed to seed Eco Admin user:", adminError.message);
+      // Don't throw - allow other seeding to continue
     }
 
     console.log("\n✨ Eco Admin seeding completed successfully!");
@@ -253,13 +300,19 @@ async function seedEcoAdmin() {
   }
 }
 
-// Run the seed function
-seedEcoAdmin()
-  .then(() => {
-    console.log("🎉 Done!");
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error("💥 Fatal error:", error);
-    process.exit(1);
-  });
+// Export the function so it can be called from server startup
+export { seedEcoAdmin };
+
+// If run directly (not imported), execute and exit
+// Check if this file is being run directly vs imported
+if (import.meta.url.endsWith(process.argv[1]?.replace(/\\/g, '/') || '') || process.argv[1]?.includes('seedEcoAdmin')) {
+  seedEcoAdmin()
+    .then(() => {
+      console.log("🎉 Done!");
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error("💥 Fatal error:", error);
+      process.exit(1);
+    });
+}
