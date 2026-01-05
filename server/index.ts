@@ -2,7 +2,6 @@ import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { seedEcoAdmin } from "./seedEcoAdmin";
 
 const app = express();
 
@@ -48,18 +47,7 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
-    // Seed Eco Admin user only on server start (no currency or plans)
-    try {
-      console.log("🌱 Starting Eco Admin seed...");
-      await seedEcoAdmin();
-      console.log("✅ Eco Admin seed completed, starting server...");
-    } catch (error) {
-      console.error("⚠️ Warning: Failed to seed Eco Admin user:", error);
-      console.log("⚠️ Continuing server startup despite seed error...");
-      // Don't block server startup if seeding fails
-    }
-
-    console.log("🚀 Registering routes...");
+    console.log("🚀 Starting server...");
     const server = await registerRoutes(app);
     console.log("✅ Routes registered successfully");
 
