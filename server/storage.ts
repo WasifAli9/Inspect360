@@ -3311,7 +3311,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAdminByEmail(email: string): Promise<AdminUser | undefined> {
-    const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
+    // Use case-insensitive comparison for email lookup
+    const [admin] = await db.select().from(adminUsers)
+      .where(sql`LOWER(${adminUsers.email}) = LOWER(${email})`);
     return admin;
   }
 

@@ -24,8 +24,9 @@ async function seedEcoAdmin() {
       .where(eq(adminUsers.email, adminEmail))
       .limit(1);
     
+    const hashedPassword = await hashPassword(adminPassword);
+    
     if (existingAdmin.length === 0) {
-      const hashedPassword = await hashPassword(adminPassword);
       await db.insert(adminUsers).values({
         email: adminEmail,
         password: hashedPassword,
@@ -34,7 +35,16 @@ async function seedEcoAdmin() {
       });
       console.log(`✅ Created Eco Admin user: ${adminEmail}`);
     } else {
-      console.log(`✓ Eco Admin user already exists: ${adminEmail}`);
+      // Update password to ensure it matches the seed password
+      await db
+        .update(adminUsers)
+        .set({ 
+          password: hashedPassword,
+          firstName: "Nadeem",
+          lastName: "Mohammed",
+        })
+        .where(eq(adminUsers.email, adminEmail));
+      console.log(`✓ Eco Admin user already exists, password updated: ${adminEmail}`);
     }
 
     console.log("✨ Eco Admin user seeding completed!");
@@ -52,8 +62,16 @@ export { seedEcoAdmin };
 // and NOT when imported by index.ts
 // Note: This script only seeds the admin user, not currencies or plans
 const __filename = fileURLToPath(import.meta.url);
-const isMainModule = process.argv[1] && resolve(process.argv[1]) === resolve(__filename);
+const mainModulePath = process.argv[1] ? resolve(process.argv[1]) : '';
+const currentFilePath = resolve(__filename);
 
+// Check if this file is being run directly (not imported)
+// Normalize paths for comparison (handle .js vs .ts, and different path separators)
+const normalizePath = (path: string) => path.replace(/\\/g, '/').replace(/\.(js|ts)$/, '').toLowerCase();
+const isMainModule = mainModulePath && normalizePath(mainModulePath) === normalizePath(currentFilePath);
+
+// Only execute and exit if this file is the main entry point
+// When imported by index.ts, this block should NOT execute
 if (isMainModule) {
   seedEcoAdmin()
     .then(() => {

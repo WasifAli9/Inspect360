@@ -661,7 +661,7 @@ export default function Billing() {
                             </span>
                           </div>
                           <p className="text-xs text-muted-foreground pl-4">
-                            ({additionalInspections} × {formatCurrency(PER_INSPECTION_PRICE, selectedCurrency)} per inspection)
+                            ({additionalInspections} × {formatCurrency(PER_INSPECTION_PRICE / 100, selectedCurrency)} per inspection)
                           </p>
                         </>
                       )}

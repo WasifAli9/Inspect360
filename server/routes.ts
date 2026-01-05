@@ -16160,17 +16160,25 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(400).json({ message: "Email and password are required" });
       }
 
-      const adminUser = await storage.getAdminByEmail(email);
+      // Normalize email to lowercase for case-insensitive matching
+      const normalizedEmail = email.toLowerCase().trim();
+
+      const adminUser = await storage.getAdminByEmail(normalizedEmail);
 
       if (!adminUser) {
+        console.error(`[Admin Login] Admin user not found for email: ${normalizedEmail}`);
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
-      const isValidPassword = await bcrypt.compare(password, adminUser.password);
+      // Use comparePasswords which supports both scrypt (from hashPassword) and bcrypt formats
+      const isValidPassword = await comparePasswords(password, adminUser.password);
 
       if (!isValidPassword) {
+        console.error(`[Admin Login] Invalid password for admin: ${normalizedEmail}`);
         return res.status(401).json({ message: "Invalid credentials" });
       }
+
+      console.log(`[Admin Login] Successful login for admin: ${normalizedEmail}`);
 
       // Set admin session
       (req.session as any).adminUser = {
@@ -17240,6 +17248,130 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const parsedIncluded = includedCredits ? parseInt(includedCredits) : NaN;
       const parsedPackSize = packSize ? parseInt(packSize) : NaN;
 
+      // Handle quotation subscription processing
+      if (session.metadata?.type === "quotation_subscription") {
+        const { quotationId, quotedInspections, billingPeriod, currency } = session.metadata;
+        console.log(`[Process Session] Processing quotation subscription for org ${user.organizationId}: quotationId=${quotationId}`);
+
+        if (!quotationId) {
+          return res.status(400).json({ message: "Quotation ID is required" });
+        }
+
+        const quotation = await storage.getQuotation(quotationId);
+        if (!quotation) {
+          return res.status(404).json({ message: "Quotation not found" });
+        }
+
+        // Verify quotation belongs to this organization
+        const request = await storage.getQuotationRequest(quotation.quotationRequestId);
+        if (!request || request.organizationId !== user.organizationId) {
+          return res.status(403).json({ message: "Quotation does not belong to your organization" });
+        }
+
+        // Get tier for custom quotations (prefer Enterprise Plus, fallback to Enterprise)
+        const tiers = await storage.getSubscriptionTiers();
+        let selectedTier = tiers.find(t => t.code === "enterprise_plus");
+        
+        // If Enterprise Plus not found, use Enterprise tier as fallback
+        if (!selectedTier) {
+          selectedTier = tiers.find(t => t.code === "enterprise");
+          console.log(`[Process Session] Enterprise Plus not found, using Enterprise tier as fallback`);
+        }
+        
+        // If Enterprise not found, use the highest tier available (by tierOrder)
+        if (!selectedTier) {
+          selectedTier = tiers.sort((a, b) => b.tierOrder - a.tierOrder)[0];
+          console.log(`[Process Session] Enterprise not found, using highest tier: ${selectedTier?.name}`);
+        }
+        
+        if (!selectedTier) {
+          console.error(`[Process Session] No tier found for quotation subscription. Available tiers: ${tiers.map(t => t.code).join(', ')}`);
+          return res.status(500).json({ message: "No suitable tier found for quotation subscription" });
+        }
+        
+        console.log(`[Process Session] Using tier ${selectedTier.name} (${selectedTier.code}) for quotation subscription`);
+
+        // Use quotation.quotedInspections as the source of truth (it's the authoritative value)
+        // The metadata quotedInspections is just for reference/logging
+        const inspectionsToGrant = quotation.quotedInspections;
+        
+        console.log(`[Process Session] Quotation credit calculation: quotationId=${quotationId}, metadata.quotedInspections=${quotedInspections}, quotation.quotedInspections=${quotation.quotedInspections}, final=${inspectionsToGrant}`);
+        
+        if (!inspectionsToGrant || inspectionsToGrant <= 0) {
+          console.error(`[Process Session] Invalid inspections to grant from quotation ${quotationId}: ${inspectionsToGrant}`);
+          return res.status(400).json({ message: `Invalid quotation inspections count: ${inspectionsToGrant}. Please contact support.` });
+        }
+        
+        // Warn if metadata doesn't match quotation (but don't fail - use quotation as source of truth)
+        const metadataValue = quotedInspections ? parseInt(quotedInspections.toString()) : null;
+        if (metadataValue && metadataValue !== inspectionsToGrant) {
+          console.warn(`[Process Session] WARNING: Metadata quotedInspections (${metadataValue}) doesn't match quotation.quotedInspections (${inspectionsToGrant}). Using quotation value.`);
+        }
+        
+        const billingCycle = (billingPeriod === "annual" ? "annual" : "monthly") as any;
+        const registrationCurrency = (currency || quotation.currency || "GBP").toUpperCase() as any;
+
+        // Get renewal date from Stripe subscription if available
+        let renewalDate: Date;
+        if (session.subscription) {
+          try {
+            const stripeSubscription = await stripe.subscriptions.retrieve(session.subscription as string);
+            renewalDate = new Date((stripeSubscription.current_period_end as number) * 1000);
+            console.log(`[Process Session] Using Stripe subscription period_end for renewal date: ${renewalDate.toISOString()}`);
+          } catch (subscriptionError: any) {
+            console.warn(`[Process Session] Could not retrieve subscription for renewal date, using calculated fallback:`, subscriptionError.message);
+            renewalDate = new Date(Date.now() + (billingCycle === "annual" ? 365 : 30) * 24 * 60 * 60 * 1000);
+          }
+        } else {
+          renewalDate = new Date(Date.now() + (billingCycle === "annual" ? 365 : 30) * 24 * 60 * 60 * 1000);
+        }
+
+        // Update or create instance subscription
+        const existingInstanceSub = await storage.getInstanceSubscription(user.organizationId);
+        if (existingInstanceSub) {
+          await storage.updateInstanceSubscription(existingInstanceSub.id, {
+            currentTierId: selectedTier.id,
+            inspectionQuotaIncluded: inspectionsToGrant,
+            billingCycle: billingCycle,
+            registrationCurrency: registrationCurrency,
+            subscriptionStatus: "active",
+            subscriptionRenewalDate: renewalDate
+          });
+        } else {
+          await storage.createInstanceSubscription({
+            organizationId: user.organizationId,
+            registrationCurrency: registrationCurrency,
+            currentTierId: selectedTier.id,
+            inspectionQuotaIncluded: inspectionsToGrant,
+            billingCycle: billingCycle,
+            subscriptionStatus: "active",
+            subscriptionRenewalDate: renewalDate,
+            subscriptionStartDate: new Date()
+          });
+        }
+
+        // For quotation subscriptions, APPEND credits (don't expire existing ones)
+        // This allows customers to keep their existing credits when upgrading via quotation
+        console.log(`[Process Session] Appending ${inspectionsToGrant} credits for quotation subscription (not expiring existing credits)`);
+
+        // Grant credits for the quotation subscription (append to existing)
+        const { subscriptionService: subService } = await import("./subscriptionService");
+        await subService.grantCredits(
+          user.organizationId,
+          inspectionsToGrant,
+          "plan_inclusion",
+          renewalDate,
+          { 
+            subscriptionId: session.subscription as string,
+            adminNotes: `Quotation subscription: ${quotationId} - ${inspectionsToGrant} inspections`,
+            createdBy: user.id
+          }
+        );
+
+        console.log(`[Process Session] Quotation subscription activated: ${inspectionsToGrant} credits APPENDED to org ${user.organizationId} (existing credits preserved)`);
+        return res.json({ message: "Quotation subscription activated successfully", processed: true });
+      }
+
       // Handle module purchase processing
       if (session.metadata?.type === "module_purchase") {
         const { moduleId, isProrated, fullPrice, proratedPrice, remainingDays } = session.metadata;
@@ -17277,9 +17409,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(403).json({ message: "Session metadata does not match your organization" });
       }
 
-      // Validate metadata
-      if (!planId && !topupOrderId && !tierId) {
-        console.error(`[Process Session] Missing required metadata: planId=${planId}, topupOrderId=${topupOrderId}, tierId=${tierId}`);
+      // Validate metadata (allow quotation subscriptions to pass)
+      if (!planId && !topupOrderId && !tierId && session.metadata?.type !== "quotation_subscription") {
+        console.error(`[Process Session] Missing required metadata: planId=${planId}, topupOrderId=${topupOrderId}, tierId=${tierId}, type=${session.metadata?.type}`);
         return res.status(400).json({ message: "Session metadata is incomplete. Missing planId, topupOrderId or tierId." });
       }
 

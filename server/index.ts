@@ -47,15 +47,21 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Seed Eco Admin user only on server start (no currency or plans)
   try {
-    await seedEcoAdmin();
-  } catch (error) {
-    console.error("Failed to seed Eco Admin user:", error);
-    // Don't block server startup if seeding fails
-  }
+    // Seed Eco Admin user only on server start (no currency or plans)
+    try {
+      console.log("🌱 Starting Eco Admin seed...");
+      await seedEcoAdmin();
+      console.log("✅ Eco Admin seed completed, starting server...");
+    } catch (error) {
+      console.error("⚠️ Warning: Failed to seed Eco Admin user:", error);
+      console.log("⚠️ Continuing server startup despite seed error...");
+      // Don't block server startup if seeding fails
+    }
 
-  const server = await registerRoutes(app);
+    console.log("🚀 Registering routes...");
+    const server = await registerRoutes(app);
+    console.log("✅ Routes registered successfully");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -82,20 +88,26 @@ app.use((req, res, next) => {
   // Use localhost on Windows, 0.0.0.0 on Unix systems (for Replit compatibility)
   const host = process.env.HOST || (process.platform === "win32" ? "localhost" : "0.0.0.0");
 
-  // Use traditional listen format for better Windows compatibility
-  // Windows doesn't support reusePort option
-  if (process.platform === "win32") {
-    server.listen(port, host, () => {
-      log(`serving on http://${host}:${port}`);
-    });
-  } else {
-    // Unix systems can use the options object with reusePort
-    server.listen({
-      port,
-      host,
-      reusePort: true,
-    }, () => {
-      log(`serving on http://${host}:${port}`);
-    });
+    // Use traditional listen format for better Windows compatibility
+    // Windows doesn't support reusePort option
+    if (process.platform === "win32") {
+      server.listen(port, host, () => {
+        log(`serving on http://${host}:${port}`);
+        console.log(`✅ Server started successfully on http://${host}:${port}`);
+      });
+    } else {
+      // Unix systems can use the options object with reusePort
+      server.listen({
+        port,
+        host,
+        reusePort: true,
+      }, () => {
+        log(`serving on http://${host}:${port}`);
+        console.log(`✅ Server started successfully on http://${host}:${port}`);
+      });
+    }
+  } catch (error) {
+    console.error("❌ Fatal error during server startup:", error);
+    process.exit(1);
   }
 })();
