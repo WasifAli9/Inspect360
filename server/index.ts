@@ -2,6 +2,7 @@ import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { seedEcoAdmin } from "./seedEcoAdmin";
 
 const app = express();
 
@@ -46,6 +47,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Seed Eco Admin user only on server start (no currency or plans)
+  try {
+    await seedEcoAdmin();
+  } catch (error) {
+    console.error("Failed to seed Eco Admin user:", error);
+    // Don't block server startup if seeding fails
+  }
+
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
