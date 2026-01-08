@@ -124,7 +124,8 @@ export default function Billing() {
   const [exactInspectionsCount, setExactInspectionsCount] = useState<number>(500);
   const [quotationNotes, setQuotationNotes] = useState<string>("");
   const sliderContainerRef = useRef<HTMLDivElement>(null);
-  const [trackInfo, setTrackInfo] = useState<{ left: number; width: number; thumbOffset?: number } | null>(null);
+  const [trackInfo, setTrackInfo] = useState<{ left: number; width: number; thumbOffset?: number; thumbWidth?: number } | null>(null);
+  const [markerPositions, setMarkerPositions] = useState<{ [key: number]: number }>({});
 
   // Debounce inspectionsNeeded to avoid too many API calls while dragging
   useEffect(() => {
@@ -160,17 +161,26 @@ export default function Billing() {
       const thumb = sliderRoot.querySelector('[role="slider"]') as HTMLElement;
       if (!thumb) return;
       
-      // Get the actual track dimensions
+      // Get the actual track dimensions - Radix UI positions the thumb relative to the track
       const trackRect = track.getBoundingClientRect();
       const containerRect = sliderContainerRef.current.getBoundingClientRect();
       const thumbRect = thumb.getBoundingClientRect();
+      const sliderRootRect = sliderRoot.getBoundingClientRect();
       
       // Calculate the track's position relative to the container
+      // Use the track's actual left edge and width
       const trackLeft = trackRect.left - containerRect.left;
       const trackWidth = trackRect.width;
       
-      // Calculate thumb center position relative to container
+      // Calculate thumb center position relative to container - this is the EXACT position Radix uses
       const thumbCenter = thumbRect.left - containerRect.left + (thumbRect.width / 2);
+      
+      // Get thumb width for adjustment calculations
+      const thumbWidth = thumbRect.width;
+      
+      // Get the actual computed transform from Radix UI to see how it positions the thumb
+      const computedStyle = window.getComputedStyle(thumb);
+      const transform = computedStyle.transform;
       
       // Calculate where the thumb should be based on current slider value
       const currentValue = inspectionsNeeded;
@@ -178,13 +188,52 @@ export default function Billing() {
       const expectedThumbPosition = trackLeft + (trackWidth * expectedThumbPercent / 100);
       
       // Calculate any offset between expected and actual thumb position
+      // This offset represents how Radix UI actually positions the thumb vs our calculation
+      // If positive, thumb is to the right of calculated position (markers need to move right)
+      // If negative, thumb is to the left of calculated position (markers need to move left)
       const thumbOffset = thumbCenter - expectedThumbPosition;
       
+      console.log(`[Track Measurement] Transform: ${transform}, ThumbCenter: ${thumbCenter}, Expected: ${expectedThumbPosition}, Offset: ${thumbOffset}`);
+      
+      // Store track info first
       setTrackInfo({
         left: trackLeft,
         width: trackWidth,
-        thumbOffset: thumbOffset
+        thumbOffset: thumbOffset,
+        thumbWidth: thumbWidth
       });
+      
+      // Always recalculate all threshold positions with a large rightward adjustment
+      // The markers are consistently behind (to the left of) the thumb, so we push them significantly right
+      const thresholds = [30, 75, 200];
+      const newMarkerPositions: { [key: number]: number } = {};
+      
+      thresholds.forEach(threshold => {
+        const thresholdPercent = ((threshold - 10) / (500 - 10)) * 100;
+        const calculatedPos = trackLeft + (trackWidth * thresholdPercent / 100);
+        
+        // If slider is currently at this threshold, use the exact measured thumb center
+        if (currentValue === threshold) {
+          newMarkerPositions[threshold] = thumbCenter;
+          console.log(`[Track Measurement] Direct measurement for ${threshold}: ${thumbCenter}px`);
+        } else {
+          // Calculate position with offset and LARGE rightward adjustment
+          // The adjustment is based on the observation that markers are consistently behind (to left of) the thumb
+          // Since markers are behind, we need to push them SIGNIFICANTLY right
+          // Use a combination of fixed pixel offset and percentage-based offset
+          const fixedOffset = 10; // Fixed 10px rightward push - increased from 6px
+          const percentageOffset = trackWidth * 0.05; // 5% of track width - increased from 4%
+          const totalAdjustment = fixedOffset + percentageOffset;
+          const adjustedPos = calculatedPos + thumbOffset + totalAdjustment;
+          newMarkerPositions[threshold] = adjustedPos;
+          console.log(`[Track Measurement] Calculated for ${threshold}: ${adjustedPos}px (base: ${calculatedPos}, offset: ${thumbOffset}, adjustment: ${totalAdjustment})`);
+        }
+      });
+      
+      // Update all positions at once to avoid stale state
+      setMarkerPositions(newMarkerPositions);
+      
+      console.log(`[Track Measurement] Value: ${currentValue}, Track: left=${trackLeft}, width=${trackWidth}, ThumbCenter: ${thumbCenter}, Expected: ${expectedThumbPosition}, Offset: ${thumbOffset}`);
     };
 
     // Measure on mount and resize
@@ -380,34 +429,45 @@ export default function Billing() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
-    const isSuccess = params.get("success") === "true";
+    const paymentStatus = params.get("payment");
+    const isSuccess = paymentStatus === "success" || params.get("success") === "true";
 
-    if (isSuccess) {
+    if (isSuccess && sessionId) {
       console.log("[Billing] Success parameter detected, sessionId:", sessionId);
 
       const processSession = async () => {
         // Clear the URL parameters IMMEDIATELY using replaceState
         window.history.replaceState({}, '', window.location.pathname);
 
-        if (sessionId) {
-          try {
-            await apiRequest("POST", "/api/billing/process-session", { sessionId });
+        try {
+          const response = await apiRequest("POST", "/api/billing/process-session", { sessionId });
+          const data = await response.json();
+          
+          console.log("[Billing] Process session response:", data);
+          
+          // Show appropriate success message based on purchase type
+          if (data.creditsGranted) {
             toast({
-              title: "Subscription Updated",
-              description: "Your plan has been successfully updated. Welcome to your new tier!",
+              title: "Purchase Successful",
+              description: `Successfully added ${data.creditsGranted} inspection credits to your account!`,
             });
-          } catch (e: any) {
-            console.error("[Billing] Session processing failed:", e);
+          } else if (data.processed) {
             toast({
-              title: "Activation Error",
-              description: e.message || "We encountered an issue activating your plan. Please contact support.",
-              variant: "destructive"
+              title: "Purchase Processed",
+              description: "Your purchase has been processed successfully.",
+            });
+          } else {
+            toast({
+              title: "Success",
+              description: data.message || "Your purchase has been processed successfully.",
             });
           }
-        } else {
+        } catch (e: any) {
+          console.error("[Billing] Session processing failed:", e);
           toast({
-            title: "Plan Updated",
-            description: "Your plan change has been recorded.",
+            title: "Processing Error",
+            description: e.message || "We encountered an issue processing your purchase. Please contact support.",
+            variant: "destructive"
           });
         }
 
@@ -415,11 +475,20 @@ export default function Billing() {
         queryClient.invalidateQueries({ queryKey: ["/api/billing/subscription"] });
         queryClient.invalidateQueries({ queryKey: ["/api/billing/inspection-balance"] });
         queryClient.invalidateQueries({ queryKey: ["/api/pricing/calculate"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/billing/addon-packs"] });
+        // Also invalidate organization query to refresh credit balance
+        if (user?.organizationId) {
+          queryClient.invalidateQueries({ queryKey: [`/api/organizations/${user.organizationId}`] });
+        }
       };
 
       processSession();
+    } else if (isSuccess && !sessionId) {
+      // Success but no session ID - might be a cancelled payment or other redirect
+      console.log("[Billing] Success parameter detected but no session_id");
+      window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [toast]);
+  }, [toast, queryClient, user?.organizationId]);
 
   const formatCurrency = (amount: number, currency: string = selectedCurrency) => {
     const symbols: Record<string, string> = { GBP: "£", USD: "$", AED: "د.إ", EUR: "€" };
@@ -670,22 +739,22 @@ export default function Billing() {
                 <div className="absolute top-0 left-0 right-0" style={{ marginTop: '12px' }}>
                   {[30, 75, 200].map((threshold) => {
                     // Calculate position to match Radix UI Slider handle center exactly
-                    // Radix UI positions the handle center at: ((value - min) / (max - min)) * 100%
-                    // We need to account for the track's actual position and width
                     let leftPosition: string;
-                    if (trackInfo) {
-                      // Calculate the percentage position on the track (0-100%)
-                      // Radix UI uses: ((value - min) / (max - min)) * 100%
+                    
+                    // Always use stored position from markerPositions (either direct measurement or calculated)
+                    if (markerPositions[threshold] !== undefined) {
+                      leftPosition = `${markerPositions[threshold]}px`;
+                    } else if (trackInfo) {
+                      // Fallback calculation if markerPositions not set yet - use same large adjustment
                       const positionPercent = ((threshold - 10) / (500 - 10)) * 100;
-                      // Calculate the position: track left edge + (percentage of track width)
-                      // Apply any thumb offset we detected to ensure perfect alignment
-                      // Add a small percentage-based offset (1.5% of track width) to push markers to the right for alignment
                       const basePosition = trackInfo.left + (trackInfo.width * positionPercent / 100);
-                      const offsetAdjustment = trackInfo.width * 0.015; // 1.5% of track width for responsive offset
-                      const adjustedPosition = basePosition + (trackInfo.thumbOffset || 0) + offsetAdjustment;
-                      leftPosition = `${adjustedPosition}px`;
+                      const fixedOffset = 10; // Match the measurement code: 10px
+                      const percentageOffset = trackInfo.width * 0.05; // Match the measurement code: 5%
+                      const totalAdjustment = fixedOffset + percentageOffset;
+                      const exactPosition = basePosition + (trackInfo.thumbOffset || 0) + totalAdjustment;
+                      leftPosition = `${exactPosition}px`;
                     } else {
-                      // Fallback to percentage if track info not available
+                      // Final fallback to percentage
                       leftPosition = `${((threshold - 10) / (500 - 10)) * 100}%`;
                     }
                     return (

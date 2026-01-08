@@ -17538,12 +17538,15 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           status: "active"
         });
 
-        console.log(`[Process Session] Created addon purchase record: ${addonPurchase.id}`);
+        console.log(`[Process Session] Created addon purchase record: ${addonPurchase.id} with quantity: ${quantity}`);
 
         // Grant credits to the organization
         try {
           const { subscriptionService: subService } = await import("./subscriptionService");
-          await subService.grantCredits(
+          
+          console.log(`[Process Session] Granting ${quantity} credits to organization ${user.organizationId} for addon pack ${packId}`);
+          
+          const creditBatch = await subService.grantCredits(
             user.organizationId,
             quantity,
             "addon_pack",
@@ -17556,15 +17559,32 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
             pricePerInspection
           );
 
-          console.log(`[Process Session] Successfully granted ${quantity} credits to organization ${user.organizationId} for pack ${packId}`);
-          return res.json({ message: "Addon pack purchased and credits granted successfully", processed: true, creditsGranted: quantity });
+          console.log(`[Process Session] Successfully granted ${quantity} credits to organization ${user.organizationId} for pack ${packId}. Credit batch ID: ${creditBatch.id}`);
+          
+          // Verify credits were granted by checking credit balance
+          const creditBalance = await storage.getCreditBalance(user.organizationId);
+          console.log(`[Process Session] Credit balance after grant: total=${creditBalance.total}, current=${creditBalance.current}`);
+          
+          return res.json({ 
+            message: "Addon pack purchased and credits granted successfully", 
+            processed: true, 
+            creditsGranted: quantity,
+            creditBalance: creditBalance.total
+          });
         } catch (creditError: any) {
           console.error(`[Process Session] ERROR granting credits to organization ${user.organizationId}:`, creditError);
-          // Still return success since purchase record is created - credits can be granted manually if needed
+          console.error(`[Process Session] Error details:`, {
+            message: creditError.message,
+            stack: creditError.stack,
+            name: creditError.name
+          });
+          // Still return error status but include purchase ID for manual credit grant if needed
           return res.status(500).json({ 
             message: "Purchase recorded but credits grant failed", 
             error: creditError.message,
-            processed: false 
+            processed: true,
+            purchaseId: addonPurchase.id,
+            quantity: quantity
           });
         }
       }
