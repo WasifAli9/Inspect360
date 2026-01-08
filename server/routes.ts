@@ -17475,6 +17475,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         }
 
         // Check if purchase already exists (prevent duplicate processing)
+        // But also check if credits were already granted
         const existingPurchases = await storage.getInstanceAddonPurchases(instanceSub.id);
         const existingPurchase = existingPurchases.find(
           p => p.packId === packId && 
@@ -17483,8 +17484,45 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         );
 
         if (existingPurchase) {
-          console.log(`[Process Session] Addon pack purchase already processed: ${existingPurchase.id}`);
-          return res.json({ message: "Already processed", processed: true });
+          // Check if credits were already granted for this purchase
+          const { subscriptionService: subService } = await import("./subscriptionService");
+          const creditBatches = await storage.getCreditBatchesByOrganization(user.organizationId);
+          const creditsGranted = creditBatches.some(
+            batch => batch.grantSource === "addon_pack" && 
+                     batch.metadataJson && 
+                     (batch.metadataJson as any).addonPurchaseId === existingPurchase.id
+          );
+
+          if (creditsGranted) {
+            console.log(`[Process Session] Addon pack purchase already processed and credits granted: ${existingPurchase.id}`);
+            return res.json({ message: "Already processed", processed: true, creditsGranted: true });
+          } else {
+            // Purchase exists but credits weren't granted - grant them now
+            console.log(`[Process Session] Purchase record exists but credits not granted. Granting credits now for purchase ${existingPurchase.id}`);
+            try {
+              await subService.grantCredits(
+                user.organizationId,
+                existingPurchase.quantity,
+                "addon_pack",
+                undefined,
+                {
+                  addonPurchaseId: existingPurchase.id,
+                  adminNotes: `Addon pack purchase via Stripe session: ${sessionId} (retry)`,
+                  createdBy: user.id
+                },
+                existingPurchase.pricePerInspection
+              );
+              console.log(`[Process Session] Successfully granted ${existingPurchase.quantity} credits to organization ${user.organizationId} for pack ${packId} (retry)`);
+              return res.json({ message: "Credits granted successfully", processed: true, creditsGranted: existingPurchase.quantity });
+            } catch (creditError: any) {
+              console.error(`[Process Session] ERROR granting credits (retry) to organization ${user.organizationId}:`, creditError);
+              return res.status(500).json({ 
+                message: "Purchase exists but credits grant failed", 
+                error: creditError.message,
+                processed: true
+              });
+            }
+          }
         }
 
         // Create add-on purchase record
