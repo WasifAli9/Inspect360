@@ -17441,7 +17441,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       if (session.metadata?.type === "addon_pack_purchase") {
         const packId = session.metadata?.packId;
         const tierIdAtPurchase = session.metadata?.tierIdAtPurchase;
-        const quantity = parseInt(session.metadata?.quantity || "0");
+        let quantity = parseInt(session.metadata?.quantity || "0");
         const pricePerInspection = parseInt(session.metadata?.pricePerInspection || "0");
         const totalPrice = parseInt(session.metadata?.totalPrice || "0");
         const currency = session.metadata?.currency || "GBP";
