@@ -4,6 +4,11 @@ import {
   BookOpen,
   Settings,
   Shield,
+  Package,
+  CreditCard,
+  Info,
+  FileText,
+  Box,
 } from "lucide-react";
 import {
   Sidebar,
@@ -39,9 +44,29 @@ export function AdminSidebar() {
       icon: BookOpen,
     },
     {
-      title: "Eco Admin",
-      url: "/admin/eco-admin",
-      icon: Settings,
+      title: "Tiers",
+      url: "/admin/tiers",
+      icon: Package,
+    },
+    {
+      title: "Add-On Packs",
+      url: "/admin/addon-packs",
+      icon: CreditCard,
+    },
+    {
+      title: "Extensive",
+      url: "/admin/extensive",
+      icon: Info,
+    },
+    {
+      title: "Modules",
+      url: "/admin/modules",
+      icon: Box,
+    },
+    {
+      title: "Quotations",
+      url: "/admin/quotations",
+      icon: FileText,
     },
   ];
 

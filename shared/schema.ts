@@ -155,7 +155,7 @@ export const organizations = pgTable("organizations", {
   currentPlanId: varchar("current_plan_id"),
   trialEndAt: timestamp("trial_end_at"),
   isActive: boolean("is_active").default(true),
-  creditsRemaining: integer("credits_remaining").default(5),
+  // creditsRemaining removed - now using credit_batches system
   includedInspectionsPerMonth: integer("included_inspections_per_month").default(0), // From subscription plan
   usedInspectionsThisMonth: integer("used_inspections_this_month").default(0), // Resets at billing cycle
   topupInspectionsBalance: integer("topup_inspections_balance").default(0), // Rolls over until used
@@ -2547,13 +2547,14 @@ export const currencyConfig = pgTable("currency_config", {
 export const subscriptionTiersTable = pgTable("subscription_tiers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 100 }).notNull(),
-  code: planCodeEnum("code").notNull().unique(),
+  code: varchar("code", { length: 100 }).notNull().unique(), // Changed from planCodeEnum to varchar for flexibility
   description: text("description"),
   tierOrder: integer("tier_order").notNull(),
   includedInspections: integer("included_inspections").notNull(),
   basePriceMonthly: integer("base_price_monthly").notNull(), // Master currency (GBP) in pence
   basePriceAnnual: integer("base_price_annual").notNull(), // Master currency (GBP) in pence
   annualDiscountPercentage: numeric("annual_discount_percentage", { precision: 5, scale: 2 }).default("16.70"),
+  perInspectionPrice: integer("per_inspection_price").notNull().default(0), // Base price per inspection in pence (GBP)
   isActive: boolean("is_active").notNull().default(true),
   requiresCustomPricing: boolean("requires_custom_pricing").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),

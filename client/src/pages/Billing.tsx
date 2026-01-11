@@ -142,7 +142,9 @@ export default function Billing() {
   const [location, setLocation] = useLocation();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
   const [inspectionsNeeded, setInspectionsNeeded] = useState<number>(10);
-  const [selectedCurrency, setSelectedCurrency] = useState<string>("GBP");
+  // Use organization currency from user, fallback to GBP
+  const organizationCurrency = (user as any)?.organizationCurrency || (user as any)?.organization?.preferredCurrency || "GBP";
+  const [selectedCurrency, setSelectedCurrency] = useState<string>(organizationCurrency);
   const [debouncedInspections, setDebouncedInspections] = useState<number>(10);
   const [quotationDialogOpen, setQuotationDialogOpen] = useState(false);
   const [exactInspectionsCount, setExactInspectionsCount] = useState<number>(500);
@@ -151,6 +153,16 @@ export default function Billing() {
   const getPositionPercent = (value: number) => {
     return ((value - 10) / (500 - 10)) * 100;
   };
+
+  // Update currency when user/organization data loads
+  useEffect(() => {
+    const orgCurrency = (user as any)?.organizationCurrency || (user as any)?.organization?.preferredCurrency;
+    if (orgCurrency && orgCurrency !== selectedCurrency) {
+      setSelectedCurrency(orgCurrency);
+    }
+    // Only depend on user, not selectedCurrency to avoid unnecessary updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Debounce inspectionsNeeded to avoid too many API calls while dragging
   useEffect(() => {
@@ -424,16 +436,8 @@ export default function Billing() {
         const pricePerInspectionMinor = Math.round(pricePerInspectionMajor * 100);
         additionalCost = additionalInspections * pricePerInspectionMinor;
       } else {
-        // Calculate locally if API doesn't have it yet
-        if (inspectionsNeeded < 30) {
-          additionalInspections = Math.max(0, inspectionsNeeded - 10);
-        } else if (inspectionsNeeded < 75) {
-          additionalInspections = Math.max(0, inspectionsNeeded - 30);
-        } else if (inspectionsNeeded < 200) {
-          additionalInspections = Math.max(0, inspectionsNeeded - 75);
-        } else if (inspectionsNeeded <= 500) {
-          additionalInspections = Math.max(0, inspectionsNeeded - 200);
-        }
+        // Calculate locally if API doesn't have it yet - use dynamic tier detection
+        additionalInspections = Math.max(0, inspectionsNeeded - tierIncluded);
         // Use per-inspection price from config (will be converted by API on next fetch)
         const perInspectionPrice = getPerInspectionPriceFromConfig(currentTierName, selectedCurrency, config);
         additionalCost = additionalInspections * perInspectionPrice;
@@ -459,52 +463,69 @@ export default function Billing() {
     }
 
     // Fallback: Calculate locally if API data not available yet
+    // Use dynamic tier detection similar to backend logic
     let tierPrice = 0;
     let additionalInspections = 0;
     let additionalCost = 0;
     let currentTierName = "";
     let tierIncluded = 0;
+    let tierCodeForCheckout = "";
 
-    // Minimum 10 inspections required - always use Starter tier as base
-    // Convert tier prices from GBP to selected currency
-    const rate = FALLBACK_RATES[selectedCurrency.toUpperCase()] || 1.0;
+    // Minimum 10 inspections required
+    const minInspectionCount = Math.max(inspectionsNeeded, 10);
+
+    // Get active tiers and sort by included inspections (ascending)
+    const activeTiers = (config?.tiers || []).filter((t: Tier) => t.isActive !== false);
+    const sortedTiers = [...activeTiers].sort((a: Tier, b: Tier) => a.includedInspections - b.includedInspections);
+
+    // Find the appropriate tier dynamically
+    let detectedTier: Tier | undefined;
     
-    if (inspectionsNeeded < 30) {
-      // Starter: tier price + per inspection for above 10
-      currentTierName = "Starter";
-      tierIncluded = 10;
-      const starterTier = config?.tiers?.find((t: Tier) => t.code === "starter");
-      const basePrice = starterTier ? (billingPeriod === "monthly" ? starterTier.basePriceMonthly : starterTier.basePriceAnnual) : 0;
+    // If count > 500, use the highest tier
+    if (minInspectionCount > 500) {
+      detectedTier = sortedTiers[sortedTiers.length - 1];
+    } else {
+      // Find the tier where minCount falls within its range
+      // Range is from tier's includedInspections up to (but not including) next tier's includedInspections
+      for (let i = 0; i < sortedTiers.length; i++) {
+        const currentTier = sortedTiers[i];
+        const nextTier = sortedTiers[i + 1];
+        
+        // If this is the last tier, use it if count >= its includedInspections
+        if (!nextTier) {
+          if (minInspectionCount >= currentTier.includedInspections) {
+            detectedTier = currentTier;
+            break;
+          }
+        } else {
+          // Check if minCount falls within this tier's range
+          // Range: [currentTier.includedInspections, nextTier.includedInspections)
+          if (minInspectionCount >= currentTier.includedInspections && minInspectionCount < nextTier.includedInspections) {
+            detectedTier = currentTier;
+            break;
+          }
+        }
+      }
+    }
+
+    // Fallback to highest tier if none found
+    if (!detectedTier && sortedTiers.length > 0) {
+      detectedTier = sortedTiers[sortedTiers.length - 1];
+    }
+
+    if (detectedTier) {
+      currentTierName = detectedTier.name;
+      tierIncluded = detectedTier.includedInspections;
+      tierCodeForCheckout = detectedTier.code;
+      
+      // Get tier price
+      const basePrice = billingPeriod === "monthly" ? detectedTier.basePriceMonthly : detectedTier.basePriceAnnual;
+      const rate = FALLBACK_RATES[selectedCurrency.toUpperCase()] || 1.0;
       tierPrice = selectedCurrency === "GBP" ? basePrice : Math.round(basePrice * rate);
-      additionalInspections = inspectionsNeeded - 10;
-      additionalCost = additionalInspections * getPerInspectionPriceFromConfig("Starter", selectedCurrency, config);
-    } else if (inspectionsNeeded < 75) {
-      // Growth: tier price + per inspection for above 30
-      currentTierName = "Growth";
-      tierIncluded = 30;
-      const growthTier = config?.tiers?.find((t: Tier) => t.code === "growth");
-      const basePrice = growthTier ? (billingPeriod === "monthly" ? growthTier.basePriceMonthly : growthTier.basePriceAnnual) : 0;
-      tierPrice = selectedCurrency === "GBP" ? basePrice : Math.round(basePrice * rate);
-      additionalInspections = inspectionsNeeded - 30;
-      additionalCost = additionalInspections * getPerInspectionPriceFromConfig("Growth", selectedCurrency, config);
-    } else if (inspectionsNeeded < 200) {
-      // Professional: tier price + per inspection for above 75
-      currentTierName = "Professional";
-      tierIncluded = 75;
-      const professionalTier = config?.tiers?.find((t: Tier) => t.code === "professional");
-      const basePrice = professionalTier ? (billingPeriod === "monthly" ? professionalTier.basePriceMonthly : professionalTier.basePriceAnnual) : 0;
-      tierPrice = selectedCurrency === "GBP" ? basePrice : Math.round(basePrice * rate);
-      additionalInspections = inspectionsNeeded - 75;
-      additionalCost = additionalInspections * getPerInspectionPriceFromConfig("Professional", selectedCurrency, config);
-    } else if (inspectionsNeeded <= 500) {
-      // Enterprise: tier price + per inspection for above 200
-      currentTierName = "Enterprise";
-      tierIncluded = 200;
-      const enterpriseTier = config?.tiers?.find((t: Tier) => t.code === "enterprise");
-      const basePrice = enterpriseTier ? (billingPeriod === "monthly" ? enterpriseTier.basePriceMonthly : enterpriseTier.basePriceAnnual) : 0;
-      tierPrice = selectedCurrency === "GBP" ? basePrice : Math.round(basePrice * rate);
-      additionalInspections = inspectionsNeeded - 200;
-      additionalCost = additionalInspections * getPerInspectionPriceFromConfig("Enterprise", selectedCurrency, config);
+      
+      // Calculate additional inspections needed
+      additionalInspections = Math.max(0, minInspectionCount - tierIncluded);
+      additionalCost = additionalInspections * getPerInspectionPriceFromConfig(currentTierName, selectedCurrency, config);
     }
 
     // Get module costs from API (this is the only part that needs API data)
@@ -513,12 +534,7 @@ export default function Billing() {
     const moduleCost = pricing?.calculations ? (billingPeriod === "monthly" ? pricing.calculations.modulesMonthly : pricing.calculations.modulesAnnual) : 0;
     const totalCost = tierPrice + additionalCost + moduleCost;
 
-    // Determine which tier code to use for checkout
-    let tierCodeForCheckout = "";
-    if (currentTierName === "Starter") tierCodeForCheckout = "starter";
-    else if (currentTierName === "Growth") tierCodeForCheckout = "growth";
-    else if (currentTierName === "Professional") tierCodeForCheckout = "professional";
-    else if (currentTierName === "Enterprise") tierCodeForCheckout = "enterprise";
+    // tierCodeForCheckout is already set in the dynamic tier detection above
 
     console.log(`[Billing] Calculated: Tier=${currentTierName}, Additional=${additionalInspections}, Cost=${additionalCost}, TierPrice=${tierPrice}, ModuleCost=${moduleCost}`);
 
@@ -646,7 +662,11 @@ export default function Billing() {
         <div className="absolute top-0 right-0 p-6 flex gap-3">
           <div className="flex items-center gap-2 bg-muted/30 p-1.5 rounded-xl border border-border">
             <Coins className="h-4 w-4 text-muted-foreground" />
-            <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
+            <Select 
+              value={selectedCurrency} 
+              onValueChange={setSelectedCurrency}
+              disabled={false} // Allow changing currency if needed, but default to organization currency
+            >
               <SelectTrigger className="h-7 w-20 border-none bg-transparent font-bold focus:ring-0 text-sm">
                 <SelectValue />
               </SelectTrigger>
@@ -654,7 +674,7 @@ export default function Billing() {
                 <SelectItem value="GBP">GBP (£)</SelectItem>
                 <SelectItem value="USD">USD ($)</SelectItem>
                 <SelectItem value="AED">AED (د.إ)</SelectItem>
-                <SelectItem value="EUR">EUR (€)</SelectItem>
+                {/* EUR removed - not supported by database currency enum */}
               </SelectContent>
             </Select>
           </div>
@@ -749,30 +769,23 @@ export default function Billing() {
 
             {/* Selected Details */}
             {(() => {
-              // Determine current tier based on inspection count (minimum 10)
-              let currentTier: { name: string; range: string; included: number } | null = null;
-              if (inspectionsNeeded < 30) {
-                currentTier = { name: "Starter", range: "10-29", included: 10 };
-              } else if (inspectionsNeeded < 75) {
-                currentTier = { name: "Growth", range: "30-74", included: 30 };
-              } else if (inspectionsNeeded < 200) {
-                currentTier = { name: "Professional", range: "75-199", included: 75 };
-              } else if (inspectionsNeeded <= 500) {
-                currentTier = { name: "Enterprise", range: "200-500", included: 200 };
-              }
+              // Use tier information from pricingBreakdown (which uses API data or dynamic detection)
+              const currentTierName = pricingBreakdown.currentTierName;
+              const tierIncluded = pricingBreakdown.tierIncluded;
+              const additionalInspections = pricingBreakdown.additionalInspections;
 
               return (
                 <div className="bg-muted/30 rounded-xl p-6 space-y-2 border border-border">
                   <div className="text-sm space-y-1">
                     <p className="font-semibold">Selected: {inspectionsNeeded >= 500 ? "500+" : inspectionsNeeded} inspections/month</p>
-                    {currentTier ? (
+                    {currentTierName ? (
                       <>
                         <p className="text-muted-foreground">
-                          Your Tier: <span className="font-semibold text-foreground">{currentTier.name}</span> (includes {currentTier.included})
+                          Your Tier: <span className="font-semibold text-foreground">{currentTierName}</span> (includes {tierIncluded})
                         </p>
-                        {inspectionsNeeded > currentTier.included && (
+                        {additionalInspections > 0 && (
                           <p className="text-muted-foreground">
-                            Additional: <span className="font-semibold text-foreground">{inspectionsNeeded - currentTier.included} inspections needed</span>
+                            Additional: <span className="font-semibold text-foreground">{additionalInspections} inspections needed</span>
                           </p>
                         )}
                       </>

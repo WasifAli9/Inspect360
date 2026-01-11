@@ -249,13 +249,9 @@ export default function Dashboard() {
     enabled: isAuthenticated,
   });
 
-  const { data: organization } = useQuery<{creditsRemaining: number | null}>({
-    queryKey: ["/api/organizations", user?.organizationId],
-    queryFn: async () => {
-      const res = await fetch(`/api/organizations/${user?.organizationId}`, { credentials: 'include' });
-      if (!res.ok) throw new Error("Failed to fetch organization");
-      return res.json();
-    },
+  // Get credit balance from billing API
+  const { data: creditBalance } = useQuery<{ total: number }>({
+    queryKey: ["/api/billing/inspection-balance"],
     enabled: isAuthenticated && !!user?.organizationId && user?.role === "owner",
   });
 
@@ -419,7 +415,7 @@ export default function Dashboard() {
     );
   }
 
-  const creditsRemaining = organization?.creditsRemaining ?? 0;
+  const creditsRemaining = creditBalance?.total ?? 0;
   const creditsLow = creditsRemaining < 5;
 
   const totalAlerts = (stats?.alerts.overdueInspections || 0) + 

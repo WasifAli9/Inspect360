@@ -13,9 +13,11 @@ export function AdminPageWrapper({ children, breadcrumbs }: AdminPageWrapperProp
   const [, navigate] = useLocation();
 
   // Check admin authentication
-  const { data: adminUser, isLoading } = useQuery({
+  const { data: adminUser, isLoading, error } = useQuery({
     queryKey: ["/api/admin/me"],
     retry: false,
+    // Don't throw errors, just return undefined data
+    throwOnError: false,
   });
 
   useEffect(() => {

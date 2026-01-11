@@ -12,7 +12,10 @@ import {
     Calendar,
     Video,
     Package,
-    ArrowRight
+    ArrowRight,
+    CheckCircle,
+    XCircle,
+    Loader2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -276,45 +279,63 @@ export default function Marketplace() {
                     >
                         {activeModules.map((module) => (
                             <motion.div variants={item} key={module.id}>
-                                <Card className="hover-elevate-2 transition-smooth h-full border-primary/10">
-                                    <div className="absolute top-0 left-0 w-full h-1 bg-primary/40"></div>
-                                    <CardHeader className="pt-8">
-                                        <div className="flex items-start justify-between">
-                                            <div className="h-12 w-12 rounded-xl bg-primary/5 flex items-center justify-center text-primary">
-                                                {getIcon(module.moduleKey)}
+                                <Card className="relative h-full border-primary/20 bg-gradient-to-br from-primary/5 via-background to-background overflow-hidden group hover:border-primary/40 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10">
+                                    {/* Animated top accent bar */}
+                                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary via-primary/80 to-primary/40"></div>
+                                    
+                                    {/* Subtle glow effect on hover */}
+                                    <div className="absolute inset-0 bg-gradient-to-br from-primary/0 via-primary/0 to-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                                    
+                                    <CardHeader className="pt-8 pb-4 relative z-10">
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary shadow-sm group-hover:shadow-md group-hover:scale-105 transition-all duration-300">
+                                                <div className="relative">
+                                                    {getIcon(module.moduleKey)}
+                                                    <div className="absolute -top-1 -right-1 h-3 w-3 bg-primary rounded-full border-2 border-background animate-pulse"></div>
+                                                </div>
                                             </div>
-                                            <Badge variant="secondary" className="px-2 py-0 h-6 text-[10px] font-bold uppercase tracking-wider">
+                                            <Badge className="px-3 py-1 h-7 text-[11px] font-bold uppercase tracking-wider bg-primary text-primary-foreground shadow-sm border-none">
+                                                <CheckCircle className="h-3 w-3 mr-1.5" />
                                                 Active
                                             </Badge>
                                         </div>
-                                        <CardTitle className="text-lg mt-4">{module.name}</CardTitle>
-                                        <CardDescription className="mt-2 text-sm line-clamp-2 min-h-[2.5rem]">
+                                        <CardTitle className="text-lg font-bold mt-2 group-hover:text-primary transition-colors duration-300">
+                                            {module.name}
+                                        </CardTitle>
+                                        <CardDescription className="mt-2 text-sm line-clamp-2 min-h-[2.5rem] text-muted-foreground">
                                             {module.description}
                                         </CardDescription>
                                     </CardHeader>
-                                    <CardContent>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 p-2 rounded-lg">
-                                            <Clock className="h-3 w-3" />
-                                            <span>Enabled on {new Date(module.enabledDate || '').toLocaleDateString()}</span>
+                                    <CardContent className="relative z-10">
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-gradient-to-r from-primary/5 to-primary/0 p-3 rounded-lg border border-primary/10">
+                                            <div className="h-6 w-6 rounded-md bg-primary/10 flex items-center justify-center">
+                                                <Clock className="h-3.5 w-3.5 text-primary" />
+                                            </div>
+                                            <span className="font-medium">Enabled on {new Date(module.enabledDate || '').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                                         </div>
                                     </CardContent>
-                                    <CardFooter className="flex flex-col gap-4">
-                                        {module.currentUsage !== undefined && (
-                                            <div className="w-full text-xs text-muted-foreground bg-muted/30 p-2 rounded-lg border border-dashed">
-                                                Currently using: <span className="font-bold text-foreground">{module.currentUsage}</span> {module.moduleKey === 'tenant_portal' ? 'tenants' : 'units'}
-                                            </div>
-                                        )}
+                                    <CardFooter className="flex flex-col gap-3 relative z-10 pt-4 border-t border-primary/10">
                                         <Button
-                                            variant="ghost"
+                                            variant="outline"
                                             size="sm"
-                                            className="w-full text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                                            className="w-full text-destructive hover:text-destructive-foreground hover:bg-destructive bg-destructive/10 border-destructive/20 transition-all duration-200 font-medium"
                                             onClick={() => {
                                                 setSelectedModule(module);
                                                 toggleMutation.mutate({ moduleId: module.id, enable: false });
                                             }}
                                             disabled={toggleMutation.isPending}
                                         >
-                                            Deactivate Module
+                                            {toggleMutation.isPending ? (
+                                                <>
+                                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                                    Deactivating...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <XCircle className="h-4 w-4 mr-2" />
+                                                    Deactivate Module
+                                                </>
+                                            )}
                                         </Button>
                                     </CardFooter>
                                 </Card>

@@ -13,19 +13,18 @@ import { Plus, Edit, Trash2, Save, X, Package, CreditCard, Globe, Loader2, Setti
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
-import type { Plan, CreditBundle, CountryPricingOverride } from "@shared/schema";
+import type { CreditBundle } from "@shared/schema";
 import { 
-  CurrencyManagement, 
+  // CurrencyManagement, // Hidden for now
   SubscriptionTierManagement, 
   AddonPackManagement, 
   ExtensiveInspectionManagement, 
-  PricingPreview,
   QuotationsManagement
 } from "./EcoAdminComponents";
 
 export default function EcoAdmin() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("plans");
+  const [activeTab, setActiveTab] = useState("tiers"); // Default to tiers since currencies is hidden
   const [, navigate] = useLocation();
 
   // Admin user is now checked in AdminPageWrapper
@@ -40,11 +39,12 @@ export default function EcoAdmin() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-8">
-          <TabsTrigger value="currencies" data-testid="tab-currencies">
+        <TabsList className="grid w-full grid-cols-4">
+          {/* Currencies tab hidden for now */}
+          {/* <TabsTrigger value="currencies" data-testid="tab-currencies">
             <Globe className="h-4 w-4 mr-2" />
             Currencies
-          </TabsTrigger>
+          </TabsTrigger> */}
           <TabsTrigger value="tiers" data-testid="tab-tiers">
             <Package className="h-4 w-4 mr-2" />
             Tiers
@@ -57,27 +57,16 @@ export default function EcoAdmin() {
             <Info className="h-4 w-4 mr-2" />
             Extensive
           </TabsTrigger>
-          <TabsTrigger value="pricing-preview" data-testid="tab-pricing-preview">
-            <Eye className="h-4 w-4 mr-2" />
-            Preview
-          </TabsTrigger>
           <TabsTrigger value="quotations" data-testid="tab-quotations">
             <FileText className="h-4 w-4 mr-2" />
             Quotations
           </TabsTrigger>
-          <TabsTrigger value="plans" data-testid="tab-plans">
-            <Package className="h-4 w-4 mr-2" />
-            Legacy Plans
-          </TabsTrigger>
-          <TabsTrigger value="pricing" data-testid="tab-pricing">
-            <Globe className="h-4 w-4 mr-2" />
-            Country Pricing
-          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="currencies" className="mt-6">
+        {/* Currencies tab content hidden for now */}
+        {/* <TabsContent value="currencies" className="mt-6">
           <CurrencyManagement />
-        </TabsContent>
+        </TabsContent> */}
 
         <TabsContent value="tiers" className="mt-6">
           <SubscriptionTierManagement />
@@ -91,263 +80,10 @@ export default function EcoAdmin() {
           <ExtensiveInspectionManagement />
         </TabsContent>
 
-        <TabsContent value="pricing-preview" className="mt-6">
-          <PricingPreview />
-        </TabsContent>
-
         <TabsContent value="quotations" className="mt-6">
           <QuotationsManagement />
         </TabsContent>
-
-        <TabsContent value="plans" className="mt-6">
-          <PlansManagement />
-        </TabsContent>
-
-        <TabsContent value="pricing" className="mt-6">
-          <CountryPricingManagement />
-        </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function PlansManagement() {
-  const { toast } = useToast();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Plan>>({});
-
-  const { data: plans, isLoading } = useQuery<Plan[]>({
-    queryKey: ["/api/admin/plans"],
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async (data: Partial<Plan>) => {
-      return await apiRequest("/api/admin/plans", "POST", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan created successfully" });
-      setFormData({});
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to create plan", 
-        description: error.message || "Invalid data provided",
-        variant: "destructive" 
-      });
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Plan> }) => {
-      return await apiRequest(`/api/admin/plans/${id}`, "PATCH", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: "Plan updated successfully" });
-      setEditingId(null);
-      setFormData({});
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "Failed to update plan", 
-        description: error.message || "Invalid data provided",
-        variant: "destructive" 
-      });
-    },
-  });
-
-  const handleSave = () => {
-    if (!formData.code || !formData.name || !formData.monthlyPriceGbp || !formData.includedCredits) {
-      toast({ title: "Please fill all required fields", variant: "destructive" });
-      return;
-    }
-
-    // Build clean payload - strip read-only fields
-    const payload = {
-      code: formData.code,
-      name: formData.name,
-      monthlyPriceGbp: formData.monthlyPriceGbp,
-      annualPriceGbp: formData.annualPriceGbp || null,
-      includedCredits: formData.includedCredits,
-      softCap: formData.softCap || 5000,
-      isCustom: formData.isCustom || false,
-      isActive: formData.isActive !== undefined ? formData.isActive : true,
-    };
-
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, data: payload });
-    } else {
-      createMutation.mutate(payload);
-    }
-  };
-
-  const startEdit = (plan: Plan) => {
-    setEditingId(plan.id);
-    setFormData(plan);
-  };
-
-  if (isLoading) {
-    return <div>Loading plans...</div>;
-  }
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {editingId ? "Edit Plan" : "Create New Plan"}
-          </CardTitle>
-          <CardDescription>
-            Configure subscription plan details and pricing (GBP base currency)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="code">Plan Code</Label>
-              <Input
-                id="code"
-                value={formData.code || ""}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value as any })}
-                placeholder="starter, professional, etc."
-                data-testid="input-plan-code"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="name">Plan Name</Label>
-              <Input
-                id="name"
-                value={formData.name || ""}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Starter Plan"
-                data-testid="input-plan-name"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="space-y-2">
-              <Label htmlFor="price">Monthly Price (GBP Pence)</Label>
-              <Input
-                id="price"
-                type="number"
-                value={formData.monthlyPriceGbp || ""}
-                onChange={(e) => setFormData({ ...formData, monthlyPriceGbp: parseInt(e.target.value) })}
-                placeholder="4900 = £49.00"
-                data-testid="input-monthly-price"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="annual-price">Annual Price (GBP Pence - Optional)</Label>
-              <Input
-                id="annual-price"
-                type="number"
-                value={formData.annualPriceGbp || ""}
-                onChange={(e) => setFormData({ ...formData, annualPriceGbp: parseInt(e.target.value) || null })}
-                placeholder="52920 = £529.20 (save 10%)"
-                data-testid="input-annual-price"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="credits">Included Credits</Label>
-              <Input
-                id="credits"
-                type="number"
-                value={formData.includedCredits || ""}
-                onChange={(e) => setFormData({ ...formData, includedCredits: parseInt(e.target.value) })}
-                placeholder="50"
-                data-testid="input-included-credits"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="softCap">Soft Cap (Fair Usage)</Label>
-              <Input
-                id="softCap"
-                type="number"
-                value={formData.softCap || 5000}
-                onChange={(e) => setFormData({ ...formData, softCap: parseInt(e.target.value) })}
-                placeholder="5000"
-                data-testid="input-soft-cap"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.isActive ?? true}
-                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                data-testid="checkbox-active"
-              />
-              <span>Active</span>
-            </label>
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.isCustom ?? false}
-                onChange={(e) => setFormData({ ...formData, isCustom: e.target.checked })}
-                data-testid="checkbox-custom"
-              />
-              <span>Custom Plan</span>
-            </label>
-          </div>
-
-          <div className="flex gap-2">
-            <Button onClick={handleSave} data-testid="button-save-plan">
-              <Save className="h-4 w-4 mr-2" />
-              {editingId ? "Update Plan" : "Create Plan"}
-            </Button>
-            {editingId && (
-              <Button variant="outline" onClick={() => {
-                setEditingId(null);
-                setFormData({});
-              }} data-testid="button-cancel-edit">
-                <X className="h-4 w-4 mr-2" />
-                Cancel
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Existing Plans</CardTitle>
-          <CardDescription>All subscription plans in the system</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {plans && plans.length > 0 ? (
-              plans.map((plan) => (
-                <div key={plan.id} className="flex items-center justify-between p-4 border rounded-lg" data-testid={`card-plan-${plan.id}`}>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold" data-testid={`text-plan-name-${plan.id}`}>{plan.name}</h3>
-                      <Badge variant="outline" data-testid={`badge-plan-code-${plan.id}`}>{plan.code}</Badge>
-                      {plan.isActive && <Badge data-testid={`badge-active-${plan.id}`}>Active</Badge>}
-                      {plan.isCustom && <Badge variant="secondary" data-testid={`badge-custom-${plan.id}`}>Custom</Badge>}
-                    </div>
-                    <p className="text-sm text-muted-foreground" data-testid={`text-plan-details-${plan.id}`}>
-                      £{(plan.monthlyPriceGbp / 100).toFixed(2)}/month · {plan.includedCredits} credits · Soft Cap: {plan.softCap}
-                    </p>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={() => startEdit(plan)} data-testid={`button-edit-plan-${plan.id}`}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <p className="text-center text-muted-foreground py-8" data-testid="text-no-plans">No plans created yet</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -634,197 +370,6 @@ function BundlesManagement() {
               ))
             ) : (
               <p className="text-center text-muted-foreground py-8" data-testid="text-no-bundles">No bundles created yet</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function CountryPricingManagement() {
-  const { toast } = useToast();
-  const [formData, setFormData] = useState<Partial<CountryPricingOverride>>({});
-
-  const { data: plans } = useQuery<Plan[]>({
-    queryKey: ["/api/admin/plans"],
-  });
-
-  const { data: overrides, isLoading } = useQuery<CountryPricingOverride[]>({
-    queryKey: ["/api/admin/country-pricing"],
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async (data: Partial<CountryPricingOverride>) => {
-      return await apiRequest("/api/admin/country-pricing", "POST", data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/country-pricing"] });
-      toast({ title: "Country pricing created successfully" });
-      setFormData({});
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return await apiRequest(`/api/admin/country-pricing/${id}`, "DELETE");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/country-pricing"] });
-      toast({ title: "Country pricing deleted successfully" });
-    },
-  });
-
-  const handleSave = () => {
-    if (!formData.countryCode || !formData.planId || !formData.currency || !formData.monthlyPriceMinorUnits) {
-      toast({ title: "Please fill all required fields", variant: "destructive" });
-      return;
-    }
-
-    createMutation.mutate(formData);
-  };
-
-  if (isLoading) {
-    return <div>Loading country pricing...</div>;
-  }
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Create Country Pricing Override</CardTitle>
-          <CardDescription>
-            Configure region-specific pricing for subscription plans
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="country-code">Country Code (ISO 3166-1 alpha-2)</Label>
-              <Input
-                id="country-code"
-                value={formData.countryCode || ""}
-                onChange={(e) => setFormData({ ...formData, countryCode: e.target.value.toUpperCase() })}
-                placeholder="US, AE, etc."
-                maxLength={2}
-                data-testid="input-country-code"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="plan-select">Plan</Label>
-              <select
-                id="plan-select"
-                className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                value={formData.planId || ""}
-                onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
-                data-testid="select-plan"
-              >
-                <option value="">Select a plan</option>
-                {plans?.map((plan) => (
-                  <option key={plan.id} value={plan.id}>{plan.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="currency">Currency</Label>
-              <select
-                id="currency"
-                className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                value={formData.currency || ""}
-                onChange={(e) => setFormData({ ...formData, currency: e.target.value as any })}
-                data-testid="select-currency"
-              >
-                <option value="">Select currency</option>
-                <option value="GBP">GBP</option>
-                <option value="USD">USD</option>
-                <option value="AED">AED</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="monthly-price">Monthly Price (Minor Units)</Label>
-              <Input
-                id="monthly-price"
-                type="number"
-                value={formData.monthlyPriceMinorUnits || ""}
-                onChange={(e) => setFormData({ ...formData, monthlyPriceMinorUnits: parseInt(e.target.value) })}
-                placeholder="4900 for £49 or $49"
-                data-testid="input-monthly-price-minor"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="topup-price">Top-up Price per Credit (Minor Units)</Label>
-              <Input
-                id="topup-price"
-                type="number"
-                value={formData.topupPricePerCreditMinorUnits || ""}
-                onChange={(e) => setFormData({ ...formData, topupPricePerCreditMinorUnits: parseInt(e.target.value) || null })}
-                placeholder="75 for £0.75"
-                data-testid="input-topup-price"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="credits-override">Included Credits Override (optional)</Label>
-            <Input
-              id="credits-override"
-              type="number"
-              value={formData.includedCreditsOverride || ""}
-              onChange={(e) => setFormData({ ...formData, includedCreditsOverride: parseInt(e.target.value) || null })}
-              placeholder="Leave empty to use plan default"
-              data-testid="input-credits-override"
-            />
-          </div>
-
-          <Button onClick={handleSave} data-testid="button-save-pricing">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Country Pricing
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Existing Country Pricing Overrides</CardTitle>
-          <CardDescription>All region-specific pricing configurations</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {overrides && overrides.length > 0 ? (
-              overrides.map((override) => {
-                const plan = plans?.find(p => p.id === override.planId);
-                return (
-                  <div key={override.id} className="flex items-center justify-between p-4 border rounded-lg" data-testid={`card-override-${override.id}`}>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" data-testid={`badge-country-${override.id}`}>{override.countryCode}</Badge>
-                        <h3 className="font-semibold" data-testid={`text-plan-name-override-${override.id}`}>{plan?.name || "Unknown Plan"}</h3>
-                        <Badge data-testid={`badge-currency-${override.id}`}>{override.currency}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground" data-testid={`text-override-details-${override.id}`}>
-                        Monthly: {override.currency === "GBP" ? "£" : override.currency === "USD" ? "$" : override.currency === "AED" ? "د.إ" : override.currency}{" "}
-                        {(override.monthlyPriceMinorUnits / 100).toFixed(2)}
-                        {override.topupPricePerCreditMinorUnits && (
-                          ` · Top-up: ${override.currency === "GBP" ? "£" : override.currency === "USD" ? "$" : override.currency === "AED" ? "د.إ" : override.currency}${(override.topupPricePerCreditMinorUnits / 100).toFixed(2)}/credit`
-                        )}
-                        {override.includedCreditsOverride && ` · Credits: ${override.includedCreditsOverride}`}
-                      </p>
-                    </div>
-                    <Button size="sm" variant="destructive" onClick={() => {
-                      if (confirm("Are you sure you want to delete this override?")) {
-                        deleteMutation.mutate(override.id);
-                      }
-                    }} data-testid={`button-delete-override-${override.id}`}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-center text-muted-foreground py-8" data-testid="text-no-overrides">No country pricing overrides created yet</p>
             )}
           </div>
         </CardContent>

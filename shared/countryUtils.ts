@@ -1,10 +1,18 @@
 // Country to Currency mapping (ISO 3166-1 alpha-2 country codes)
+// Note: Database enum only supports GBP, USD, AED, so other currencies default to GBP
 export const COUNTRY_TO_CURRENCY: Record<string, "GBP" | "USD" | "AED"> = {
   // GBP Countries
   GB: "GBP", // United Kingdom
   GG: "GBP", // Guernsey
   IM: "GBP", // Isle of Man
   JE: "GBP", // Jersey
+  IE: "GBP", // Ireland (uses EUR but defaults to GBP since EUR not in enum)
+  AU: "GBP", // Australia (uses AUD but defaults to GBP since AUD not in enum)
+  NZ: "GBP", // New Zealand (uses NZD but defaults to GBP since NZD not in enum)
+  ZA: "GBP", // South Africa (uses ZAR but defaults to GBP since ZAR not in enum)
+  IN: "GBP", // India (uses INR but defaults to GBP since INR not in enum)
+  SG: "GBP", // Singapore (uses SGD but defaults to GBP since SGD not in enum)
+  CA: "GBP", // Canada (uses CAD but defaults to GBP since CAD not in enum)
   
   // USD Countries
   US: "USD", // United States
@@ -26,8 +34,13 @@ export const COUNTRY_TO_CURRENCY: Record<string, "GBP" | "USD" | "AED"> = {
   VI: "USD", // Virgin Islands (U.S.)
   ZW: "USD", // Zimbabwe
   
-  // AED Countries
+  // AED Countries (Gulf Cooperation Council countries)
   AE: "AED", // United Arab Emirates
+  SA: "AED", // Saudi Arabia (uses SAR but defaults to AED as closest match)
+  QA: "AED", // Qatar (uses QAR but defaults to AED as closest match)
+  KW: "AED", // Kuwait (uses KWD but defaults to AED as closest match)
+  BH: "AED", // Bahrain (uses BHD but defaults to AED as closest match)
+  OM: "AED", // Oman (uses OMR but defaults to AED as closest match)
 };
 
 // Default to GBP for countries not in the map

@@ -1,7 +1,7 @@
 // This file contains the new Eco-Admin components for the 2026 pricing model
 // These components are imported into EcoAdmin.tsx
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ export function CurrencyManagement() {
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [formData, setFormData] = useState<any>({});
 
-  const { data: currencies, isLoading } = useQuery({
+  const { data: currencies = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
@@ -182,15 +182,62 @@ export function SubscriptionTierManagement() {
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
   const [pricingFormData, setPricingFormData] = useState<any>({});
 
-  const { data: tiers, isLoading } = useQuery({
+  const { data: tiers = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/subscription-tiers"],
   });
 
-  const { data: currencies } = useQuery({
+  // Auto-calculate tier order when creating new tier
+  useEffect(() => {
+    if (!editingId && tiers && tiers.length > 0) {
+      const maxOrder = Math.max(...tiers.map((t: any) => t.tierOrder || 0));
+      setFormData((prev: any) => {
+        if (!prev.tierOrder || prev.tierOrder <= maxOrder) {
+          return { ...prev, tierOrder: maxOrder + 1 };
+        }
+        return prev;
+      });
+    } else if (!editingId && tiers && tiers.length === 0) {
+      setFormData((prev: any) => ({ ...prev, tierOrder: 1 }));
+    }
+  }, [tiers, editingId]);
+
+  // Auto-calculate annual price from monthly price and discount
+  useEffect(() => {
+    if (formData.basePriceMonthlyGBP !== undefined && formData.basePriceMonthlyGBP !== null && formData.basePriceMonthlyGBP !== "" && formData.basePriceMonthlyGBP > 0) {
+      const monthlyInPence = Math.round(parseFloat(String(formData.basePriceMonthlyGBP)) * 100);
+      const annualWithoutDiscount = monthlyInPence * 12;
+      
+      // Get discount percentage (default to 16.70 if not set)
+      const discountPercentage = parseFloat(String(formData.annualDiscountPercentage || "16.70"));
+      const discountDecimal = discountPercentage / 100;
+      
+      // Calculate annual price with discount: Annual = (Monthly × 12) × (1 - discount%)
+      const annualWithDiscount = Math.round(annualWithoutDiscount * (1 - discountDecimal));
+      
+      setFormData((prev: any) => ({
+        ...prev,
+        basePriceMonthly: monthlyInPence,
+        basePriceAnnual: annualWithDiscount
+      }));
+    }
+  }, [formData.basePriceMonthlyGBP, formData.annualDiscountPercentage]);
+
+  // Convert per-inspection price from GBP to pence
+  useEffect(() => {
+    if (formData.perInspectionPriceGBP !== undefined && formData.perInspectionPriceGBP !== null && formData.perInspectionPriceGBP !== "") {
+      const perInspectionInPence = Math.round(parseFloat(String(formData.perInspectionPriceGBP)) * 100);
+      setFormData((prev: any) => ({
+        ...prev,
+        perInspectionPrice: perInspectionInPence
+      }));
+    }
+  }, [formData.perInspectionPriceGBP]);
+
+  const { data: currencies = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
-  const { data: tierPricing, isLoading: pricingLoading } = useQuery({
+  const { data: tierPricing = [], isLoading: pricingLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/subscription-tiers", selectedTierId, "pricing"],
     queryFn: async () => {
       if (!selectedTierId) return [];
@@ -206,8 +253,9 @@ export function SubscriptionTierManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/subscription-tiers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pricing/config"] }); // Invalidate to refresh operator side
       toast({ title: "Tier created successfully" });
-      setFormData({});
+      setFormData({ basePriceMonthlyGBP: "", annualDiscountPercentage: "16.70", perInspectionPriceGBP: "" });
     },
     onError: (error: any) => {
       toast({ title: "Failed to create tier", description: error.message, variant: "destructive" });
@@ -220,6 +268,7 @@ export function SubscriptionTierManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/subscription-tiers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pricing/config"] }); // Invalidate to refresh operator side
       toast({ title: "Tier updated successfully" });
       setEditingId(null);
       setFormData({});
@@ -254,20 +303,25 @@ export function SubscriptionTierManagement() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Tier Name</Label>
+              <Label>Tier Name <span className="text-destructive">*</span></Label>
               <Input
+                required
                 value={formData.name || ""}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Starter, Growth, Professional..."
               />
             </div>
             <div className="space-y-2">
-              <Label>Tier Code</Label>
+              <Label>Tier Code <span className="text-destructive">*</span></Label>
               <Input
+                required
                 value={formData.code || ""}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value.toLowerCase() })}
                 placeholder="starter, growth, professional..."
               />
+              <p className="text-xs text-muted-foreground">
+                Allowed values: starter, growth, professional, enterprise, enterprise_plus, freelancer, btr, pbsa, housing_association, council
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -276,52 +330,139 @@ export function SubscriptionTierManagement() {
               <Input
                 type="number"
                 value={formData.tierOrder || ""}
-                onChange={(e) => setFormData({ ...formData, tierOrder: parseInt(e.target.value) })}
-                placeholder="1-5"
+                onChange={(e) => setFormData({ ...formData, tierOrder: parseInt(e.target.value) || 0 })}
+                placeholder="Auto-calculated"
+                disabled={!editingId}
               />
+              {!editingId && (
+                <p className="text-xs text-muted-foreground">Auto-calculated based on existing tiers</p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label>Included Inspections</Label>
+              <Label>Included Inspections <span className="text-destructive">*</span></Label>
               <Input
                 type="number"
+                required
+                min="1"
                 value={formData.includedInspections || ""}
-                onChange={(e) => setFormData({ ...formData, includedInspections: parseInt(e.target.value) })}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 0;
+                  setFormData({ ...formData, includedInspections: value });
+                }}
                 placeholder="10, 30, 75..."
+                className={(() => {
+                  // Check if this inspection count is already used by another tier
+                  if (formData.includedInspections && tiers) {
+                    const existingTier = tiers.find((t: any) => 
+                      t.includedInspections === formData.includedInspections && 
+                      t.id !== editingId
+                    );
+                    if (existingTier) {
+                      return "border-destructive";
+                    }
+                  }
+                  return "";
+                })()}
               />
+              {formData.includedInspections && tiers && (() => {
+                const existingTier = tiers.find((t: any) => 
+                  t.includedInspections === formData.includedInspections && 
+                  t.id !== editingId
+                );
+                if (existingTier) {
+                  return (
+                    <p className="text-xs text-destructive">
+                      {formData.includedInspections} inspections are already used by "{existingTier.name}" tier
+                    </p>
+                  );
+                }
+                return null;
+              })()}
             </div>
             <div className="space-y-2">
-              <Label>Annual Discount %</Label>
+              <Label>Annual Discount % <span className="text-destructive">*</span></Label>
               <Input
                 type="number"
                 step="0.01"
+                required
+                min="0"
+                max="100"
                 value={formData.annualDiscountPercentage || "16.70"}
                 onChange={(e) => setFormData({ ...formData, annualDiscountPercentage: e.target.value })}
+                placeholder="16.70"
               />
+              <p className="text-xs text-muted-foreground">Applied to annual price calculation</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Base Monthly Price (GBP, in pence)</Label>
+              <Label>Base Monthly Price (GBP) <span className="text-destructive">*</span></Label>
               <Input
                 type="number"
-                value={formData.basePriceMonthly || ""}
-                onChange={(e) => setFormData({ ...formData, basePriceMonthly: parseInt(e.target.value) })}
-                placeholder="19900 = £199.00"
+                step="0.01"
+                required
+                value={formData.basePriceMonthlyGBP || (formData.basePriceMonthly ? (formData.basePriceMonthly / 100).toFixed(2) : "")}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  setFormData({ ...formData, basePriceMonthlyGBP: value });
+                }}
+                placeholder="199.00"
               />
+              <p className="text-xs text-muted-foreground">
+                {formData.basePriceMonthly ? `= ${formData.basePriceMonthly} pence` : "Enter price in GBP"}
+              </p>
             </div>
             <div className="space-y-2">
-              <Label>Base Annual Price (GBP, in pence)</Label>
+              <Label>Base Annual Price (GBP)</Label>
               <Input
                 type="number"
-                value={formData.basePriceAnnual || ""}
-                onChange={(e) => setFormData({ ...formData, basePriceAnnual: parseInt(e.target.value) })}
-                placeholder="199000 = £1990.00"
+                step="0.01"
+                value={formData.basePriceAnnual ? (formData.basePriceAnnual / 100).toFixed(2) : ""}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  setFormData({ ...formData, basePriceAnnual: Math.round(value * 100) });
+                }}
+                placeholder="Auto-calculated"
+                disabled={!!formData.basePriceMonthlyGBP}
+                className={formData.basePriceMonthlyGBP ? "bg-muted" : ""}
               />
+              <p className="text-xs text-muted-foreground">
+                {formData.basePriceAnnual ? (
+                  <>
+                    = {formData.basePriceAnnual} pence
+                    {formData.basePriceMonthlyGBP && formData.annualDiscountPercentage && parseFloat(formData.annualDiscountPercentage) > 0 && (
+                      <span className="block text-primary mt-1">
+                        Calculation: £{formData.basePriceMonthlyGBP} × 12 = £{(formData.basePriceMonthlyGBP * 12).toFixed(2)}, then {formData.annualDiscountPercentage}% discount = £{((formData.basePriceAnnual || 0) / 100).toFixed(2)}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  "Auto-calculated from monthly price with annual discount"
+                )}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Per-Inspection Price (GBP) <span className="text-destructive">*</span></Label>
+              <Input
+                type="number"
+                step="0.01"
+                required
+                value={formData.perInspectionPriceGBP || (formData.perInspectionPrice ? (formData.perInspectionPrice / 100).toFixed(2) : "")}
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  setFormData({ ...formData, perInspectionPriceGBP: value });
+                }}
+                placeholder="0.10"
+              />
+              <p className="text-xs text-muted-foreground">
+                {formData.perInspectionPrice ? `= ${formData.perInspectionPrice} pence` : "Price per additional inspection"}
+              </p>
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Description</Label>
+            <Label>Description <span className="text-destructive">*</span></Label>
             <Textarea
+              required
               value={formData.description || ""}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               placeholder="Tier description..."
@@ -382,7 +523,6 @@ export function SubscriptionTierManagement() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold">{tier.name}</h3>
-                        <Badge>{tier.code}</Badge>
                         {tier.isActive && <Badge variant="default">Active</Badge>}
                         {tier.requiresCustomPricing && <Badge variant="outline">Custom Pricing</Badge>}
                       </div>
@@ -396,7 +536,12 @@ export function SubscriptionTierManagement() {
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" onClick={() => {
                         setEditingId(tier.id);
-                        setFormData(tier);
+                        // Convert pence to GBP for display
+                        setFormData({
+                          ...tier,
+                          basePriceMonthlyGBP: tier.basePriceMonthly ? (tier.basePriceMonthly / 100).toFixed(2) : "",
+                          perInspectionPriceGBP: tier.perInspectionPrice ? (tier.perInspectionPrice / 100).toFixed(2) : ""
+                        });
                       }}>
                         <Edit className="h-4 w-4 mr-2" />
                         Edit
@@ -510,19 +655,23 @@ export function AddonPackManagement() {
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
   const [pricingFormData, setPricingFormData] = useState<any>({});
 
-  const { data: packs, isLoading } = useQuery({
+  const { data: packs = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/addon-packs"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/admin/addon-packs");
+      return res.json();
+    },
   });
 
-  const { data: tiers } = useQuery({
+  const { data: tiers = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/subscription-tiers"],
   });
 
-  const { data: currencies } = useQuery({
+  const { data: currencies = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
-  const { data: packPricing, isLoading: pricingLoading } = useQuery({
+  const { data: packPricing = [], isLoading: pricingLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/addon-packs", selectedPackId, "pricing"],
     queryFn: async () => {
       if (!selectedPackId) return [];
@@ -538,6 +687,7 @@ export function AddonPackManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/addon-packs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/addon-packs"] }); // Invalidate operator portal
       toast({ title: "Pack created successfully" });
       setFormData({});
     },
@@ -552,6 +702,7 @@ export function AddonPackManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/addon-packs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/addon-packs"] }); // Invalidate operator portal
       toast({ title: "Pack updated successfully" });
       setEditingId(null);
       setFormData({});
@@ -588,6 +739,7 @@ export function AddonPackManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/addon-packs", selectedPackId, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/addon-packs"] }); // Invalidate operator portal
       toast({ title: "Pricing created successfully" });
       setPricingFormData({});
     },
@@ -606,6 +758,7 @@ export function AddonPackManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/addon-packs", selectedPackId, "pricing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/addon-packs"] }); // Invalidate operator portal
       toast({ title: "Pricing updated successfully" });
       setEditingPricingId(null);
       setPricingFormData({});
@@ -627,6 +780,21 @@ export function AddonPackManagement() {
       toast({ title: "Failed to delete pricing", description: error.message, variant: "destructive" });
     },
   });
+
+  // Auto-calculate pack order when creating new pack
+  useEffect(() => {
+    if (!editingId && packs && packs.length > 0) {
+      const maxOrder = Math.max(...packs.map((p: any) => p.packOrder || 0));
+      setFormData((prev: any) => {
+        if (!prev.packOrder || prev.packOrder <= maxOrder) {
+          return { ...prev, packOrder: maxOrder + 1 };
+        }
+        return prev;
+      });
+    } else if (!editingId && packs && packs.length === 0) {
+      setFormData((prev: any) => ({ ...prev, packOrder: 1 }));
+    }
+  }, [packs, editingId]);
 
   if (isLoading) return <div>Loading packs...</div>;
 
@@ -661,8 +829,12 @@ export function AddonPackManagement() {
                 type="number"
                 value={formData.packOrder || ""}
                 onChange={(e) => setFormData({ ...formData, packOrder: parseInt(e.target.value) })}
-                placeholder="1, 2, 3..."
+                placeholder="Auto-calculated"
+                disabled={!editingId}
               />
+              {!editingId && (
+                <p className="text-xs text-muted-foreground">Auto-calculated based on existing packs</p>
+              )}
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -718,7 +890,7 @@ export function AddonPackManagement() {
                 {packs.map((pack: any) => (
                   <TableRow key={pack.id}>
                     <TableCell className="font-medium">{pack.name}</TableCell>
-                    <TableCell>{pack.inspectionQuantity} credits</TableCell>
+                    <TableCell>{pack.inspectionQuantity} inspections</TableCell>
                     <TableCell>{pack.packOrder}</TableCell>
                     <TableCell>
                       {pack.isActive ? (
@@ -880,8 +1052,14 @@ export function AddonPackManagement() {
                         <TableRow key={p.id}>
                           <TableCell>{tiers?.find((t: any) => t.id === p.tierId)?.name || "Unknown"}</TableCell>
                           <TableCell>{p.currencyCode}</TableCell>
-                          <TableCell>{(p.pricePerInspection / 100).toFixed(2)}</TableCell>
-                          <TableCell>{(p.totalPackPrice / 100).toFixed(2)}</TableCell>
+                          <TableCell>
+                            {p.currencyCode === "GBP" ? "£" : p.currencyCode === "USD" ? "$" : p.currencyCode === "AED" ? "د.إ" : ""}
+                            {(p.pricePerInspection / 100).toFixed(2)} per inspection
+                          </TableCell>
+                          <TableCell>
+                            {p.currencyCode === "GBP" ? "£" : p.currencyCode === "USD" ? "$" : p.currencyCode === "AED" ? "د.إ" : ""}
+                            {(p.totalPackPrice / 100).toFixed(2)} total
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Button 
@@ -933,19 +1111,19 @@ export function ExtensiveInspectionManagement() {
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null);
   const [pricingFormData, setPricingFormData] = useState<any>({});
 
-  const { data: types, isLoading } = useQuery({
+  const { data: types = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/extensive-inspections"],
   });
 
-  const { data: tiers } = useQuery({
+  const { data: tiers = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/subscription-tiers"],
   });
 
-  const { data: currencies } = useQuery({
+  const { data: currencies = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
-  const { data: typePricing, isLoading: pricingLoading } = useQuery({
+  const { data: typePricing = [], isLoading: pricingLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/extensive-inspections", selectedTypeId, "pricing"],
     queryFn: async () => {
       if (!selectedTypeId) return [];
@@ -1197,37 +1375,43 @@ export function ModuleManagement() {
   const { toast } = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<any>({});
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [editingPricing, setEditingPricing] = useState<{ moduleId: string; pricingId: string } | null>(null);
   const [pricingFormData, setPricingFormData] = useState<any>({});
-  const [limitFormData, setLimitFormData] = useState<any>({});
 
-  const { data: modules, isLoading } = useQuery({
+  const { data: modules = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/modules"],
   });
 
-  const { data: currencies } = useQuery({
+  const { data: currencies = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
-  const { data: modulePricing, isLoading: pricingLoading } = useQuery({
-    queryKey: ["/api/admin/modules", selectedModuleId, "pricing"],
+  // Fetch pricing for all modules in one request
+  const { data: allModulePricing = [], isLoading: pricingLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/modules/pricing/all"],
     queryFn: async () => {
-      if (!selectedModuleId) return [];
-      const res = await apiRequest("GET", `/api/admin/modules/${selectedModuleId}/pricing`);
-      return res.json();
+      const res = await fetch("/api/admin/modules/pricing/all", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      
+      if (!res.ok) {
+        console.error(`Failed to fetch all module pricing:`, res.status, res.statusText);
+        return [];
+      }
+      
+      const pricingData = await res.json();
+      return Array.isArray(pricingData) ? pricingData : [];
     },
-    enabled: !!selectedModuleId,
+    enabled: modules.length > 0,
+    refetchOnMount: true,
   });
 
-  const { data: moduleLimits, isLoading: limitsLoading } = useQuery({
-    queryKey: ["/api/admin/modules", selectedModuleId, "limits"],
-    queryFn: async () => {
-      if (!selectedModuleId) return [];
-      const res = await apiRequest("GET", `/api/admin/modules/${selectedModuleId}/limits`);
-      return res.json();
-    },
-    enabled: !!selectedModuleId,
-  });
+  // Helper to get pricing for a specific module
+  const getModulePricing = (moduleId: string) => {
+    const modulePricingData = allModulePricing.find((mp: any) => mp.moduleId === moduleId);
+    return modulePricingData?.pricing || [];
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -1259,30 +1443,34 @@ export function ModuleManagement() {
   });
 
   const createPricingMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await apiRequest("POST", `/api/admin/modules/${selectedModuleId}/pricing`, data);
+    mutationFn: async ({ moduleId, data }: { moduleId: string; data: any }) => {
+      return await apiRequest("POST", `/api/admin/modules/${moduleId}/pricing`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", selectedModuleId, "pricing"] });
+      // Invalidate the correct query key
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/modules/pricing/all"] });
       toast({ title: "Pricing created successfully" });
       setPricingFormData({});
+      setEditingPricing(null);
     },
     onError: (error: any) => {
       toast({ title: "Failed to create pricing", description: error.message, variant: "destructive" });
     },
   });
 
-  const createLimitMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await apiRequest("POST", `/api/admin/modules/${selectedModuleId}/limits`, data);
+  const updatePricingMutation = useMutation({
+    mutationFn: async ({ moduleId, pricingId, data }: { moduleId: string; pricingId: string; data: any }) => {
+      return await apiRequest("PATCH", `/api/admin/modules/${moduleId}/pricing/${pricingId}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", selectedModuleId, "limits"] });
-      toast({ title: "Limit created successfully" });
-      setLimitFormData({});
+      // Invalidate the correct query key
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/modules/pricing/all"] });
+      toast({ title: "Pricing updated successfully" });
+      setPricingFormData({});
+      setEditingPricing(null);
     },
     onError: (error: any) => {
-      toast({ title: "Failed to create limit", description: error.message, variant: "destructive" });
+      toast({ title: "Failed to update pricing", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1290,86 +1478,82 @@ export function ModuleManagement() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{editingId ? "Edit Module" : "Create Module"}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Module Name</Label>
-              <Input
-                value={formData.name || ""}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="White Labelling, Tenant Portal..."
-              />
+      {editingId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit Module</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Module Name</Label>
+                <Input
+                  value={formData.name || ""}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="White Labelling, Tenant Portal..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Module Key (unique identifier)</Label>
+                <Input
+                  value={formData.moduleKey || ""}
+                  onChange={(e) => setFormData({ ...formData, moduleKey: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+                  placeholder="white_label, tenant_portal..."
+                  disabled={!!editingId}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Icon Name</Label>
+                <Input
+                  value={formData.iconName || ""}
+                  onChange={(e) => setFormData({ ...formData, iconName: e.target.value })}
+                  placeholder="wrench, users, layout..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Display Order</Label>
+                <Input
+                  type="number"
+                  value={formData.displayOrder || ""}
+                  onChange={(e) => setFormData({ ...formData, displayOrder: parseInt(e.target.value) })}
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>Module Key (unique identifier)</Label>
-              <Input
-                value={formData.moduleKey || ""}
-                onChange={(e) => setFormData({ ...formData, moduleKey: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
-                placeholder="white_label, tenant_portal..."
-                disabled={!!editingId}
+              <Label>Description</Label>
+              <Textarea
+                value={formData.description || ""}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Module description..."
               />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Icon Name</Label>
-              <Input
-                value={formData.iconName || ""}
-                onChange={(e) => setFormData({ ...formData, iconName: e.target.value })}
-                placeholder="wrench, users, layout..."
-              />
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={formData.isAvailableGlobally ?? true}
+                  onChange={(e) => setFormData({ ...formData, isAvailableGlobally: e.target.checked })}
+                />
+                <Label>Available Globally</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={formData.defaultEnabled ?? false}
+                  onChange={(e) => setFormData({ ...formData, defaultEnabled: e.target.checked })}
+                />
+                <Label>Default Enabled</Label>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Display Order</Label>
-              <Input
-                type="number"
-                value={formData.displayOrder || ""}
-                onChange={(e) => setFormData({ ...formData, displayOrder: parseInt(e.target.value) })}
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Description</Label>
-            <Textarea
-              value={formData.description || ""}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Module description..."
-            />
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.isAvailableGlobally ?? true}
-                onChange={(e) => setFormData({ ...formData, isAvailableGlobally: e.target.checked })}
-              />
-              <Label>Available Globally</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.defaultEnabled ?? false}
-                onChange={(e) => setFormData({ ...formData, defaultEnabled: e.target.checked })}
-              />
-              <Label>Default Enabled</Label>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => {
-              if (editingId) {
+            <div className="flex gap-2">
+              <Button onClick={() => {
                 updateMutation.mutate({ id: editingId, data: formData });
-              } else {
-                createMutation.mutate(formData);
-              }
-            }}>
-              <Save className="h-4 w-4 mr-2" />
-              {editingId ? "Update" : "Create"}
-            </Button>
-            {editingId && (
+              }}>
+                <Save className="h-4 w-4 mr-2" />
+                Update
+              </Button>
               <Button variant="outline" onClick={() => {
                 setEditingId(null);
                 setFormData({});
@@ -1377,45 +1561,161 @@ export function ModuleManagement() {
                 <X className="h-4 w-4 mr-2" />
                 Cancel
               </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Modules</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {modules && modules.length > 0 ? (
-              modules.map((module: any) => (
-                <div key={module.id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{module.name}</h3>
-                        <Badge variant="outline">{module.moduleKey}</Badge>
-                        {module.isAvailableGlobally && <Badge variant="default">Available</Badge>}
-                        {module.defaultEnabled && <Badge variant="secondary">Default Enabled</Badge>}
+              modules.map((module: any) => {
+                const modulePricing = getModulePricing(module.id);
+                const gbpPricing = modulePricing?.find((p: any) => p.currencyCode === "GBP");
+                
+                return (
+                  <div key={module.id} className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold">{module.name}</h3>
+                          <Badge variant="outline">{module.moduleKey}</Badge>
+                          {module.isAvailableGlobally && <Badge variant="default">Available</Badge>}
+                          {module.defaultEnabled && <Badge variant="secondary">Default Enabled</Badge>}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">{module.description}</p>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1">{module.description}</p>
-                    </div>
-                    <div className="flex gap-2">
                       <Button size="sm" variant="outline" onClick={() => {
                         setEditingId(module.id);
                         setFormData(module);
                       }}>
                         <Edit className="h-4 w-4 mr-2" />
-                        Edit
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setSelectedModuleId(module.id)}>
-                        Manage Pricing & Limits
+                        Edit Module
                       </Button>
                     </div>
+                    
+                    {/* Pricing Section */}
+                    <div className="pt-3 border-t">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-semibold text-sm">Pricing (GBP)</h4>
+                      </div>
+                      {editingPricing?.moduleId === module.id && (editingPricing?.pricingId === gbpPricing?.id || editingPricing?.pricingId === "new") ? (
+                        <div className="grid grid-cols-3 gap-3 items-end">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Monthly Price (GBP)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={pricingFormData.priceMonthlyGBP !== undefined ? pricingFormData.priceMonthlyGBP : (gbpPricing?.priceMonthly ? (gbpPricing.priceMonthly / 100).toFixed(2) : "")}
+                              onChange={(e) => {
+                                const gbpValue = parseFloat(e.target.value) || 0;
+                                setPricingFormData({ ...pricingFormData, priceMonthlyGBP: gbpValue, priceMonthly: Math.round(gbpValue * 100) });
+                              }}
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Annual Price (GBP)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={pricingFormData.priceAnnualGBP !== undefined ? pricingFormData.priceAnnualGBP : (gbpPricing?.priceAnnual ? (gbpPricing.priceAnnual / 100).toFixed(2) : "")}
+                              onChange={(e) => {
+                                const gbpValue = parseFloat(e.target.value) || 0;
+                                setPricingFormData({ ...pricingFormData, priceAnnualGBP: gbpValue, priceAnnual: Math.round(gbpValue * 100) });
+                              }}
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => {
+                              if (gbpPricing && editingPricing?.pricingId !== "new") {
+                                // Use form data if available, otherwise use existing pricing
+                                const monthlyPrice = pricingFormData.priceMonthly !== undefined 
+                                  ? pricingFormData.priceMonthly 
+                                  : gbpPricing.priceMonthly;
+                                const annualPrice = pricingFormData.priceAnnual !== undefined 
+                                  ? pricingFormData.priceAnnual 
+                                  : gbpPricing.priceAnnual;
+                                
+                                console.log(`[Frontend] Updating pricing: monthly=${monthlyPrice}, annual=${annualPrice}`);
+                                
+                                updatePricingMutation.mutate({ 
+                                  moduleId: module.id, 
+                                  pricingId: gbpPricing.id, 
+                                  data: { 
+                                    priceMonthly: monthlyPrice, 
+                                    priceAnnual: annualPrice 
+                                  } 
+                                });
+                              } else {
+                                // Create new GBP pricing if it doesn't exist
+                                createPricingMutation.mutate({ 
+                                  moduleId: module.id,
+                                  data: {
+                                    currencyCode: "GBP",
+                                    priceMonthly: pricingFormData.priceMonthly || 0,
+                                    priceAnnual: pricingFormData.priceAnnual || 0,
+                                  }
+                                });
+                              }
+                            }}>
+                              <Save className="h-3 w-3 mr-1" />
+                              Save
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => {
+                              setEditingPricing(null);
+                              setPricingFormData({});
+                            }}>
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-4 text-sm">
+                            {gbpPricing ? (
+                              <>
+                                <span className="font-medium">Monthly: £{(gbpPricing.priceMonthly / 100).toFixed(2)}</span>
+                                <span className="font-medium">Annual: £{(gbpPricing.priceAnnual / 100).toFixed(2)}</span>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">No pricing configured</span>
+                            )}
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => {
+                            if (gbpPricing) {
+                              setEditingPricing({ moduleId: module.id, pricingId: gbpPricing.id });
+                              setPricingFormData({
+                                priceMonthlyGBP: gbpPricing.priceMonthly / 100,
+                                priceAnnualGBP: gbpPricing.priceAnnual / 100,
+                                priceMonthly: gbpPricing.priceMonthly,
+                                priceAnnual: gbpPricing.priceAnnual,
+                              });
+                            } else {
+                              // Start creating new pricing
+                              setEditingPricing({ moduleId: module.id, pricingId: "new" });
+                              setPricingFormData({
+                                priceMonthlyGBP: 0,
+                                priceAnnualGBP: 0,
+                                priceMonthly: 0,
+                                priceAnnual: 0,
+                              });
+                            }
+                          }}>
+                            <Edit className="h-3 w-3 mr-1" />
+                            {gbpPricing ? "Edit Price" : "Add Price"}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-center text-muted-foreground py-8">No modules configured</p>
             )}
@@ -1423,164 +1723,6 @@ export function ModuleManagement() {
         </CardContent>
       </Card>
 
-      {selectedModuleId && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Multi-Currency Pricing for {modules?.find((m: any) => m.id === selectedModuleId)?.name}</CardTitle>
-              <Button size="sm" variant="ghost" onClick={() => setSelectedModuleId(null)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Currency</Label>
-                  <Select value={pricingFormData.currencyCode || ""} onValueChange={(v) => setPricingFormData({ ...pricingFormData, currencyCode: v })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies?.filter((c: any) => c.isActive).map((c: any) => (
-                        <SelectItem key={c.code} value={c.code}>{c.code} ({c.symbol})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Monthly Price (in minor units)</Label>
-                  <Input
-                    type="number"
-                    value={pricingFormData.priceMonthly || ""}
-                    onChange={(e) => setPricingFormData({ ...pricingFormData, priceMonthly: parseInt(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Annual Price (in minor units)</Label>
-                  <Input
-                    type="number"
-                    value={pricingFormData.priceAnnual || ""}
-                    onChange={(e) => setPricingFormData({ ...pricingFormData, priceAnnual: parseInt(e.target.value) })}
-                  />
-                </div>
-              </div>
-              <Button onClick={() => {
-                createPricingMutation.mutate(pricingFormData);
-              }}>
-                <Save className="h-4 w-4 mr-2" />
-                Add Pricing
-              </Button>
-
-              {pricingLoading ? (
-                <div>Loading pricing...</div>
-              ) : (
-                <div className="space-y-2 mt-4">
-                  <h4 className="font-semibold">Existing Pricing</h4>
-                  {modulePricing && modulePricing.length > 0 ? (
-                    modulePricing.map((p: any) => (
-                      <div key={p.id} className="flex items-center justify-between p-2 border rounded">
-                        <span>
-                          {(() => {
-                            const symbol = p.currencyCode === "GBP" ? "£" : p.currencyCode === "USD" ? "$" : p.currencyCode === "AED" ? "د.إ" : p.currencyCode;
-                            return `${p.currencyCode}: ${symbol}${(p.priceMonthly / 100).toFixed(2)}/mo • ${symbol}${(p.priceAnnual / 100).toFixed(2)}/yr`;
-                          })()}
-                        </span>
-                        <Button size="sm" variant="ghost" onClick={async () => {
-                          await apiRequest("DELETE", `/api/admin/modules/${selectedModuleId}/pricing/${p.id}`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", selectedModuleId, "pricing"] });
-                        }}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No pricing configured</p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Usage Limits & Overage Pricing</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label>Limit Type</Label>
-                  <Input
-                    value={limitFormData.limitType || ""}
-                    onChange={(e) => setLimitFormData({ ...limitFormData, limitType: e.target.value })}
-                    placeholder="active_tenants, work_orders..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Included Quantity</Label>
-                  <Input
-                    type="number"
-                    value={limitFormData.includedQuantity || ""}
-                    onChange={(e) => setLimitFormData({ ...limitFormData, includedQuantity: parseInt(e.target.value) })}
-                    placeholder="500, 100..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Overage Price (per unit)</Label>
-                  <Input
-                    type="number"
-                    value={limitFormData.overagePrice || ""}
-                    onChange={(e) => setLimitFormData({ ...limitFormData, overagePrice: parseInt(e.target.value) })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Overage Currency</Label>
-                  <Select value={limitFormData.overageCurrency || ""} onValueChange={(v) => setLimitFormData({ ...limitFormData, overageCurrency: v })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currencies?.filter((c: any) => c.isActive).map((c: any) => (
-                        <SelectItem key={c.code} value={c.code}>{c.code}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <Button onClick={() => {
-                createLimitMutation.mutate(limitFormData);
-              }}>
-                <Save className="h-4 w-4 mr-2" />
-                Add Limit
-              </Button>
-
-              {limitsLoading ? (
-                <div>Loading limits...</div>
-              ) : (
-                <div className="space-y-2 mt-4">
-                  <h4 className="font-semibold">Existing Limits</h4>
-                  {moduleLimits && moduleLimits.length > 0 ? (
-                    moduleLimits.map((l: any) => (
-                      <div key={l.id} className="flex items-center justify-between p-2 border rounded">
-                        <span>
-                          {l.limitType}: {l.includedQuantity} included • {l.overagePrice / 100} {l.overageCurrency} per overage unit
-                        </span>
-                        <Button size="sm" variant="ghost" onClick={async () => {
-                          await apiRequest("DELETE", `/api/admin/modules/${selectedModuleId}/limits/${l.id}`);
-                          queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", selectedModuleId, "limits"] });
-                        }}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No limits configured</p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }
@@ -1594,19 +1736,19 @@ export function ModuleBundleManagement() {
   const [pricingFormData, setPricingFormData] = useState<any>({});
   const [selectedModuleToAdd, setSelectedModuleToAdd] = useState<string>("");
 
-  const { data: bundles, isLoading } = useQuery({
+  const { data: bundles = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/module-bundles"],
   });
 
-  const { data: modules } = useQuery({
+  const { data: modules = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/modules"],
   });
 
-  const { data: currencies } = useQuery({
+  const { data: currencies = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
-  const { data: bundleModules, isLoading: modulesLoading } = useQuery({
+  const { data: bundleModules = [], isLoading: modulesLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/module-bundles", selectedBundleId, "modules"],
     queryFn: async () => {
       if (!selectedBundleId) return [];
@@ -1616,7 +1758,7 @@ export function ModuleBundleManagement() {
     enabled: !!selectedBundleId,
   });
 
-  const { data: bundlePricing, isLoading: pricingLoading } = useQuery({
+  const { data: bundlePricing = [], isLoading: pricingLoading } = useQuery<any[]>({
     queryKey: ["/api/admin/module-bundles", selectedBundleId, "pricing"],
     queryFn: async () => {
       if (!selectedBundleId) return [];
@@ -1945,11 +2087,11 @@ export function PricingPreview() {
   const { toast } = useToast();
   const [selectedCurrency, setSelectedCurrency] = useState("GBP");
 
-  const { data: currencies } = useQuery({
+  const { data: currencies = [] } = useQuery<any[]>({
     queryKey: ["/api/admin/currencies"],
   });
 
-  const currencySymbol = currencies?.find((c: any) => c.code === selectedCurrency)?.symbol || selectedCurrency;
+  const currencySymbol = currencies.find((c: any) => c.code === selectedCurrency)?.symbol || selectedCurrency;
 
   const { data: preview, isLoading } = useQuery({
     queryKey: ["/api/admin/pricing-preview", selectedCurrency],
@@ -2149,7 +2291,7 @@ export function QuotationsManagement() {
     customerNotes: "",
   });
 
-  const { data: quotations, isLoading, refetch } = useQuery({
+  const { data: quotations = [], isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/admin/quotations", selectedStatus],
     queryFn: async () => {
       const params = selectedStatus !== "all" ? `?status=${selectedStatus}` : "";
@@ -2158,11 +2300,11 @@ export function QuotationsManagement() {
     },
   });
 
-  const { data: stats } = useQuery({
+  const { data: stats = {} } = useQuery<any>({
     queryKey: ["/api/admin/quotations/stats"],
   });
 
-  const { data: requestDetails } = useQuery({
+  const { data: requestDetails = null } = useQuery<any>({
     queryKey: ["/api/admin/quotations", selectedRequest?.id],
     queryFn: async () => {
       if (!selectedRequest?.id) return null;
@@ -2269,31 +2411,31 @@ export function QuotationsManagement() {
       <div className="grid grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold">{stats?.total || 0}</div>
+            <div className="text-2xl font-bold">{(stats as any)?.total || 0}</div>
             <div className="text-sm text-muted-foreground">Total</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-amber-600">{stats?.pending || 0}</div>
+            <div className="text-2xl font-bold text-amber-600">{(stats as any)?.pending || 0}</div>
             <div className="text-sm text-muted-foreground">Pending</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-blue-600">{stats?.quoted || 0}</div>
+            <div className="text-2xl font-bold text-blue-600">{(stats as any)?.quoted || 0}</div>
             <div className="text-sm text-muted-foreground">Quoted</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-emerald-600">{stats?.accepted || 0}</div>
+            <div className="text-2xl font-bold text-emerald-600">{(stats as any)?.accepted || 0}</div>
             <div className="text-sm text-muted-foreground">Accepted</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-gray-600">{stats?.cancelled || 0}</div>
+            <div className="text-2xl font-bold text-gray-600">{(stats as any)?.cancelled || 0}</div>
             <div className="text-sm text-muted-foreground">Cancelled</div>
           </CardContent>
         </Card>
@@ -2623,26 +2765,74 @@ export function QuotationsManagement() {
                   {requestDetails.activityLog?.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No activity logged yet</p>
                   ) : (
-                    requestDetails.activityLog?.map((log: any) => (
-                      <div key={log.id} className="flex items-start gap-3 p-3 border rounded-lg">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                          {log.performedByType === "admin" ? <User className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{log.action}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {format(new Date(log.createdAt), "PPp")}
-                            </span>
+                    requestDetails.activityLog?.map((log: any) => {
+                      // Format details in a user-friendly way
+                      const formatDetails = (details: any) => {
+                        if (!details || typeof details !== 'object') return null;
+                        
+                        const formatValue = (key: string, value: any): string => {
+                          // Format currency values
+                          if (key.toLowerCase().includes('price') && typeof value === 'number') {
+                            return `£${(value / 100).toFixed(2)}`;
+                          }
+                          // Format dates
+                          if ((key.toLowerCase().includes('date') || key.toLowerCase().includes('at')) && typeof value === 'string') {
+                            try {
+                              return format(new Date(value), "PPp");
+                            } catch {
+                              return value;
+                            }
+                          }
+                          // Format booleans
+                          if (typeof value === 'boolean') {
+                            return value ? 'Yes' : 'No';
+                          }
+                          // Format numbers with commas
+                          if (typeof value === 'number' && value > 1000) {
+                            return value.toLocaleString();
+                          }
+                          return String(value);
+                        };
+
+                        return Object.entries(details).map(([key, value]) => {
+                          const formattedKey = key
+                            .replace(/([A-Z])/g, ' $1')
+                            .replace(/^./, str => str.toUpperCase())
+                            .trim();
+                          const formattedValue = formatValue(key, value);
+                          
+                          return { key: formattedKey, value: formattedValue, rawValue: value };
+                        });
+                      };
+
+                      const formattedDetails = formatDetails(log.details);
+
+                      return (
+                        <div key={log.id} className="flex items-start gap-3 p-3 border rounded-lg bg-muted/30">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                            {log.performedByType === "admin" ? <User className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
                           </div>
-                          {log.details && Object.keys(log.details).length > 0 && (
-                            <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
-                              {JSON.stringify(log.details, null, 2)}
-                            </pre>
-                          )}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-medium capitalize">{log.action}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {format(new Date(log.createdAt), "PPp")}
+                              </span>
+                            </div>
+                            {formattedDetails && formattedDetails.length > 0 && (
+                              <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-primary/20">
+                                {formattedDetails.map((item: any, idx: number) => (
+                                  <div key={idx} className="text-xs">
+                                    <span className="font-medium text-foreground">{item.key}:</span>{' '}
+                                    <span className="text-muted-foreground">{item.value}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </TabsContent>
               </Tabs>

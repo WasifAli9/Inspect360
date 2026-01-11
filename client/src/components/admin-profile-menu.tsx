@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogOut } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function AdminProfileMenu() {
   const [, navigate] = useLocation();
@@ -28,7 +28,13 @@ export function AdminProfileMenu() {
       await apiRequest("POST", "/api/admin/logout", {});
     },
     onSuccess: () => {
-      navigate("/admin/login");
+      // Clear all query cache
+      queryClient.clear();
+      // Invalidate auth queries
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/me"] });
+      // Use hard redirect to ensure clean state
+      window.location.href = "/admin/login";
     },
   });
 

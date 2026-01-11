@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Plus, Trash2, Edit } from "lucide-react";
+import { Plus, Trash2, Edit, Eye, EyeOff } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -38,6 +38,8 @@ export default function AdminTeam() {
     firstName: "",
     lastName: "",
   });
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   // Fetch admin team
   const { data: admins = [], isLoading } = useQuery<any[]>({
@@ -45,7 +47,12 @@ export default function AdminTeam() {
     retry: false,
   });
 
-  // Admin user is now checked in AdminPageWrapper
+  // Fetch current admin user to identify "You" in the list
+  const { data: currentAdmin } = useQuery({
+    queryKey: ["/api/admin/me"],
+    retry: false,
+    throwOnError: false,
+  });
 
   // Create admin mutation
   const createMutation = useMutation({
@@ -221,7 +228,7 @@ export default function AdminTeam() {
                     <TableRow key={admin.id} data-testid={`row-admin-${admin.id}`}>
                       <TableCell className="font-medium">
                         {admin.firstName} {admin.lastName}
-                        {currentAdmin.id === admin.id && (
+                        {currentAdmin?.id === admin.id && (
                           <span className="ml-2 text-xs text-muted-foreground">(You)</span>
                         )}
                       </TableCell>
@@ -242,7 +249,7 @@ export default function AdminTeam() {
                           variant="destructive"
                           size="sm"
                           onClick={() => handleDeleteClick(admin)}
-                          disabled={currentAdmin.id === admin.id}
+                          disabled={currentAdmin?.id === admin.id}
                           data-testid={`button-delete-admin-${admin.id}`}
                         >
                           <Trash2 className="w-4 h-4" />
@@ -297,13 +304,28 @@ export default function AdminTeam() {
             </div>
             <div className="space-y-2">
               <Label>Password</Label>
+              <div className="relative">
               <Input
-                type="password"
+                  type={showCreatePassword ? "text" : "password"}
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 placeholder="Enter password"
                 data-testid="input-password"
-              />
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePassword(!showCreatePassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-toggle-password"
+                >
+                  {showCreatePassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -358,13 +380,28 @@ export default function AdminTeam() {
             </div>
             <div className="space-y-2">
               <Label>New Password (leave blank to keep current)</Label>
+              <div className="relative">
               <Input
-                type="password"
+                  type={showEditPassword ? "text" : "password"}
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 placeholder="Enter new password"
                 data-testid="input-edit-password"
-              />
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEditPassword(!showEditPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-toggle-edit-password"
+                >
+                  {showEditPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
           <DialogFooter>

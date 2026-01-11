@@ -339,6 +339,19 @@ function detectImageMimeType(buffer: Buffer): string {
   return 'image/jpeg';
 }
 import { setupAuth, isAuthenticated, requireRole, hashPassword, comparePasswords } from "./auth";
+
+// Middleware that allows both regular users and admins
+const isUserOrAdmin = (req: any, res: any, next: any) => {
+  // Check for admin session
+  if (req.session && (req.session as any).adminUser) {
+    return next();
+  }
+  // Check for regular user authentication
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ message: "Unauthorized" });
+};
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission, getObjectAclPolicy } from "./objectAcl";
 import { db } from "./db";
@@ -917,18 +930,16 @@ Be thorough but concise, specific, and objective about "${inspectionPointTitle}"
       await storage.updateInspectionEntry(entry.id, { note: newNote });
 
       // Deduct credit
-      await storage.updateOrganizationCredits(
+      // Consume credit using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      await subscriptionService.consumeCredits(
         organization.id,
-        (organization.creditsRemaining ?? 0) - 1 - totalCreditsUsed
+        1,
+        "inspection",
+        inspectionId,
+        `InspectAI full report analysis: ${fieldLabel}`
       );
       totalCreditsUsed++;
-
-      await storage.createCreditTransaction({
-        organizationId: organization.id,
-        amount: -1,
-        type: "inspection",
-        description: `InspectAI full report analysis: ${fieldLabel}`,
-      });
 
       processedCount++;
 
@@ -1058,6 +1069,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== CONFIG ROUTES ====================
 
   // Get Google Maps API key (public endpoint, but API key is restricted by domain in Google Console)
+  // Geolocation proxy endpoint to avoid CORS issues
+  app.get("/api/geolocation", async (req: any, res) => {
+    try {
+      // Proxy request to ipapi.co to avoid CORS issues
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch("https://ipapi.co/json/", {
+        headers: {
+          "User-Agent": "Inspect360/1.0",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return res.json({ 
+          countryCode: "GB", // Default fallback
+          countryName: "United Kingdom"
+        });
+      }
+
+      const data = await response.json();
+      
+      // Return only the data we need
+      res.json({
+        countryCode: data.country_code || "GB",
+        countryName: data.country_name || "United Kingdom",
+        city: data.city,
+        timezone: data.timezone,
+      });
+    } catch (error: any) {
+      // Return default values on error (fail silently)
+      res.json({
+        countryCode: "GB",
+        countryName: "United Kingdom",
+      });
+    }
+  });
+
   app.get("/api/config/google-maps-key", async (req: any, res) => {
     try {
       // Check all possible ways the key might be set
@@ -1141,8 +1193,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==================== AUTH ROUTES ====================
 
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.get('/api/auth/user', isUserOrAdmin, async (req: any, res) => {
     try {
+      // Check if admin is logged in
+      if (req.session && (req.session as any).adminUser) {
+        const adminUser = (req.session as any).adminUser;
+        // Return admin user in compatible format
+        return res.json({
+          id: adminUser.id,
+          email: adminUser.email,
+          firstName: adminUser.firstName,
+          lastName: adminUser.lastName,
+          role: "admin",
+          isAdmin: true,
+          // Admin doesn't have organization, return null
+          organization: null,
+          organizationId: null,
+        });
+      }
+
+      // Regular user authentication
       const userId = req.user.id;
       const user = await storage.getUser(userId);
       if (!user) {
@@ -1158,9 +1228,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Exclude password from response for security
       const { password, resetToken, resetTokenExpiry, ...userWithoutPassword } = user;
 
+      // Add organization currency and country code to user object for easy access
+      const responseData: any = { ...userWithoutPassword, organization };
+      if (organization) {
+        responseData.organizationCountryCode = organization.countryCode;
+        responseData.organizationCurrency = organization.preferredCurrency || "GBP";
+      }
+
       // Return user object directly (not wrapped in { user: ... })
       // This matches what the frontend expects
-      res.json({ ...userWithoutPassword, organization });
+      res.json(responseData);
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -1293,7 +1370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const organization = await storage.createOrganization({
         name: validation.data.name,
         ownerId: userId,
-        creditsRemaining: 5, // Give 5 free credits to start
+        // Credits are now granted via credit batch system (see below)
       });
 
       // Update user with organization ID and set role to owner (preserving all existing fields)
@@ -1428,7 +1505,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Organization not found" });
       }
 
-      res.json(organization);
+      // Get credit balance from batch system (not legacy creditsRemaining)
+      const creditBalance = await storage.getCreditBalance(organizationId);
+      
+      // Return organization with credit balance from batch system
+      const orgResponse: any = { ...organization };
+      // Remove legacy creditsRemaining if it exists
+      delete orgResponse.creditsRemaining;
+      // Add credit balance from batch system
+      orgResponse.creditBalance = {
+        total: creditBalance.total,
+        current: creditBalance.current,
+        rolled: creditBalance.rolled,
+        expiresOn: creditBalance.expiresOn,
+      };
+      
+      res.json(orgResponse);
     } catch (error) {
       console.error("Error fetching organization:", error);
       res.status(500).json({ message: "Failed to fetch organization" });
@@ -1606,7 +1698,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Module is not available" });
       }
 
-      const currency = instanceSub.registrationCurrency || "GBP";
+      // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
       const modulePricing = await storage.getModulePricing(moduleId, currency);
       if (!modulePricing) {
         return res.status(400).json({ message: "Module pricing not configured" });
@@ -1764,7 +1857,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Bundle is already active" });
       }
 
-      const currency = instanceSub.registrationCurrency || "GBP";
+      // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
       const bundlePricing = await storage.getBundlePricing(bundleId, currency);
       if (!bundlePricing) {
         return res.status(400).json({ message: "Bundle pricing not configured" });
@@ -1917,7 +2011,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get current pricing
-      const currency = instanceSub.registrationCurrency || "GBP";
+      // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
       const modulePricing = await storage.getModulePricing(moduleId, currency);
       
       // Calculate prorated charge if enabling mid-cycle
@@ -2010,9 +2105,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { inspections, currency } = req.query;
       const organizationId = req.user.organizationId;
 
+      // Get organization to determine default currency
+      let defaultCurrency = "GBP";
+      if (organizationId) {
+        const org = await storage.getOrganization(organizationId);
+        if (org?.preferredCurrency) {
+          defaultCurrency = org.preferredCurrency;
+        }
+      }
+
+      // Use provided currency or organization's preferred currency
+      const targetCurrency = (currency as string) || defaultCurrency;
+
       const pricing = await pricingService.calculatePricing(
         Number(inspections) || 0,
-        (currency as string) || "GBP",
+        targetCurrency,
         organizationId
       );
 
@@ -2023,13 +2130,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/pricing/config", isAuthenticated, async (req: any, res) => {
+  app.get("/api/pricing/config", isUserOrAdmin, async (req: any, res) => {
     try {
-      const tiers = await storage.getSubscriptionTiers();
+      const { subscriptionTiersTable, tierPricing } = await import("@shared/schema");
+      // Get all tiers (including inactive ones for admin view, but filter for operator)
+      const allTiers = await db.select().from(subscriptionTiersTable).orderBy(subscriptionTiersTable.tierOrder);
       const currencies = await storage.getCurrencyConfig();
       // Include tier pricing (with per-inspection price) for admin-managed rates
-      const { tierPricing } = await import("@shared/schema");
       const allTierPricing = await db.select().from(tierPricing);
+      
+      // Filter active tiers for operator view (if not admin)
+      const isAdmin = (req.session as any)?.adminUser;
+      const tiers = isAdmin ? allTiers : allTiers.filter(t => t.isActive !== false);
+      
       res.json({ tiers, currencies, tierPricing: allTierPricing });
     } catch (error) {
       console.error("Error fetching pricing config:", error);
@@ -2092,6 +2205,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!sub) {
         // User has no subscription, but may have signup reward credits
         return res.json({
+          total: creditBalance.total, // Main field used by frontend - total available credits from batches
+          current: creditBalance.current,
+          rolled: creditBalance.rolled,
+          expiresOn: creditBalance.expiresOn,
           tierQuotaIncluded: 0,
           tierQuotaUsed: 0,
           tierQuotaRemaining: 0,
@@ -2146,7 +2263,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
 
+      // Return credit balance in format expected by frontend
       res.json({
+        total: creditBalance.total, // Main field used by frontend - total available credits from batches
+        current: creditBalance.current,
+        rolled: creditBalance.rolled,
+        expiresOn: creditBalance.expiresOn,
+        // Additional breakdown for billing page
         tierQuotaIncluded,
         tierQuotaUsed,
         tierQuotaRemaining,
@@ -2604,7 +2727,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No active subscription tier found" });
       }
 
-      const currency = instanceSub.registrationCurrency || "GBP";
+      // Get currency from subscription or organization, fallback to GBP
+      const org = await storage.getOrganization(organizationId);
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
       const packs = await storage.getAddonPacks();
       const tiers = await storage.getSubscriptionTiers();
       const currentTier = tiers.find(t => t.id === instanceSub.currentTierId);
@@ -2679,7 +2804,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No active subscription tier found" });
       }
 
-      const currency = instanceSub.registrationCurrency || "GBP";
+      // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
 
       // Get pack details
       const packs = await storage.getAddonPacks();
@@ -4097,40 +4223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const creditBalance = await storage.getCreditBalance(currentUser.organizationId);
         console.log(`[Create Inspection] Credit check for org ${currentUser.organizationId}: total=${creditBalance.total}, current=${creditBalance.current}, rolled=${creditBalance.rolled}`);
         
-        // If no credits in batches but organization has creditsRemaining, grant them as a batch
-        if (creditBalance.total === 0) {
-          const org = await storage.getOrganization(currentUser.organizationId);
-          const legacyCredits = org?.creditsRemaining ?? 0;
-          if (org && legacyCredits > 0) {
-            console.log(`[Create Inspection] No credit batches found but org has ${legacyCredits} creditsRemaining, granting as batch`);
-            const { subscriptionService } = await import("./subscriptionService");
-            await subscriptionService.grantCredits(
-              currentUser.organizationId,
-              legacyCredits,
-              "admin_grant",
-              undefined,
-              {
-                adminNotes: "Migrated from legacy creditsRemaining field",
-                createdBy: currentUser.id,
-              }
-            );
-            // Re-check balance after granting
-            const newBalance = await storage.getCreditBalance(currentUser.organizationId);
-            console.log(`[Create Inspection] After migration: total=${newBalance.total}`);
-            if (newBalance.total < 1) {
-              return res.status(402).json({ 
-                message: "No credits available for inspection. Please subscribe to a plan to get inspection credits.",
-                error: "insufficient_credits"
-              });
-            }
-          } else {
-            console.log(`[Create Inspection] BLOCKED: Insufficient credits (${creditBalance.total} < 1)`);
-            return res.status(402).json({ 
-              message: "No credits available for inspection. Please subscribe to a plan to get inspection credits.",
-              error: "insufficient_credits"
-            });
-          }
-        } else if (creditBalance.total < 1) {
+        if (creditBalance.total < 1) {
           console.log(`[Create Inspection] BLOCKED: Insufficient credits (${creditBalance.total} < 1)`);
           return res.status(402).json({ 
             message: "No credits available for inspection. Please subscribe to a plan to get inspection credits.",
@@ -5122,30 +5215,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const creditsNeeded = subscriptionService.calculateInspectionCredits(imageCount);
           console.log(`[Complete Inspection] Credits needed: ${creditsNeeded} (images: ${imageCount})`);
 
-          // If no credits in batches but organization has creditsRemaining, grant them as a batch
-          let finalBalance = creditBalance;
-          if (creditBalance.total === 0) {
-            const org = await storage.getOrganization(ownerOrgId);
-            const legacyCredits = org?.creditsRemaining ?? 0;
-            if (org && legacyCredits > 0) {
-              console.log(`[Complete Inspection] No credit batches found but org has ${legacyCredits} creditsRemaining, granting as batch`);
-              await subscriptionService.grantCredits(
-                ownerOrgId,
-                legacyCredits,
-                "admin_grant",
-                undefined,
-                {
-                  adminNotes: "Migrated from legacy creditsRemaining field",
-                  createdBy: inspection.inspectorId,
-                }
-              );
-              // Re-check balance after granting
-              finalBalance = await storage.getCreditBalance(ownerOrgId);
-              console.log(`[Complete Inspection] After migration: total=${finalBalance.total}`);
-            }
-          }
-
           // Check if organization has sufficient credits BEFORE attempting to consume
+          const finalBalance = creditBalance;
           if (finalBalance.total < creditsNeeded) {
             console.log(`[Complete Inspection] BLOCKED: Insufficient credits (${finalBalance.total} < ${creditsNeeded})`);
             console.log(`[Complete Inspection] Available batches: ${allBatches.length}, Total remaining: ${allBatches.reduce((sum, b) => sum + b.remainingQuantity, 0)}`);
@@ -5888,8 +5959,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check credits AFTER verifying ownership
-      const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || (organization.creditsRemaining ?? 0) < 1) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 1) {
         return res.status(402).json({ message: "Insufficient credits" });
       }
 
@@ -5979,18 +6050,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update the item with AI analysis
       await storage.updateInspectionItemAI(itemId, analysis);
 
-      // Deduct credit
-      await storage.updateOrganizationCredits(
-        organization.id,
-        (organization.creditsRemaining ?? 0) - 1
+      // Consume credit using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      await subscriptionService.consumeCredits(
+        user.organizationId,
+        1,
+        "inspection",
+        item.inspectionId,
+        `AI photo analysis: ${item.category} - ${item.itemName}`
       );
-
-      await storage.createCreditTransaction({
-        organizationId: organization.id,
-        amount: -1,
-        type: "inspection",
-        description: `AI photo analysis: ${item.category} - ${item.itemName}`,
-      });
 
       res.json({ analysis });
     } catch (error: any) {
@@ -6058,8 +6126,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check credits (1 credit per field inspection)
-      const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || (organization.creditsRemaining ?? 0) < 1) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 1) {
         return res.status(402).json({ message: "Insufficient credits" });
       }
 
@@ -6125,6 +6193,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let aiMaxWords: number;
       let aiInstruction: string;
 
+      // Get organization for default settings
+      const organization = await storage.getOrganization(user.organizationId);
+
       // Get template settings if available
       let templateAiMaxWords: number | null = null;
       let templateAiInstruction: string | null = null;
@@ -6139,10 +6210,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Apply inheritance chain independently for each field:
       // aiMaxWords: template > organization > system default (150)
-      aiMaxWords = templateAiMaxWords ?? organization.defaultAiMaxWords ?? 150;
+      aiMaxWords = templateAiMaxWords ?? organization?.defaultAiMaxWords ?? 150;
 
       // aiInstruction: template > organization > empty (use default prompt)
-      aiInstruction = templateAiInstruction ?? organization.defaultAiInstruction ?? "";
+      aiInstruction = templateAiInstruction ?? organization?.defaultAiInstruction ?? "";
 
       // Build the prompt with explicit Category and Inspection Point context
       // sectionName = Category (e.g., "Kitchen", "Bathroom", "Living Room")
@@ -6330,18 +6401,15 @@ Remember: Only analyze "${inspectionPointTitle}" in the "${category}" - nothing 
         .replace(/\n{3,}/g, '\n\n') // Collapse multiple newlines
         .trim();
 
-      // Deduct credit
-      await storage.updateOrganizationCredits(
-        organization.id,
-        (organization.creditsRemaining ?? 0) - 1
+      // Consume credit using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      await subscriptionService.consumeCredits(
+        user.organizationId,
+        1,
+        "inspection",
+        inspectionId,
+        `InspectAI field analysis: ${fieldLabel}`
       );
-
-      await storage.createCreditTransaction({
-        organizationId: organization.id,
-        amount: -1,
-        type: "inspection",
-        description: `InspectAI field analysis: ${fieldLabel}`,
-      });
 
       res.json({ analysis });
     } catch (error: any) {
@@ -6428,10 +6496,10 @@ Remember: Only analyze "${inspectionPointTitle}" in the "${category}" - nothing 
       }
 
       // Get organization for credits check
-      const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || (organization.creditsRemaining ?? 0) < entriesWithPhotos.length) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < entriesWithPhotos.length) {
         return res.status(402).json({
-          message: `Insufficient credits. You need ${entriesWithPhotos.length} credits but have ${organization?.creditsRemaining ?? 0}`
+          message: `Insufficient credits. You need ${entriesWithPhotos.length} credits but have ${creditBalance.total}`
         });
       }
 
@@ -6442,6 +6510,9 @@ Remember: Only analyze "${inspectionPointTitle}" in the "${category}" - nothing 
         aiAnalysisTotalFields: entriesWithPhotos.length,
         aiAnalysisError: null
       } as any);
+
+      // Get organization for background processing
+      const organization = await storage.getOrganization(user.organizationId);
 
       // Start background processing (fire and forget)
       processInspectionAIAnalysis(
@@ -6515,8 +6586,8 @@ Remember: Only analyze "${inspectionPointTitle}" in the "${category}" - nothing 
       }
 
       // Check credits
-      const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || (organization.creditsRemaining ?? 0) < 1) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 1) {
         return res.status(402).json({ message: "Insufficient credits" });
       }
 
@@ -6618,17 +6689,15 @@ Cleanliness guidelines:
       }
 
       // Deduct credit (0.5 credit for quick analysis, but charge 1 minimum)
-      await storage.updateOrganizationCredits(
-        organization.id,
-        (organization.creditsRemaining ?? 0) - 1
+      // Consume credit using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      await subscriptionService.consumeCredits(
+        user.organizationId,
+        1,
+        "ai_analysis",
+        `condition_suggestion_${Date.now()}`,
+        `AI condition suggestion: ${fieldLabel || 'Field analysis'}`
       );
-
-      await storage.createCreditTransaction({
-        organizationId: organization.id,
-        amount: -1,
-        type: "inspection",
-        description: `AI condition suggestion: ${fieldLabel || 'Field analysis'}`,
-      });
 
       console.log("[AI Suggest Condition] Analysis complete:", {
         fieldLabel,
@@ -6787,8 +6856,8 @@ Cleanliness guidelines:
       const activeTenant = tenantAssignments.find(ta => ta.assignment?.isActive);
 
       // Check credits (2 credits for comparison report generation)
-      const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || (organization.creditsRemaining ?? 0) < 2) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 2) {
         return res.status(402).json({ message: "Insufficient credits (2 required for comparison report)" });
       }
 
@@ -6860,6 +6929,9 @@ Cleanliness guidelines:
       } else {
         console.log(`[Notification] No active tenant found for property ${propertyId}. Tenant assignments:`, tenantAssignments.map(ta => ({ id: ta.id, isActive: ta.assignment?.isActive })));
       }
+
+      // Store organizationId for use in async function (guaranteed to exist due to check above)
+      const organizationId: string = user.organizationId!;
 
       // Process marked entries asynchronously (same logic as the regular endpoint)
       (async () => {
@@ -7055,18 +7127,17 @@ LIABILITY: [tenant/landlord/shared]`;
             }
           });
 
-          await storage.updateOrganizationCredits(
-            organization.id,
-            (organization.creditsRemaining ?? 0) - 2
+          // Consume credits using credit batch system
+          const { subscriptionService } = await import("./subscriptionService");
+          // report.id is guaranteed to exist since report was just created above
+          const reportId: string = report.id || `comparison_${Date.now()}`;
+          await subscriptionService.consumeCredits(
+            organizationId, // Use the stored organizationId from outer scope
+            2,
+            "comparison",
+            reportId,
+            `Comparison report generation for property`
           );
-
-          await storage.createCreditTransaction({
-            organizationId: organization.id,
-            amount: -2,
-            type: "comparison",
-            description: `Comparison report generation for property`,
-            relatedId: report.id,
-          });
 
         } catch (asyncError) {
           console.error("Error in async comparison processing:", asyncError);
@@ -7111,8 +7182,8 @@ LIABILITY: [tenant/landlord/shared]`;
       const activeTenant = tenantAssignments.find(ta => ta.assignment?.isActive);
 
       // Check credits (2 credits for comparison report generation)
-      const organization = await storage.getOrganization(user.organizationId);
-      if (!organization || (organization.creditsRemaining ?? 0) < 2) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 2) {
         return res.status(402).json({ message: "Insufficient credits (2 required for comparison report)" });
       }
 
@@ -7779,19 +7850,16 @@ Respond with ONLY valid JSON (no markdown, no code blocks):
         }
       })();
 
-      // Deduct credits
-      await storage.updateOrganizationCredits(
-        organization.id,
-        (organization.creditsRemaining ?? 0) - 2
+      // Consume credits using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      const reportId: string = report.id || `comparison_${Date.now()}`;
+      await subscriptionService.consumeCredits(
+        user.organizationId,
+        2,
+        "comparison",
+        reportId,
+        `Comparison report generation for property`
       );
-
-      await storage.createCreditTransaction({
-        organizationId: organization.id,
-        amount: -2,
-        type: "comparison",
-        description: `Comparison report generation for property`,
-        relatedId: report.id,
-      });
 
       res.json(report);
     } catch (error) {
@@ -11033,12 +11101,12 @@ Write how the condition changed. JSON only: {"notes_comparison": "comparison tex
       }
 
       // Check if organization has credits
-      const organization = await storage.getOrganization(user.organizationId);
-      const currentCredits = organization?.creditsRemaining ?? 0;
-      if (!organization || currentCredits < 1) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 1) {
         return res.status(402).json({
           message: "Insufficient credits. Please purchase more credits to use AI analysis.",
-          creditsRemaining: currentCredits
+          creditBalance: creditBalance.total, // Using creditBalance instead of legacy creditsRemaining
+          total: creditBalance.total
         });
       }
 
@@ -11175,8 +11243,18 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         throw new Error("Failed to get AI analysis");
       }
 
-      // Deduct credit
-      await storage.deductCredit(user.organizationId, 1, "AI maintenance image analysis");
+      // Consume credit using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      await subscriptionService.consumeCredits(
+        user.organizationId,
+        1,
+        "ai_analysis",
+        `maintenance_${Date.now()}`,
+        "AI maintenance image analysis"
+      );
+
+      // Get updated credit balance for response
+      const updatedBalance = await storage.getCreditBalance(user.organizationId);
 
       res.json({
         suggestedFixes,
@@ -11184,7 +11262,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           model: "gpt-4o",
           timestamp: new Date().toISOString()
         },
-        creditsRemaining: currentCredits - 1
+        creditBalance: updatedBalance.total, // Using creditBalance instead of legacy creditsRemaining
+        total: updatedBalance.total
       });
     } catch (error: any) {
       console.error("[Maintenance Analyze Image] Error:", {
@@ -11649,7 +11728,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           }
 
           // Enable the module for this instance
-          const currency = instanceSub.registrationCurrency || "GBP";
+          // Get currency from subscription or organization, fallback to GBP
+          const org = await storage.getOrganization(organizationId);
+          const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
           const modulePricing = await storage.getModulePricing(moduleId, currency);
 
           if (modulePricing) {
@@ -11800,7 +11881,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
             return res.json({ received: true });
           }
 
-          const currency = instanceSub.registrationCurrency || "GBP";
+          // Get currency from subscription or organization, fallback to GBP
+          const org = await storage.getOrganization(organizationId);
+          const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
           const bundlePricing = await storage.getBundlePricing(bundleId, currency);
 
           if (bundlePricing) {
@@ -11851,23 +11934,20 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           }
         } else if (session.metadata.credits) {
           // Legacy credit purchase handling
-        const credits = parseInt(session.metadata.credits);
+          const credits = parseInt(session.metadata.credits);
 
-        // Add credits to organization
-        const organization = await storage.getOrganization(organizationId);
-        if (organization) {
-          await storage.updateOrganizationCredits(
+          // Grant credits using credit batch system
+          const { subscriptionService } = await import("./subscriptionService");
+          await subscriptionService.grantCredits(
             organizationId,
-            (organization.creditsRemaining ?? 0) + credits
+            credits,
+            "topup",
+            undefined, // No expiration for topup credits
+            {
+              topupOrderId: session.metadata.topupOrderId || undefined,
+              adminNotes: `Purchased ${credits} credits via Stripe`,
+            }
           );
-
-          await storage.createCreditTransaction({
-            organizationId,
-            amount: credits,
-            type: "purchase",
-            description: `Purchased ${credits} credits via Stripe`,
-          });
-          }
         }
       }
 
@@ -15551,8 +15631,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       }
 
       // Check if organization has credits
-      const org = await storage.getOrganization(user.organizationId);
-      if (!org || (org.creditsRemaining ?? 0) < 1) {
+      const creditBalance = await storage.getCreditBalance(user.organizationId);
+      if (creditBalance.total < 1) {
         return res.status(402).json({ message: "Insufficient AI credits" });
       }
 
@@ -15647,8 +15727,18 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       // Strip markdown asterisks from the response
       analysisText = analysisText.replace(/\*\*/g, '');
 
-      // Deduct credit
-      await storage.updateOrganizationCredits(user.organizationId, (org.creditsRemaining ?? 0) - 1);
+      // Consume credit using credit batch system
+      const { subscriptionService } = await import("./subscriptionService");
+      await subscriptionService.consumeCredits(
+        user.organizationId,
+        1,
+        "ai_analysis",
+        inspectionId || inspectionEntryId || "individual_photo",
+        "Individual photo AI analysis"
+      );
+
+      // Get updated credit balance for response
+      const updatedBalance = await storage.getCreditBalance(user.organizationId);
 
       // Save analysis
       const validatedData = insertAiImageAnalysisSchema.parse({
@@ -15661,7 +15751,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       });
       const analysis = await storage.createAiImageAnalysis(validatedData);
 
-      res.status(201).json({ ...analysis, remainingCredits: (org.creditsRemaining ?? 0) - 1 });
+      res.status(201).json({ ...analysis, remainingCredits: updatedBalance.total });
     } catch (error: any) {
       // Safely log error without circular reference issues
       const errorMessage = error?.message || String(error);
@@ -16211,6 +16301,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(401).json({ message: "Invalid credentials" });
       }
 
+      // Log for debugging (remove in production)
+      console.log(`[Admin Login] Retrieved password hash length: ${adminUser.password.length}, starts with: ${adminUser.password.substring(0, 10)}`);
+      console.log(`[Admin Login] Password hash format: ${adminUser.password.startsWith("$2") ? "bcrypt" : adminUser.password.includes(".") ? "scrypt" : "unknown"}`);
+
       // Use comparePasswords which supports both scrypt (from hashPassword) and bcrypt formats
       const isValidPassword = await comparePasswords(password, adminUser.password);
 
@@ -16229,6 +16323,18 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         lastName: adminUser.lastName,
       };
 
+      // Explicitly save the session before responding
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error("[Admin Login] Error saving session:", err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+
       res.json({
         id: adminUser.id,
         email: adminUser.email,
@@ -16242,9 +16348,41 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Admin Logout
-  app.post("/api/admin/logout", (req, res) => {
-    (req.session as any).adminUser = null;
-    res.json({ message: "Logged out successfully" });
+  app.post("/api/admin/logout", async (req, res) => {
+    try {
+      // Clear admin session
+      (req.session as any).adminUser = null;
+      
+      // Explicitly save the session to persist the logout
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err) => {
+          if (err) {
+            console.error("[Admin Logout] Error saving session:", err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      // Optionally destroy the session completely
+      await new Promise<void>((resolve, reject) => {
+        req.session.destroy((err) => {
+          if (err) {
+            console.error("[Admin Logout] Error destroying session:", err);
+            // Don't reject - session might already be destroyed
+            resolve();
+          } else {
+            resolve();
+          }
+        });
+      });
+
+      res.json({ message: "Logged out successfully" });
+    } catch (error) {
+      console.error("Admin logout error:", error);
+      res.status(500).json({ message: "Logout failed" });
+    }
   });
 
   // Get current admin user
@@ -16259,17 +16397,26 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     try {
       const orgs = await storage.getAllOrganizationsWithOwners();
 
-      // Enrich with instance subscription data
+      // Enrich with instance subscription data and credit balance from batch system
       const instances = await Promise.all(orgs.map(async (org) => {
         const subscription = await storage.getInstanceSubscription(org.id);
         const tiers = await storage.getSubscriptionTiers();
         const tier = subscription?.currentTierId ? tiers.find(t => t.id === subscription.currentTierId) : null;
+
+        // Get credit balance from batch system (not legacy creditsRemaining)
+        const creditBalance = await storage.getCreditBalance(org.id);
 
         return {
           ...org,
           subscription,
           tierName: tier?.name || null,
           tierCode: tier?.code || null,
+          creditBalance: {
+            total: creditBalance.total,
+            current: creditBalance.current,
+            rolled: creditBalance.rolled,
+            expiresOn: creditBalance.expiresOn,
+          },
         };
       }));
 
@@ -16294,34 +16441,126 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  // Update instance (tier, credits, active status)
+  // Update instance (tier, credits, active status, modules)
   app.patch("/api/admin/instances/:id", isAdminAuthenticated, async (req, res) => {
     try {
-      const { tierId, creditsRemaining, isActive } = req.body;
+      const { tierId, credits, isActive, enabledModules } = req.body; // Changed from creditsRemaining to credits
 
-      // Update organization credits and status
+      // Get organization to get currency
+      const org = await storage.getOrganization(req.params.id);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      // If credits is being updated, grant credits via the credit batch system
+      // This ensures the credits show up on the operator's billing page
+      if (credits !== undefined && credits !== null) {
+        // Get current credit balance from batches (this is what the operator sees)
+        const currentBalance = await storage.getCreditBalance(req.params.id);
+        const currentBalanceTotal = currentBalance.total;
+        
+        // Calculate how many credits to grant/revoke
+        // Target balance should match credits
+        const creditsToAdjust = credits - currentBalanceTotal;
+        
+        if (creditsToAdjust > 0) {
+          // Grant credits using the subscription service
+          const { subscriptionService } = await import("./subscriptionService");
+          await subscriptionService.grantCredits(
+            req.params.id,
+            creditsToAdjust,
+            "admin_grant",
+            undefined, // No expiration
+            {
+              adminNotes: `Admin adjustment: Updated from ${currentBalanceTotal} to ${credits} credits`,
+              createdBy: (req.session as any).adminUser?.id || "admin",
+            }
+          );
+          console.log(`[Admin] Granted ${creditsToAdjust} credits to org ${req.params.id} (new total: ${credits})`);
+        } else if (creditsToAdjust < 0) {
+          // For reducing credits, try to consume them
+          const { subscriptionService } = await import("./subscriptionService");
+          const creditsToConsume = Math.abs(creditsToAdjust);
+          try {
+            await subscriptionService.consumeInspectionCredits(req.params.id, creditsToConsume, "admin_adjustment");
+            console.log(`[Admin] Consumed ${creditsToConsume} credits from org ${req.params.id} (new total: ${credits})`);
+          } catch (consumeError: any) {
+            // If consumption fails (not enough credits), log warning but continue
+            console.warn(`[Admin] Could not consume ${creditsToConsume} credits (current: ${currentBalanceTotal}, target: ${credits}): ${consumeError.message}`);
+          }
+        }
+      }
+
+      // Update organization status
       const updated = await storage.updateOrganization(req.params.id, {
-        creditsRemaining,
         isActive,
       });
 
       // Update instance subscription tier if provided
       if (tierId) {
         const subscription = await storage.getInstanceSubscription(req.params.id);
+        const tiers = await storage.getSubscriptionTiers();
+        const selectedTier = tiers.find(t => t.id === tierId);
+        
         if (subscription) {
+          // Update existing subscription
           await storage.updateInstanceSubscription(subscription.id, {
             currentTierId: tierId,
+            // Update inspection quota to match tier's included inspections
+            inspectionQuotaIncluded: selectedTier?.includedInspections || subscription.inspectionQuotaIncluded,
           });
         } else {
           // Create new instance subscription if it doesn't exist
           await storage.createInstanceSubscription({
             organizationId: req.params.id,
-            registrationCurrency: 'GBP',
+            registrationCurrency: org.preferredCurrency || 'GBP',
             currentTierId: tierId,
-            inspectionQuotaIncluded: 0,
+            inspectionQuotaIncluded: selectedTier?.includedInspections || 0,
             billingCycle: 'monthly',
             subscriptionStatus: 'active',
           });
+        }
+        
+        // Invalidate queries to refresh operator-side data
+        // This ensures changes reflect immediately on the operator's billing page
+        console.log(`[Admin] Updated instance ${req.params.id}: tier=${tierId}${credits !== undefined ? `, credits=${credits}` : ''}`);
+      }
+
+      // Update modules if provided
+      if (enabledModules !== undefined && Array.isArray(enabledModules)) {
+        const subscription = await storage.getInstanceSubscription(req.params.id);
+        if (subscription) {
+          // Get all available modules
+          const allModules = await storage.getMarketplaceModules();
+          const allModuleIds = allModules.map(m => m.id);
+          
+          // Get current instance modules
+          const currentInstanceModules = await storage.getInstanceModules(subscription.id);
+          const currentEnabledModuleIds = currentInstanceModules
+            .filter(im => im.isEnabled)
+            .map(im => im.moduleId);
+          
+          // Determine which modules to enable and disable
+          const modulesToEnable = enabledModules.filter((moduleId: string) => 
+            !currentEnabledModuleIds.includes(moduleId) && allModuleIds.includes(moduleId)
+          );
+          const modulesToDisable = currentEnabledModuleIds.filter((moduleId: string) => 
+            !enabledModules.includes(moduleId)
+          );
+          
+          // Enable new modules
+          for (const moduleId of modulesToEnable) {
+            await storage.toggleInstanceModule(subscription.id, moduleId, true);
+            console.log(`[Admin] Enabled module ${moduleId} for instance ${req.params.id}`);
+          }
+          
+          // Disable removed modules
+          for (const moduleId of modulesToDisable) {
+            await storage.toggleInstanceModule(subscription.id, moduleId, false);
+            console.log(`[Admin] Disabled module ${moduleId} for instance ${req.params.id}`);
+          }
+          
+          console.log(`[Admin] Updated modules for instance ${req.params.id}: enabled=${modulesToEnable.length}, disabled=${modulesToDisable.length}`);
         }
       }
 
@@ -16340,13 +16579,115 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(404).json({ message: "Instance not found" });
       }
 
+      const wasActive = org.isActive !== false;
+      const newStatus = !wasActive;
+
+      // Update organization status
       const updated = await storage.updateOrganization(req.params.id, {
-        isActive: !org.isActive,
+        isActive: newStatus,
       });
+
+      // If disabling organization, invalidate all user sessions
+      if (!newStatus && wasActive) {
+        try {
+          // Get all users in this organization
+          const orgUsers = await storage.getUsersByOrganization(req.params.id);
+          const userIds = orgUsers.map(u => u.id);
+          
+          console.log(`[Toggle Status] Organization ${req.params.id} disabled. ${userIds.length} users will be logged out on next request.`);
+          
+          // Destroy all sessions for users in this organization
+          // Query the sessions table directly to find and destroy sessions
+          const { db } = await import("./db");
+          const { sql } = await import("drizzle-orm");
+          
+          if (userIds.length > 0) {
+            // Get session store to destroy sessions
+            const { getSessionStore } = await import("./auth");
+            const sessionStore = getSessionStore();
+            
+            // Query all sessions from the sessions table
+            // connect-pg-simple stores sessions as JSON in the 'sess' column
+            // The user ID is stored in sess.passport.user
+            try {
+              // Use the existing database pool
+              const { pool } = await import("./db");
+              
+              const sessionsResult = await pool.query(`
+                SELECT sid, sess 
+                FROM sessions 
+                WHERE sess::text LIKE '%"passport"%'
+              `);
+              
+              let destroyedCount = 0;
+              for (const sessionRow of sessionsResult.rows) {
+                try {
+                  // Parse the session data (sess is stored as JSON text)
+                  let sessionData: any;
+                  if (typeof sessionRow.sess === 'string') {
+                    sessionData = JSON.parse(sessionRow.sess);
+                  } else {
+                    sessionData = sessionRow.sess;
+                  }
+                  
+                  // Check if this session belongs to one of our users
+                  if (sessionData?.passport?.user && userIds.includes(sessionData.passport.user)) {
+                    // Destroy this session
+                    await new Promise<void>((resolve, reject) => {
+                      sessionStore.destroy(sessionRow.sid as string, (err) => {
+                        if (err) {
+                          console.error(`[Toggle Status] Error destroying session ${sessionRow.sid}:`, err);
+                          reject(err);
+                        } else {
+                          destroyedCount++;
+                          resolve();
+                        }
+                      });
+                    });
+                  }
+                } catch (parseError) {
+                  console.error(`[Toggle Status] Error parsing session ${sessionRow.sid}:`, parseError);
+                  // Continue with next session
+                }
+              }
+              
+              console.log(`[Toggle Status] Destroyed ${destroyedCount} sessions for organization ${req.params.id}`);
+            } catch (sessionsQueryError) {
+              console.error("[Toggle Status] Error querying sessions:", sessionsQueryError);
+              // Continue - auth checks will handle it on next request
+            }
+          }
+          
+          // Note: Even if session destruction fails, authentication checks in isAuthenticated 
+          // middleware will block access on the next request and log users out
+        } catch (sessionError) {
+          console.error("[Toggle Status] Error invalidating sessions:", sessionError);
+          // Continue even if session invalidation fails - auth checks will handle it
+        }
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error toggling instance status:", error);
       res.status(500).json({ message: "Failed to toggle status" });
+    }
+  });
+
+  // Get users for an organization (admin only)
+  app.get("/api/admin/instances/:id/users", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const users = await storage.getUsersByOrganization(id);
+      // Remove password from response
+      const sanitizedUsers = users.map(({ password, resetToken, resetTokenExpiry, ...user }) => ({
+        ...user,
+        // Include additional computed fields
+        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+      }));
+      res.json(sanitizedUsers);
+    } catch (error) {
+      console.error("Error fetching organization users:", error);
+      res.status(500).json({ message: "Failed to fetch organization users" });
     }
   });
 
@@ -16375,6 +16716,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
+      
+      // Log for debugging (remove in production)
+      console.log(`[Create Admin] Password hash length: ${hashedPassword.length}, starts with: ${hashedPassword.substring(0, 10)}`);
 
       const admin = await storage.createAdmin({
         email,
@@ -16382,6 +16726,15 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         firstName,
         lastName,
       });
+      
+      // Verify the stored password
+      const storedAdmin = await storage.getAdminByEmail(email);
+      if (storedAdmin) {
+        console.log(`[Create Admin] Stored password hash length: ${storedAdmin.password.length}, starts with: ${storedAdmin.password.substring(0, 10)}`);
+        if (storedAdmin.password.length !== hashedPassword.length) {
+          console.error(`[Create Admin] WARNING: Password hash was truncated! Original: ${hashedPassword.length} chars, Stored: ${storedAdmin.password.length} chars`);
+        }
+      }
 
       // Remove password from response
       const { password: _, ...sanitizedAdmin } = admin;
@@ -16427,6 +16780,38 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     } catch (error) {
       console.error("Error deleting admin:", error);
       res.status(500).json({ message: "Failed to delete admin" });
+    }
+  });
+
+  // Reset admin password (utility endpoint for fixing password issues)
+  app.post("/api/admin/team/:id/reset-password", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const { password } = req.body;
+      const adminId = req.params.id;
+
+      if (!password) {
+        return res.status(400).json({ message: "Password is required" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      console.log(`[Reset Admin Password] Hash length: ${hashedPassword.length}, starts with: ${hashedPassword.substring(0, 10)}`);
+
+      const updatedAdmin = await storage.updateAdmin(adminId, { password: hashedPassword });
+      
+      // Verify the stored password
+      const storedAdmin = await storage.getAdminByEmail(updatedAdmin.email);
+      if (storedAdmin) {
+        console.log(`[Reset Admin Password] Stored hash length: ${storedAdmin.password.length}, starts with: ${storedAdmin.password.substring(0, 10)}`);
+        if (storedAdmin.password.length !== hashedPassword.length) {
+          console.error(`[Reset Admin Password] WARNING: Password hash was truncated! Original: ${hashedPassword.length} chars, Stored: ${storedAdmin.password.length} chars`);
+        }
+      }
+
+      const { password: _, ...sanitizedAdmin } = updatedAdmin;
+      res.json({ message: "Password reset successfully", admin: sanitizedAdmin });
+    } catch (error: any) {
+      console.error("Error resetting admin password:", error);
+      res.status(500).json({ message: "Failed to reset password" });
     }
   });
 
@@ -17204,7 +17589,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 if (customerId) {
                   console.log(`[Portal] Found customer ID from Stripe: ${customerId}`);
                   stripeCustomerId = customerId;
-                  await storage.updateOrganizationStripe(user.organizationId, stripeCustomerId, "active");
+                  if (stripeCustomerId) {
+                    await storage.updateOrganizationStripe(user.organizationId, stripeCustomerId, "active");
+                  }
                 }
               }
             } catch (stripeError: any) {
@@ -17357,7 +17744,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         if (session.subscription) {
           try {
             const stripeSubscription = await stripe.subscriptions.retrieve(session.subscription as string);
-            renewalDate = new Date((stripeSubscription.current_period_end as number) * 1000);
+            renewalDate = new Date(((stripeSubscription as any).current_period_end as number) * 1000);
             console.log(`[Process Session] Using Stripe subscription period_end for renewal date: ${renewalDate.toISOString()}`);
           } catch (subscriptionError: any) {
             console.warn(`[Process Session] Could not retrieve subscription for renewal date, using calculated fallback:`, subscriptionError.message);
@@ -17424,7 +17811,9 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           
           // Log proration information
           if (isProrated === "true" && fullPrice && proratedPrice && remainingDays) {
-            const currency = instanceSub.registrationCurrency || "GBP";
+            // Get currency from subscription or organization, fallback to GBP
+            const org = await storage.getOrganization(user.organizationId);
+            const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
             console.log(`[Process Session] Module ${moduleId} enabled for org ${user.organizationId} (PRO-RATED)`);
             console.log(`[Process Session] Full price: ${parseInt(fullPrice)/100} ${currency}, Prorated: ${parseInt(proratedPrice)/100} ${currency}, Remaining days: ${remainingDays}`);
           } else {
@@ -17672,7 +18061,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           if (session.subscription) {
             try {
               const stripeSubscription = await stripe.subscriptions.retrieve(session.subscription as string);
-              renewalDate = new Date((stripeSubscription.current_period_end as number) * 1000);
+              renewalDate = new Date(((stripeSubscription as any).current_period_end as number) * 1000);
               console.log(`[Process Session] Using Stripe subscription period_end for renewal date: ${renewalDate.toISOString()} (billing period: ${billingPeriod})`);
             } catch (subscriptionError: any) {
               console.warn(`[Process Session] Could not retrieve subscription ${session.subscription} for renewal date, using calculated fallback:`, subscriptionError.message);
@@ -18086,7 +18475,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
               
               // Log proration information
               if (isProrated === "true" && fullPrice && proratedPrice && remainingDays) {
-                const currency = instanceSub.registrationCurrency || "GBP";
+                // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
                 console.log(`[Stripe Webhook] Module ${moduleId} enabled for org ${organizationId} (PRO-RATED)`);
                 console.log(`[Stripe Webhook] Full price: ${parseInt(fullPrice)/100} ${currency}, Prorated: ${parseInt(proratedPrice)/100} ${currency}, Remaining days: ${remainingDays}`);
               } else {
@@ -18289,7 +18679,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                     const enabledModules = instanceModules.filter(m => m.isEnabled);
                     const modules = await storage.getMarketplaceModules();
                     const { pricingService } = await import("./pricingService");
-                    const currency = instanceSub.registrationCurrency || "GBP";
+                    // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
                     
                     // Get active bundles to exclude modules covered by bundles
                     const activeBundles = await storage.getInstanceBundles(instanceSub.id);
@@ -18429,7 +18820,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                     const enabledModules = instanceModules.filter(m => m.isEnabled);
                     const modules = await storage.getMarketplaceModules();
                     const { pricingService } = await import("./pricingService");
-                    const currency = instanceSub.registrationCurrency || "GBP";
+                    // Get currency from subscription or organization, fallback to GBP
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
                     
                     // Get active bundles to exclude modules covered by bundles
                     const activeBundles = await storage.getInstanceBundles(instanceSub.id);
@@ -18553,11 +18945,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 });
               }
 
-              // 4. Update organization credits to zero
-              const org = await storage.getOrganization(organizationId);
-              if (org) {
-                await storage.updateOrganizationCredits(organizationId, 0);
-              }
+              // 4. Credits are already handled by expiring batches above
+              // No need to update legacy creditsRemaining field as it's removed
 
               console.log(`[Stripe Webhook] Payment failure handled: subscription inactive, ${enabledModules.length} modules deactivated, ${activeBatches.length} credit batches expired for org ${organizationId}`);
             } else {
@@ -18753,11 +19142,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 });
               }
 
-              // Update organization credits to zero
-              const org = await storage.getOrganization(dbSubscription.organizationId);
-              if (org) {
-                await storage.updateOrganizationCredits(dbSubscription.organizationId, 0);
-              }
+              // Credits are already handled by expiring batches above
+              // No need to update legacy creditsRemaining field as it's removed
 
               // Update instance subscription status
               await storage.updateInstanceSubscription(instanceSub.id, {
@@ -18952,89 +19338,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  // ==================== ECO-ADMIN ROUTES (Country Pricing Configuration) ====================
-
-  // Get all country pricing overrides
-  app.get("/api/admin/country-pricing", isAuthenticated, async (req: any, res) => {
-    try {
-      // Check if user is admin
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const overrides = await storage.getAllCountryPricingOverrides();
-      res.json(overrides);
-    } catch (error: any) {
-      console.error("Error fetching country pricing:", error);
-      res.status(500).json({ message: "Failed to fetch country pricing" });
-    }
-  });
-
-  // Create country pricing override
-  app.post("/api/admin/country-pricing", isAuthenticated, async (req: any, res) => {
-    try {
-      // Check if user is admin
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Validate request body
-      const validated = insertCountryPricingOverrideSchema.parse(req.body);
-      const override = await storage.createCountryPricingOverride(validated);
-      res.json(override);
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ message: "Invalid country pricing data", errors: error.errors });
-      }
-      console.error("Error creating country pricing:", error);
-      res.status(500).json({ message: "Failed to create country pricing", error: error.message });
-    }
-  });
-
-  // Update country pricing override
-  app.patch("/api/admin/country-pricing/:id", isAuthenticated, async (req: any, res) => {
-    try {
-      // Check if user is admin
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Validate request body
-      const validated = insertCountryPricingOverrideSchema.partial().parse(req.body);
-      const { id } = req.params;
-      const override = await storage.updateCountryPricingOverride(id, validated);
-      res.json(override);
-    } catch (error: any) {
-      if (error.name === 'ZodError') {
-        return res.status(400).json({ message: "Invalid country pricing data", errors: error.errors });
-      }
-      console.error("Error updating country pricing:", error);
-      res.status(500).json({ message: "Failed to update country pricing", error: error.message });
-    }
-  });
-
-  // Delete country pricing override
-  app.delete("/api/admin/country-pricing/:id", isAuthenticated, async (req: any, res) => {
-    try {
-      // Check if user is admin
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { id } = req.params;
-      await storage.deleteCountryPricingOverride(id);
-      res.json({ success: true });
-    } catch (error: any) {
-      console.error("Error deleting country pricing:", error);
-      res.status(500).json({ message: "Failed to delete country pricing", error: error.message });
-    }
-  });
-
   // ==================== SUBSCRIPTION PLAN ROUTES (Eco-Admin) ====================
+  // Note: Country Pricing Overrides have been removed as they are redundant with the currency conversion API
 
   // Get all plans
   app.get("/api/admin/plans", isAuthenticated, async (req: any, res) => {
@@ -19208,12 +19513,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   // ==================== ECO-ADMIN PRICING MODEL 2026 ROUTES ====================
 
   // Currency Management
-  app.get("/api/admin/currencies", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/currencies", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const currencies = await storage.getCurrencyConfig();
       res.json(currencies);
     } catch (error: any) {
@@ -19222,12 +19523,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.post("/api/admin/currencies", isAuthenticated, async (req: any, res) => {
+  app.post("/api/admin/currencies", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { code, symbol, isActive, defaultForRegion, conversionRate } = req.body;
       const { currencyConfig } = await import("@shared/schema");
       const [currency] = await db.insert(currencyConfig).values({
@@ -19244,12 +19541,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.patch("/api/admin/currencies/:code", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/admin/currencies/:code", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { code } = req.params;
       const { symbol, isActive, defaultForRegion, conversionRate } = req.body;
       const { currencyConfig } = await import("@shared/schema");
@@ -19270,12 +19563,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.delete("/api/admin/currencies/:code", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/admin/currencies/:code", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { code } = req.params;
       const { currencyConfig } = await import("@shared/schema");
       await db.delete(currencyConfig).where(eq(currencyConfig.code, code));
@@ -19287,12 +19576,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Subscription Tier Management
-  app.get("/api/admin/subscription-tiers", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/subscription-tiers", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const tiers = await storage.getSubscriptionTiers();
       res.json(tiers);
     } catch (error: any) {
@@ -19301,26 +19586,84 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.post("/api/admin/subscription-tiers", isAuthenticated, async (req: any, res) => {
+  app.post("/api/admin/subscription-tiers", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { subscriptionTiersTable } = await import("@shared/schema");
-      const { name, code, description, tierOrder, includedInspections, basePriceMonthly, basePriceAnnual, annualDiscountPercentage, isActive, requiresCustomPricing } = req.body;
-      const [tier] = await db.insert(subscriptionTiersTable).values({
+      const { name, code, description, tierOrder, includedInspections, basePriceMonthly, basePriceAnnual, annualDiscountPercentage, isActive, requiresCustomPricing, perInspectionPrice } = req.body;
+      
+      // Validate required fields
+      if (!name || !code || !includedInspections || !basePriceMonthly || !perInspectionPrice || !description) {
+        return res.status(400).json({ message: "Missing required fields: name, code, includedInspections, basePriceMonthly, perInspectionPrice, and description are required" });
+      }
+      
+      // Normalize code to lowercase and validate format (alphanumeric with underscores)
+      const codeLower = code.toLowerCase().trim();
+      if (!/^[a-z0-9_]+$/.test(codeLower)) {
+        return res.status(400).json({ 
+          message: `Invalid tier code format. Code must contain only lowercase letters, numbers, and underscores.`,
+          error: `Tier code "${code}" contains invalid characters.`,
+          providedCode: code
+        });
+      }
+      
+      // Prepare tier data - check if perInspectionPrice column exists by trying to insert
+      const tierData: any = {
         name,
-        code,
+        code: codeLower, // Use lowercase for consistency
         description: description || null,
-        tierOrder,
+        tierOrder: tierOrder || 1,
         includedInspections,
         basePriceMonthly,
         basePriceAnnual,
         annualDiscountPercentage: annualDiscountPercentage || "16.70",
         isActive: isActive !== undefined ? isActive : true,
         requiresCustomPricing: requiresCustomPricing || false
-      }).returning();
+      };
+      
+      // Only include perInspectionPrice if it's provided (column might not exist if migration hasn't run)
+      if (perInspectionPrice !== undefined && perInspectionPrice !== null) {
+        tierData.perInspectionPrice = perInspectionPrice;
+      }
+      
+      let tier;
+      try {
+        [tier] = await db.insert(subscriptionTiersTable).values(tierData).returning();
+      } catch (insertError: any) {
+        // If error is about missing column, provide helpful message
+        if (insertError.message && insertError.message.includes("per_inspection_price")) {
+          console.error("Database migration required: per_inspection_price column missing");
+          return res.status(500).json({ 
+            message: "Database migration required. Please run migration 0005_add_per_inspection_price_to_tiers.sql to add the per_inspection_price column.",
+            error: "Column 'per_inspection_price' does not exist. Migration required.",
+            migrationFile: "migrations/0005_add_per_inspection_price_to_tiers.sql"
+          });
+        }
+        // If error is about invalid enum value (before migration), provide helpful message
+        if (insertError.message && insertError.message.includes("invalid input value for enum plan_code")) {
+          return res.status(500).json({ 
+            message: "Database migration required. The tier code column is still using an enum. Please run migration 0006_change_tier_code_to_varchar.sql to allow custom tier codes.",
+            error: "Column 'code' is still an enum type. Migration required.",
+            migrationFile: "migrations/0006_change_tier_code_to_varchar.sql"
+          });
+        }
+        throw insertError;
+      }
+      
+      // Automatically create GBP tier pricing entry with the base prices
+      try {
+        const { tierPricing } = await import("@shared/schema");
+        await db.insert(tierPricing).values({
+          tierId: tier.id,
+          currencyCode: "GBP",
+          priceMonthly: basePriceMonthly,
+          priceAnnual: basePriceAnnual,
+          perInspectionPrice: perInspectionPrice || 0
+        });
+      } catch (pricingError: any) {
+        console.warn("Failed to create default GBP pricing for tier:", pricingError.message);
+        // Continue even if pricing creation fails - tier is still created
+      }
+      
       res.json(tier);
     } catch (error: any) {
       console.error("Error creating subscription tier:", error);
@@ -19328,12 +19671,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.patch("/api/admin/subscription-tiers/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/admin/subscription-tiers/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
       const { subscriptionTiersTable } = await import("@shared/schema");
       const updates: any = { updatedAt: new Date() };
@@ -19344,6 +19683,14 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       if (req.body.basePriceMonthly !== undefined) updates.basePriceMonthly = req.body.basePriceMonthly;
       if (req.body.basePriceAnnual !== undefined) updates.basePriceAnnual = req.body.basePriceAnnual;
       if (req.body.annualDiscountPercentage !== undefined) updates.annualDiscountPercentage = req.body.annualDiscountPercentage;
+      if (req.body.perInspectionPrice !== undefined) {
+        (updates as any).perInspectionPrice = req.body.perInspectionPrice;
+        // Also update GBP tier pricing if it exists
+        const { tierPricing } = await import("@shared/schema");
+        await db.update(tierPricing)
+          .set({ perInspectionPrice: req.body.perInspectionPrice })
+          .where(and(eq(tierPricing.tierId, id), eq(tierPricing.currencyCode, "GBP")));
+      }
       if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
       if (req.body.requiresCustomPricing !== undefined) updates.requiresCustomPricing = req.body.requiresCustomPricing;
 
@@ -19359,12 +19706,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Tier Pricing Management
-  app.get("/api/admin/subscription-tiers/:tierId/pricing", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/subscription-tiers/:tierId/pricing", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { tierId } = req.params;
       const { tierPricing } = await import("@shared/schema");
       const pricing = await db.select().from(tierPricing).where(eq(tierPricing.tierId, tierId));
@@ -19375,12 +19718,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.post("/api/admin/subscription-tiers/:tierId/pricing", isAuthenticated, async (req: any, res) => {
+  app.post("/api/admin/subscription-tiers/:tierId/pricing", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { tierId } = req.params;
       const { tierPricing } = await import("@shared/schema");
       const { currencyCode, priceMonthly, priceAnnual, perInspectionPrice } = req.body;
@@ -19398,12 +19737,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.patch("/api/admin/subscription-tiers/:tierId/pricing/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/admin/subscription-tiers/:tierId/pricing/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
       const { tierPricing } = await import("@shared/schema");
       const { priceMonthly, priceAnnual, perInspectionPrice } = req.body;
@@ -19424,12 +19759,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Add-On Pack Management
-  app.get("/api/admin/addon-packs", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/addon-packs", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const packs = await storage.getAddonPacks();
       res.json(packs);
     } catch (error: any) {
@@ -19438,12 +19769,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.post("/api/admin/addon-packs", isAuthenticated, async (req: any, res) => {
+  app.post("/api/admin/addon-packs", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { addonPackConfig } = await import("@shared/schema");
       const { name, inspectionQuantity, packOrder, isActive } = req.body;
       const [pack] = await db.insert(addonPackConfig).values({
@@ -19459,12 +19786,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.patch("/api/admin/addon-packs/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/admin/addon-packs/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
       const { addonPackConfig } = await import("@shared/schema");
       const updates: any = {};
@@ -19485,12 +19808,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Add-On Pack Pricing Management
-  app.get("/api/admin/addon-packs/:packId/pricing", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/addon-packs/:packId/pricing", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { packId } = req.params;
       const { addonPackPricing } = await import("@shared/schema");
       const pricing = await db.select().from(addonPackPricing).where(eq(addonPackPricing.packId, packId));
@@ -19501,12 +19820,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.post("/api/admin/addon-packs/:packId/pricing", isAuthenticated, async (req: any, res) => {
+  app.post("/api/admin/addon-packs/:packId/pricing", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { packId } = req.params;
       const { addonPackPricing } = await import("@shared/schema");
       const { tierId, currencyCode, pricePerInspection, totalPackPrice } = req.body;
@@ -19524,12 +19839,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.patch("/api/admin/addon-packs/:packId/pricing/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/admin/addon-packs/:packId/pricing/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
       const { addonPackPricing } = await import("@shared/schema");
       const { pricePerInspection, totalPackPrice } = req.body;
@@ -19548,12 +19859,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.delete("/api/admin/addon-packs/:packId/pricing/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/admin/addon-packs/:packId/pricing/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
       const { addonPackPricing } = await import("@shared/schema");
       await db.delete(addonPackPricing).where(eq(addonPackPricing.id, id));
@@ -19564,14 +19871,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.delete("/api/admin/addon-packs/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/admin/addon-packs/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
-      const { addonPackConfig, instanceAddonPurchases } = await import("@shared/schema");
+      const { addonPackConfig, instanceAddonPurchases, addonPackPricing } = await import("@shared/schema");
       
       // Check if pack has any active purchases
       const packPurchases = await db.select()
@@ -19587,6 +19890,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         });
       }
 
+      // Delete all pricing entries for this pack first (to avoid foreign key constraint violation)
+      await db.delete(addonPackPricing).where(eq(addonPackPricing.packId, id));
+      
+      // Now delete the pack itself
       await db.delete(addonPackConfig).where(eq(addonPackConfig.id, id));
       res.json({ message: "Pack deleted successfully" });
     } catch (error: any) {
@@ -19696,17 +20003,91 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Module Management
-  app.get("/api/admin/modules", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/modules", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const modules = await storage.getMarketplaceModules();
+      console.log(`[Admin] Fetched ${modules.length} marketplace modules`);
       res.json(modules);
     } catch (error: any) {
       console.error("Error fetching modules:", error);
       res.status(500).json({ message: "Failed to fetch modules", error: error.message });
+    }
+  });
+
+  // Get all module pricing in one request (avoids multiple parallel requests)
+  app.get("/api/admin/modules/pricing/all", isAdminAuthenticated, async (req: any, res) => {
+    try {
+      const modules = await storage.getMarketplaceModules();
+      console.log(`[Admin Pricing] Fetching pricing for ${modules.length} modules`);
+      
+      // Query all pricing directly from database to ensure we get everything
+      const { modulePricing, marketplaceModules } = await import("@shared/schema");
+      const allPricing = await db.select().from(modulePricing);
+      console.log(`[Admin Pricing] Found ${allPricing.length} total pricing entries in database`);
+      
+      // Get all modules from database to match by module_key (in case IDs don't match)
+      const allModules = await db.select().from(marketplaceModules);
+      const modulesByKey = new Map<string, any>();
+      allModules.forEach((m: any) => {
+        modulesByKey.set(m.moduleKey, m);
+      });
+      
+      // Create a map of module_key -> pricing entries
+      // First, get the module_key for each pricing entry
+      const pricingByModuleKey = new Map<string, any[]>();
+      for (const pricing of allPricing) {
+        // Find the module for this pricing entry
+        const module = allModules.find((m: any) => m.id === pricing.moduleId);
+        if (module) {
+          const key = module.moduleKey;
+          if (!pricingByModuleKey.has(key)) {
+            pricingByModuleKey.set(key, []);
+          }
+          pricingByModuleKey.get(key)!.push(pricing);
+        }
+      }
+      
+      // Match pricing to modules by module_key (more reliable than ID)
+      const pricingData = modules.map((module: any) => {
+        const pricing = pricingByModuleKey.get(module.moduleKey) || [];
+        console.log(`[Admin Pricing] Module ${module.name} (${module.moduleKey}): Found ${pricing.length} pricing entries`);
+        if (pricing.length > 0) {
+          console.log(`[Admin Pricing] Pricing details:`, pricing.map((p: any) => ({
+            id: p.id,
+            currency: p.currencyCode,
+            monthly: p.priceMonthly,
+            annual: p.priceAnnual
+          })));
+        }
+        return { moduleId: module.id, pricing };
+      });
+      
+      console.log(`[Admin Pricing] Returning pricing data for ${pricingData.length} modules`);
+      res.json(pricingData);
+    } catch (error: any) {
+      console.error("Error fetching all module pricing:", error);
+      res.status(500).json({ message: "Failed to fetch module pricing", error: error.message });
+    }
+  });
+
+  // Get instance modules (enabled/disabled status)
+  app.get("/api/admin/instances/:id/modules", isAdminAuthenticated, async (req, res) => {
+    try {
+      const org = await storage.getOrganization(req.params.id);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+      
+      const subscription = await storage.getInstanceSubscription(req.params.id);
+      if (!subscription) {
+        return res.json([]); // No subscription means no modules
+      }
+      
+      const instanceModules = await storage.getInstanceModules(subscription.id);
+      res.json(instanceModules);
+    } catch (error: any) {
+      console.error("Error fetching instance modules:", error);
+      res.status(500).json({ message: "Failed to fetch instance modules", error: error.message });
     }
   });
 
@@ -19762,28 +20143,20 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
   });
 
   // Module Pricing Management
-  app.get("/api/admin/modules/:moduleId/pricing", isAuthenticated, async (req: any, res) => {
+  app.get("/api/admin/modules/:moduleId/pricing", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { moduleId } = req.params;
-      const { modulePricing } = await import("@shared/schema");
-      const pricing = await db.select().from(modulePricing).where(eq(modulePricing.moduleId, moduleId));
-      res.json(pricing);
+      // Use storage method to get all pricing for the module (same as marketplace uses)
+      const allPricing = await storage.getAllModulePricing(moduleId);
+      res.json(allPricing);
     } catch (error: any) {
       console.error("Error fetching module pricing:", error);
       res.status(500).json({ message: "Failed to fetch module pricing", error: error.message });
     }
   });
 
-  app.post("/api/admin/modules/:moduleId/pricing", isAuthenticated, async (req: any, res) => {
+  app.post("/api/admin/modules/:moduleId/pricing", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { moduleId } = req.params;
       const { modulePricing } = await import("@shared/schema");
       const { currencyCode, priceMonthly, priceAnnual } = req.body;
@@ -19800,23 +20173,28 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.patch("/api/admin/modules/:moduleId/pricing/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/admin/modules/:moduleId/pricing/:id", isAdminAuthenticated, async (req: any, res) => {
     try {
-      const adminUser = await storage.getAdminByEmail(req.user.email);
-      if (!adminUser) {
-        return res.status(403).json({ message: "Access denied" });
-      }
       const { id } = req.params;
       const { modulePricing } = await import("@shared/schema");
       const { priceMonthly, priceAnnual } = req.body;
+      
+      console.log(`[Admin Pricing Update] Updating pricing ${id} with monthly: ${priceMonthly}, annual: ${priceAnnual}`);
+      
+      if (priceMonthly === undefined || priceAnnual === undefined) {
+        return res.status(400).json({ message: "priceMonthly and priceAnnual are required" });
+      }
+      
       const [pricing] = await db.update(modulePricing)
         .set({
-          priceMonthly,
-          priceAnnual,
+          priceMonthly: parseInt(priceMonthly, 10),
+          priceAnnual: parseInt(priceAnnual, 10),
           lastUpdated: new Date()
         })
         .where(eq(modulePricing.id, id))
         .returning();
+      
+      console.log(`[Admin Pricing Update] Updated pricing:`, pricing);
       res.json(pricing);
     } catch (error: any) {
       console.error("Error updating module pricing:", error);
@@ -20501,36 +20879,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  // Get inspection balance for current organization
-  app.get("/api/billing/inspection-balance", isAuthenticated, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.user.id);
-      if (!user?.organizationId) {
-        return res.status(400).json({ message: "User must belong to an organization" });
-      }
-
-      const org = await storage.getOrganization(user.organizationId);
-      if (!org) {
-        return res.status(404).json({ message: "Organization not found" });
-      }
-
-      // Get credit balance from batches
-      const creditBalance = await storage.getCreditBalance(user.organizationId);
-
-      res.json({
-        includedInspectionsPerMonth: org.includedInspectionsPerMonth || 0,
-        usedInspectionsThisMonth: org.usedInspectionsThisMonth || 0,
-        topupInspectionsBalance: org.topupInspectionsBalance || 0,
-        remainingMonthlyAllowance: Math.max(0, (org.includedInspectionsPerMonth || 0) - (org.usedInspectionsThisMonth || 0)),
-        totalAvailable: creditBalance.total,
-        billingCycleResetAt: org.billingCycleResetAt,
-        preferredCurrency: org.preferredCurrency || "GBP",
-      });
-    } catch (error: any) {
-      console.error("Error fetching inspection balance:", error);
-      res.status(500).json({ message: "Failed to fetch inspection balance" });
-    }
-  });
+  // DUPLICATE ENDPOINT REMOVED - Using the more comprehensive endpoint at line 2143
 
   // Cancel subscription with reason
   app.post("/api/billing/cancel", isAuthenticated, async (req: any, res) => {
@@ -20592,8 +20941,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
               });
             }
 
-            // Zero organization credits
-            await storage.updateOrganizationCredits(user.organizationId, 0);
+            // Credits are already handled by expiring batches above
+            // No need to update legacy creditsRemaining field as it's removed
 
             // Update instance subscription status
             await storage.updateInstanceSubscription(instanceSub.id, {
@@ -22700,6 +23049,15 @@ You can help the tenant with:
       if (!user.isActive) {
         console.log(`[Tenant Login] User account is inactive: ${user.email}`);
         return res.status(403).json({ message: "Account is deactivated. Please contact property management." });
+      }
+
+      // Check if user's organization is active
+      if (user.organizationId) {
+        const organization = await storage.getOrganization(user.organizationId);
+        if (organization && organization.isActive === false) {
+          console.log(`[Tenant Login] Organization ${user.organizationId} is disabled for user: ${user.email}`);
+          return res.status(403).json({ message: "Your account has been blocked. Please contact admin." });
+        }
       }
 
       console.log(`[Tenant Login] Authentication successful for user: ${user.email}`);
@@ -27016,11 +27374,11 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
             upcomingSheet.getCell(row, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
             upcomingSheet.getCell(row, 2).value = block?.name || '';
             upcomingSheet.getCell(row, 3).value = property?.name || '';
-            upcomingSheet.getCell(row, 4).value = doc.documentName || doc.documentType || '';
+            upcomingSheet.getCell(row, 4).value = doc.documentType || '';
             upcomingSheet.getCell(row, 5).value = expiry.toLocaleDateString();
             upcomingSheet.getCell(row, 6).value = daysUntil;
             upcomingSheet.getCell(row, 6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
-            upcomingSheet.getCell(row, 7).value = doc.notes || '';
+            upcomingSheet.getCell(row, 7).value = ''; // Notes field not available in schema
 
             for (let col = 1; col <= 7; col++) {
               Object.assign(upcomingSheet.getCell(row, col), cellStyle);
@@ -29304,8 +29662,9 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
       const successUrl = `${req.headers.origin}/settings?tab=marketplace&success=true&session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${req.headers.origin}/settings?tab=marketplace&canceled=true`;
 
+      // TypeScript workaround for Stripe API - mode is valid but types are incorrect
       const session = await stripe.checkout.sessions.create({
-        mode: 'subscription',
+        mode: 'subscription' as any,
         payment_method_types: ['card'],
         line_items: [{
           price_data: priceData,
@@ -29320,7 +29679,7 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
           type: type,
           itemId: id
         }
-      });
+      } as any);
 
       res.json({ url: session.url });
     } catch (error: any) {

@@ -6,15 +6,16 @@ export interface GeolocationResult {
   timezone?: string;
 }
 
-// Free IP geolocation service using ipapi.co
+// Free IP geolocation service using backend proxy to avoid CORS issues
 export async function detectUserCountry(): Promise<GeolocationResult | null> {
   try {
-    // Add timeout to prevent hanging
+    // Use backend proxy endpoint to avoid CORS issues
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
     
-    const response = await fetch("https://ipapi.co/json/", {
-      signal: controller.signal
+    const response = await fetch("/api/geolocation", {
+      signal: controller.signal,
+      credentials: "include",
     });
     
     clearTimeout(timeoutId);
@@ -27,23 +28,26 @@ export async function detectUserCountry(): Promise<GeolocationResult | null> {
     const data = await response.json();
     
     // Validate response has required fields
-    if (!data.country_code) {
+    if (!data.countryCode) {
       console.warn("IP geolocation response missing country code");
       return null;
     }
     
     return {
-      countryCode: data.country_code || "GB", // Default to GB
-      countryName: data.country_name || "United Kingdom",
+      countryCode: data.countryCode || "GB", // Default to GB
+      countryName: data.countryName || "United Kingdom",
       city: data.city,
       timezone: data.timezone,
     };
   } catch (error) {
-    // Timeout or network error
+    // Timeout or network error - fail silently
     if (error instanceof Error && error.name === 'AbortError') {
-      console.warn("Country detection timed out");
+      // Silently handle timeout
     } else {
-      console.error("Error detecting country:", error);
+      // Only log non-timeout errors in development
+      if (process.env.NODE_ENV === 'development') {
+        console.warn("Error detecting country:", error);
+      }
     }
     return null;
   }

@@ -46,8 +46,18 @@ router.post("/create-test-user", async (req, res) => {
     const organization = await storage.createOrganization({
       name: "Test Organization",
       ownerId: tempOwner.id,
-      creditsRemaining: 100,
+      // Credits are granted via credit batch system
     });
+
+    // Grant test credits via credit batch system
+    const { subscriptionService } = await import("../subscriptionService");
+    await subscriptionService.grantCredits(
+      organization.id,
+      100,
+      "admin_grant",
+      undefined,
+      { adminNotes: "Test organization credits", createdBy: tempOwner.id }
+    );
 
     const user = await storage.createUser({
       username: testUsername,
@@ -113,8 +123,18 @@ router.post("/create-test-tenant", async (req, res) => {
       org = await storage.createOrganization({
         name: "Test BTR Organization",
         ownerId: tempOwner.id,
-        creditsRemaining: 100,
+        // Credits are granted via credit batch system
       });
+
+      // Grant test credits via credit batch system
+      const { subscriptionService } = await import("../subscriptionService");
+      await subscriptionService.grantCredits(
+        org.id,
+        100,
+        "admin_grant",
+        undefined,
+        { adminNotes: "Test organization credits", createdBy: tempOwner.id }
+      );
     }
 
     // Create tenant user

@@ -278,9 +278,9 @@ export interface IStorage {
   getOrganization(id: string): Promise<Organization | undefined>;
   getOrganizationsByNormalizedEmail(email: string): Promise<Array<{ organizationId: string; organizationName: string; userRole: string }>>;
   updateOrganization(id: string, updates: Partial<InsertOrganization>): Promise<Organization>;
-  updateOrganizationCredits(id: string, credits: number): Promise<Organization>;
+  // updateOrganizationCredits removed - use credit batch system instead
   updateOrganizationStripe(id: string, customerId: string, status: string): Promise<Organization>;
-  deductCredit(organizationId: string, amount: number, description: string): Promise<Organization>;
+  // deductCredit removed - use subscriptionService.consumeCredits() instead
 
   // Contact operations
   createContact(contact: InsertContact & { organizationId: string }): Promise<Contact>;
@@ -990,14 +990,7 @@ export class DatabaseStorage implements IStorage {
       }));
   }
 
-  async updateOrganizationCredits(id: string, credits: number): Promise<Organization> {
-    const [org] = await db
-      .update(organizations)
-      .set({ creditsRemaining: credits, updatedAt: new Date() })
-      .where(eq(organizations.id, id))
-      .returning();
-    return org;
-  }
+  // updateOrganizationCredits removed - use subscriptionService.grantCredits() or consumeCredits() instead
 
   async updateOrganizationStripe(id: string, customerId: string, status: string): Promise<Organization> {
     const [org] = await db
@@ -1021,28 +1014,7 @@ export class DatabaseStorage implements IStorage {
     return org;
   }
 
-  async deductCredit(organizationId: string, amount: number, description: string): Promise<Organization> {
-    const org = await this.getOrganization(organizationId);
-    if (!org) {
-      throw new Error("Organization not found");
-    }
-
-    const currentCredits = org.creditsRemaining ?? 0;
-    if (currentCredits < amount) {
-      throw new Error("Insufficient credits");
-    }
-
-    const newCredits = currentCredits - amount;
-
-    await this.createCreditTransaction({
-      organizationId,
-      amount: -amount,
-      type: "usage",
-      description,
-    });
-
-    return await this.updateOrganizationCredits(organizationId, newCredits);
-  }
+  // deductCredit removed - use subscriptionService.consumeCredits() instead
 
   // Contact operations
   async createContact(contactData: InsertContact & { organizationId: string }): Promise<Contact> {
@@ -3347,7 +3319,7 @@ export class DatabaseStorage implements IStorage {
         subscriptionStatus: organizations.subscriptionStatus,
         subscriptionLevel: organizations.subscriptionLevel,
         isActive: organizations.isActive,
-        creditsRemaining: organizations.creditsRemaining,
+        // creditsRemaining removed - use credit batch system
         stripeCustomerId: organizations.stripeCustomerId,
         createdAt: organizations.createdAt,
         owner: {
@@ -3371,7 +3343,7 @@ export class DatabaseStorage implements IStorage {
         subscriptionStatus: organizations.subscriptionStatus,
         subscriptionLevel: organizations.subscriptionLevel,
         isActive: organizations.isActive,
-        creditsRemaining: organizations.creditsRemaining,
+        // creditsRemaining removed - use credit batch system
         stripeCustomerId: organizations.stripeCustomerId,
         createdAt: organizations.createdAt,
         updatedAt: organizations.updatedAt,
@@ -4838,7 +4810,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSubscriptionTiers(): Promise<SubscriptionTier[]> {
+    // Get all active tiers, ordered by tierOrder
     return await db.select().from(subscriptionTiersTable).where(eq(subscriptionTiersTable.isActive, true)).orderBy(subscriptionTiersTable.tierOrder);
+  }
+  
+  async getAllSubscriptionTiers(): Promise<SubscriptionTier[]> {
+    // Get all tiers (including inactive), ordered by tierOrder
+    return await db.select().from(subscriptionTiersTable).orderBy(subscriptionTiersTable.tierOrder);
   }
 
   async getInstanceSubscription(organizationId: string): Promise<InstanceSubscription | undefined> {

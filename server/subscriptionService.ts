@@ -130,14 +130,7 @@ export class SubscriptionService {
       });
     }
 
-    // Also update the legacy creditsRemaining field for backward compatibility
-    const org = await storage.getOrganization(organizationId);
-    if (org) {
-      await storage.updateOrganizationCredits(
-        organizationId,
-        Math.max(0, (org.creditsRemaining ?? 0) - quantity)
-      );
-    }
+    // Legacy creditsRemaining field removed - credits are now managed entirely through credit_batches
   }
 
   /**
@@ -202,14 +195,7 @@ export class SubscriptionService {
       linkedEntityId,
     });
 
-    // Also update the legacy creditsRemaining field for backward compatibility
-    const org = await storage.getOrganization(organizationId);
-    if (org) {
-      await storage.updateOrganizationCredits(
-        organizationId,
-        (org.creditsRemaining ?? 0) + quantity
-      );
-    }
+    // Legacy creditsRemaining field removed - credits are now managed entirely through credit_batches
 
     return batch;
   }

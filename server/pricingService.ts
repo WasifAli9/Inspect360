@@ -167,7 +167,7 @@ export class PricingService {
 
         // Enforce minimum 10 inspections
         const minInspectionCount = Math.max(inspectionCount, 10);
-        
+
         // 1. Detect appropriate tier
         const detectedTier = this.detectTier(minInspectionCount, tiers);
         if (!detectedTier) {

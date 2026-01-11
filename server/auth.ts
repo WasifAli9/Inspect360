@@ -34,23 +34,8 @@ export async function comparePasswords(
     return false;
   }
 
-  // Check if password is in scrypt format (hash.salt)
-  if (stored.includes(".")) {
-    const [hashed, salt] = stored.split(".");
-    if (!hashed || !salt) {
-      return false;
-    }
-    try {
-      const hashedBuf = Buffer.from(hashed, "hex");
-      const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-      return timingSafeEqual(hashedBuf, suppliedBuf);
-    } catch (error) {
-      console.error("Error comparing scrypt passwords:", error);
-      return false;
-    }
-  }
-
-  // Check if password is in bcrypt format (starts with $2a$, $2b$, or $2y$)
+  // Check if password is in bcrypt format FIRST (starts with $2a$, $2b$, or $2y$)
+  // This must be checked before scrypt because bcrypt hashes can also contain "."
   if (stored.startsWith("$2a$") || stored.startsWith("$2b$") || stored.startsWith("$2y$")) {
     try {
       const bcrypt = await import("bcryptjs");
@@ -61,6 +46,36 @@ export async function comparePasswords(
     }
   }
 
+  // Check if password is in scrypt format (hash.salt)
+  // Scrypt format: hex_hash.salt (e.g., "abc123...def.salt123")
+  if (stored.includes(".")) {
+    const parts = stored.split(".");
+    // Scrypt format should have exactly 2 parts: hash and salt
+    // And the hash should be valid hex (even length, no $ prefix)
+    if (parts.length === 2 && !stored.startsWith("$")) {
+      const [hashed, salt] = parts;
+      if (hashed && salt && hashed.length > 0 && salt.length > 0) {
+        try {
+          const hashedBuf = Buffer.from(hashed, "hex");
+          const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+          // Ensure buffers have the same length before comparing
+          if (hashedBuf.length === suppliedBuf.length) {
+            return timingSafeEqual(hashedBuf, suppliedBuf);
+          } else {
+            console.error("Error comparing scrypt passwords: Buffer length mismatch", {
+              hashedLength: hashedBuf.length,
+              suppliedLength: suppliedBuf.length
+            });
+            return false;
+          }
+        } catch (error) {
+          console.error("Error comparing scrypt passwords:", error);
+          return false;
+        }
+      }
+    }
+  }
+
   // Unknown format - return false for security
   console.warn("Unknown password hash format");
   return false;
@@ -68,7 +83,7 @@ export async function comparePasswords(
 
 let sessionStoreInstance: session.Store | null = null;
 
-function getSessionStore(): session.Store {
+export function getSessionStore(): session.Store {
   if (!sessionStoreInstance) {
     const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
     const pgStore = connectPg(session);
@@ -208,6 +223,14 @@ export async function setupAuth(app: Express) {
             return done(null, false, { message: "Account has been disabled. Please contact your administrator." });
           }
 
+          // Check if user's organization is active
+          if (user.organizationId) {
+            const organization = await storage.getOrganization(user.organizationId);
+            if (organization && organization.isActive === false) {
+              return done(null, false, { message: "Your account has been blocked. Please contact admin." });
+            }
+          }
+
           return done(null, user);
         } catch (error) {
           console.error("Authentication error:", error);
@@ -240,6 +263,15 @@ export async function setupAuth(app: Express) {
       if (!user.isActive) {
         console.warn(`[Deserialize] User ${id} is inactive`);
         return done(null, false);
+      }
+
+      // Check if user's organization is active
+      if (user.organizationId) {
+        const organization = await storage.getOrganization(user.organizationId);
+        if (organization && organization.isActive === false) {
+          console.warn(`[Deserialize] Organization ${user.organizationId} is disabled for user ${id}`);
+          return done(null, false);
+        }
       }
 
       done(null, user);
@@ -284,7 +316,7 @@ export async function setupAuth(app: Express) {
       if (user.role === "owner" || !user.organizationId) {
         try {
           // Get and validate country code from registration or default to GB
-          const { COMMON_COUNTRIES } = await import('../shared/countryUtils');
+          const { COMMON_COUNTRIES, getCurrencyForCountry, COUNTRY_TO_CURRENCY } = await import('../shared/countryUtils');
           let countryCode = validatedData.countryCode || "GB";
 
           // Validate country code against supported countries
@@ -294,12 +326,28 @@ export async function setupAuth(app: Express) {
             countryCode = "GB";
           }
 
+          // Determine currency based on country
+          // getCurrencyForCountry will always return GBP, USD, or AED (valid enum values)
+          // Countries not in the mapping default to GBP, which is safe for the database
+          const preferredCurrency = getCurrencyForCountry(countryCode);
+          
+          // Log for debugging if currency doesn't match country's actual currency
+          if (!COUNTRY_TO_CURRENCY[countryCode]) {
+            console.log(`[Registration] Country ${countryCode} not in currency mapping, using default: ${preferredCurrency}`);
+          }
+          
+          // Log for debugging if currency doesn't match country's actual currency
+          if (!COUNTRY_TO_CURRENCY[countryCode]) {
+            console.log(`[Registration] Country ${countryCode} not in currency mapping, using default: ${preferredCurrency}`);
+          }
+
           // Create organization using username as company name
           const organization = await storage.createOrganization({
             name: validatedData.username, // Company name from registration form
             ownerId: user.id,
             countryCode: countryCode,
-            creditsRemaining: 5, // Initial credits (will be granted via credit system)
+            preferredCurrency: preferredCurrency, // Set currency based on country
+            // Credits are now granted via credit batch system (see below)
           });
 
           // Update user with organization ID
@@ -338,8 +386,7 @@ export async function setupAuth(app: Express) {
             }
           } catch (creditError: any) {
             console.error("Warning: Failed to grant signup credits:", creditError);
-            // Fallback: Update organization credits directly if credit system fails
-            await storage.updateOrganizationCredits(organization.id, 5);
+            // No fallback - credit batch system is required
           }
 
           // Create default inspection templates
@@ -669,7 +716,7 @@ export async function setupAuth(app: Express) {
 }
 
 // Middleware to check if user is authenticated
-export function isAuthenticated(req: any, res: any, next: any) {
+export async function isAuthenticated(req: any, res: any, next: any) {
   // If deserialization failed, req.user will be false or undefined
   // Clear the invalid session and return unauthorized
   if (req.user === false) {
@@ -679,7 +726,23 @@ export function isAuthenticated(req: any, res: any, next: any) {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  if (req.isAuthenticated()) {
+  if (req.isAuthenticated() && req.user) {
+    // Check if user's organization is active
+    if (req.user.organizationId) {
+      try {
+        const organization = await storage.getOrganization(req.user.organizationId);
+        if (organization && organization.isActive === false) {
+          // Log out the user since their organization is disabled
+          req.logout((err: any) => {
+            if (err) console.error('[isAuthenticated] Error logging out user from disabled org:', err);
+          });
+          return res.status(403).json({ message: "Your account has been blocked. Please contact admin." });
+        }
+      } catch (error) {
+        console.error('[isAuthenticated] Error checking organization status:', error);
+        // Allow request to continue if we can't check org status (graceful degradation)
+      }
+    }
     return next();
   }
   res.status(401).json({ message: "Unauthorized" });

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff } from "lucide-react";
+import { queryClient } from "@/lib/queryClient";
 import logoUrl from "@assets/Inspect360 Logo_1761302629835.png";
 
 export default function AdminLogin() {
@@ -40,7 +41,14 @@ export default function AdminLogin() {
         description: `Welcome back, ${admin.firstName}!`,
       });
 
-      navigate("/admin/dashboard");
+      // Invalidate auth query to refetch user data (which will now include admin user)
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      
+      // Small delay to ensure session is saved before redirect
+      setTimeout(() => {
+        // Use window.location.href for a hard redirect to ensure clean state
+        window.location.href = "/admin/dashboard";
+      }, 100);
     } catch (error: any) {
       toast({
         variant: "destructive",

@@ -41,13 +41,9 @@ export default function Credits() {
   const locale = useLocale();
   const [selectedCredits, setSelectedCredits] = useState(10);
 
-  const { data: organization } = useQuery<{ creditsRemaining: number | null }>({
-    queryKey: ["/api/organizations", user?.organizationId],
-    queryFn: async () => {
-      const res = await fetch(`/api/organizations/${user?.organizationId}`);
-      if (!res.ok) throw new Error("Failed to fetch organization");
-      return res.json();
-    },
+  // Get credit balance from billing API
+  const { data: creditBalance } = useQuery<{ total: number }>({
+    queryKey: ["/api/billing/inspection-balance"],
     enabled: !!user?.organizationId,
   });
 
@@ -137,7 +133,7 @@ export default function Credits() {
     { amount: 100, price: 80, popular: false, discount: "20% off" },
   ];
 
-  const creditsRemaining = organization?.creditsRemaining ?? 0;
+  const creditsRemaining = creditBalance?.total ?? 0;
   const isOwner = user?.role === "owner";
   const selectedBundle = bundles.find(b => b.id === autoRenewBundleId);
 

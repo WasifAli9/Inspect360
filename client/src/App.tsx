@@ -50,8 +50,8 @@ import AdminLogin from "@/pages/AdminLogin";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminTeam from "@/pages/AdminTeam";
 import KnowledgeBase from "@/pages/KnowledgeBase";
-import EcoAdmin from "@/pages/EcoAdmin";
 import { AdminPageWrapper } from "@/components/admin-page-wrapper";
+import { SubscriptionTierManagement, AddonPackManagement, ExtensiveInspectionManagement, QuotationsManagement, ModuleManagement } from "@/pages/EcoAdminComponents";
 import TenantLogin from "@/pages/TenantLogin";
 import TenantHome from "@/pages/TenantHome";
 import TenantMaintenance from "@/pages/TenantMaintenance";
@@ -108,7 +108,11 @@ function AppContent() {
     "/admin/dashboard",
     "/admin/team",
     "/admin/knowledge-base",
-    "/admin/eco-admin",
+    "/admin/tiers",
+    "/admin/addon-packs",
+    "/admin/extensive",
+    "/admin/modules",
+    "/admin/quotations",
     "/tenant/login",
   ];
 
@@ -141,6 +145,135 @@ function AppContent() {
       setShowOnboarding(false);
     }
   }, [user]);
+
+  // Redirect admin users without organizationId to admin dashboard
+  // This must be at the top level to follow Rules of Hooks
+  // Only redirect if not already on an admin route to prevent loops
+  useLayoutEffect(() => {
+    if (user && !user.organizationId && (user.role === "admin" || (user as any).isAdmin)) {
+      // Only redirect if not already on an admin route
+      if (!location.startsWith("/admin/")) {
+        window.location.href = "/admin/dashboard";
+      }
+    }
+  }, [user, location]);
+
+  // Redirect admin users to admin dashboard if they're not on an admin route
+  // This must be at the top level to follow Rules of Hooks
+  useLayoutEffect(() => {
+    if (user && (user.role === "admin" || (user as any).isAdmin) && !location.startsWith("/admin/")) {
+      window.location.href = "/admin/dashboard";
+    }
+  }, [user, location]);
+
+  // Check if user is admin (even if not authenticated via regular auth)
+  // This handles the case where admin logs in via /api/admin/login
+  const isAdminUser = user && (user.role === "admin" || (user as any).isAdmin);
+
+  // If admin user, show admin routes (they have their own auth system)
+  if (isAdminUser) {
+    return (
+      <TooltipProvider>
+        <Switch>
+          <Route path="/admin/dashboard">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard" }]}>
+                <AdminDashboard />
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/team">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Team" }]}>
+                <AdminTeam />
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/knowledge-base">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Knowledge Base" }]}>
+                <KnowledgeBase />
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/tiers">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Tiers" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Subscription Tiers</h1>
+                    <p className="text-muted-foreground">Manage subscription tiers and pricing</p>
+                  </div>
+                  <SubscriptionTierManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/addon-packs">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Add-On Packs" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Add-On Packs</h1>
+                    <p className="text-muted-foreground">Manage add-on inspection packs and pricing</p>
+                  </div>
+                  <AddonPackManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/extensive">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Extensive" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Extensive Inspections</h1>
+                    <p className="text-muted-foreground">Manage extensive inspection types and pricing</p>
+                  </div>
+                  <ExtensiveInspectionManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/modules">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Modules" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Modules</h1>
+                    <p className="text-muted-foreground">Manage modules and pricing</p>
+                  </div>
+                  <ModuleManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/quotations">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Quotations" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Quotations</h1>
+                    <p className="text-muted-foreground">Manage quotation requests and quotes</p>
+                  </div>
+                  <QuotationsManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="*">
+            {() => (
+              <div className="flex items-center justify-center h-screen">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            )}
+          </Route>
+        </Switch>
+        <PWAInstallPrompt />
+        <Toaster />
+      </TooltipProvider>
+    );
+  }
 
   // If unauthorized and trying to access protected route, show loading while redirecting
   if (!isLoading && !isAuthenticated && isProtectedRoute) {
@@ -187,10 +320,55 @@ function AppContent() {
               </AdminPageWrapper>
             )}
           </Route>
-          <Route path="/admin/eco-admin">
+          <Route path="/admin/tiers">
             {() => (
-              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Eco Admin" }]}>
-                <EcoAdmin />
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Tiers" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Subscription Tiers</h1>
+                    <p className="text-muted-foreground">Manage subscription tiers and pricing</p>
+                  </div>
+                  <SubscriptionTierManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/addon-packs">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Add-On Packs" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Add-On Packs</h1>
+                    <p className="text-muted-foreground">Manage add-on inspection packs and pricing</p>
+                  </div>
+                  <AddonPackManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/extensive">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Extensive" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Extensive Inspections</h1>
+                    <p className="text-muted-foreground">Manage extensive inspection types and pricing</p>
+                  </div>
+                  <ExtensiveInspectionManagement />
+                </div>
+              </AdminPageWrapper>
+            )}
+          </Route>
+          <Route path="/admin/quotations">
+            {() => (
+              <AdminPageWrapper breadcrumbs={[{ label: "Dashboard", href: "/admin/dashboard" }, { label: "Quotations" }]}>
+                <div className="container mx-auto p-6 max-w-7xl">
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">Quotations</h1>
+                    <p className="text-muted-foreground">Manage quotation requests and quotes</p>
+                  </div>
+                  <QuotationsManagement />
+                </div>
               </AdminPageWrapper>
             )}
           </Route>
@@ -257,8 +435,9 @@ function AppContent() {
     );
   }
 
-  // Authenticated but no organization - show onboarding (for staff users only)
-  if (user && !user.organizationId) {
+  // Authenticated but no organization - show onboarding (for staff users only, not admins)
+  // Admins don't need organizations, they should use the admin portal
+  if (user && !user.organizationId && user.role !== "admin" && !user.isAdmin) {
     return (
       <TooltipProvider>
         <Switch>
@@ -268,6 +447,24 @@ function AppContent() {
         <Toaster />
       </TooltipProvider>
     );
+  }
+
+  // If admin user somehow gets here without organizationId, allow them to access admin routes
+  // The redirect is handled by useLayoutEffect above, but if they're already on an admin route, let them through
+  // Admin routes are handled separately and don't require organizationId
+  if (user && !user.organizationId && (user.role === "admin" || (user as any).isAdmin)) {
+    // If on admin route, allow access (AdminPageWrapper will handle auth check)
+    if (location.startsWith("/admin/")) {
+      // Allow admin routes to render - they have their own auth wrapper
+      // Don't return early, let the routing continue
+    } else {
+      // Not on admin route, show loading while redirecting
+      return (
+        <div className="flex items-center justify-center h-screen">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      );
+    }
   }
 
   // Authenticated with organization - show app with sidebar
@@ -280,6 +477,7 @@ function AppContent() {
       </TooltipProvider>
     );
   }
+
 
   return (
     <TooltipProvider>
