@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequestJson, API_URL } from '../services/api';
+import { apiRequestJson, getAPI_URL } from '../services/api';
 import { colors, spacing, typography, shadows } from '../theme';
+import { useTheme } from '../contexts/ThemeContext';
 import { Menu } from 'lucide-react-native';
 
 interface Organization {
@@ -20,6 +21,9 @@ interface AppHeaderProps {
 }
 
 export default function AppHeader({ onMenuPress }: AppHeaderProps) {
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
   const { user } = useAuth();
   const [logoError, setLogoError] = React.useState(false);
@@ -37,7 +41,7 @@ export default function AppHeader({ onMenuPress }: AppHeaderProps) {
   // Web app uses: import defaultLogoUrl from "@assets/Inspect360 Logo_1761302629835.png";
   // Server now serves this at /default-logo.png route (from attached_assets folder)
   // This matches the web app's default logo behavior
-  const defaultLogoUrl = `${API_URL}/default-logo.png`;
+  const defaultLogoUrl = `${getAPI_URL()}/default-logo.png`;
 
   // Get logo source with cache busting - EXACTLY matching web app logic
   // From web app: if (!organization?.logoUrl) return defaultLogoUrl;
@@ -53,7 +57,7 @@ export default function AppHeader({ onMenuPress }: AppHeaderProps) {
     // If logoUrl is a relative path, prepend API_URL
     if (logoUrl && !logoUrl.startsWith('http')) {
       logoUrl = logoUrl.startsWith('/') ? logoUrl : `/${logoUrl}`;
-      logoUrl = `${API_URL}${logoUrl}`;
+      logoUrl = `${getAPI_URL()}${logoUrl}`;
     }
     
     const separator = logoUrl.includes('?') ? '&' : '?';

@@ -13,12 +13,11 @@ import {
   User,
   Camera,
   Plus,
-  Pencil,
   Sparkles,
 } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { inspectionsService } from '../../services/inspections';
-import { apiRequestJson, API_URL } from '../../services/api';
+import { apiRequestJson, getAPI_URL } from '../../services/api';
 import type { InspectionsStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -33,6 +32,9 @@ export default function InspectionReviewScreen() {
   const route = useRoute<RoutePropType>();
   const navigation = useNavigation<NavProp>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const { inspectionId } = route.params;
 
   const { data: inspection, isLoading } = useQuery({
@@ -142,7 +144,7 @@ export default function InspectionReviewScreen() {
   const isCompleted = inspection.status === 'completed';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView 
         contentContainerStyle={[
           styles.content,
@@ -158,11 +160,12 @@ export default function InspectionReviewScreen() {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <ArrowLeft size={24} color={colors.text.primary} />
+            <ArrowLeft size={24} color={themeColors.text.primary} />
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
-            <Text style={styles.pageTitle}>Inspection Details</Text>
-            <Text style={styles.pageSubtitle}>{getPropertyName()}</Text>
+            <Text style={styles.pageTitle} numberOfLines={1}>
+              Inspection Details
+            </Text>
           </View>
           <View style={styles.headerActions}>
             {inspection.status !== 'completed' && (
@@ -172,7 +175,7 @@ export default function InspectionReviewScreen() {
                 disabled={completeInspection.isPending}
                 variant="default"
                 size="sm"
-                icon={<CheckCircle2 size={16} color={colors.primary.foreground} />}
+                icon={<CheckCircle2 size={16} color={themeColors.primary.foreground} />}
                 style={styles.completeButton}
                 loading={completeInspection.isPending}
               />
@@ -197,7 +200,7 @@ export default function InspectionReviewScreen() {
                 );
               }}
             >
-              <Trash2 size={20} color={colors.destructive.DEFAULT} />
+              <Trash2 size={20} color={themeColors.destructive.DEFAULT} />
             </TouchableOpacity>
           </View>
         </View>
@@ -207,20 +210,11 @@ export default function InspectionReviewScreen() {
           {/* Inspection Information Card */}
           <Card style={styles.infoCard}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Inspection Information</Text>
-              <TouchableOpacity
-                style={styles.editButton}
-                onPress={() => {
-                  // TODO: Implement edit functionality
-                  Alert.alert('Edit', 'Edit functionality to be implemented');
-                }}
-              >
-                <Pencil size={16} color={colors.text.secondary} />
-              </TouchableOpacity>
+              <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Inspection Information</Text>
             </View>
             <View style={styles.cardContent}>
               <View style={styles.cardInfoRow}>
-                <Text style={styles.cardLabel}>Status:</Text>
+                <Text style={[styles.cardLabel, { color: themeColors.text.secondary }]}>Status:</Text>
                 {getStatusBadge(inspection.status)}
               </View>
               <View style={styles.cardInfoRow}>
@@ -228,8 +222,8 @@ export default function InspectionReviewScreen() {
                 {getTypeBadge(inspection.type)}
               </View>
               <View style={styles.cardInfoRow}>
-                <Calendar size={16} color={colors.text.secondary} />
-                <Text style={styles.cardValue}>
+                <Calendar size={16} color={themeColors.text.secondary} />
+                <Text style={[styles.cardValue, { color: themeColors.text.primary }]}>
                   {inspection.scheduledDate
                     ? format(new Date(inspection.scheduledDate), 'MMMM dd, yyyy')
                     : 'Not scheduled'}
@@ -237,8 +231,8 @@ export default function InspectionReviewScreen() {
               </View>
               {inspection.completedDate && (
                 <View style={styles.cardInfoRow}>
-                  <CheckCircle2 size={16} color={colors.text.secondary} />
-                  <Text style={styles.cardValue}>
+                  <CheckCircle2 size={16} color={themeColors.text.secondary} />
+                  <Text style={[styles.cardValue, { color: themeColors.text.primary }]}>
                     Completed: {format(new Date(inspection.completedDate), 'MMMM dd, yyyy')}
                   </Text>
                 </View>
@@ -249,23 +243,23 @@ export default function InspectionReviewScreen() {
           {/* Property Card */}
           <Card style={styles.infoCard}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Property</Text>
+              <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Property</Text>
             </View>
             <View style={styles.cardContent}>
               <View style={styles.propertySection}>
                 <View style={styles.cardInfoRow}>
-                  <MapPin size={16} color={colors.text.secondary} />
-                  <Text style={styles.propertyName}>{getPropertyName()}</Text>
+                  <MapPin size={16} color={themeColors.text.secondary} />
+                  <Text style={[styles.propertyName, { color: themeColors.text.primary }]}>{getPropertyName()}</Text>
                 </View>
-                <Text style={styles.propertyAddress}>{getPropertyAddress()}</Text>
+                <Text style={[styles.propertyAddress, { color: themeColors.text.secondary }]}>{getPropertyAddress()}</Text>
               </View>
               {clerk && (
                 <View style={styles.clerkSection}>
                   <View style={styles.cardInfoRow}>
-                    <User size={16} color={colors.text.secondary} />
+                    <User size={16} color={themeColors.text.secondary} />
                     <Text style={styles.cardLabel}>Assigned Clerk:</Text>
                   </View>
-                  <Text style={styles.clerkEmail}>{clerk.email}</Text>
+                  <Text style={[styles.clerkEmail, { color: themeColors.text.primary }]}>{clerk.email}</Text>
                 </View>
               )}
             </View>
@@ -276,9 +270,9 @@ export default function InspectionReviewScreen() {
         {inspection.notes && (
           <Card style={styles.notesCard}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Notes</Text>
+              <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Notes</Text>
             </View>
-            <Text style={styles.notesText}>{inspection.notes}</Text>
+            <Text style={[styles.notesText, { color: themeColors.text.primary }]}>{inspection.notes}</Text>
           </Card>
         )}
 
@@ -286,8 +280,8 @@ export default function InspectionReviewScreen() {
         <Card style={styles.itemsCard}>
           <View style={styles.itemsCardHeader}>
             <View style={styles.itemsCardTitleContainer}>
-              <Text style={styles.cardTitle}>Inspection Items</Text>
-              <Text style={styles.cardDescription}>
+              <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Inspection Items</Text>
+              <Text style={[styles.cardDescription, { color: themeColors.text.secondary }]}>
                 Photos and condition assessments for this inspection
               </Text>
             </View>
@@ -295,12 +289,21 @@ export default function InspectionReviewScreen() {
               <Button
                 title="Add Item"
                 onPress={() => {
-                  // TODO: Implement add item functionality
-                  Alert.alert('Add Item', 'Add item functionality to be implemented');
+                  // Navigate to Asset Inventory with auto-open and pre-filled property/block
+                  // Navigate to Assets tab with AssetInventoryList screen and params
+                  (navigation.getParent()?.getParent() as any)?.navigate('Assets', {
+                    screen: 'AssetInventoryList',
+                    params: {
+                      propertyId: inspection?.propertyId,
+                      blockId: inspection?.blockId,
+                      autoOpen: true,
+                      inspectionId: inspectionId,
+                    },
+                  });
                 }}
                 variant="default"
                 size="sm"
-                icon={<Plus size={16} color={colors.primary.foreground} />}
+                icon={<Plus size={16} color={themeColors.primary.foreground} />}
               />
             )}
           </View>
@@ -308,9 +311,9 @@ export default function InspectionReviewScreen() {
           <View style={styles.itemsContent}>
             {items.length === 0 ? (
               <View style={styles.emptyItemsContainer}>
-                <Camera size={48} color={colors.text.muted} />
-                <Text style={styles.emptyItemsTitle}>No inspection items yet</Text>
-                <Text style={styles.emptyItemsText}>
+                <Camera size={48} color={themeColors.text.muted} />
+                <Text style={[styles.emptyItemsTitle, { color: themeColors.text.primary }]}>No inspection items yet</Text>
+                <Text style={[styles.emptyItemsText, { color: themeColors.text.secondary }]}>
                   Add inspection items to document the condition of this property
                 </Text>
               </View>
@@ -333,8 +336,8 @@ export default function InspectionReviewScreen() {
                           <Image
                             source={{ 
                               uri: item.photoUrl.startsWith('/objects/') 
-                                ? `${API_URL}${item.photoUrl}`
-                                : `${API_URL}/objects/${item.photoUrl}`
+                                ? `${getAPI_URL()}${item.photoUrl}`
+                                : `${getAPI_URL()}/objects/${item.photoUrl}`
                             }}
                             style={styles.itemPhoto}
                             resizeMode="cover"
@@ -351,7 +354,7 @@ export default function InspectionReviewScreen() {
                       {item.aiAnalysis && (
                         <View style={styles.itemAiContainer}>
                           <View style={styles.itemAiHeader}>
-                            <Sparkles size={16} color={colors.primary.DEFAULT} />
+                            <Sparkles size={16} color={themeColors.primary.DEFAULT} />
                             <Text style={styles.itemAiTitle}>AI Analysis</Text>
                           </View>
                           <Text style={styles.itemAiText}>{item.aiAnalysis}</Text>
@@ -393,12 +396,6 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
-  },
-  pageSubtitle: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
-    marginTop: spacing[1],
   },
   headerActions: {
     flexDirection: 'row',
@@ -430,15 +427,10 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
   },
   cardDescription: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginTop: spacing[1],
-  },
-  editButton: {
-    padding: spacing[1],
   },
   cardContent: {
     gap: spacing[4],
@@ -450,11 +442,9 @@ const styles = StyleSheet.create({
   },
   cardLabel: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
   },
   cardValue: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
   },
   propertySection: {
     gap: spacing[1],
@@ -462,11 +452,9 @@ const styles = StyleSheet.create({
   propertyName: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
   },
   propertyAddress: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginLeft: 24, // Icon width + gap
   },
   clerkSection: {
@@ -475,7 +463,6 @@ const styles = StyleSheet.create({
   },
   clerkEmail: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
     marginLeft: 24, // Icon width + gap
   },
   notesCard: {
@@ -484,7 +471,6 @@ const styles = StyleSheet.create({
   },
   notesText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
     lineHeight: typography.lineHeight.relaxed * typography.fontSize.sm,
   },
   itemsCard: {
@@ -510,13 +496,11 @@ const styles = StyleSheet.create({
   },
   emptyItemsTitle: {
     fontSize: typography.fontSize.base,
-    color: colors.text.secondary,
     marginTop: spacing[4],
     marginBottom: spacing[2],
   },
   emptyItemsText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     textAlign: 'center',
   },
   itemsGrid: {
@@ -538,11 +522,9 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
   },
   itemCategory: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginTop: spacing[1],
   },
   itemContent: {
@@ -552,7 +534,6 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
-    backgroundColor: colors.background,
   },
   itemPhoto: {
     width: '100%',
@@ -560,17 +541,14 @@ const styles = StyleSheet.create({
   },
   itemNotesContainer: {
     padding: spacing[3],
-    backgroundColor: colors.background,
     borderRadius: borderRadius.md,
   },
   itemNotes: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
     lineHeight: typography.lineHeight.relaxed * typography.fontSize.sm,
   },
   itemAiContainer: {
     padding: spacing[3],
-    backgroundColor: colors.background,
     borderRadius: borderRadius.md,
   },
   itemAiHeader: {
@@ -582,11 +560,9 @@ const styles = StyleSheet.create({
   itemAiTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
   },
   itemAiText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     lineHeight: typography.lineHeight.relaxed * typography.fontSize.sm,
   },
   errorContainer: {
@@ -598,7 +574,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     marginBottom: spacing[4],
   },
 });

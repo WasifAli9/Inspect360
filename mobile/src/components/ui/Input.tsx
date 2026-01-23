@@ -1,6 +1,7 @@
 import React from 'react';
 import { TextInput, Text, View, StyleSheet, TextInputProps } from 'react-native';
 import { colors, spacing, typography, borderRadius } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -8,6 +9,9 @@ interface InputProps extends TextInputProps {
 }
 
 export default function Input({ label, error, style, multiline, secureTextEntry, editable, autoCorrect, required, ...props }: InputProps) {
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   // Ensure boolean props are actually booleans, not strings
   const safeMultiline = typeof multiline === 'boolean' ? multiline : multiline === true || multiline === 'true';
   const safeSecureTextEntry = typeof secureTextEntry === 'boolean' ? secureTextEntry : secureTextEntry === true || secureTextEntry === 'true';
@@ -37,21 +41,30 @@ export default function Input({ label, error, style, multiline, secureTextEntry,
   return (
     <View style={styles.container}>
       {label && (
-        <Text style={styles.label}>
+        <Text style={[styles.label, { color: themeColors.text.primary }]}>
           {label}
-          {safeRequired && <Text style={styles.required}> *</Text>}
+          {safeRequired && <Text style={[styles.required, { color: themeColors.destructive.DEFAULT }]}> *</Text>}
         </Text>
       )}
       <TextInput
-        style={[styles.input, !!error && styles.inputError, style]}
-        placeholderTextColor={colors.text.muted}
+        style={[
+          styles.input,
+          {
+            borderColor: themeColors.border.DEFAULT,
+            backgroundColor: themeColors.input,
+            color: themeColors.text.primary,
+          },
+          !!error && { borderColor: themeColors.destructive.DEFAULT },
+          style
+        ]}
+        placeholderTextColor={themeColors.text.muted}
         multiline={safeMultiline}
         secureTextEntry={safeSecureTextEntry}
         editable={safeEditable}
         autoCorrect={safeAutoCorrect}
         {...safeProps}
       />
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && <Text style={[styles.errorText, { color: themeColors.destructive.DEFAULT }]}>{error}</Text>}
     </View>
   );
 }
@@ -64,29 +77,24 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
     marginBottom: spacing[2],
-    color: colors.text.primary,
     fontFamily: typography.fontFamily.sans,
     letterSpacing: 0.2,
   },
   required: {
-    color: colors.destructive.DEFAULT,
+    // Color set dynamically
   },
   input: {
     borderWidth: 1.5, // Slightly thicker border for modern look
-    borderColor: colors.input,
     borderRadius: borderRadius.lg, // More rounded
     padding: spacing[3],
     fontSize: typography.fontSize.base,
-    backgroundColor: colors.background,
-    color: colors.text.primary,
     minHeight: 48, // Slightly taller for better touch targets
     fontFamily: typography.fontFamily.sans,
   },
   inputError: {
-    borderColor: colors.destructive.DEFAULT,
+    // Border color set dynamically
   },
   errorText: {
-    color: colors.destructive.DEFAULT,
     fontSize: typography.fontSize.xs,
     marginTop: spacing[1],
   },

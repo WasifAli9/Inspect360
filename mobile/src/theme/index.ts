@@ -74,6 +74,8 @@ export const shadows = {
 };
 
 export { colors, spacing, typography };
+export { useTheme } from '../contexts/ThemeContext';
+// Note: themeColors is NOT exported from here - it's only available via useTheme() hook
 
 export default {
   colors,

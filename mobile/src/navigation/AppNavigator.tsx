@@ -5,6 +5,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ClipboardList, Wrench, Package, User } from 'lucide-react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { colors } from '../theme';
 import type { 
   RootStackParamList, 
   AuthStackParamList, 
@@ -116,14 +118,19 @@ function AssetsNavigator() {
 
 function MainTabNavigator() {
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   
   return (
     <MainTabs.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#00D5CC',
-        tabBarInactiveTintColor: '#8E8E93',
+        tabBarActiveTintColor: themeColors.primary.DEFAULT,
+        tabBarInactiveTintColor: themeColors.text.secondary,
         tabBarStyle: {
+          backgroundColor: themeColors.card.DEFAULT,
+          borderTopColor: themeColors.border.DEFAULT,
           paddingBottom: Math.max(insets.bottom, 8),
           height: 60 + Math.max(insets.bottom, 8),
         },
@@ -162,9 +169,22 @@ function MainTabNavigator() {
 }
 
 export default function AppNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   
-  if (isLoading) return null;
+  // Show loading screen instead of null to prevent black screen
+  if (isLoading) {
+    return (
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <RootStack.Navigator screenOptions={{ headerShown: false }}>
+            <RootStack.Screen name="Auth" component={AuthNavigator} />
+          </RootStack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    );
+  }
+
+  console.log('[AppNavigator] Render - isAuthenticated:', isAuthenticated, 'user:', user?.email);
 
   return (
     <SafeAreaProvider>

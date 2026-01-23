@@ -361,6 +361,30 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import multer from "multer";
 import { format } from "date-fns";
+
+/**
+ * Safely log error without causing serialization issues
+ * Handles circular references and un-serializable properties
+ */
+function safeErrorLog(message: string, error: any): void {
+  try {
+    const errorMessage = error?.message || error?.toString() || "Unknown error";
+    console.error(message, errorMessage);
+    if (error?.stack) {
+      console.error("Stack trace:", error.stack);
+    }
+    // Log additional error properties if they exist and are safe
+    if (error?.name) {
+      console.error("Error name:", error.name);
+    }
+    if (error?.code) {
+      console.error("Error code:", error.code);
+    }
+  } catch (logError) {
+    // If even logging fails, just log a basic message
+    console.error(message, "Failed to log error details");
+  }
+}
 import { devRouter } from "./devRoutes";
 import { sendInspectionCompleteEmail, sendTeamWorkOrderNotification, sendContractorWorkOrderNotification, sendComparisonReportToFinance } from "./resend";
 import { DEFAULT_TEMPLATES } from "./defaultTemplates";
@@ -1060,7 +1084,7 @@ async function isModuleAvailableForInstance(moduleKey: string, organizationId: s
     const instanceModule = await storage.getInstanceModuleByModuleKey(instanceSub.id, moduleKey);
     return instanceModule?.isEnabled === true;
   } catch (error) {
-    console.error(`Error checking module availability for ${moduleKey}:`, error);
+    console.error(`Error checking module availability for ${moduleKey}:`, error?.message || error?.toString() || "Unknown error");
     return false;
   }
 }
@@ -1135,7 +1159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('[Google Maps API] API key found, returning to client (length:', apiKey.length, ')');
       res.json({ apiKey, configured: true });
     } catch (error) {
-      console.error("Error fetching Google Maps API key:", error);
+      console.error("Error fetching Google Maps API key:", error?.message || error?.toString() || "Unknown error");
       res.status(500).json({ error: "Failed to fetch API key", apiKey: null, configured: false });
     }
   });
@@ -13188,7 +13212,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       });
       res.status(201).json(asset);
     } catch (error: any) {
-      console.error("Error creating asset inventory:", error);
+      safeErrorLog("Error creating asset inventory:", error);
       if (error.name === "ZodError") {
         return res.status(400).json({ error: "Invalid request data", details: error.errors });
       }
@@ -13513,7 +13537,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const asset = await storage.updateAssetInventory(req.params.id, validatedData);
       res.json(asset);
     } catch (error: any) {
-      console.error("Error updating asset inventory:", error);
+      safeErrorLog("Error updating asset inventory:", error);
       if (error.name === "ZodError") {
         return res.status(400).json({ error: "Invalid request data", details: error.errors });
       }
@@ -16116,7 +16140,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
       res.status(200).json({ objectPath });
     } catch (error: any) {
-      console.error("Error setting object ACL:", error);
+      safeErrorLog("Error setting object ACL:", error);
       const errorMessage = error?.message || "Internal server error";
       res.status(500).json({ error: errorMessage });
     }

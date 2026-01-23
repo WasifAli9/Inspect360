@@ -11,7 +11,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Calendar, User as UserIcon, FileText, Building } from 'lucide-react-native';
+import { ChevronLeft, Calendar, User as UserIcon, FileText, Building, WifiOff } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { inspectionsService } from '../../services/inspections';
 import { apiRequestJson } from '../../services/api';
@@ -20,8 +20,11 @@ import type { InspectionsStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { colors, spacing, typography, borderRadius } from '../../theme';
+import DatePicker from '../../components/ui/DatePicker';
+import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 
 type NavigationProp = StackNavigationProp<InspectionsStackParamList, 'CreateInspection'>;
 
@@ -56,6 +59,13 @@ const INSPECTION_TYPES = [
 export default function CreateInspectionScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
+  
+  // Get theme colors with fallback - hooks must be called unconditionally
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
+  
+  const isOnline = useOnlineStatus();
   const [formData, setFormData] = useState<FormData>({
     targetType: 'property',
     propertyId: '',
@@ -128,6 +138,16 @@ export default function CreateInspectionScreen() {
   });
 
   const handleSubmit = () => {
+    // Prevent creation when offline
+    if (!isOnline) {
+      Alert.alert(
+        'Offline Mode',
+        'You cannot create new inspections while offline. Please connect to the internet to create a new inspection.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     // Validate required fields
     if (formData.targetType === 'property' && !formData.propertyId) {
       Alert.alert('Validation Error', 'Please select a property');
@@ -195,42 +215,65 @@ export default function CreateInspectionScreen() {
   const selectedTenant = tenants.find((t: any) => t.id === formData.tenantId);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top + spacing[2], spacing[6]) }]}>
+      <View style={[styles.header, { 
+        backgroundColor: themeColors.card.DEFAULT,
+        borderBottomColor: themeColors.border.light,
+        paddingTop: Math.max(insets.top + spacing[2], spacing[6]) 
+      }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
-          <ChevronLeft size={24} color={colors.text.primary} />
+          <ChevronLeft size={24} color={themeColors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create New Inspection</Text>
+        <Text style={[styles.headerTitle, { color: themeColors.text.primary }]}>Create New Inspection</Text>
         <View style={styles.iconButton} />
       </View>
 
+      {/* Offline Banner */}
+      {!isOnline && (
+        <Card style={styles.offlineBanner}>
+          <View style={styles.offlineBannerContent}>
+            <WifiOff size={16} color={themeColors.warning} />
+            <View style={styles.offlineBannerTextContainer}>
+              <Text style={[styles.offlineBannerText, { color: themeColors.text.primary }]}>Working Offline</Text>
+              <Text style={[styles.offlineBannerDescription, { color: themeColors.text.secondary }]}>
+                You cannot create new inspections while offline. Please connect to the internet to create a new inspection.
+              </Text>
+            </View>
+          </View>
+        </Card>
+      )}
+
       <ScrollView 
-        style={styles.content} 
+        style={[styles.content, { backgroundColor: themeColors.background }]} 
         contentContainerStyle={[
           styles.contentContainer,
           { 
-            paddingTop: Math.max(insets.top + spacing[4], spacing[8]),
+            paddingTop: spacing[4],
             paddingBottom: Math.max(insets.bottom + 80, spacing[8]) 
           }
         ]}
+        showsVerticalScrollIndicator={false}
       >
-        <Card style={styles.card}>
+        <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
           {/* Inspection Target */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Inspection Target *</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Inspection Target *</Text>
             <View style={styles.targetTypeRow}>
               <TouchableOpacity
                 style={[
                   styles.targetTypeButton,
-                  formData.targetType === 'property' && styles.targetTypeButtonActive,
+                  { 
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: formData.targetType === 'property' ? themeColors.primary.DEFAULT : themeColors.background 
+                  }
                 ]}
                 onPress={() => handleTargetTypeChange('property')}
               >
                 <Text
                   style={[
                     styles.targetTypeText,
-                    formData.targetType === 'property' && styles.targetTypeTextActive,
+                    { color: formData.targetType === 'property' ? themeColors.primary.foreground : themeColors.text.primary }
                   ]}
                 >
                   Property (Unit)
@@ -239,14 +282,17 @@ export default function CreateInspectionScreen() {
               <TouchableOpacity
                 style={[
                   styles.targetTypeButton,
-                  formData.targetType === 'block' && styles.targetTypeButtonActive,
+                  { 
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: formData.targetType === 'block' ? themeColors.primary.DEFAULT : themeColors.background 
+                  }
                 ]}
                 onPress={() => handleTargetTypeChange('block')}
               >
                 <Text
                   style={[
                     styles.targetTypeText,
-                    formData.targetType === 'block' && styles.targetTypeTextActive,
+                    { color: formData.targetType === 'block' ? themeColors.primary.foreground : themeColors.text.primary }
                   ]}
                 >
                   Block (Building)
@@ -258,26 +304,35 @@ export default function CreateInspectionScreen() {
           {/* Block Selection (if targetType is block) */}
           {formData.targetType === 'block' && (
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Block *</Text>
+              <Text style={[styles.label, { color: themeColors.text.primary }]}>Block *</Text>
               <TouchableOpacity
-                style={styles.selectButton}
+                style={[styles.selectButton, { 
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: themeColors.input 
+                }]}
                 onPress={() => setShowBlockPicker(true)}
               >
-                <Building size={16} color={colors.text.secondary} />
-                <Text style={[styles.selectButtonText, !formData.blockId && styles.placeholder]}>
+                <Building size={16} color={themeColors.text.secondary} />
+                <Text style={[
+                  styles.selectButtonText, 
+                  { color: formData.blockId ? themeColors.text.primary : themeColors.text.muted }
+                ]}>
                   {selectedBlock?.name || 'Select block'}
                 </Text>
               </TouchableOpacity>
               {showBlockPicker && (
-                <View style={styles.pickerContainer}>
-                  <ScrollView style={styles.pickerScroll}>
+                <View style={[styles.pickerContainer, { 
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: themeColors.card.DEFAULT 
+                }]}>
+                  <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={true}>
                     {blocks.map((block: any) => (
                       <TouchableOpacity
                         key={block.id}
-                        style={styles.pickerItem}
+                        style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                         onPress={() => handleBlockChange(block.id)}
                       >
-                        <Text style={styles.pickerItemText}>{block.name}</Text>
+                        <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{block.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -295,26 +350,35 @@ export default function CreateInspectionScreen() {
           {/* Property Selection (if targetType is property) */}
           {formData.targetType === 'property' && (
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Property *</Text>
+              <Text style={[styles.label, { color: themeColors.text.primary }]}>Property *</Text>
               <TouchableOpacity
-                style={styles.selectButton}
+                style={[styles.selectButton, { 
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: themeColors.input 
+                }]}
                 onPress={() => setShowPropertyPicker(true)}
               >
-                <Building size={16} color={colors.text.secondary} />
-                <Text style={[styles.selectButtonText, !formData.propertyId && styles.placeholder]}>
+                <Building size={16} color={themeColors.text.secondary} />
+                <Text style={[
+                  styles.selectButtonText, 
+                  { color: formData.propertyId ? themeColors.text.primary : themeColors.text.muted }
+                ]}>
                   {selectedProperty?.name || 'Select property'}
                 </Text>
               </TouchableOpacity>
               {showPropertyPicker && (
-                <View style={styles.pickerContainer}>
-                  <ScrollView style={styles.pickerScroll}>
+                <View style={[styles.pickerContainer, { 
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: themeColors.card.DEFAULT 
+                }]}>
+                  <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={true}>
                     {properties.map((property: any) => (
                       <TouchableOpacity
                         key={property.id}
-                        style={styles.pickerItem}
+                        style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                         onPress={() => handlePropertyChange(property.id)}
                       >
-                        <Text style={styles.pickerItemText}>{property.name}</Text>
+                        <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{property.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -329,10 +393,10 @@ export default function CreateInspectionScreen() {
 
               {/* Active Tenants Display */}
               {selectedPropertyId && tenants.length > 0 && (
-                <View style={styles.tenantsContainer}>
-                  <Text style={styles.tenantsTitle}>Active Tenants</Text>
+                <View style={[styles.tenantsContainer, { backgroundColor: themeColors.card.DEFAULT }]}>
+                  <Text style={[styles.tenantsTitle, { color: themeColors.text.primary }]}>Active Tenants</Text>
                   {tenants.filter((t: any) => t.assignment?.isActive).length === 0 ? (
-                    <Text style={styles.noTenantsText}>No active tenants at this property</Text>
+                    <Text style={[styles.noTenantsText, { color: themeColors.text.secondary }]}>No active tenants at this property</Text>
                   ) : (
                     <View style={styles.tenantsList}>
                       {tenants
@@ -343,9 +407,9 @@ export default function CreateInspectionScreen() {
                           const fullName = `${firstName} ${lastName}`.trim() || 'Unnamed Tenant';
                           const email = tenant.tenant?.email || tenant.email || '';
                           return (
-                            <View key={tenant.id} style={styles.tenantItem}>
-                              <View style={styles.tenantAvatar}>
-                                <Text style={styles.tenantInitials}>
+                            <View key={tenant.id} style={[styles.tenantItem, { backgroundColor: themeColors.background }]}>
+                              <View style={[styles.tenantAvatar, { backgroundColor: themeColors.primary.DEFAULT }]}>
+                                <Text style={[styles.tenantInitials, { color: themeColors.primary.foreground }]}>
                                   {fullName
                                     .split(' ')
                                     .map(n => n[0])
@@ -355,11 +419,11 @@ export default function CreateInspectionScreen() {
                                 </Text>
                               </View>
                               <View style={styles.tenantInfo}>
-                                <Text style={styles.tenantName}>{fullName}</Text>
-                                {email && <Text style={styles.tenantEmail}>{email}</Text>}
+                                <Text style={[styles.tenantName, { color: themeColors.text.primary }]}>{fullName}</Text>
+                                {email && <Text style={[styles.tenantEmail, { color: themeColors.text.secondary }]}>{email}</Text>}
                               </View>
-                              <View style={styles.activeBadge}>
-                                <Text style={styles.activeBadgeText}>Active</Text>
+                              <View style={[styles.activeBadge, { backgroundColor: themeColors.success || '#10B981' }]}>
+                                <Text style={[styles.activeBadgeText, { color: '#fff' }]}>Active</Text>
                               </View>
                             </View>
                           );
@@ -372,40 +436,49 @@ export default function CreateInspectionScreen() {
               {/* Tenant Selection (optional) */}
               {selectedPropertyId && tenants.length > 0 && (
                 <View style={[styles.formGroup, { marginTop: spacing[4] }]}>
-                  <Text style={styles.label}>Assign to Tenant (Optional)</Text>
+                  <Text style={[styles.label, { color: themeColors.text.primary }]}>Assign to Tenant (Optional)</Text>
                   <TouchableOpacity
-                    style={styles.selectButton}
+                    style={[styles.selectButton, { 
+                      borderColor: themeColors.border.DEFAULT,
+                      backgroundColor: themeColors.input 
+                    }]}
                     onPress={() => setShowTenantPicker(true)}
                   >
-                    <UserIcon size={16} color={colors.text.secondary} />
-                    <Text style={[styles.selectButtonText, !formData.tenantId && styles.placeholder]}>
+                    <UserIcon size={16} color={themeColors.text.secondary} />
+                    <Text style={[
+                      styles.selectButtonText, 
+                      { color: formData.tenantId ? themeColors.text.primary : themeColors.text.muted }
+                    ]}>
                       {selectedTenant
                         ? `${selectedTenant.firstName || ''} ${selectedTenant.lastName || ''}`.trim()
                         : 'No tenant selected'}
                     </Text>
                   </TouchableOpacity>
                   {showTenantPicker && (
-                    <View style={styles.pickerContainer}>
-                      <ScrollView style={styles.pickerScroll}>
+                    <View style={[styles.pickerContainer, { 
+                      borderColor: themeColors.border.DEFAULT,
+                      backgroundColor: themeColors.card.DEFAULT 
+                    }]}>
+                      <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={true}>
                         <TouchableOpacity
-                          style={styles.pickerItem}
+                          style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                           onPress={() => {
                             setFormData({ ...formData, tenantId: '__none__' });
                             setShowTenantPicker(false);
                           }}
                         >
-                          <Text style={styles.pickerItemText}>No Tenant Selected</Text>
+                          <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>No Tenant Selected</Text>
                         </TouchableOpacity>
                         {tenants.map((tenant: any) => (
                           <TouchableOpacity
                             key={tenant.id}
-                            style={styles.pickerItem}
+                            style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                             onPress={() => {
                               setFormData({ ...formData, tenantId: tenant.id });
                               setShowTenantPicker(false);
                             }}
                           >
-                            <Text style={styles.pickerItemText}>
+                            <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
                               {tenant.firstName} {tenant.lastName}
                               {tenant.assignment?.isActive && ' (Active)'}
                             </Text>
@@ -427,29 +500,38 @@ export default function CreateInspectionScreen() {
 
           {/* Inspection Type */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Inspection Type *</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Inspection Type *</Text>
             <TouchableOpacity
-              style={styles.selectButton}
+              style={[styles.selectButton, { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: themeColors.input 
+              }]}
               onPress={() => setShowTypePicker(true)}
             >
-              <FileText size={16} color={colors.text.secondary} />
-              <Text style={[styles.selectButtonText, !formData.type && styles.placeholder]}>
+              <FileText size={16} color={themeColors.text.secondary} />
+              <Text style={[
+                styles.selectButtonText, 
+                { color: formData.type ? themeColors.text.primary : themeColors.text.muted }
+              ]}>
                 {selectedType?.label || 'Select type'}
               </Text>
             </TouchableOpacity>
             {showTypePicker && (
-              <View style={styles.pickerContainer}>
-                <ScrollView style={styles.pickerScroll}>
+              <View style={[styles.pickerContainer, { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: themeColors.card.DEFAULT 
+              }]}>
+                <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={true}>
                   {INSPECTION_TYPES.map((type) => (
                     <TouchableOpacity
                       key={type.value}
-                      style={styles.pickerItem}
+                      style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                       onPress={() => {
                         setFormData({ ...formData, type: type.value });
                         setShowTypePicker(false);
                       }}
                     >
-                      <Text style={styles.pickerItemText}>{type.label}</Text>
+                      <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{type.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -465,40 +547,49 @@ export default function CreateInspectionScreen() {
 
           {/* Template Selection */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Template (Optional)</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Template (Optional)</Text>
             <TouchableOpacity
-              style={styles.selectButton}
+              style={[styles.selectButton, { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: themeColors.input 
+              }]}
               onPress={() => setShowTemplatePicker(true)}
             >
-              <FileText size={16} color={colors.text.secondary} />
-              <Text style={[styles.selectButtonText, (!formData.templateId || formData.templateId === '__none__') && styles.placeholder]}>
+              <FileText size={16} color={themeColors.text.secondary} />
+              <Text style={[
+                styles.selectButtonText, 
+                { color: (formData.templateId && formData.templateId !== '__none__') ? themeColors.text.primary : themeColors.text.muted }
+              ]}>
                 {selectedTemplate
                   ? `${selectedTemplate.name}${selectedTemplate.version > 1 ? ` (v${selectedTemplate.version})` : ''}`
                   : 'No template'}
               </Text>
             </TouchableOpacity>
             {showTemplatePicker && (
-              <View style={styles.pickerContainer}>
-                <ScrollView style={styles.pickerScroll}>
+              <View style={[styles.pickerContainer, { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: themeColors.card.DEFAULT 
+              }]}>
+                <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={true}>
                   <TouchableOpacity
-                    style={styles.pickerItem}
+                    style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                     onPress={() => {
                       setFormData({ ...formData, templateId: '__none__' });
                       setShowTemplatePicker(false);
                     }}
                   >
-                    <Text style={styles.pickerItemText}>No Template</Text>
+                    <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>No Template</Text>
                   </TouchableOpacity>
                   {templates.map((template: any) => (
                     <TouchableOpacity
                       key={template.id}
-                      style={styles.pickerItem}
+                      style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                       onPress={() => {
                         setFormData({ ...formData, templateId: template.id });
                         setShowTemplatePicker(false);
                       }}
                     >
-                      <Text style={styles.pickerItemText}>
+                      <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
                         {template.name}
                         {template.version > 1 && ` (v${template.version})`}
                       </Text>
@@ -517,45 +608,51 @@ export default function CreateInspectionScreen() {
 
           {/* Scheduled Date */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Scheduled Date *</Text>
-            <View style={styles.dateInputContainer}>
-              <Calendar size={16} color={colors.text.secondary} />
-              <Input
-                value={formData.scheduledDate}
-                onChangeText={(text) => setFormData({ ...formData, scheduledDate: text })}
-                placeholder="YYYY-MM-DD"
-                style={styles.dateInput}
+            <DatePicker
+              label="Scheduled Date *"
+              value={formData.scheduledDate ? new Date(formData.scheduledDate) : null}
+              onChange={(date) => setFormData({ ...formData, scheduledDate: date ? format(date, 'yyyy-MM-dd') : '' })}
+              placeholder="Select date"
+              required
               />
-            </View>
           </View>
 
           {/* Inspector Selection */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Assign to Inspector (Optional)</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Assign to Inspector (Optional)</Text>
             <TouchableOpacity
-              style={styles.selectButton}
+              style={[styles.selectButton, { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: themeColors.input 
+              }]}
               onPress={() => setShowClerkPicker(true)}
             >
-              <UserIcon size={16} color={colors.text.secondary} />
-              <Text style={[styles.selectButtonText, !formData.clerkId && styles.placeholder]}>
+              <UserIcon size={16} color={themeColors.text.secondary} />
+              <Text style={[
+                styles.selectButtonText, 
+                { color: formData.clerkId ? themeColors.text.primary : themeColors.text.muted }
+              ]}>
                 {selectedClerk
                   ? `${selectedClerk.firstName || ''} ${selectedClerk.lastName || ''}`.trim()
                   : 'Select team member'}
               </Text>
             </TouchableOpacity>
             {showClerkPicker && (
-              <View style={styles.pickerContainer}>
-                <ScrollView style={styles.pickerScroll}>
+              <View style={[styles.pickerContainer, { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: themeColors.card.DEFAULT 
+              }]}>
+                <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={true}>
                   {clerks.map((clerk: any) => (
                     <TouchableOpacity
                       key={clerk.id}
-                      style={styles.pickerItem}
+                      style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                       onPress={() => {
                         setFormData({ ...formData, clerkId: clerk.id });
                         setShowClerkPicker(false);
                       }}
                     >
-                      <Text style={styles.pickerItemText}>
+                      <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
                         {clerk.firstName} {clerk.lastName}
                       </Text>
                     </TouchableOpacity>
@@ -573,7 +670,7 @@ export default function CreateInspectionScreen() {
 
           {/* Notes */}
           <View style={styles.formGroup}>
-            <Text style={styles.label}>Notes (Optional)</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Notes (Optional)</Text>
             <Input
               value={formData.notes}
               onChangeText={(text) => setFormData({ ...formData, notes: text })}
@@ -597,7 +694,7 @@ export default function CreateInspectionScreen() {
               onPress={handleSubmit}
               variant="primary"
               size="md"
-              disabled={createInspection.isPending}
+              disabled={createInspection.isPending || !isOnline}
               loading={createInspection.isPending}
             />
           </View>
@@ -610,7 +707,6 @@ export default function CreateInspectionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -618,15 +714,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing[3],
     paddingHorizontal: spacing[4],
-    backgroundColor: colors.card.DEFAULT,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.DEFAULT,
   },
   headerTitle: {
     flex: 1,
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     textAlign: 'center',
   },
   iconButton: {
@@ -650,7 +743,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   targetTypeRow: {
@@ -663,21 +755,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.background,
     alignItems: 'center',
   },
   targetTypeButtonActive: {
-    borderColor: colors.primary.DEFAULT,
-    backgroundColor: `${colors.primary.DEFAULT}10`,
   },
   targetTypeText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     fontWeight: typography.fontWeight.medium,
   },
   targetTypeTextActive: {
-    color: colors.primary.DEFAULT,
     fontWeight: typography.fontWeight.semibold,
   },
   selectButton: {
@@ -688,54 +774,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.background,
   },
   selectButtonText: {
     flex: 1,
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
   },
   placeholder: {
-    color: colors.text.muted,
   },
   pickerContainer: {
     marginTop: spacing[2],
-    padding: spacing[3],
-    borderRadius: borderRadius.md,
+    padding: spacing[2],
+    borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.card.DEFAULT,
     maxHeight: 200,
+    ...shadows.md,
   },
   pickerScroll: {
     maxHeight: 150,
   },
   pickerItem: {
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[2.5],
     paddingHorizontal: spacing[3],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
+    borderRadius: borderRadius.sm,
+    marginVertical: spacing[0.5],
   },
   pickerItemText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
   },
   tenantsContainer: {
     marginTop: spacing[3],
     padding: spacing[3],
     borderRadius: borderRadius.md,
-    backgroundColor: colors.muted.DEFAULT,
   },
   tenantsTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   noTenantsText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
     textAlign: 'center',
     paddingVertical: spacing[2],
   },
@@ -748,20 +826,17 @@ const styles = StyleSheet.create({
     gap: spacing[2],
     padding: spacing[2],
     borderRadius: borderRadius.md,
-    backgroundColor: colors.background,
   },
   tenantAvatar: {
     width: 32,
     height: 32,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.primary.DEFAULT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tenantInitials: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.bold,
-    color: colors.primary.foreground,
   },
   tenantInfo: {
     flex: 1,
@@ -769,25 +844,45 @@ const styles = StyleSheet.create({
   tenantName: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
   },
   tenantEmail: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.secondary,
   },
   activeBadge: {
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.secondary.DEFAULT,
   },
   activeBadgeText: {
     fontSize: typography.fontSize.xs,
-    color: colors.secondary.foreground,
   },
   notesInput: {
     minHeight: 100,
     textAlignVertical: 'top',
+  },
+  offlineBanner: {
+    margin: spacing[4],
+    marginBottom: spacing[3],
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+  },
+  offlineBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+  },
+  offlineBannerTextContainer: {
+    flex: 1,
+  },
+  offlineBannerText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing[1],
+  },
+  offlineBannerDescription: {
+    fontSize: typography.fontSize.xs,
+    lineHeight: typography.lineHeight.relaxed * typography.fontSize.xs,
   },
   dateInputContainer: {
     flexDirection: 'row',

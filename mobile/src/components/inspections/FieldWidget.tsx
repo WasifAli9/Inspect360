@@ -18,12 +18,16 @@ import Button from '../ui/Button';
 import { Star, Camera as CameraIcon, Image as ImageIcon, X, Sparkles, Wrench, Trash2, Calendar, Clock, Eye, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { inspectionsService } from '../../services/inspections';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import SignatureCanvas from 'react-native-signature-canvas';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import Badge from '../ui/Badge';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { apiRequestJson, API_URL } from '../../services/api';
+import { useTheme } from '../../contexts/ThemeContext';
+import { apiRequestJson, getAPI_URL } from '../../services/api';
+import { photoStorage } from '../../services/photoStorage';
+import { localDatabase } from '../../services/localDatabase';
+import { syncManager } from '../../services/syncManager';
 
 interface TemplateField {
   id: string;
@@ -49,6 +53,7 @@ interface FieldWidgetProps {
   sectionName?: string;
   isCheckOut?: boolean;
   markedForReview?: boolean;
+  disabled?: boolean;
   autoContext?: {
     inspectorName?: string;
     address?: string;
@@ -71,6 +76,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     sectionName,
     isCheckOut = false,
     markedForReview = false,
+    disabled = false,
     autoContext,
     onChange,
     onMarkedForReviewChange,
@@ -78,6 +84,8 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   } = props;
   const queryClient = useQueryClient();
   const isOnline = useOnlineStatus();
+  const theme = useTheme();
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
 
   // Normalize field object to ensure all boolean properties are actual booleans
   const safeField = useMemo(() => {
@@ -115,6 +123,15 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   const [localValue, setLocalValue] = useState(() => parseValue(value));
   const [localNote, setLocalNote] = useState(note || '');
   const [localPhotos, setLocalPhotos] = useState<string[]>(photos || []);
+  // Store generated entryId if it doesn't exist (for photos added before field value is saved)
+  const generatedEntryIdRef = useRef<string | null>(null);
+  
+  // Update ref when entryId prop changes (when entry is created)
+  useEffect(() => {
+    if (entryId) {
+      generatedEntryIdRef.current = entryId;
+    }
+  }, [entryId]);
   const [localCondition, setLocalCondition] = useState<number | undefined>(
     value?.condition
   );
@@ -226,6 +243,10 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   }, [safeField.type, autoContext, value, onChange]);
 
   const handleValueChange = (newValue: any) => {
+    if (disabled) {
+      Alert.alert('Inspection Completed', 'You cannot modify a completed inspection.');
+      return;
+    }
     setLocalValue(newValue);
     const composedValue = composeValue(newValue, localCondition, localCleanliness);
     onChange(composedValue, localNote, localPhotos);
@@ -276,7 +297,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     setAnalyzingPhoto(photoUrl);
 
     try {
-      const response = await fetch(`${API_URL}/api/ai-analyses`, {
+      const response = await fetch(`${getAPI_URL()}/api/ai-analyses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -331,93 +352,152 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     }
   };
 
-  // Upload photo to server
+  // Upload photo to server (with offline support)
   const uploadPhoto = async (uri: string): Promise<string> => {
     try {
-      // Read file extension
-      const extension = uri.split('.').pop()?.toLowerCase() || 'jpg';
-      const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
+      // Always save to local storage first
+      if (!inspectionId) {
+        throw new Error('Missing inspection ID');
+      }
 
-      // Create FormData for React Native
-      const formData = new FormData();
-      formData.append('file', {
-        uri,
-        type: mimeType,
-        name: `photo.${extension}`,
-      } as any);
+      // Generate a temporary entryId if it doesn't exist (for photos added before field value is saved)
+      // This entryId will be used when the entry is created via onChange
+      // Use stored generated ID if available, otherwise generate a new one
+      const effectiveEntryId = entryId || generatedEntryIdRef.current || `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Store the generated ID for future use
+      if (!entryId && !generatedEntryIdRef.current) {
+        generatedEntryIdRef.current = effectiveEntryId;
+      }
 
-      // Construct full URL (API_URL should already be a full URL)
-      const uploadUrl = API_URL.startsWith('http') 
-        ? `${API_URL}/api/objects/upload-direct`
-        : `/api/objects/upload-direct`; // Fallback - but API_URL should always have http
+      const localPath = await photoStorage.savePhoto(uri, inspectionId, effectiveEntryId);
+      const fileSize = await photoStorage.getPhotoSize(localPath);
+      const mimeType = photoStorage.getMimeType(localPath);
 
-      // Create abort controller for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for file uploads
+      // Save photo metadata to local DB
+      const photo = await localDatabase.savePhoto({
+        entry_id: effectiveEntryId,
+        inspection_id: inspectionId,
+        local_path: localPath,
+        upload_status: 'pending',
+        file_size: fileSize,
+        mime_type: mimeType,
+      });
 
-      try {
-        // For FormData, React Native automatically sets Content-Type with boundary
-        // DO NOT set Content-Type manually - it will break the upload
-        const response = await fetch(uploadUrl, {
-          method: 'POST',
-          headers: {
-            // Only set non-content-type headers
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache',
-          },
-          body: formData,
-          credentials: 'include',
-          signal: controller.signal,
-        });
+      // If online, try to upload immediately
+      if (isOnline) {
+        try {
+          // Read file extension
+          const extension = localPath.split('.').pop()?.toLowerCase() || 'jpg';
 
-        clearTimeout(timeoutId);
+          // Create FormData for React Native
+          const formData = new FormData();
+          formData.append('file', {
+            uri: localPath,
+            type: mimeType,
+            name: `photo.${extension}`,
+          } as any);
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorMessage = 'Failed to upload photo';
+          // Construct full URL (getAPI_URL() always returns a full URL)
+          const uploadUrl = `${getAPI_URL()}/api/objects/upload-direct`;
+
+          // Create abort controller for timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for file uploads
+
           try {
-            const errorData = JSON.parse(errorText);
-            errorMessage = errorData.message || errorData.error || errorMessage;
-          } catch {
-            errorMessage = errorText || `Server error: ${response.status} ${response.statusText}`;
+            // For FormData, React Native automatically sets Content-Type with boundary
+            // DO NOT set Content-Type manually - it will break the upload
+            const response = await fetch(uploadUrl, {
+              method: 'POST',
+              headers: {
+                // Only set non-content-type headers
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache',
+              },
+              body: formData,
+              credentials: 'include',
+              signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              let errorMessage = 'Failed to upload photo';
+              try {
+                const errorData = JSON.parse(errorText);
+                errorMessage = errorData.message || errorData.error || errorMessage;
+              } catch {
+                errorMessage = errorText || `Server error: ${response.status} ${response.statusText}`;
+              }
+              throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+            // The endpoint returns { url, uploadURL } - use url or uploadURL
+            const serverUrl = data.url || data.uploadURL || data.path || data.objectUrl || `/objects/${data.objectId}`;
+
+            // Update photo with server URL
+            await localDatabase.updatePhotoUploadStatus(photo.id, 'uploaded', serverUrl);
+
+            return serverUrl;
+          } catch (fetchError: any) {
+            clearTimeout(timeoutId);
+            
+            // Handle abort (timeout)
+            if (fetchError.name === 'AbortError') {
+              // Queue for later upload
+              await syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
+              await localDatabase.updatePhotoUploadStatus(photo.id, 'pending');
+              return localPath; // Return local path for immediate display
+            }
+
+            // Handle network errors - queue for later upload
+            if (fetchError.message?.includes('Network request failed') || 
+                fetchError.message?.includes('Failed to fetch') ||
+                fetchError.message?.includes('ERR_CONNECTION_REFUSED')) {
+              // Queue for later upload
+              await syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
+              await localDatabase.updatePhotoUploadStatus(photo.id, 'pending');
+              return localPath; // Return local path for immediate display
+            }
+
+            // Other errors - still queue for retry
+            await syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
+            await localDatabase.updatePhotoUploadStatus(photo.id, 'pending');
+            throw fetchError;
           }
-          throw new Error(errorMessage);
+        } catch (uploadError: any) {
+          // Upload failed, but photo is saved locally - queue for sync
+          console.error('[FieldWidget] Upload failed, queueing for sync:', uploadError);
+          await syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
+          await localDatabase.updatePhotoUploadStatus(photo.id, 'pending');
+          // Return local path so photo can be displayed immediately
+          return localPath;
         }
-
-        const data = await response.json();
-        // The endpoint returns { url, uploadURL } - use url or uploadURL
-        return data.url || data.uploadURL || data.path || data.objectUrl || `/objects/${data.objectId}`;
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        
-        // Handle abort (timeout)
-        if (fetchError.name === 'AbortError') {
-          throw new Error('Upload timeout. Please check your internet connection and try again.');
-        }
-
-        // Handle network errors
-        if (fetchError.message?.includes('Network request failed') || 
-            fetchError.message?.includes('Failed to fetch') ||
-            fetchError.message?.includes('ERR_CONNECTION_REFUSED')) {
-          throw new Error(
-            `Cannot connect to server at ${API_URL}. ` +
-            `Please check your internet connection and ensure the backend server is running.`
-          );
-        }
-
-        throw fetchError;
+      } else {
+        // Offline - queue for upload when back online
+        await syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
+        // Return local path so photo can be displayed immediately
+        return localPath;
       }
     } catch (error: any) {
-      console.error('Error uploading photo:', error);
+      console.error('Error handling photo:', error);
       // Re-throw with more context if it's not already a proper error
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error(error?.message || 'Failed to upload photo');
+      throw new Error(error?.message || 'Failed to handle photo');
     }
   };
 
   const handleTakePhoto = async () => {
+    if (disabled) {
+      Alert.alert('Inspection Completed', 'You cannot add photos to a completed inspection.');
+      return;
+    }
+    
     try {
       const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
@@ -477,6 +557,11 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   };
 
   const handlePickPhoto = async () => {
+    if (disabled) {
+      Alert.alert('Inspection Completed', 'You cannot add photos to a completed inspection.');
+      return;
+    }
+    
     try {
       const hasPermission = await requestMediaLibraryPermission();
       if (!hasPermission) {
@@ -553,6 +638,10 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   };
 
   const handleRemovePhoto = (photoUrl: string) => {
+    if (disabled) {
+      Alert.alert('Inspection Completed', 'You cannot modify photos in a completed inspection.');
+      return;
+    }
     const newPhotos = localPhotos.filter(p => p !== photoUrl);
     setLocalPhotos(newPhotos);
     const composedValue = composeValue(localValue, localCondition, localCleanliness);
@@ -605,6 +694,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             onChangeText={handleValueChange}
             placeholder={safeField.placeholder || `Enter ${safeField.label.toLowerCase()}`}
             required={!!safeField.required}
+            editable={!disabled}
           />
         );
 
@@ -618,6 +708,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             placeholder={safeField.placeholder || `Enter ${safeField.label.toLowerCase()}`}
             multiline={true}
             required={!!safeField.required}
+            editable={!disabled}
           />
         );
 
@@ -630,6 +721,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             placeholder={safeField.placeholder || 'Enter number'}
             keyboardType="numeric"
             required={!!safeField.required}
+            editable={!disabled}
           />
         );
 
@@ -637,9 +729,9 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       case 'dropdown':
         return (
           <View style={styles.selectContainer}>
-            <Text style={styles.label}>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>
               {safeField.label}
-              {!!safeField.required && <Text style={styles.required}> *</Text>}
+              {!!safeField.required && <Text style={[styles.required, { color: themeColors.destructive.DEFAULT }]}> *</Text>}
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
               {safeField.options?.map((option) => (
@@ -648,8 +740,10 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                   style={[
                     styles.optionButton,
                     localValue === option && styles.optionButtonSelected,
+                    disabled && styles.optionButtonDisabled,
                   ]}
                   onPress={() => handleValueChange(option)}
+                  disabled={disabled}
                 >
                   <Text
                     style={[
@@ -671,28 +765,33 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         const boolValue = !!localValue;
         return (
           <TouchableOpacity
-            style={styles.checkboxContainer}
+            style={[styles.checkboxContainer, disabled && styles.checkboxContainerDisabled]}
             onPress={() => handleValueChange(!boolValue)}
+            disabled={disabled}
           >
             <View style={[styles.checkbox, boolValue && styles.checkboxChecked]}>
-              {boolValue && <Text style={styles.checkmark}>✓</Text>}
+              {boolValue && <Text style={[styles.checkmark, { color: themeColors.primary.foreground || '#ffffff' }]}>✓</Text>}
             </View>
-            <Text style={styles.checkboxLabel}>{safeField.label}</Text>
+            <Text style={[styles.checkboxLabel, { color: themeColors.text.primary }]}>{safeField.label}</Text>
           </TouchableOpacity>
         );
 
       case 'date':
         return (
-          <View style={styles.dateContainer}>
-            <Calendar size={20} color={colors.text.muted} />
-            <Input
-              label={safeField.label}
-              value={localValue || ''}
-              onChangeText={handleValueChange}
-              placeholder="YYYY-MM-DD"
-              required={!!safeField.required}
-            />
-          </View>
+          <DatePicker
+            label={safeField.label}
+            value={localValue ? (typeof localValue === 'string' ? new Date(localValue) : localValue) : null}
+            onChange={(date) => {
+              if (date) {
+                handleValueChange(format(date, 'yyyy-MM-dd'));
+              } else {
+                handleValueChange('');
+              }
+            }}
+            placeholder="Select date"
+            required={!!safeField.required}
+            disabled={disabled}
+          />
         );
 
       case 'time':
@@ -705,6 +804,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               onChangeText={handleValueChange}
               placeholder="HH:MM"
               required={!!safeField.required}
+              editable={!disabled}
             />
           </View>
         );
@@ -717,15 +817,16 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             onChangeText={handleValueChange}
             placeholder="YYYY-MM-DDTHH:MM"
             required={!!safeField.required}
+            editable={!disabled}
           />
         );
 
       case 'signature':
         return (
           <View style={styles.signatureContainer}>
-            <Text style={styles.label}>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>
               {safeField.label}
-              {!!safeField.required && <Text style={styles.required}> *</Text>}
+              {!!safeField.required && <Text style={[styles.required, { color: themeColors.destructive.DEFAULT }]}> *</Text>}
             </Text>
             {localValue ? (
               <View style={styles.signaturePreview}>
@@ -745,7 +846,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                 style={styles.signatureButton}
                 onPress={() => setShowSignature(true)}
               >
-                <Text style={styles.signatureButtonText}>Tap to Sign</Text>
+                <Text style={[styles.signatureButtonText, { color: themeColors.text.secondary }]}>Tap to Sign</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -784,6 +885,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             onChangeText={handleValueChange}
             placeholder={safeField.placeholder}
             required={!!safeField.required}
+            editable={!disabled}
           />
         );
     }
@@ -797,9 +899,9 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           <Card style={styles.checkInReferenceCard}>
             <View style={styles.checkInReferenceHeader}>
               <Eye size={16} color={colors.primary.DEFAULT} />
-              <Text style={styles.checkInReferenceTitle}>Check-In Reference Photos</Text>
+              <Text style={[styles.checkInReferenceTitle, { color: themeColors.text.primary }]}>Check-In Reference Photos</Text>
             </View>
-            <Text style={styles.checkInReferenceText}>
+            <Text style={[styles.checkInReferenceText, { color: themeColors.text.secondary }]}>
               Match these angles when taking your Check-Out photos for accurate comparison
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={styles.checkInPhotosContainer}>
@@ -810,8 +912,8 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                     uri: photoUrl.startsWith('http')
                       ? photoUrl
                       : photoUrl.startsWith('/')
-                        ? `${API_URL}${photoUrl}`
-                        : `${API_URL}/objects/${photoUrl}`
+                        ? `${getAPI_URL()}${photoUrl}`
+                        : `${getAPI_URL()}/objects/${photoUrl}`
                   }}
                   style={styles.checkInPhoto}
                 />
@@ -823,9 +925,9 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         {/* Current Photos */}
         <View style={styles.photoSection}>
           <View style={styles.photoHeader}>
-            <Text style={styles.photoLabel}>
+            <Text style={[styles.photoLabel, { color: themeColors.text.primary }]}>
               {safeField.label}
-              {!!safeField.required && <Text style={styles.required}> *</Text>}
+              {!!safeField.required && <Text style={[styles.required, { color: themeColors.destructive.DEFAULT }]}> *</Text>}
             </Text>
             <TouchableOpacity
               style={styles.photoButton}
@@ -833,14 +935,14 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               activeOpacity={0.8}
             >
               <CameraIcon size={18} color={colors.primary.foreground || '#ffffff'} />
-              <Text style={styles.photoButtonText}>Add Photo</Text>
+              <Text style={[styles.photoButtonText, { color: themeColors.primary.foreground || '#ffffff' }]}>Add Photo</Text>
             </TouchableOpacity>
           </View>
 
           {localPhotos.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={styles.photosContainer}>
               {localPhotos.map((photo, index) => {
-                const photoUrl = photo.startsWith('http') ? photo : `${API_URL}${photo}`;
+                const photoUrl = photo.startsWith('http') ? photo : `${getAPI_URL()}${photo}`;
                 const hasAnalysis = aiAnalyses[photo];
                 const isAnalyzing = analyzingPhoto === photo;
 
@@ -877,9 +979,9 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     <Card style={styles.card}>
       {/* Field Label and Mark for Review */}
       <View style={styles.fieldHeader}>
-        <Text style={styles.fieldLabel}>
+        <Text style={[styles.fieldLabel, { color: themeColors.text.primary }]}>
           {safeField.label}
-          {!!safeField.required && <Text style={styles.required}> *</Text>}
+          {!!safeField.required && <Text style={[styles.required, { color: themeColors.destructive.DEFAULT }]}> *</Text>}
         </Text>
         {!!isCheckOut && (safeField.type === 'photo' || safeField.type === 'photo_array') && (
           <TouchableOpacity
@@ -889,7 +991,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             <View style={[styles.markCheckbox, localMarkedForReview && styles.markCheckboxChecked]}>
               {localMarkedForReview && <CheckCircle2 size={16} color="#fff" />}
             </View>
-            <Text style={styles.markForReviewText}>Mark for Review</Text>
+            <Text style={[styles.markForReviewText, { color: themeColors.text.secondary }]}>Mark for Review</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -899,7 +1001,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       {/* Condition Rating */}
       {!!safeField.includeCondition && (
         <View style={styles.ratingContainer}>
-          <Text style={styles.ratingLabel}>Condition Rating</Text>
+          <Text style={[styles.ratingLabel, { color: themeColors.text.primary }]}>Condition Rating</Text>
           <View style={styles.starsContainer}>
             {[1, 2, 3, 4, 5].map((rating) => (
               <TouchableOpacity
@@ -915,7 +1017,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               </TouchableOpacity>
             ))}
             {localCondition && (
-              <Text style={styles.ratingText}>{localCondition} / 5</Text>
+              <Text style={[styles.ratingText, { color: themeColors.text.secondary }]}>{localCondition} / 5</Text>
             )}
           </View>
         </View>
@@ -924,7 +1026,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       {/* Cleanliness Rating */}
       {!!safeField.includeCleanliness && (
         <View style={styles.ratingContainer}>
-          <Text style={styles.ratingLabel}>Cleanliness Rating</Text>
+          <Text style={[styles.ratingLabel, { color: themeColors.text.primary }]}>Cleanliness Rating</Text>
           <View style={styles.starsContainer}>
             {[1, 2, 3, 4, 5].map((rating) => (
               <TouchableOpacity
@@ -940,7 +1042,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               </TouchableOpacity>
             ))}
             {localCleanliness && (
-              <Text style={styles.ratingText}>{localCleanliness} / 5</Text>
+              <Text style={[styles.ratingText, { color: themeColors.text.secondary }]}>{localCleanliness} / 5</Text>
             )}
           </View>
         </View>
@@ -973,7 +1075,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
 
       {/* Notes - now shown for ALL field types including photo fields */}
       <View style={styles.notesContainer}>
-        <Text style={styles.notesLabel}>Notes (optional)</Text>
+        <Text style={[styles.notesLabel, { color: themeColors.text.secondary }]}>Notes (optional)</Text>
         <Input
           value={localNote}
           onChangeText={handleNoteChange}
@@ -1130,17 +1232,17 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     flex: 1,
+    // Color applied dynamically via themeColors
   },
   label: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     marginBottom: spacing[2],
-    color: colors.text.primary,
+    // Color applied dynamically via themeColors
   },
   required: {
-    color: colors.destructive.DEFAULT,
+    // Color applied dynamically via themeColors
   },
   markForReviewButton: {
     flexDirection: 'row',
@@ -1161,7 +1263,7 @@ const styles = StyleSheet.create({
   },
   markForReviewText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
+    // Color applied dynamically via themeColors
   },
   selectContainer: {
     marginBottom: spacing[4],
@@ -1206,13 +1308,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary.DEFAULT,
   },
   checkmark: {
-    color: colors.primary.foreground,
     fontSize: 16,
     fontWeight: typography.fontWeight.bold,
+    // Color applied dynamically via themeColors
   },
   checkboxLabel: {
     fontSize: typography.fontSize.base,
-    color: colors.text.primary,
+    // Color applied dynamically via themeColors
   },
   ratingContainer: {
     marginBottom: spacing[4],
@@ -1221,7 +1323,7 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     marginBottom: spacing[2],
-    color: colors.text.primary,
+    // Color applied dynamically via themeColors
   },
   starsContainer: {
     flexDirection: 'row',
@@ -1233,8 +1335,8 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginLeft: spacing[2],
+    // Color applied dynamically via themeColors
   },
   dateContainer: {
     flexDirection: 'row',
@@ -1256,7 +1358,20 @@ const styles = StyleSheet.create({
   },
   signatureButtonText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.secondary,
+    // Color applied dynamically via themeColors
+  },
+  signatureButtonDisabled: {
+    opacity: 0.5,
+    backgroundColor: colors.muted.light || colors.background,
+  },
+  signatureButtonTextDisabled: {
+    // Color applied dynamically via themeColors
+  },
+  optionButtonDisabled: {
+    opacity: 0.5,
+  },
+  checkboxContainerDisabled: {
+    opacity: 0.5,
   },
   signaturePreview: {
     alignItems: 'center',
@@ -1336,12 +1451,12 @@ const styles = StyleSheet.create({
   checkInReferenceTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
+    // Color applied dynamically via themeColors
   },
   checkInReferenceText: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.secondary,
     marginBottom: spacing[2],
+    // Color applied dynamically via themeColors
   },
   checkInPhotosContainer: {
     marginTop: spacing[2],
@@ -1372,7 +1487,7 @@ const styles = StyleSheet.create({
   photoLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
+    // Color applied dynamically via themeColors
   },
   photoButton: {
     flexDirection: 'row',
@@ -1386,8 +1501,8 @@ const styles = StyleSheet.create({
   },
   photoButtonText: {
     fontSize: typography.fontSize.sm,
-    color: colors.primary.foreground || '#ffffff',
     fontWeight: typography.fontWeight.semibold,
+    // Color applied dynamically via themeColors
   },
   photosContainer: {
     marginBottom: spacing[3],
@@ -1488,8 +1603,8 @@ const styles = StyleSheet.create({
   notesLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.secondary,
     marginBottom: spacing[2],
+    // Color applied dynamically via themeColors
   },
   notesInput: {
     minHeight: 80,

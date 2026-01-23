@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, View } from 'react-native';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface ButtonProps {
   title: string;
@@ -25,13 +26,74 @@ export default function Button({
   textStyle,
   icon,
 }: ButtonProps) {
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
+  
   // Ensure disabled and loading are actual booleans (not strings)
   const safeDisabled = typeof disabled === 'boolean' ? disabled : disabled === true || disabled === 'true';
   const safeLoading = typeof loading === 'boolean' ? loading : loading === true || loading === 'true';
 
+  const getVariantStyle = () => {
+    switch (variant) {
+      case 'primary':
+      case 'default':
+        return {
+          backgroundColor: themeColors.primary.DEFAULT,
+          borderColor: themeColors.primary.border,
+        };
+      case 'secondary':
+        return {
+          backgroundColor: themeColors.secondary.DEFAULT,
+          borderColor: themeColors.secondary.border,
+        };
+      case 'outline':
+        return {
+          backgroundColor: 'transparent',
+          borderColor: themeColors.border.dark || themeColors.border.DEFAULT,
+        };
+      case 'destructive':
+        return {
+          backgroundColor: themeColors.destructive.DEFAULT,
+          borderColor: themeColors.destructive.border,
+        };
+      case 'ghost':
+        return {
+          backgroundColor: 'transparent',
+          borderColor: 'transparent',
+        };
+      default:
+        return {
+          backgroundColor: themeColors.primary.DEFAULT,
+          borderColor: themeColors.primary.border,
+        };
+    }
+  };
+
+  const getTextColor = () => {
+    switch (variant) {
+      case 'primary':
+      case 'default':
+        return themeColors.primary.foreground || '#ffffff';
+      case 'secondary':
+        return themeColors.secondary.foreground;
+      case 'outline':
+        return themeColors.text.primary;
+      case 'destructive':
+        return themeColors.destructive.foreground;
+      case 'ghost':
+        return themeColors.text.primary;
+      default:
+        return themeColors.primary.foreground || '#ffffff';
+    }
+  };
+
   const buttonStyle = [
     styles.button,
-    styles[variant] || styles.default,
+    {
+      ...getVariantStyle(),
+      borderWidth: variant === 'ghost' ? 0 : 1.5,
+    },
     styles[`size_${size}`],
     safeDisabled && styles.disabled,
     !safeDisabled && variant !== 'ghost' && variant !== 'outline' && shadows.sm,
@@ -40,16 +102,19 @@ export default function Button({
 
   const buttonTextStyle = [
     styles.text,
-    styles[`${variant}Text`] || styles.defaultText,
+    {
+      color: getTextColor(),
+      fontWeight: variant === 'outline' ? typography.fontWeight.medium : typography.fontWeight.semibold,
+    },
     styles[`text_${size}`],
     textStyle,
   ];
 
   const getIndicatorColor = () => {
     if (variant === 'default' || variant === 'destructive' || variant === 'primary') {
-      return colors.primary.foreground || '#ffffff';
+      return themeColors.primary.foreground || '#ffffff';
     }
-    return colors.primary.DEFAULT;
+    return themeColors.primary.DEFAULT;
   };
 
   return (
@@ -77,7 +142,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: borderRadius.xl, // More rounded for modern look
-    borderWidth: 1.5, // Slightly thicker
     minHeight: 44, // Better touch targets
   },
   content: {
@@ -88,32 +152,6 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginRight: spacing[1],
-  },
-  default: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.border,
-  },
-  primary: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.border,
-  },
-  secondary: {
-    backgroundColor: colors.secondary.DEFAULT,
-    borderColor: colors.secondary.border,
-    borderWidth: 1,
-  },
-  outline: {
-    backgroundColor: 'transparent',
-    borderColor: colors.border.dark || '#d4d4d4',
-    borderWidth: 1.5,
-  },
-  destructive: {
-    backgroundColor: colors.destructive.DEFAULT,
-    borderColor: colors.destructive.border,
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-    borderColor: 'transparent',
   },
   size_sm: {
     paddingVertical: spacing[2],
@@ -140,28 +178,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   text: {
-    fontWeight: typography.fontWeight.semibold,
     fontFamily: typography.fontFamily.sans,
     letterSpacing: 0.3, // Better letter spacing for modern look
-  },
-  defaultText: {
-    color: colors.primary.foreground || '#ffffff',
-  },
-  primaryText: {
-    color: colors.primary.foreground || '#ffffff',
-  },
-  secondaryText: {
-    color: colors.secondary.foreground,
-  },
-  outlineText: {
-    color: colors.text.primary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  destructiveText: {
-    color: colors.destructive.foreground,
-  },
-  ghostText: {
-    color: colors.text.primary,
   },
   text_sm: {
     fontSize: typography.fontSize.xs,

@@ -27,6 +27,7 @@ import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Input from '../../components/ui/Input';
 import { colors, spacing, typography, borderRadius } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
 import { format, formatDistanceToNow } from 'date-fns';
 
 type NavigationProp = StackNavigationProp<MaintenanceStackParamList, 'MaintenanceList'>;
@@ -54,6 +55,9 @@ const workOrderStatusColors: Record<string, string> = {
 };
 
 export default function MaintenanceListScreen() {
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
   const { user } = useAuth();
@@ -234,7 +238,7 @@ export default function MaintenanceListScreen() {
     const label = status === 'in_progress' ? 'In Progress' : status.charAt(0).toUpperCase() + status.slice(1);
     return (
       <View style={[styles.statusBadge, { backgroundColor: color }]}>
-        <Text style={styles.statusBadgeText}>{label}</Text>
+        <Text style={[styles.statusBadgeText, { color: '#fff' }]}>{label}</Text>
       </View>
     );
   };
@@ -266,13 +270,13 @@ export default function MaintenanceListScreen() {
       <Card style={styles.requestCard}>
         <View style={styles.requestHeader}>
           <View style={styles.requestTitleRow}>
-            <Text style={styles.requestTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={[styles.requestTitle, { color: themeColors.text.primary }]} numberOfLines={2}>{item.title}</Text>
             {(user?.role === 'owner' || user?.role === 'clerk') && (
               <TouchableOpacity
                 onPress={() => handleEdit(item)}
                 style={styles.editButton}
               >
-                <Pencil size={16} color={colors.text.secondary} />
+                <Pencil size={16} color={themeColors.text.secondary} />
               </TouchableOpacity>
             )}
           </View>
@@ -283,36 +287,36 @@ export default function MaintenanceListScreen() {
         </View>
 
         <View style={styles.requestMeta}>
-          <Text style={styles.metaText}>
+          <Text style={[styles.metaText, { color: themeColors.text.secondary }]}>
             {item.property?.name || 'Unknown'}
             {item.property?.address && ` • ${item.property.address}`}
           </Text>
           {item.dueDate ? (
-            <Text style={styles.metaText}>
+            <Text style={[styles.metaText, { color: themeColors.text.secondary }]}>
               Due {format(new Date(item.dueDate), 'PPP')}
             </Text>
           ) : (
-            <Text style={styles.metaText}>
+            <Text style={[styles.metaText, { color: themeColors.text.secondary }]}>
               Created {format(new Date(item.createdAt), 'PPP')}
             </Text>
           )}
         </View>
 
         {item.description && (
-          <Text style={styles.description} numberOfLines={3}>
+          <Text style={[styles.description, { color: themeColors.text.secondary }]} numberOfLines={3}>
             {item.description}
           </Text>
         )}
 
-        <View style={styles.requestFooter}>
+        <View style={[styles.requestFooter, { borderTopColor: themeColors.border.DEFAULT }]}>
           <View style={styles.reporterInfo}>
-            <Text style={styles.footerText}>
+            <Text style={[styles.footerText, { color: themeColors.text.secondary }]}>
               Reported by: {item.reportedByUser
                 ? `${item.reportedByUser.firstName} ${item.reportedByUser.lastName}`
                 : 'Unknown'}
             </Text>
             {item.assignedToUser && (
-              <Text style={styles.footerText}>
+              <Text style={[styles.footerText, { color: themeColors.text.secondary }]}>
                 Assigned to: {item.assignedToUser.firstName} {item.assignedToUser.lastName}
               </Text>
             )}
@@ -367,7 +371,7 @@ export default function MaintenanceListScreen() {
                 style={styles.workOrderButton}
                 onPress={() => handleCreateWorkOrder(item)}
               >
-                <Clipboard size={16} color={colors.text.primary} />
+                <Clipboard size={16} color={themeColors.text.primary} />
                 <Text style={styles.workOrderButtonText}>Work Order</Text>
               </TouchableOpacity>
             </View>
@@ -385,11 +389,11 @@ export default function MaintenanceListScreen() {
         <View style={styles.workOrderHeader}>
           <View style={styles.workOrderTitleRow}>
             {getWorkOrderStatusIcon(item.status)}
-            <Text style={styles.workOrderTitle} numberOfLines={2}>
+            <Text style={[styles.workOrderTitle, { color: themeColors.text.primary }]} numberOfLines={2}>
               {item.maintenanceRequest.title}
             </Text>
             <View style={[styles.workOrderStatusBadge, { backgroundColor: statusColor }]}>
-              <Text style={styles.workOrderStatusText}>
+              <Text style={[styles.workOrderStatusText, { color: '#fff' }]}>
                 {item.status.replace('_', ' ')}
               </Text>
             </View>
@@ -408,14 +412,14 @@ export default function MaintenanceListScreen() {
         <View style={styles.workOrderMeta}>
           {item.team && (
             <View style={styles.metaItem}>
-              <User size={14} color={colors.text.secondary} />
-              <Text style={styles.metaText}>Team: {item.team.name}</Text>
+              <User size={14} color={themeColors.text.secondary} />
+              <Text style={[styles.metaText, { color: themeColors.text.secondary }]}>Team: {item.team.name}</Text>
             </View>
           )}
 
           {item.contractor && (
             <View style={styles.metaItem}>
-              <User size={14} color={colors.text.secondary} />
+              <User size={14} color={themeColors.text.secondary} />
               <Text style={styles.metaText}>
                 {item.contractor.firstName} {item.contractor.lastName}
               </Text>
@@ -424,7 +428,7 @@ export default function MaintenanceListScreen() {
 
           {item.slaDue && (
             <View style={styles.metaItem}>
-              <Calendar size={14} color={colors.text.secondary} />
+              <Calendar size={14} color={themeColors.text.secondary} />
               <Text style={styles.metaText}>
                 SLA: {formatDistanceToNow(new Date(item.slaDue), { addSuffix: true })}
               </Text>
@@ -433,7 +437,7 @@ export default function MaintenanceListScreen() {
 
           {(item.costEstimate || item.costActual) && (
             <View style={styles.metaItem}>
-              <Text style={styles.metaText}>
+              <Text style={[styles.metaText, { color: themeColors.text.secondary }]}>
                 {item.costActual
                   ? `Actual: ${formatCurrency(item.costActual)}`
                   : `Est: ${formatCurrency(item.costEstimate)}`}
@@ -442,8 +446,8 @@ export default function MaintenanceListScreen() {
           )}
 
           <View style={styles.metaItem}>
-            <Clock size={14} color={colors.text.secondary} />
-            <Text style={styles.metaText}>
+            <Clock size={14} color={themeColors.text.secondary} />
+            <Text style={[styles.metaText, { color: themeColors.text.secondary }]}>
               Created {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
             </Text>
           </View>
@@ -480,10 +484,14 @@ export default function MaintenanceListScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top + spacing[2], spacing[6]) }]}>
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+      <View style={[styles.header, { 
+        paddingTop: Math.max(insets.top + spacing[2], spacing[6]),
+        backgroundColor: themeColors.card.DEFAULT,
+        borderBottomColor: themeColors.border.DEFAULT
+      }]}>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Maintenance</Text>
+          <Text style={[styles.headerTitle, { color: themeColors.text.primary }]}>Maintenance</Text>
           <Button
             title="New Request"
             onPress={() => navigation.navigate('CreateMaintenance')}
@@ -494,23 +502,38 @@ export default function MaintenanceListScreen() {
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <View style={[styles.tabsContainer, { 
+        backgroundColor: themeColors.card.DEFAULT,
+        borderBottomColor: themeColors.border.DEFAULT
+      }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'requests' && styles.tabActive]}
+          style={[
+            styles.tab, 
+            activeTab === 'requests' && { borderBottomColor: themeColors.primary.DEFAULT }
+          ]}
           onPress={() => setActiveTab('requests')}
         >
-          <Wrench size={16} color={activeTab === 'requests' ? colors.primary.DEFAULT : colors.text.secondary} />
-          <Text style={[styles.tabText, activeTab === 'requests' && styles.tabTextActive]}>
+          <Wrench size={16} color={activeTab === 'requests' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+          <Text style={[
+            styles.tabText, 
+            { color: activeTab === 'requests' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+          ]}>
             Requests
           </Text>
         </TouchableOpacity>
         {(user?.role === 'owner' || user?.role === 'contractor') && (
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'work-orders' && styles.tabActive]}
+            style={[
+              styles.tab, 
+              activeTab === 'work-orders' && { borderBottomColor: themeColors.primary.DEFAULT }
+            ]}
             onPress={() => setActiveTab('work-orders')}
           >
-            <Clipboard size={16} color={activeTab === 'work-orders' ? colors.primary.DEFAULT : colors.text.secondary} />
-            <Text style={[styles.tabText, activeTab === 'work-orders' && styles.tabTextActive]}>
+            <Clipboard size={16} color={activeTab === 'work-orders' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+            <Text style={[
+              styles.tabText, 
+              { color: activeTab === 'work-orders' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+            ]}>
               Work Orders
             </Text>
           </TouchableOpacity>
@@ -519,15 +542,21 @@ export default function MaintenanceListScreen() {
 
       {/* Filters (only for requests tab, hidden for tenants) */}
       {activeTab === 'requests' && user?.role !== 'tenant' && (
-        <View style={styles.filtersContainer}>
+        <View style={[styles.filtersContainer, { backgroundColor: themeColors.background }]}>
           <TouchableOpacity
-            style={styles.filterButton}
+            style={[
+              styles.filterButton, 
+              { 
+                backgroundColor: themeColors.card.DEFAULT,
+                borderColor: themeColors.border.light,
+              }
+            ]}
             onPress={() => setShowFiltersModal(true)}
           >
-            <Filter size={16} color={colors.text.primary} />
-            <Text style={styles.filterButtonText}>Filters</Text>
+            <Filter size={16} color={themeColors.text.primary} />
+            <Text style={[styles.filterButtonText, { color: themeColors.text.primary }]}>Filters</Text>
             {(selectedStatus !== 'all' || filterBlock !== 'all' || filterProperty !== 'all') && (
-              <View style={styles.filterIndicator} />
+              <View style={[styles.filterIndicator, { backgroundColor: themeColors.primary.DEFAULT }]} />
             )}
           </TouchableOpacity>
 
@@ -537,14 +566,19 @@ export default function MaintenanceListScreen() {
                 key={status}
                 style={[
                   styles.statusFilterButton,
-                  selectedStatus === status && styles.statusFilterButtonActive,
+                  {
+                    backgroundColor: selectedStatus === status ? themeColors.primary.DEFAULT : themeColors.card.DEFAULT,
+                    borderColor: selectedStatus === status ? themeColors.primary.DEFAULT : themeColors.border.light,
+                  },
                 ]}
                 onPress={() => setSelectedStatus(status)}
               >
                 <Text
                   style={[
                     styles.statusFilterText,
-                    selectedStatus === status && styles.statusFilterTextActive,
+                    {
+                      color: selectedStatus === status ? themeColors.primary.foreground : themeColors.text.secondary,
+                    },
                   ]}
                 >
                   {status === 'all' ? 'All' : status === 'in_progress' ? 'In Progress' : status.charAt(0).toUpperCase() + status.slice(1)}
@@ -611,24 +645,28 @@ export default function MaintenanceListScreen() {
         transparent={true}
         onRequestClose={() => setShowFiltersModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filters</Text>
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card.DEFAULT }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.DEFAULT }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filters</Text>
               <TouchableOpacity onPress={() => setShowFiltersModal(false)}>
-                <X size={24} color={colors.text.primary} />
+                <X size={24} color={themeColors.text.primary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
               <View style={styles.filterSection}>
-                <Text style={styles.filterLabel}>Status</Text>
+                <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Status</Text>
                 <View style={styles.filterOptions}>
                   {['all', 'open', 'in_progress', 'completed', 'closed'].map((status) => (
                     <TouchableOpacity
                       key={status}
                       style={[
                         styles.filterOptionButton,
+                        {
+                          backgroundColor: selectedStatus === status ? themeColors.primary.DEFAULT : themeColors.card.DEFAULT,
+                          borderColor: selectedStatus === status ? themeColors.primary.DEFAULT : themeColors.border.light,
+                        },
                         selectedStatus === status && styles.filterOptionButtonActive,
                       ]}
                       onPress={() => setSelectedStatus(status)}
@@ -636,6 +674,9 @@ export default function MaintenanceListScreen() {
                       <Text
                         style={[
                           styles.filterOptionText,
+                          {
+                            color: selectedStatus === status ? themeColors.primary.foreground : themeColors.text.secondary,
+                          },
                           selectedStatus === status && styles.filterOptionTextActive,
                         ]}
                       >
@@ -647,8 +688,8 @@ export default function MaintenanceListScreen() {
               </View>
 
               <View style={styles.filterSection}>
-                <Text style={styles.filterLabel}>Block</Text>
-                <ScrollView style={styles.filterSelectContainer}>
+                <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Block</Text>
+                <ScrollView style={styles.filterSelectContainer} showsVerticalScrollIndicator={true}>
                   {['all', ...blocks.map(b => b.id)].map((blockId) => {
                     const block = blockId === 'all' ? null : blocks.find(b => b.id === blockId);
                     return (
@@ -675,8 +716,8 @@ export default function MaintenanceListScreen() {
               </View>
 
               <View style={styles.filterSection}>
-                <Text style={styles.filterLabel}>Property</Text>
-                <ScrollView style={styles.filterSelectContainer}>
+                <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Property</Text>
+                <ScrollView style={styles.filterSelectContainer} showsVerticalScrollIndicator={true}>
                   {['all', ...properties.filter(p => filterBlock === 'all' || p.blockId === filterBlock).map(p => p.id)].map((propertyId) => {
                     const property = propertyId === 'all' ? null : properties.find(p => p.id === propertyId);
                     return (
@@ -684,14 +725,20 @@ export default function MaintenanceListScreen() {
                         key={propertyId}
                         style={[
                           styles.filterSelectOption,
-                          filterProperty === propertyId && styles.filterSelectOptionActive,
+                          {
+                            backgroundColor: filterProperty === propertyId ? themeColors.primary.light : themeColors.card.DEFAULT,
+                            borderColor: filterProperty === propertyId ? themeColors.primary.DEFAULT : themeColors.border.light,
+                          },
                         ]}
                         onPress={() => setFilterProperty(propertyId)}
                       >
                         <Text
                           style={[
                             styles.filterSelectText,
-                            filterProperty === propertyId && styles.filterSelectTextActive,
+                            {
+                              color: filterProperty === propertyId ? themeColors.primary.DEFAULT : themeColors.text.primary,
+                              fontWeight: filterProperty === propertyId ? '600' : '400',
+                            },
                           ]}
                         >
                           {property ? property.name : 'All Properties'}
@@ -727,24 +774,24 @@ export default function MaintenanceListScreen() {
         onRequestClose={() => setShowWorkOrderModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create Work Order</Text>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card.DEFAULT }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.DEFAULT }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Create Work Order</Text>
               <TouchableOpacity onPress={() => setShowWorkOrderModal(false)}>
-                <X size={24} color={colors.text.primary} />
+                <X size={24} color={themeColors.text.primary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
               {selectedRequestForWorkOrder && (
-                <Text style={styles.workOrderRequestTitle}>
+                <Text style={[styles.workOrderRequestTitle, { color: themeColors.text.primary }]}>
                   {selectedRequestForWorkOrder.title}
                 </Text>
               )}
 
               <View style={styles.workOrderForm}>
-                <Text style={styles.workOrderFormLabel}>Assign to Team (Optional)</Text>
-                <ScrollView style={styles.filterSelectContainer}>
+                <Text style={[styles.workOrderFormLabel, { color: themeColors.text.primary }]}>Assign to Team (Optional)</Text>
+                <ScrollView style={styles.filterSelectContainer} showsVerticalScrollIndicator={true}>
                   <TouchableOpacity
                     style={[
                       styles.filterSelectOption,
@@ -788,12 +835,15 @@ export default function MaintenanceListScreen() {
                   ))}
                 </ScrollView>
 
-                <Text style={[styles.workOrderFormLabel, { marginTop: 16 }]}>Or Assign to Contractor (Optional)</Text>
+                <Text style={[styles.workOrderFormLabel, { marginTop: 16, color: themeColors.text.primary }]}>Or Assign to Contractor (Optional)</Text>
                 <ScrollView style={styles.filterSelectContainer}>
                   <TouchableOpacity
                     style={[
                       styles.filterSelectOption,
-                      !workOrderContractorId && styles.filterSelectOptionActive,
+                      {
+                        backgroundColor: !workOrderContractorId ? themeColors.primary.light : themeColors.card.DEFAULT,
+                        borderColor: !workOrderContractorId ? themeColors.primary.DEFAULT : themeColors.border.light,
+                      },
                     ]}
                     onPress={() => {
                       setWorkOrderTeamId('');
@@ -803,7 +853,10 @@ export default function MaintenanceListScreen() {
                     <Text
                       style={[
                         styles.filterSelectText,
-                        !workOrderContractorId && styles.filterSelectTextActive,
+                        {
+                          color: !workOrderContractorId ? themeColors.primary.DEFAULT : themeColors.text.primary,
+                          fontWeight: !workOrderContractorId ? '600' : '400',
+                        },
                       ]}
                     >
                       None
@@ -860,12 +913,9 @@ export default function MaintenanceListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   header: {
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
@@ -877,13 +927,10 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#000',
   },
   tabsContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
     paddingHorizontal: 16,
   },
   tab: {
@@ -896,25 +943,22 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: colors.primary.DEFAULT,
+    // borderBottomColor will be set dynamically
   },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text.secondary,
     marginLeft: 6,
   },
   tabTextActive: {
-    color: colors.primary.DEFAULT,
+    // color will be set dynamically
   },
   filtersContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   filterButton: {
     flexDirection: 'row',
@@ -923,14 +967,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border.light,
     marginRight: 8,
     position: 'relative',
   },
   filterButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text.primary,
     marginLeft: 6,
   },
   filterIndicator: {
@@ -940,7 +982,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.primary.DEFAULT,
   },
   statusFilters: {
     flex: 1,
@@ -950,21 +991,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.border.light,
     marginRight: 8,
-    backgroundColor: '#fff',
   },
   statusFilterButtonActive: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   statusFilterText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text.secondary,
   },
   statusFilterTextActive: {
-    color: '#fff',
+    // Color set dynamically
   },
   listContent: {
     padding: 16,
@@ -985,7 +1022,6 @@ const styles = StyleSheet.create({
   requestTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
     flex: 1,
     marginRight: 8,
   },
@@ -1002,7 +1038,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   priorityBadgeText: {
-    color: '#fff',
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'capitalize',
@@ -1022,26 +1057,22 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: colors.text.secondary,
     marginBottom: 4,
   },
   description: {
     fontSize: 14,
-    color: '#666',
     lineHeight: 20,
     marginBottom: 12,
   },
   requestFooter: {
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
   },
   reporterInfo: {
     marginBottom: 12,
   },
   footerText: {
     fontSize: 12,
-    color: colors.text.secondary,
     marginBottom: 2,
   },
   actionRow: {
@@ -1065,13 +1096,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1.5,
-    borderColor: colors.border.dark,
-    backgroundColor: '#fff',
   },
   assignButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text.primary,
   },
   workOrderButton: {
     flexDirection: 'row',
@@ -1080,14 +1108,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1.5,
-    borderColor: colors.border.dark,
-    backgroundColor: '#fff',
     gap: 4,
   },
   workOrderButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text.primary,
   },
   workOrderCard: {
     marginBottom: 16,
@@ -1106,7 +1131,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '600',
-    color: '#000',
   },
   workOrderStatusBadge: {
     paddingHorizontal: 8,
@@ -1114,7 +1138,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   workOrderStatusText: {
-    color: '#fff',
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'capitalize',
@@ -1133,7 +1156,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '90%',
@@ -1145,12 +1167,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#000',
   },
   modalBody: {
     padding: 16,
@@ -1161,7 +1181,6 @@ const styles = StyleSheet.create({
   filterLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
     marginBottom: 12,
   },
   filterOptions: {
@@ -1174,22 +1193,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border.light,
-    backgroundColor: '#fff',
     minWidth: 100,
   },
   filterOptionButtonActive: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   filterOptionText: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text.secondary,
     textAlign: 'center',
   },
   filterOptionTextActive: {
-    color: '#fff',
+    // Color set dynamically
   },
   filterSelectContainer: {
     maxHeight: 200,
@@ -1199,21 +1214,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: colors.border.light,
-    backgroundColor: '#fff',
     marginBottom: 8,
   },
   filterSelectOptionActive: {
-    backgroundColor: colors.primary.DEFAULT + '20',
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   filterSelectText: {
     fontSize: 14,
-    color: colors.text.primary,
   },
   filterSelectTextActive: {
-    color: colors.primary.DEFAULT,
-    fontWeight: '600',
+    // Color set dynamically
   },
   clearFiltersButton: {
     marginTop: 8,
@@ -1221,7 +1231,6 @@ const styles = StyleSheet.create({
   workOrderRequestTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
     marginBottom: 16,
   },
   workOrderForm: {
@@ -1230,7 +1239,6 @@ const styles = StyleSheet.create({
   workOrderFormLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
     marginBottom: 8,
   },
   modalActions: {

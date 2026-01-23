@@ -12,6 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { Eye, EyeOff } from 'lucide-react-native';
 import Logo from '../../components/ui/Logo';
 import { colors, spacing, typography, borderRadius } from '../../theme';
@@ -22,6 +23,9 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const { login, isLoading } = useAuth();
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -32,17 +36,28 @@ export default function LoginScreen() {
     setError(null);
     try {
       await login(email.trim().toLowerCase(), password);
+      // Navigation happens automatically via AppNavigator when isAuthenticated changes
     } catch (err: any) {
-      // Display generic error message for any login failure (wrong credentials or wrong role)
-      setError('Invalid credentials. Please try again.');
+      // Use the error message directly - it should already be user-friendly
+      // from api.ts and AuthContext error handling
+      let errorMessage = 'Email or password is incorrect. Please try again.';
+      
+      if (err?.message) {
+        // Use the error message if it's user-friendly
+        errorMessage = err.message;
+      } else if (err?.name === 'AbortError') {
+        errorMessage = 'Request timeout. Please check your internet connection.';
+      }
+      
+      setError(errorMessage);
     }
   };
 
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#1e3a5f" />
+      <StatusBar barStyle={theme?.theme === 'dark' ? "light-content" : "dark-content"} backgroundColor={themeColors.background} />
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: themeColors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
@@ -53,24 +68,28 @@ export default function LoginScreen() {
           <View style={styles.content}>
             {/* Logo and App Name */}
             <View style={styles.logoContainer}>
-              <Logo size={80} color={colors.primary.DEFAULT} />
-              <Text style={styles.appName}>INSPECT 360</Text>
+              <Logo size={80} color={themeColors.primary.DEFAULT} />
+              <Text style={[styles.appName, { color: themeColors.text.primary }]}>INSPECT 360</Text>
             </View>
 
             {/* Login Card */}
-            <View style={styles.card}>
-              <Text style={styles.welcomeTitle}>Welcome back</Text>
-              <Text style={styles.welcomeSubtitle}>
+            <View style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+              <Text style={[styles.welcomeTitle, { color: themeColors.text.primary }]}>Welcome back</Text>
+              <Text style={[styles.welcomeSubtitle, { color: themeColors.text.secondary }]}>
                 Enter your credentials to access your account
               </Text>
 
               <View style={styles.form}>
                 <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Email Address</Text>
+                  <Text style={[styles.label, { color: themeColors.text.primary }]}>Email Address</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { 
+                      borderColor: themeColors.border.DEFAULT,
+                      backgroundColor: themeColors.input,
+                      color: themeColors.text.primary 
+                    }]}
                     placeholder="Enter your email address"
-                    placeholderTextColor={colors.text.muted}
+                    placeholderTextColor={themeColors.text.muted}
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
@@ -81,12 +100,16 @@ export default function LoginScreen() {
                 </View>
 
                 <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Password</Text>
+                  <Text style={[styles.label, { color: themeColors.text.primary }]}>Password</Text>
                   <View style={styles.passwordContainer}>
                     <TextInput
-                      style={styles.passwordInput}
+                      style={[styles.passwordInput, { 
+                        borderColor: themeColors.border.DEFAULT,
+                        backgroundColor: themeColors.input,
+                        color: themeColors.text.primary 
+                      }]}
                       placeholder="Enter your password"
-                      placeholderTextColor={colors.text.muted}
+                      placeholderTextColor={themeColors.text.muted}
                       value={password}
                       onChangeText={setPassword}
                       secureTextEntry={!showPassword}
@@ -99,9 +122,9 @@ export default function LoginScreen() {
                       disabled={!!isLoading}
                     >
                       {showPassword ? (
-                        <EyeOff size={20} color={colors.text.secondary} />
+                        <EyeOff size={20} color={themeColors.text.secondary} />
                       ) : (
-                        <Eye size={20} color={colors.text.secondary} />
+                        <Eye size={20} color={themeColors.text.secondary} />
                       )}
                     </TouchableOpacity>
                   </View>
@@ -114,25 +137,32 @@ export default function LoginScreen() {
                   }}
                   disabled={!!isLoading}
                 >
-                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                  <Text style={[styles.forgotPasswordText, { color: themeColors.primary.DEFAULT }]}>Forgot password?</Text>
                 </TouchableOpacity>
 
                 {error && (
-                  <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>{error}</Text>
+                  <View style={[styles.errorContainer, { 
+                    backgroundColor: themeColors.destructive.DEFAULT + '15',
+                    borderColor: themeColors.destructive.DEFAULT + '30'
+                  }]}>
+                    <Text style={[styles.errorText, { color: themeColors.destructive.DEFAULT }]}>{error}</Text>
                   </View>
                 )}
 
                 <TouchableOpacity
-                  style={[styles.button, isLoading && styles.buttonDisabled]}
+                  style={[
+                    styles.button, 
+                    { backgroundColor: themeColors.primary.DEFAULT },
+                    isLoading && styles.buttonDisabled
+                  ]}
                   onPress={handleLogin}
                   disabled={!!isLoading}
                   activeOpacity={0.8}
                 >
                   {isLoading ? (
-                    <ActivityIndicator color={colors.primary.foreground} />
+                    <ActivityIndicator color={themeColors.primary.foreground} />
                   ) : (
-                    <Text style={styles.buttonText}>Sign in</Text>
+                    <Text style={[styles.buttonText, { color: themeColors.primary.foreground }]}>Sign in</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -147,7 +177,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
@@ -169,11 +198,9 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     letterSpacing: 1,
   },
   card: {
-    backgroundColor: colors.card.DEFAULT,
     borderRadius: borderRadius.xl,
     padding: spacing[6],
     shadowColor: '#000',
@@ -188,12 +215,10 @@ const styles = StyleSheet.create({
   welcomeTitle: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   welcomeSubtitle: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginBottom: spacing[6],
   },
   form: {
@@ -206,16 +231,12 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
     marginBottom: spacing[2],
-    color: colors.text.primary,
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
     borderRadius: borderRadius.md,
     padding: spacing[3],
     fontSize: typography.fontSize.base,
-    backgroundColor: colors.background,
-    color: colors.text.primary,
     minHeight: 44,
   },
   passwordContainer: {
@@ -226,13 +247,10 @@ const styles = StyleSheet.create({
   passwordInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
     borderRadius: borderRadius.md,
     padding: spacing[3],
     paddingRight: 45,
     fontSize: typography.fontSize.base,
-    backgroundColor: colors.background,
-    color: colors.text.primary,
     minHeight: 44,
   },
   eyeButton: {
@@ -247,24 +265,19 @@ const styles = StyleSheet.create({
   },
   forgotPasswordText: {
     fontSize: typography.fontSize.sm,
-    color: colors.primary.DEFAULT,
     fontWeight: typography.fontWeight.medium,
   },
   errorContainer: {
     marginBottom: spacing[4],
     padding: spacing[3],
-    backgroundColor: colors.destructive.DEFAULT + '15',
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.destructive.DEFAULT + '30',
   },
   errorText: {
-    color: colors.destructive.DEFAULT,
     fontSize: typography.fontSize.sm,
     textAlign: 'center',
   },
   button: {
-    backgroundColor: colors.primary.DEFAULT,
     borderRadius: borderRadius.md,
     padding: spacing[4],
     alignItems: 'center',
@@ -276,7 +289,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: colors.primary.foreground,
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
   },

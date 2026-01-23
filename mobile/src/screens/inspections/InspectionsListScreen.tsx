@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -37,9 +37,16 @@ import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import DatePicker from '../../components/ui/DatePicker';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { localDatabase } from '../../services/localDatabase';
+import { syncManager } from '../../services/syncManager';
+import { Cloud, WifiOff } from 'lucide-react-native';
 
 type NavigationProp = StackNavigationProp<InspectionsStackParamList, 'InspectionsList'>;
 
@@ -70,7 +77,16 @@ interface Inspection {
   tenantComments?: string | null;
 }
 
-const getStatusBadge = (status: string) => {
+// Helper function to get status badge - defined at module level but only called from component
+// Must be extra defensive since it's defined outside component scope
+const getStatusBadge = (status: string, themeColors?: any) => {
+  // Triple-check: ensure themeColors is always a valid object, fallback to default colors
+  let safeThemeColors = colors;
+  if (themeColors && typeof themeColors === 'object' && themeColors !== null) {
+    safeThemeColors = themeColors;
+  }
+  
+  try {
   switch (status) {
     case 'in_progress':
       return (
@@ -89,18 +105,27 @@ const getStatusBadge = (status: string) => {
         <Badge 
           variant="outline" 
           size="sm" 
-          style={{ ...styles.statusBadge, borderColor: '#3b82f6', borderWidth: 1 }}
+            style={{ ...styles.statusBadge, borderColor: (safeThemeColors?.primary?.DEFAULT || colors.primary.DEFAULT), borderWidth: 1 }}
         >
-          <Text style={{ color: '#3b82f6', fontSize: 10 }}>Scheduled</Text>
+            <Text style={{ color: (safeThemeColors?.primary?.DEFAULT || colors.primary.DEFAULT), fontSize: 10 }}>Scheduled</Text>
         </Badge>
       );
     case 'draft':
       return (
         <Badge variant="outline" size="sm" style={styles.statusBadge}>
-          <Text style={{ color: colors.text.secondary, fontSize: 10 }}>Draft</Text>
+            <Text style={{ color: (safeThemeColors?.text?.secondary || colors.text.secondary), fontSize: 10 }}>Draft</Text>
         </Badge>
       );
     default:
+        return (
+          <Badge variant="outline" size="sm" style={styles.statusBadge}>
+            <Text style={{ color: (safeThemeColors?.text?.secondary || colors.text.secondary), fontSize: 10 }}>{status}</Text>
+          </Badge>
+        );
+    }
+  } catch (error) {
+    // Fallback in case of any errors - return a simple badge
+    console.warn('Error in getStatusBadge:', error);
       return (
         <Badge variant="outline" size="sm" style={styles.statusBadge}>
           <Text style={{ color: colors.text.secondary, fontSize: 10 }}>{status}</Text>
@@ -173,7 +198,17 @@ const STATUS_OPTIONS = [
 export default function InspectionsListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
+  
+  // Get theme colors with fallback - hooks must be called unconditionally
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
+  
+  const { isAuthenticated, user } = useAuth();
+  const isOnline = useOnlineStatus();
   const [refreshing, setRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const [filterBlockId, setFilterBlockId] = useState('');
   const [filterPropertyId, setFilterPropertyId] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -193,19 +228,156 @@ export default function InspectionsListScreen() {
   const [copyImages, setCopyImages] = useState(true);
   const [copyText, setCopyText] = useState(true);
 
-  const { data: inspections = [], isLoading } = useQuery({
-    queryKey: ['/api/inspections/my'],
-    queryFn: () => inspectionsService.getMyInspections(),
+  // Initialize local DB and load pending count
+  React.useEffect(() => {
+    const initLocalDB = async () => {
+      try {
+        await localDatabase.initialize();
+        const count = await syncManager.getPendingCount();
+        setPendingCount(count);
+      } catch (error) {
+        console.error('[InspectionsList] Failed to initialize local DB:', error);
+      }
+    };
+    initLocalDB();
+
+    // Refresh pending count periodically
+    const interval = setInterval(async () => {
+      const count = await syncManager.getPendingCount();
+      setPendingCount(count);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Always load from local DB first (both online and offline)
+  const { data: localInspections = [], isLoading: isLoadingLocal, refetch: refetchLocal } = useQuery({
+    queryKey: ['local-inspections', user?.id],
+    queryFn: async () => {
+      try {
+        await localDatabase.initialize();
+        const locals = await localDatabase.getAllInspections(user?.id);
+        return locals.map(local => {
+          try {
+            const templateData = JSON.parse(local.template_snapshot_json);
+            const metadata = templateData._metadata || {};
+            
+            return {
+        id: local.id,
+        type: local.type,
+        status: local.status,
+        scheduledDate: local.scheduled_date || undefined,
+              property: metadata.property || undefined,
+              block: metadata.block || undefined,
+              clerk: metadata.clerk || undefined,
+              templateSnapshotJson: templateData,
+              tenantApprovalStatus: metadata.tenantApprovalStatus || undefined,
+              tenantApprovalDeadline: metadata.tenantApprovalDeadline || undefined,
+              tenantComments: metadata.tenantComments || undefined,
+              createdAt: local.created_at,
+              updatedAt: local.updated_at,
+            };
+          } catch (parseError) {
+            console.error('[InspectionsList] Error parsing inspection data:', parseError);
+            return {
+              id: local.id,
+              type: local.type,
+              status: local.status,
+              scheduledDate: local.scheduled_date || undefined,
+              property: undefined,
+              block: undefined,
+              clerk: undefined,
+              templateSnapshotJson: {},
+              createdAt: local.created_at,
+              updatedAt: local.updated_at,
+            };
+          }
+        });
+      } catch (error) {
+        console.error('[InspectionsList] Error loading local inspections:', error);
+        return [];
+      }
+    },
+    staleTime: 0, // Always refetch to get latest local data
+    refetchOnMount: true,
+    enabled: !!user?.id, // only load scoped local data once we know the user
   });
+
+  // Fetch from server when online and authenticated
+  const { data: serverInspections = [], isLoading: isLoadingServer, refetch: refetchServer } = useQuery({
+    queryKey: ['/api/inspections/my'],
+    queryFn: async () => {
+      const inspections = await inspectionsService.getMyInspections();
+      
+      // Always save to local DB (both online and offline scenarios)
+        try {
+          await localDatabase.initialize();
+        for (const inspection of inspections) {
+            try {
+              await localDatabase.saveInspection(inspection);
+            } catch (saveError) {
+              console.error('[InspectionsList] Failed to save inspection to local DB:', saveError);
+              // Continue with other inspections even if one fails
+            }
+          }
+        // After saving, refetch local inspections to update the UI
+        queryClient.invalidateQueries({ queryKey: ['local-inspections'] });
+        } catch (error) {
+          console.error('[InspectionsList] Failed to initialize or save to local DB:', error);
+        }
+      
+      return inspections;
+    },
+    enabled: isOnline && isAuthenticated, // Only fetch when online AND authenticated
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+
+  // Always use local inspections as the source of truth
+  // When online, server data will update local DB, and local query will refetch
+  // When offline, only local data is available
+  const effectiveInspections = localInspections;
+  const isLoading = isOnline ? (isLoadingLocal || isLoadingServer) : isLoadingLocal;
+
+  // Load sync statuses for all inspections
+  const [syncStatuses, setSyncStatuses] = React.useState<Record<string, { status: 'synced' | 'pending' | 'conflict'; pendingCount: number }>>({});
+  
+  React.useEffect(() => {
+    const loadSyncStatuses = async () => {
+      const statuses: Record<string, { status: 'synced' | 'pending' | 'conflict'; pendingCount: number }> = {};
+      for (const inspection of effectiveInspections) {
+        try {
+          const local = await localDatabase.getInspection(inspection.id);
+          if (local) {
+            const count = await localDatabase.getPendingEntriesCount(inspection.id);
+            statuses[inspection.id] = {
+              status: local.sync_status,
+              pendingCount: count,
+            };
+          } else {
+            statuses[inspection.id] = { status: 'synced', pendingCount: 0 };
+          }
+        } catch (error) {
+          statuses[inspection.id] = { status: 'synced', pendingCount: 0 };
+        }
+      }
+      setSyncStatuses(statuses);
+    };
+    if (effectiveInspections.length > 0) {
+      loadSyncStatuses();
+    }
+  }, [effectiveInspections]);
 
   const { data: blocks = [] } = useQuery({
     queryKey: ['/api/blocks'],
     queryFn: () => apiRequestJson<any[]>('GET', '/api/blocks'),
+    enabled: isAuthenticated, // Only fetch when authenticated
   });
 
   const { data: properties = [] } = useQuery({
     queryKey: ['/api/properties'],
     queryFn: () => apiRequestJson<any[]>('GET', '/api/properties'),
+    enabled: isAuthenticated, // Only fetch when authenticated
   });
 
   const copyInspection = useMutation({
@@ -249,7 +421,7 @@ export default function InspectionsListScreen() {
   }, [properties, filterBlockId]);
 
   const filteredInspections = useMemo(() => {
-    let filtered = [...inspections];
+    let filtered = [...effectiveInspections];
 
     // Block filter - check both blockId and property's blockId
     if (filterBlockId) {
@@ -290,12 +462,43 @@ export default function InspectionsListScreen() {
     }
 
     return filtered;
-  }, [inspections, filterBlockId, filterPropertyId, filterStatus, filterOverdue, filterDueSoon, properties]);
+  }, [effectiveInspections, filterBlockId, filterPropertyId, filterStatus, filterOverdue, filterDueSoon, properties]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await queryClient.refetchQueries({ queryKey: ['/api/inspections/my'] });
+    try {
+      // Always refetch local inspections
+      await refetchLocal();
+    
+      // If online, also refetch from server and sync
+    if (isOnline) {
+      try {
+        setIsSyncing(true);
+        const result = await syncManager.startSync();
+        const count = await syncManager.getPendingCount();
+        setPendingCount(count);
+        
+        if (result.success > 0) {
+          // Refresh inspections after successful sync
+            await refetchServer();
+            await refetchLocal();
+          } else {
+            // Still refetch server data even if sync had no pending items
+            await refetchServer();
+        }
+        } catch (syncError) {
+          console.error('[InspectionsList] Sync error during refresh:', syncError);
+          // Still try to refetch server data
+          await refetchServer();
+      } finally {
+        setIsSyncing(false);
+      }
+    }
+    } catch (error) {
+      console.error('[InspectionsList] Refresh error:', error);
+    } finally {
     setRefreshing(false);
+    }
   };
 
   const handleCopyClick = (inspection: Inspection) => {
@@ -322,7 +525,7 @@ export default function InspectionsListScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: themeColors.background }]}>
         <LoadingSpinner />
       </View>
     );
@@ -330,7 +533,7 @@ export default function InspectionsListScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: themeColors.background }]}
       contentContainerStyle={[
         styles.contentContainer,
         { 
@@ -343,45 +546,120 @@ export default function InspectionsListScreen() {
       {/* Page Header */}
       <View style={styles.pageHeader}>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Inspections</Text>
-          <Text style={styles.subtitle}>Manage and conduct property inspections</Text>
+          <Text style={[styles.title, { color: themeColors.text.primary }]}>Inspections</Text>
+          <Text style={[styles.subtitle, { color: themeColors.text.secondary }]}>Manage and conduct property inspections</Text>
         </View>
         <Button
           title="New Inspection"
           onPress={() => {
+            if (!isOnline) {
+              Alert.alert(
+                'Offline Mode',
+                'You cannot create new inspections while offline. Please connect to the internet to create a new inspection.',
+                [{ text: 'OK' }]
+              );
+              return;
+            }
             navigation.navigate('CreateInspection');
           }}
           variant="primary"
           size="sm"
           icon={<Plus size={16} color="#ffffff" />}
+          disabled={!isOnline}
         />
       </View>
 
+      {/* Offline/Sync Status Banner */}
+      {!isOnline && (
+        <Card style={{
+          ...styles.offlineBanner,
+          backgroundColor: themeColors.warning + '15',
+          borderColor: themeColors.warning + '40',
+        }}>
+          <View style={styles.offlineBannerContent}>
+            <WifiOff size={16} color={themeColors.warning} />
+            <View style={styles.offlineBannerTextContainer}>
+              <Text style={[styles.offlineBannerText, { color: themeColors.warning }]}>Working Offline</Text>
+              <Text style={[styles.offlineBannerDescription, { color: themeColors.text.secondary }]}>
+                You can edit existing inspections (add photos, notes, conditions). Creating new inspections or completing inspections requires internet connection.
+              </Text>
+              {pendingCount > 0 && (
+                <Text style={[styles.offlineBannerSubtext, { color: themeColors.text.muted }]}>
+                  {pendingCount} item{pendingCount !== 1 ? 's' : ''} pending sync
+                </Text>
+              )}
+            </View>
+          </View>
+        </Card>
+      )}
+
+      {/* Auto-sync is handled by useOfflineSync hook - no manual sync button needed */}
+      {isOnline && pendingCount > 0 && isSyncing && (
+        <Card style={styles.syncBanner}>
+          <View style={styles.syncBannerContent}>
+            <Cloud size={16} color={themeColors.primary.DEFAULT} />
+            <Text style={[styles.syncBannerText, { color: themeColors.text.primary }]}>
+              Syncing {pendingCount} item{pendingCount !== 1 ? 's' : ''}...
+            </Text>
+          </View>
+        </Card>
+      )}
+
       {/* Filters - Simplified for mobile */}
       <View style={styles.filters}>
-        <Text style={styles.filterLabel}>Filter by:</Text>
+        <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Filter by:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
           <TouchableOpacity
-            style={[styles.filterChip, filterBlockId && styles.filterChipActive]}
+            style={[
+              styles.filterChip, 
+              { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: filterBlockId ? themeColors.primary.light : themeColors.background 
+              },
+              filterBlockId && { borderColor: themeColors.primary.DEFAULT }
+            ]}
             onPress={() => setShowBlockFilter(true)}
           >
-            <Text style={[styles.filterChipText, filterBlockId && styles.filterChipTextActive]}>
+            <Text style={[
+              styles.filterChipText, 
+              { color: filterBlockId ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+            ]}>
               Block: {selectedBlock?.name || 'All'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.filterChip, filterPropertyId && styles.filterChipActive]}
+            style={[
+              styles.filterChip, 
+              { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: filterPropertyId ? themeColors.primary.light : themeColors.background 
+              },
+              filterPropertyId && { borderColor: themeColors.primary.DEFAULT }
+            ]}
             onPress={() => setShowPropertyFilter(true)}
           >
-            <Text style={[styles.filterChipText, filterPropertyId && styles.filterChipTextActive]}>
+            <Text style={[
+              styles.filterChipText, 
+              { color: filterPropertyId ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+            ]}>
               Property: {selectedProperty?.name || 'All'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.filterChip, filterStatus && styles.filterChipActive]}
+            style={[
+              styles.filterChip, 
+              { 
+                borderColor: themeColors.border.DEFAULT,
+                backgroundColor: filterStatus ? themeColors.primary.light : themeColors.background 
+              },
+              filterStatus && { borderColor: themeColors.primary.DEFAULT }
+            ]}
             onPress={() => setShowStatusFilter(true)}
           >
-            <Text style={[styles.filterChipText, filterStatus && styles.filterChipTextActive]}>
+            <Text style={[
+              styles.filterChipText, 
+              { color: filterStatus ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+            ]}>
               Status: {selectedStatusLabel}
             </Text>
           </TouchableOpacity>
@@ -396,15 +674,21 @@ export default function InspectionsListScreen() {
         onRequestClose={() => setShowBlockFilter(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter by Block</Text>
+          <View style={[
+            styles.modalContent, 
+            { 
+              backgroundColor: themeColors.background,
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+            }
+          ]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Block</Text>
               <TouchableOpacity 
                 onPress={() => setShowBlockFilter(false)}
-                style={styles.modalCloseButton}
+                style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
               >
-                <Text style={styles.modalClose}>✕</Text>
+                <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
               </TouchableOpacity>
             </View>
       <FlatList
@@ -414,6 +698,9 @@ export default function InspectionsListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
+                    { 
+                      backgroundColor: filterBlockId === item.id ? themeColors.primary.light : themeColors.card.DEFAULT 
+                    },
                     filterBlockId === item.id && styles.modalItemSelected,
                   ]}
                   onPress={() => handleBlockFilterChange(item.id)}
@@ -421,13 +708,13 @@ export default function InspectionsListScreen() {
                   <Text
                     style={[
                       styles.modalItemText,
-                      filterBlockId === item.id && styles.modalItemTextSelected,
+                      { color: filterBlockId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
                     ]}
                   >
                     {item.name}
                   </Text>
                   {filterBlockId === item.id && (
-                    <CheckCircle2 size={20} color={colors.primary.DEFAULT} />
+                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
                   )}
                 </TouchableOpacity>
               )}
@@ -444,9 +731,15 @@ export default function InspectionsListScreen() {
         onRequestClose={() => setShowPropertyFilter(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter by Property</Text>
+          <View style={[
+            styles.modalContent, 
+            { 
+              backgroundColor: themeColors.card.DEFAULT,
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+            }
+          ]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Property</Text>
               <TouchableOpacity 
                 onPress={() => setShowPropertyFilter(false)}
                 style={styles.modalCloseButton}
@@ -464,7 +757,10 @@ export default function InspectionsListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    filterPropertyId === item.id && styles.modalItemSelected,
+                    { 
+                      backgroundColor: filterPropertyId === item.id ? themeColors.primary.light : themeColors.card.DEFAULT 
+                    },
+                    filterPropertyId === item.id && { borderColor: themeColors.primary.DEFAULT, borderWidth: 2 }
                   ]}
                   onPress={() => {
                     setFilterPropertyId(item.id);
@@ -474,13 +770,13 @@ export default function InspectionsListScreen() {
                   <Text
                     style={[
                       styles.modalItemText,
-                      filterPropertyId === item.id && styles.modalItemTextSelected,
+                      { color: filterPropertyId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
                     ]}
                   >
                     {item.name}
                   </Text>
                   {filterPropertyId === item.id && (
-                    <CheckCircle2 size={20} color={colors.primary.DEFAULT} />
+                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
                   )}
                 </TouchableOpacity>
               )}
@@ -497,15 +793,21 @@ export default function InspectionsListScreen() {
         onRequestClose={() => setShowStatusFilter(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter by Status</Text>
+          <View style={[
+            styles.modalContent, 
+            { 
+              backgroundColor: themeColors.background,
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+            }
+          ]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Status</Text>
               <TouchableOpacity 
                 onPress={() => setShowStatusFilter(false)}
-                style={styles.modalCloseButton}
+                style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
               >
-                <Text style={styles.modalClose}>✕</Text>
+                <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
               </TouchableOpacity>
           </View>
             <FlatList
@@ -517,7 +819,11 @@ export default function InspectionsListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    filterStatus === item.value && styles.modalItemSelected,
+                    { 
+                      backgroundColor: filterStatus === item.value ? themeColors.primary.light : themeColors.card.DEFAULT,
+                      borderColor: filterStatus === item.value ? themeColors.primary.DEFAULT : themeColors.border.light,
+                      borderWidth: filterStatus === item.value ? 2 : 1,
+                    },
                   ]}
                   onPress={() => {
                     setFilterStatus(item.value);
@@ -527,13 +833,13 @@ export default function InspectionsListScreen() {
                   <Text
                     style={[
                       styles.modalItemText,
-                      filterStatus === item.value && styles.modalItemTextSelected,
+                      { color: filterStatus === item.value ? themeColors.primary.DEFAULT : themeColors.text.primary }
                     ]}
                   >
                     {item.label}
                   </Text>
                   {filterStatus === item.value && (
-                    <CheckCircle2 size={20} color={colors.primary.DEFAULT} />
+                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
                   )}
                 </TouchableOpacity>
         )}
@@ -546,9 +852,9 @@ export default function InspectionsListScreen() {
       {filteredInspections.length === 0 ? (
         <Card style={styles.emptyCard}>
           <EmptyState
-            title={inspections.length === 0 ? 'No inspections yet' : 'No inspections match your filters'}
+            title={effectiveInspections.length === 0 ? 'No inspections yet' : 'No inspections match your filters'}
             message={
-              inspections.length === 0
+              effectiveInspections.length === 0
                 ? 'Create your first inspection to get started'
                 : 'Try adjusting your filters or create a new inspection'
             }
@@ -556,40 +862,53 @@ export default function InspectionsListScreen() {
         </Card>
       ) : (
         <View style={styles.inspectionsGrid}>
-          {filteredInspections.map((inspection: Inspection) => (
-            <Card key={inspection.id} style={styles.inspectionCard} variant="elevated">
-              <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderLeft}>
-                  <Text style={styles.propertyName}>
-                    {inspection.property?.name || inspection.block?.name || 'Unknown Property'}
-                  </Text>
-                  <View style={styles.badgeRow}>
-                    {getStatusBadge(inspection.status)}
-                    {getTenantApprovalBadge(inspection)}
+          {filteredInspections.map((inspection: Inspection) => {
+            const syncStatus = syncStatuses[inspection.id] || { status: 'synced' as const, pendingCount: 0 };
+            
+            return (
+              <Card key={inspection.id} style={styles.inspectionCard} variant="elevated">
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Text style={[styles.propertyName, { color: themeColors.text.primary }]}>
+                      {inspection.property?.name || inspection.block?.name || 'Unknown Property'}
+                    </Text>
+                    <View style={styles.badgeRow}>
+                      {getStatusBadge(inspection.status, themeColors)}
+                      {getTenantApprovalBadge(inspection)}
+                      {syncStatus.status === 'pending' && syncStatus.pendingCount > 0 && (
+                        <Badge variant="warning" size="sm" style={styles.statusBadge}>
+                          Pending ({syncStatus.pendingCount})
+                        </Badge>
+                      )}
+                      {syncStatus.status === 'conflict' && (
+                        <Badge variant="destructive" size="sm" style={styles.statusBadge}>
+                          Conflict
+                        </Badge>
+                      )}
+                    </View>
                   </View>
                 </View>
-              </View>
 
               <View style={styles.cardContent}>
                 {/* Address */}
                 <View style={styles.infoRow}>
-                  <MapPin size={14} color={colors.text.secondary} />
-                  <Text style={styles.infoText}>
+                  <MapPin size={14} color={themeColors.text.secondary} />
+                  <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
                     {inspection.property?.address || inspection.block?.address || 'No location'}
                   </Text>
                 </View>
 
                 {/* Type */}
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Type:</Text>
+                  <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Type:</Text>
                   {getTypeBadge(inspection.type)}
                 </View>
 
                 {/* Date */}
                 {inspection.scheduledDate && (
                   <View style={styles.infoRow}>
-                    <Calendar size={14} color={colors.text.secondary} />
-                    <Text style={styles.infoText}>
+                    <Calendar size={14} color={themeColors.text.secondary} />
+                    <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
                       {format(new Date(inspection.scheduledDate), 'MMM dd, yyyy')}
                     </Text>
                   </View>
@@ -598,8 +917,8 @@ export default function InspectionsListScreen() {
                 {/* Inspector */}
                 {inspection.clerk && (
                   <View style={styles.infoRow}>
-                    <User size={14} color={colors.text.secondary} />
-                    <Text style={styles.infoText}>{inspection.clerk.email}</Text>
+                    <User size={14} color={themeColors.text.secondary} />
+                    <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>{inspection.clerk.email}</Text>
                   </View>
                 )}
 
@@ -612,7 +931,7 @@ export default function InspectionsListScreen() {
                       variant="primary"
                       size="sm"
                       style={styles.actionButton}
-                      icon={<Play size={14} color="#ffffff" />}
+                      icon={<Play size={14} color={themeColors.primary.foreground} />}
                     />
                   )}
                   {inspection.templateSnapshotJson && (
@@ -622,7 +941,7 @@ export default function InspectionsListScreen() {
                       variant="outline"
                       size="sm"
                       style={styles.actionButton}
-                      icon={<FileText size={14} color={colors.text.primary} />}
+                      icon={<FileText size={14} color={themeColors.text.primary} />}
                     />
                   )}
                   <Button
@@ -635,15 +954,16 @@ export default function InspectionsListScreen() {
                     style={styles.actionButton}
                   />
                   <TouchableOpacity
-                    style={styles.copyButton}
+                    style={[styles.copyButton, { borderColor: themeColors.border.DEFAULT }]}
                     onPress={() => handleCopyClick(inspection)}
                   >
-                    <CopyIcon size={16} color={colors.text.secondary} />
+                    <CopyIcon size={16} color={themeColors.text.secondary} />
                   </TouchableOpacity>
                 </View>
               </View>
             </Card>
-          ))}
+            );
+          })}
         </View>
       )}
 
@@ -655,29 +975,49 @@ export default function InspectionsListScreen() {
         onRequestClose={() => setShowCopyModal(false)}
       >
         <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Copy Inspection</Text>
-            <Text style={styles.modalSubtitle}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.card.DEFAULT }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Copy Inspection</Text>
+            </View>
+            <Text style={[styles.modalSubtitle, { color: themeColors.text.secondary }]}>
               Create a new inspection based on {inspectionToCopy?.property?.name || inspectionToCopy?.block?.name || 'this inspection'}
             </Text>
 
             <View style={styles.copyForm}>
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Inspection Type *</Text>
+                <Text style={[styles.formLabel, { color: themeColors.text.primary }]}>Inspection Type *</Text>
                 <View style={styles.typeButtons}>
                   <TouchableOpacity
-                    style={[styles.typeButton, copyType === 'check_in' && styles.typeButtonActive]}
+                    style={[
+                      styles.typeButton, 
+                      { 
+                        borderColor: themeColors.border.DEFAULT,
+                        backgroundColor: copyType === 'check_in' ? themeColors.primary.DEFAULT : themeColors.background 
+                      }
+                    ]}
                     onPress={() => setCopyType('check_in')}
                   >
-                    <Text style={[styles.typeButtonText, copyType === 'check_in' && styles.typeButtonTextActive]}>
+                    <Text style={[
+                      styles.typeButtonText, 
+                      { color: copyType === 'check_in' ? themeColors.primary.foreground : themeColors.text.primary }
+                    ]}>
                       Check In
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.typeButton, copyType === 'check_out' && styles.typeButtonActive]}
+                    style={[
+                      styles.typeButton, 
+                      { 
+                        borderColor: themeColors.border.DEFAULT,
+                        backgroundColor: copyType === 'check_out' ? themeColors.primary.DEFAULT : themeColors.background 
+                      }
+                    ]}
                     onPress={() => setCopyType('check_out')}
                   >
-                    <Text style={[styles.typeButtonText, copyType === 'check_out' && styles.typeButtonTextActive]}>
+                    <Text style={[
+                      styles.typeButtonText, 
+                      { color: copyType === 'check_out' ? themeColors.primary.foreground : themeColors.text.primary }
+                    ]}>
                       Check Out
                     </Text>
                   </TouchableOpacity>
@@ -685,33 +1025,46 @@ export default function InspectionsListScreen() {
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Scheduled Date *</Text>
-                <Input
-                  value={copyScheduledDate}
-                  onChangeText={setCopyScheduledDate}
-                  placeholder="YYYY-MM-DD"
+                <DatePicker
+                  label="Scheduled Date *"
+                  value={copyScheduledDate ? new Date(copyScheduledDate) : null}
+                  onChange={(date) => setCopyScheduledDate(date ? format(date, 'yyyy-MM-dd') : '')}
+                  placeholder="Select date"
+                  required
                 />
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Copy Options</Text>
+                <Text style={[styles.formLabel, { color: themeColors.text.primary }]}>Copy Options</Text>
                 <TouchableOpacity
                   style={styles.checkboxRow}
                   onPress={() => setCopyImages(!copyImages)}
                 >
-                  <View style={[styles.checkbox, copyImages && styles.checkboxChecked]}>
-                    {copyImages && <Text style={styles.checkmark}>✓</Text>}
+                  <View style={[
+                    styles.checkbox, 
+                    { 
+                      borderColor: themeColors.border.DEFAULT,
+                      backgroundColor: copyImages ? themeColors.primary.DEFAULT : 'transparent' 
+                    }
+                  ]}>
+                    {copyImages && <Text style={[styles.checkmark, { color: themeColors.primary.foreground }]}>✓</Text>}
                   </View>
-                  <Text style={styles.checkboxLabelText}>Copy images from original inspection</Text>
+                  <Text style={[styles.checkboxLabelText, { color: themeColors.text.primary }]}>Copy images from original inspection</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.checkboxRow}
                   onPress={() => setCopyText(!copyText)}
                 >
-                  <View style={[styles.checkbox, copyText && styles.checkboxChecked]}>
-                    {copyText && <Text style={styles.checkmark}>✓</Text>}
+                  <View style={[
+                    styles.checkbox, 
+                    { 
+                      borderColor: themeColors.border.DEFAULT,
+                      backgroundColor: copyText ? themeColors.primary.DEFAULT : 'transparent' 
+                    }
+                  ]}>
+                    {copyText && <Text style={[styles.checkmark, { color: themeColors.primary.foreground }]}>✓</Text>}
                   </View>
-                  <Text style={styles.checkboxLabelText}>Copy notes and conditions from original inspection</Text>
+                  <Text style={[styles.checkboxLabelText, { color: themeColors.text.primary }]}>Copy notes and conditions from original inspection</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -742,7 +1095,6 @@ export default function InspectionsListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   contentContainer: {
     padding: spacing[4],
@@ -761,12 +1113,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     marginBottom: spacing[1],
   },
   subtitle: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
   },
   filters: {
     marginBottom: spacing[4],
@@ -774,7 +1124,6 @@ const styles = StyleSheet.create({
   filterLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   filterRow: {
@@ -785,20 +1134,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.background,
     marginRight: spacing[2],
   },
   filterChipActive: {
-    backgroundColor: colors.primary.light,
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   filterChipText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
   },
   filterChipTextActive: {
-    color: colors.primary.DEFAULT,
     fontWeight: typography.fontWeight.medium,
   },
   inspectionsGrid: {
@@ -822,7 +1166,6 @@ const styles = StyleSheet.create({
   propertyName: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   badgeRow: {
@@ -847,12 +1190,10 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginRight: spacing[1],
   },
   infoText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     flex: 1,
   },
   actionButtons: {
@@ -875,14 +1216,12 @@ const styles = StyleSheet.create({
   },
   textButtonText: {
     fontSize: typography.fontSize.sm,
-    color: colors.primary.DEFAULT,
     fontWeight: typography.fontWeight.medium,
   },
   copyButton: {
     padding: spacing[2],
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -892,7 +1231,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: colors.background,
     borderTopLeftRadius: borderRadius.xl || 24,
     borderTopRightRadius: borderRadius.xl || 24,
     maxHeight: '85%',
@@ -907,17 +1245,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing[4],
     paddingBottom: spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   modalTitle: {
     fontSize: typography.fontSize.xl || 20,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     letterSpacing: 0.3,
   },
   modalCloseButton: {
     borderRadius: borderRadius.full,
-    backgroundColor: colors.card?.DEFAULT || '#f5f5f5',
     width: 32,
     height: 32,
     justifyContent: 'center',
@@ -925,7 +1260,6 @@ const styles = StyleSheet.create({
   },
   modalClose: {
     fontSize: typography.fontSize.xl || 20,
-    color: colors.text.secondary,
     fontWeight: typography.fontWeight.bold,
   },
   modalItem: {
@@ -936,33 +1270,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     marginVertical: spacing[1],
     borderRadius: borderRadius.md,
-    backgroundColor: colors.card?.DEFAULT || colors.background,
     borderWidth: 1,
-    borderColor: colors.border.light,
   },
   modalItemSelected: {
-    backgroundColor: colors.primary.light,
-    borderColor: colors.primary.DEFAULT,
     borderWidth: 2,
   },
   modalItemText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.primary,
     fontWeight: typography.fontWeight.medium,
   },
   modalItemTextSelected: {
-    color: colors.primary.DEFAULT,
     fontWeight: typography.fontWeight.semibold,
-  },
-  modalTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
-    marginBottom: spacing[2],
   },
   modalSubtitle: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     marginBottom: spacing[4],
   },
   copyForm: {
@@ -974,7 +1295,6 @@ const styles = StyleSheet.create({
   formLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   typeButtons: {
@@ -987,21 +1307,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.background,
     alignItems: 'center',
   },
   typeButtonActive: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   typeButtonText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.secondary,
     fontWeight: typography.fontWeight.medium,
   },
   typeButtonTextActive: {
-    color: colors.primary.foreground || '#ffffff',
+    // Color set dynamically
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -1013,24 +1329,20 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: borderRadius.sm,
     borderWidth: 2,
-    borderColor: colors.border.DEFAULT,
     marginRight: spacing[3],
     alignItems: 'center',
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   checkmark: {
-    color: colors.primary.foreground || '#ffffff',
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
   },
   checkboxLabelText: {
     flex: 1,
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
   },
   modalActions: {
     flexDirection: 'row',
@@ -1039,5 +1351,60 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
+  },
+  offlineBanner: {
+    marginBottom: spacing[3],
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+  },
+  offlineBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+    flexWrap: 'wrap',
+  },
+  offlineBannerTextContainer: {
+    flex: 1,
+  },
+  offlineBannerText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing[1],
+  },
+  offlineBannerDescription: {
+    fontSize: typography.fontSize.xs,
+    lineHeight: typography.lineHeight.relaxed * typography.fontSize.xs,
+    marginBottom: spacing[1],
+  },
+  offlineBannerSubtext: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+  },
+  syncBanner: {
+    marginBottom: spacing[3],
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing[3],
+  },
+  syncBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flexWrap: 'wrap',
+  },
+  syncBannerText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    flex: 1,
+  },
+  syncButton: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.md,
+  },
+  syncButtonText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
   },
 });

@@ -14,6 +14,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import type { RouteProp, NavigationProp } from '@react-navigation/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -37,16 +39,21 @@ import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { assetsService, type AssetInventory } from '../../services/assets';
 import { propertiesService } from '../../services/properties';
-import { apiRequestJson, API_URL } from '../../services/api';
+import { apiRequestJson, getAPI_URL } from '../../services/api';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import EmptyState from '../../components/ui/EmptyState';
+import DatePicker from '../../components/ui/DatePicker';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
+import type { AssetsStackParamList } from '../../navigation/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+type RoutePropType = RouteProp<AssetsStackParamList, 'AssetInventoryList'>;
 
 const conditionLabels: Record<string, string> = {
   excellent: 'Excellent',
@@ -90,12 +97,12 @@ const normalizePhotoUrl = (url: string | null | undefined): string | null => {
     try {
       const urlObj = new URL(url);
       const path = urlObj.pathname + urlObj.search;
-      return `${API_URL}${path}`;
+      return `${getAPI_URL()}${path}`;
     } catch {
       // If URL parsing fails, try to extract path manually
       const match = url.match(/(localhost|127\.0\.0\.1)[:\d]*(\/.*)/);
       if (match && match[2]) {
-        return `${API_URL}${match[2]}`;
+        return `${getAPI_URL()}${match[2]}`;
       }
     }
   }
@@ -107,22 +114,34 @@ const normalizePhotoUrl = (url: string | null | undefined): string | null => {
   
   // If relative path starting with /, make it absolute
   if (url.startsWith('/')) {
-    return `${API_URL}${url}`;
+    return `${getAPI_URL()}${url}`;
   }
   
   // If it's an object path like /objects/xxx, make it absolute
   if (url.startsWith('objects/')) {
-    return `${API_URL}/${url}`;
+    return `${getAPI_URL()}/${url}`;
   }
   
   // Otherwise, assume it's a relative path and prepend API_URL
-  return `${API_URL}/${url}`;
+  return `${getAPI_URL()}/${url}`;
 };
 
 export default function AssetInventoryListScreen() {
+  const route = useRoute<RoutePropType>();
+  const navigation = useNavigation<NavigationProp<AssetsStackParamList>>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  
+  // Get route params
+  const routeParams = route.params;
+  const propertyIdFromRoute = routeParams?.propertyId;
+  const blockIdFromRoute = routeParams?.blockId;
+  const autoOpen = routeParams?.autoOpen;
+  
   const [refreshing, setRefreshing] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<AssetInventory | null>(null);
@@ -145,6 +164,7 @@ export default function AssetInventoryListScreen() {
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['/api/asset-inventory'],
     queryFn: () => assetsService.getAssetInventory(),
+    enabled: !!user,
   });
 
   // Fetch properties
@@ -167,13 +187,42 @@ export default function AssetInventoryListScreen() {
     return locs;
   }, [properties, blocks]);
 
+  // Auto-filter by block or property if in route params (only if explicitly provided)
+  useEffect(() => {
+    if (blockIdFromRoute) {
+      setFilterLocation(blockIdFromRoute);
+    } else if (propertyIdFromRoute) {
+      setFilterLocation(propertyIdFromRoute);
+    }
+    // Note: If no route params, filterLocation stays 'all' and shows all assets
+  }, [blockIdFromRoute, propertyIdFromRoute]);
+
+  // Auto-open dialog and pre-populate form when navigated from inspection
+  useEffect(() => {
+    if (autoOpen && (propertyIdFromRoute || blockIdFromRoute)) {
+      const initialFormData: Partial<AssetInventory> = {};
+      if (propertyIdFromRoute) {
+        initialFormData.propertyId = propertyIdFromRoute;
+      } else if (blockIdFromRoute) {
+        initialFormData.blockId = blockIdFromRoute;
+      }
+      setFormData(initialFormData);
+      setIsDialogOpen(true);
+      
+      // Clear route params after opening to prevent re-opening on re-render
+      if (navigation) {
+        (navigation as any).setParams({ autoOpen: false });
+      }
+    }
+  }, [autoOpen, propertyIdFromRoute, blockIdFromRoute, navigation]);
+
   // Filter assets
   const filteredAssets = useMemo(() => {
-    if (!assets) return [];
+    if (!assets || assets.length === 0) return [];
 
     return assets.filter(asset => {
       const matchesSearch = searchTerm === '' ||
-        asset.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        asset.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         asset.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         asset.location?.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -188,7 +237,7 @@ export default function AssetInventoryListScreen() {
   // Photo upload function
   const uploadPhoto = async (uri: string): Promise<string> => {
     try {
-      const response = await fetch(`${API_URL}/api/objects/upload`, {
+      const response = await fetch(`${getAPI_URL()}/api/objects/upload`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -227,9 +276,9 @@ export default function AssetInventoryListScreen() {
         }
       }
 
-      const absoluteUrl = objectPath.startsWith('http') ? objectPath : `${API_URL}${objectPath}`;
+      const absoluteUrl = objectPath.startsWith('http') ? objectPath : `${getAPI_URL()}${objectPath}`;
 
-      await fetch(`${API_URL}/api/objects/set-acl`, {
+      await fetch(`${getAPI_URL()}/api/objects/set-acl`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -332,7 +381,14 @@ export default function AssetInventoryListScreen() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setEditingAsset(null);
-    setFormData({});
+    // Clear form data but preserve route params for property/block if they exist
+    const preservedFormData: Partial<AssetInventory> = {};
+    if (propertyIdFromRoute) {
+      preservedFormData.propertyId = propertyIdFromRoute;
+    } else if (blockIdFromRoute) {
+      preservedFormData.blockId = blockIdFromRoute;
+    }
+    setFormData(preservedFormData);
     setUploadedPhotos([]);
   };
 
@@ -342,7 +398,14 @@ export default function AssetInventoryListScreen() {
       setFormData(asset);
       setUploadedPhotos(asset.photos || []);
     } else {
-      setFormData({});
+      // Pre-populate property or block based on route params if available
+      const initialFormData: Partial<AssetInventory> = {};
+      if (propertyIdFromRoute) {
+        initialFormData.propertyId = propertyIdFromRoute;
+      } else if (blockIdFromRoute) {
+        initialFormData.blockId = blockIdFromRoute;
+      }
+      setFormData(initialFormData);
       setUploadedPhotos([]);
     }
     setIsDialogOpen(true);
@@ -361,6 +424,22 @@ export default function AssetInventoryListScreen() {
       return isNaN(parsed.getTime()) ? null : parsed;
     };
 
+    // Helper to convert numeric values to strings (schema expects strings for numeric fields)
+    const convertNumericToString = (value: string | number | null | undefined): string | null => {
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+      // If it's already a string, return it
+      if (typeof value === 'string') {
+        return value;
+      }
+      // If it's a number, convert to string
+      if (typeof value === 'number') {
+        return String(value);
+      }
+      return null;
+    };
+
     const submitData: any = {
       organizationId: user?.organizationId || formData.organizationId,
       name: formData.name,
@@ -372,10 +451,10 @@ export default function AssetInventoryListScreen() {
       blockId: formData.blockId || null,
       location: formData.location || null,
       datePurchased: convertDate(formData.datePurchased),
-      purchasePrice: formData.purchasePrice || null,
+      purchasePrice: convertNumericToString(formData.purchasePrice),
       expectedLifespanYears: formData.expectedLifespanYears || null,
-      depreciationPerYear: formData.depreciationPerYear || null,
-      currentValue: formData.currentValue || null,
+      depreciationPerYear: convertNumericToString(formData.depreciationPerYear),
+      currentValue: convertNumericToString(formData.currentValue),
       supplier: formData.supplier || null,
       supplierContact: formData.supplierContact || null,
       serialNumber: formData.serialNumber || null,
@@ -423,8 +502,8 @@ export default function AssetInventoryListScreen() {
     return <LoadingSpinner />;
   }
 
-  return (
-    <View style={styles.container}>
+    return (
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[
@@ -437,10 +516,10 @@ export default function AssetInventoryListScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: themeColors.card.DEFAULT }]}>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Asset Inventory</Text>
-            <Text style={styles.subtitle}>Manage physical assets and equipment</Text>
+            <Text style={[styles.title, { color: themeColors.text.primary }]}>Asset Inventory</Text>
+            <Text style={[styles.subtitle, { color: themeColors.text.secondary }]}>Manage physical assets and equipment</Text>
           </View>
           <Button
             title="Add Asset"
@@ -453,12 +532,18 @@ export default function AssetInventoryListScreen() {
 
         {/* Filters */}
         <View style={styles.filters}>
-          <View style={styles.searchContainer}>
-            <Search size={16} color={colors.text.secondary} style={styles.searchIcon} />
+          <View style={[
+            styles.searchContainer,
+            {
+              backgroundColor: themeColors.card.DEFAULT,
+              borderColor: themeColors.border.DEFAULT,
+            }
+          ]}>
+            <Search size={16} color={themeColors.text.secondary} style={styles.searchIcon} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: themeColors.text.primary }]}
               placeholder="Search assets by name, description, or location..."
-              placeholderTextColor={colors.text.secondary}
+              placeholderTextColor={themeColors.text.secondary}
               value={searchTerm}
               onChangeText={setSearchTerm}
             />
@@ -466,40 +551,70 @@ export default function AssetInventoryListScreen() {
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
             <TouchableOpacity
-              style={[styles.filterChip, filterCategory !== 'all' && styles.filterChipActive]}
+              style={[
+                styles.filterChip,
+                {
+                  borderColor: filterCategory !== 'all' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                  backgroundColor: filterCategory !== 'all' ? (themeColors.primary.light || `${themeColors.primary.DEFAULT}20`) : themeColors.background,
+                }
+              ]}
               onPress={() => setShowCategoryPicker(true)}
             >
-              <Text style={[styles.filterChipText, filterCategory !== 'all' && styles.filterChipTextActive]}>
+              <Text style={[
+                styles.filterChipText,
+                { color: filterCategory !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+              ]}>
                 Category: {selectedCategoryLabel}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.filterChip, filterCondition !== 'all' && styles.filterChipActive]}
+              style={[
+                styles.filterChip,
+                {
+                  borderColor: filterCondition !== 'all' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                  backgroundColor: filterCondition !== 'all' ? (themeColors.primary.light || `${themeColors.primary.DEFAULT}20`) : themeColors.background,
+                }
+              ]}
               onPress={() => setShowConditionPicker(true)}
             >
-              <Text style={[styles.filterChipText, filterCondition !== 'all' && styles.filterChipTextActive]}>
+              <Text style={[
+                styles.filterChipText,
+                { color: filterCondition !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+              ]}>
                 Condition: {selectedConditionLabel}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.filterChip, filterLocation !== 'all' && styles.filterChipActive]}
+              style={[
+                styles.filterChip,
+                {
+                  borderColor: filterLocation !== 'all' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                  backgroundColor: filterLocation !== 'all' ? (themeColors.primary.light || `${themeColors.primary.DEFAULT}20`) : themeColors.background,
+                }
+              ]}
               onPress={() => setShowLocationPicker(true)}
             >
-              <Text style={[styles.filterChipText, filterLocation !== 'all' && styles.filterChipTextActive]}>
+              <Text style={[
+                styles.filterChipText,
+                { color: filterLocation !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+              ]}>
                 Location: {selectedLocationLabel}
               </Text>
             </TouchableOpacity>
             {(filterCategory !== 'all' || filterCondition !== 'all' || filterLocation !== 'all') && (
               <TouchableOpacity
-                style={styles.filterChip}
+                style={[styles.filterChip, {
+                  backgroundColor: themeColors.card.DEFAULT,
+                  borderColor: themeColors.border.light,
+                }]}
                 onPress={() => {
                   setFilterCategory('all');
                   setFilterCondition('all');
                   setFilterLocation('all');
                 }}
               >
-                <X size={14} color={colors.text.secondary} />
-                <Text style={styles.filterChipText}>Clear</Text>
+                <X size={14} color={themeColors.text.secondary} />
+                <Text style={[styles.filterChipText, { color: themeColors.text.secondary }]}>Clear</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
@@ -509,13 +624,13 @@ export default function AssetInventoryListScreen() {
         {filteredAssets.length === 0 ? (
           <Card style={styles.emptyCard}>
             <View style={styles.emptyContent}>
-              <Package size={48} color={colors.text.secondary} />
-              <Text style={styles.emptyTitle}>
+              <Package size={48} color={themeColors.text.secondary} />
+              <Text style={[styles.emptyTitle, { color: themeColors.text.primary }]}>
                 {searchTerm || filterCategory !== 'all' || filterCondition !== 'all' || filterLocation !== 'all'
                   ? 'No Assets Found'
                   : 'No Assets Yet'}
               </Text>
-              <Text style={styles.emptyMessage}>
+              <Text style={[styles.emptyMessage, { color: themeColors.text.secondary }]}>
                 {searchTerm || filterCategory !== 'all' || filterCondition !== 'all' || filterLocation !== 'all'
                   ? 'Try adjusting your search or filters'
                   : 'Get started by adding your first asset'}
@@ -537,14 +652,14 @@ export default function AssetInventoryListScreen() {
               <Card key={asset.id} style={styles.assetCard}>
                 <View style={styles.assetHeader}>
                   <View style={styles.assetHeaderContent}>
-                    <Text style={styles.assetName} numberOfLines={1}>
+                    <Text style={[styles.assetName, { color: themeColors.text.primary }]} numberOfLines={1}>
                       {asset.name}
                     </Text>
                     <View style={styles.assetBadges}>
                       {asset.category && (
                         <Badge variant="outline" size="sm" style={styles.categoryBadge}>
-                          <TagIcon size={12} color={colors.text.secondary} />
-                          <Text style={styles.badgeText}>{asset.category}</Text>
+                          <TagIcon size={12} color={themeColors.text.secondary} />
+                          <Text style={[styles.badgeText, { color: themeColors.text.secondary }]}>{asset.category}</Text>
                         </Badge>
                       )}
                       <Badge
@@ -568,13 +683,13 @@ export default function AssetInventoryListScreen() {
                       style={styles.actionButton}
                       onPress={() => handleOpenDialog(asset)}
                     >
-                      <Edit2 size={18} color={colors.primary.DEFAULT} />
+                      <Edit2 size={18} color={themeColors.primary.DEFAULT} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.actionButton}
                       onPress={() => handleDelete(asset)}
                     >
-                      <Trash2 size={18} color="#FF3B30" />
+                      <Trash2 size={18} color={themeColors.destructive.DEFAULT} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -585,8 +700,8 @@ export default function AssetInventoryListScreen() {
                     return (
                       <View style={styles.assetPhotoContainer}>
                         <View style={styles.photoPlaceholder}>
-                          <Package size={48} color={colors.text.muted} />
-                          <Text style={styles.photoPlaceholderText}>No Image</Text>
+                          <Package size={48} color={themeColors.text.muted} />
+                          <Text style={[styles.photoPlaceholderText, { color: themeColors.text.muted }]}>No Image</Text>
                         </View>
                       </View>
                     );
@@ -599,7 +714,7 @@ export default function AssetInventoryListScreen() {
                     return (
                       <View style={styles.assetPhotoContainer}>
                         <View style={styles.photoPlaceholder}>
-                          <Package size={48} color={colors.text.muted} />
+                          <Package size={48} color={themeColors.text.muted} />
                           <Text style={styles.photoPlaceholderText}>Invalid Image URL</Text>
                         </View>
                       </View>
@@ -638,8 +753,8 @@ export default function AssetInventoryListScreen() {
                 <View style={styles.assetDetails}>
                   {asset.location && (
                     <View style={styles.assetDetailRow}>
-                      <MapPin size={14} color={colors.text.secondary} />
-                      <Text style={styles.assetDetailText} numberOfLines={1}>
+                      <MapPin size={14} color={themeColors.text.secondary} />
+                      <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]} numberOfLines={1}>
                         {asset.location}
                       </Text>
                     </View>
@@ -647,34 +762,58 @@ export default function AssetInventoryListScreen() {
 
                   {asset.purchasePrice && (
                     <View style={styles.assetDetailRow}>
-                      <Text style={styles.assetDetailText}>
+                      <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]}>
                         Purchase: £{parseFloat(asset.purchasePrice.toString()).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </Text>
                     </View>
                   )}
 
-                  {asset.datePurchased && (
+                  {asset.datePurchased && (() => {
+                    try {
+                      const date = asset.datePurchased instanceof Date 
+                        ? asset.datePurchased 
+                        : new Date(asset.datePurchased);
+                      if (!isNaN(date.getTime())) {
+                        return (
                     <View style={styles.assetDetailRow}>
-                      <Calendar size={14} color={colors.text.secondary} />
-                      <Text style={styles.assetDetailText}>
-                        Purchased: {format(new Date(asset.datePurchased), 'MMM d, yyyy')}
+                            <Calendar size={14} color={themeColors.text.secondary} />
+                            <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]}>
+                              Purchased: {format(date, 'MMM d, yyyy')}
                       </Text>
                     </View>
-                  )}
+                        );
+                      }
+                    } catch (e) {
+                      // Invalid date, skip rendering
+                    }
+                    return null;
+                  })()}
 
-                  {asset.lastMaintenanceDate && (
+                  {asset.lastMaintenanceDate && (() => {
+                    try {
+                      const date = asset.lastMaintenanceDate instanceof Date 
+                        ? asset.lastMaintenanceDate 
+                        : new Date(asset.lastMaintenanceDate);
+                      if (!isNaN(date.getTime())) {
+                        return (
                     <View style={styles.assetDetailRow}>
-                      <Wrench size={14} color={colors.text.secondary} />
-                      <Text style={styles.assetDetailText}>
-                        Last Maintained: {format(new Date(asset.lastMaintenanceDate), 'MMM d, yyyy')}
+                            <Wrench size={14} color={themeColors.text.secondary} />
+                            <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]}>
+                              Last Maintained: {format(date, 'MMM d, yyyy')}
                       </Text>
                     </View>
-                  )}
+                        );
+                      }
+                    } catch (e) {
+                      // Invalid date, skip rendering
+                    }
+                    return null;
+                  })()}
 
                   {asset.description && (
                     <View style={styles.assetDetailRow}>
-                      <FileText size={14} color={colors.text.secondary} />
-                      <Text style={styles.assetDetailText} numberOfLines={2}>
+                      <FileText size={14} color={themeColors.text.secondary} />
+                      <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]} numberOfLines={2}>
                         {asset.description}
                       </Text>
                     </View>
@@ -682,7 +821,7 @@ export default function AssetInventoryListScreen() {
 
                   {asset.cleanliness && asset.cleanliness in cleanlinessLabels && (
                     <View style={styles.assetDetailRow}>
-                      <Text style={styles.cleanlinessLabel}>Cleanliness:</Text>
+                      <Text style={[styles.cleanlinessLabel, { color: themeColors.text.secondary }]}>Cleanliness:</Text>
                       <Badge variant="secondary" size="sm">
                         {cleanlinessLabels[asset.cleanliness as keyof typeof cleanlinessLabels]}
                       </Badge>
@@ -702,23 +841,24 @@ export default function AssetInventoryListScreen() {
         presentationStyle="pageSheet"
         onRequestClose={handleCloseDialog}
       >
-        <View style={[styles.modalContainer, { paddingTop: Math.max(insets.top, spacing[4]) }]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
+        <View style={[styles.modalContainer, { paddingTop: Math.max(insets.top, spacing[4]), backgroundColor: themeColors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+            <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>
               {editingAsset ? 'Edit Asset' : 'Add New Asset'}
             </Text>
             <TouchableOpacity onPress={handleCloseDialog} style={styles.modalCloseButton}>
-              <X size={24} color={colors.text.primary} />
+              <X size={24} color={themeColors.text.primary} />
             </TouchableOpacity>
           </View>
 
           <ScrollView
             style={styles.modalScrollView}
             contentContainerStyle={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]}
+            showsVerticalScrollIndicator={true}
           >
             {/* Basic Information */}
             <Card style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Basic Information</Text>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Basic Information</Text>
               <Input
                 label="Asset Name *"
                 value={formData.name || ''}
@@ -771,7 +911,7 @@ export default function AssetInventoryListScreen() {
 
             {/* Location & Assignment */}
             <Card style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Location & Assignment</Text>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Location & Assignment</Text>
               <View style={styles.pickerRow}>
                 <View style={styles.pickerHalf}>
                   <TouchableOpacity
@@ -808,14 +948,14 @@ export default function AssetInventoryListScreen() {
 
             {/* Purchase & Financial */}
             <Card style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Purchase & Financial Information</Text>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Purchase & Financial Information</Text>
               <View style={styles.pickerRow}>
                 <View style={styles.pickerHalf}>
-                  <Input
+                  <DatePicker
                     label="Date Purchased"
-                    value={formData.datePurchased ? format(new Date(formData.datePurchased), 'yyyy-MM-dd') : ''}
-                    onChangeText={(value) => setFormData({ ...formData, datePurchased: value ? new Date(value) as any : undefined })}
-                    placeholder="YYYY-MM-DD"
+                    value={formData.datePurchased}
+                    onChange={(date) => setFormData({ ...formData, datePurchased: date as any })}
+                    placeholder="Select date"
                   />
                 </View>
                 <View style={styles.pickerHalf}>
@@ -852,7 +992,7 @@ export default function AssetInventoryListScreen() {
 
             {/* Supplier & Product */}
             <Card style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Supplier & Product Information</Text>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Supplier & Product Information</Text>
               <View style={styles.pickerRow}>
                 <View style={styles.pickerHalf}>
                   <Input
@@ -889,32 +1029,32 @@ export default function AssetInventoryListScreen() {
                   />
                 </View>
               </View>
-              <Input
+              <DatePicker
                 label="Warranty Expiry Date"
-                value={formData.warrantyExpiryDate ? format(new Date(formData.warrantyExpiryDate), 'yyyy-MM-dd') : ''}
-                onChangeText={(value) => setFormData({ ...formData, warrantyExpiryDate: value ? new Date(value) as any : undefined })}
-                placeholder="YYYY-MM-DD"
+                value={formData.warrantyExpiryDate}
+                onChange={(date) => setFormData({ ...formData, warrantyExpiryDate: date as any })}
+                placeholder="Select date"
               />
             </Card>
 
             {/* Maintenance */}
             <Card style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Maintenance Information</Text>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Maintenance Information</Text>
               <View style={styles.pickerRow}>
                 <View style={styles.pickerHalf}>
-                  <Input
+                  <DatePicker
                     label="Last Maintenance Date"
-                    value={formData.lastMaintenanceDate ? format(new Date(formData.lastMaintenanceDate), 'yyyy-MM-dd') : ''}
-                    onChangeText={(value) => setFormData({ ...formData, lastMaintenanceDate: value ? new Date(value) as any : undefined })}
-                    placeholder="YYYY-MM-DD"
+                    value={formData.lastMaintenanceDate}
+                    onChange={(date) => setFormData({ ...formData, lastMaintenanceDate: date as any })}
+                    placeholder="Select date"
                   />
                 </View>
                 <View style={styles.pickerHalf}>
-                  <Input
+                  <DatePicker
                     label="Next Maintenance Date"
-                    value={formData.nextMaintenanceDate ? format(new Date(formData.nextMaintenanceDate), 'yyyy-MM-dd') : ''}
-                    onChangeText={(value) => setFormData({ ...formData, nextMaintenanceDate: value ? new Date(value) as any : undefined })}
-                    placeholder="YYYY-MM-DD"
+                    value={formData.nextMaintenanceDate}
+                    onChange={(date) => setFormData({ ...formData, nextMaintenanceDate: date as any })}
+                    placeholder="Select date"
                   />
                 </View>
               </View>
@@ -930,12 +1070,12 @@ export default function AssetInventoryListScreen() {
 
             {/* Photos */}
             <Card style={styles.formCard}>
-              <Text style={styles.sectionTitle}>Photos</Text>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Photos</Text>
               {uploadedPhotos.length > 0 && (
                 <View style={styles.photosGrid}>
                   {uploadedPhotos.map((url, index) => {
                     const photoUrl = normalizePhotoUrl(url);
-                    return (
+  return (
                       <View key={index} style={styles.photoWrapper}>
                         {photoUrl && (
                           <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} />
@@ -998,6 +1138,7 @@ export default function AssetInventoryListScreen() {
             <Text style={styles.pickerTitle}>Select Category</Text>
             <FlatList
               data={['all', ...assetCategories]}
+              showsVerticalScrollIndicator={true}
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -1009,7 +1150,7 @@ export default function AssetInventoryListScreen() {
                 >
                   <Text style={styles.pickerItemText}>{item === 'all' ? 'All Categories' : item}</Text>
                   {(filterCategory === item || (item === 'all' && filterCategory === 'all')) && (
-                    <CheckCircle2 size={20} color={colors.primary.DEFAULT} />
+                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
                   )}
                 </TouchableOpacity>
               )}
@@ -1025,6 +1166,7 @@ export default function AssetInventoryListScreen() {
             <Text style={styles.pickerTitle}>Select Condition</Text>
             <FlatList
               data={['all', ...Object.keys(conditionLabels)]}
+              showsVerticalScrollIndicator={true}
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -1047,7 +1189,7 @@ export default function AssetInventoryListScreen() {
                     {item === 'all' ? 'All Conditions' : conditionLabels[item]}
                   </Text>
                   {((isDialogOpen && formData.condition === item) || (!isDialogOpen && (filterCondition === item || (item === 'all' && filterCondition === 'all')))) && (
-                    <CheckCircle2 size={20} color={colors.primary.DEFAULT} />
+                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
                   )}
                 </TouchableOpacity>
               )}
@@ -1061,10 +1203,11 @@ export default function AssetInventoryListScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.pickerModal}>
             <Text style={styles.pickerTitle}>Select Location</Text>
-            <FlatList
+      <FlatList
               data={[{ id: 'all', name: 'All Locations', type: 'property' as const }, ...locations]}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
+              showsVerticalScrollIndicator={true}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.pickerItem}
                   onPress={() => {
@@ -1072,10 +1215,10 @@ export default function AssetInventoryListScreen() {
                     setShowLocationPicker(false);
                   }}
                 >
-                  {item.type === 'property' ? <Home size={16} color={colors.text.secondary} /> : <Building2 size={16} color={colors.text.secondary} />}
+                  {item.type === 'property' ? <Home size={16} color={themeColors.text.secondary} /> : <Building2 size={16} color={themeColors.text.secondary} />}
                   <Text style={styles.pickerItemText}>{item.name}</Text>
                   {(filterLocation === item.id || (item.id === 'all' && filterLocation === 'all')) && (
-                    <CheckCircle2 size={20} color={colors.primary.DEFAULT} />
+                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
                   )}
                 </TouchableOpacity>
               )}
@@ -1091,6 +1234,7 @@ export default function AssetInventoryListScreen() {
             <Text style={styles.pickerTitle}>Select Property</Text>
             <FlatList
               data={[{ id: '', name: 'None' }, ...properties]}
+              showsVerticalScrollIndicator={true}
               keyExtractor={(item) => item.id || 'none'}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -1101,7 +1245,7 @@ export default function AssetInventoryListScreen() {
                   }}
                 >
                   <Text style={styles.pickerItemText}>{item.name || item.address || 'None'}</Text>
-                  {formData.propertyId === item.id && <CheckCircle2 size={20} color={colors.primary.DEFAULT} />}
+                  {formData.propertyId === item.id && <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />}
                 </TouchableOpacity>
               )}
             />
@@ -1116,6 +1260,7 @@ export default function AssetInventoryListScreen() {
             <Text style={styles.pickerTitle}>Select Block</Text>
             <FlatList
               data={[{ id: '', name: 'None' }, ...blocks]}
+              showsVerticalScrollIndicator={true}
               keyExtractor={(item) => item.id || 'none'}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -1126,7 +1271,7 @@ export default function AssetInventoryListScreen() {
                   }}
                 >
                   <Text style={styles.pickerItemText}>{item.name || 'None'}</Text>
-                  {formData.blockId === item.id && <CheckCircle2 size={20} color={colors.primary.DEFAULT} />}
+                  {formData.blockId === item.id && <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />}
                 </TouchableOpacity>
               )}
             />
@@ -1140,7 +1285,6 @@ export default function AssetInventoryListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
@@ -1161,12 +1305,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     marginBottom: spacing[1],
   },
   subtitle: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
   },
   filters: {
     marginBottom: spacing[4],
@@ -1174,10 +1316,8 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.border.light,
     paddingHorizontal: spacing[3],
     marginBottom: spacing[3],
     ...shadows.sm,
@@ -1189,7 +1329,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     fontSize: typography.fontSize.base,
-    color: colors.text.primary,
   },
   filterRow: {
     flexDirection: 'row',
@@ -1198,26 +1337,23 @@ const styles = StyleSheet.create({
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1.5],
-    backgroundColor: '#fff',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
     borderWidth: 1,
-    borderColor: colors.border.light,
-    gap: spacing[1.5],
-    ...shadows.sm,
+    marginRight: spacing[2],
+    // Colors applied dynamically via themeColors
   },
   filterChipActive: {
-    backgroundColor: colors.primary.DEFAULT + '10',
-    borderColor: colors.primary.DEFAULT,
+    // Colors set dynamically
   },
   filterChipText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.text.secondary,
+    fontSize: typography.fontSize.sm,
+    // Color applied dynamically via themeColors
   },
   filterChipTextActive: {
-    color: colors.primary.DEFAULT,
-    fontWeight: typography.fontWeight.semibold,
+    fontWeight: typography.fontWeight.medium,
+    // Color applied dynamically via themeColors
   },
   assetsGrid: {
     flexDirection: 'column',
@@ -1240,7 +1376,6 @@ const styles = StyleSheet.create({
   assetName: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   assetBadges: {
@@ -1270,7 +1405,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
     marginBottom: spacing[3],
-    backgroundColor: colors.border.light,
   },
   assetPhoto: {
     width: '100%',
@@ -1282,12 +1416,10 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.border.light,
   },
   photoPlaceholderText: {
     marginTop: spacing[2],
     fontSize: typography.fontSize.sm,
-    color: colors.text.muted,
     fontFamily: typography.fontFamily.sans,
   },
   photoCountBadge: {
@@ -1306,11 +1438,9 @@ const styles = StyleSheet.create({
   assetDetailText: {
     flex: 1,
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
   },
   cleanlinessLabel: {
     fontSize: typography.fontSize.xs,
-    color: colors.text.secondary,
     marginRight: spacing[1],
   },
   emptyCard: {
@@ -1322,13 +1452,11 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     marginTop: spacing[4],
     marginBottom: spacing[2],
   },
   emptyMessage: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing[4],
   },
@@ -1338,7 +1466,6 @@ const styles = StyleSheet.create({
   // Modal styles
   modalContainer: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1347,12 +1474,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   modalTitle: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
   },
   modalCloseButton: {
     padding: spacing[1],
@@ -1369,7 +1494,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     marginBottom: spacing[4],
   },
   pickerRow: {
@@ -1382,20 +1506,17 @@ const styles = StyleSheet.create({
   },
   dropdownButton: {
     borderWidth: 1,
-    borderColor: colors.border.light,
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[3],
-    backgroundColor: '#fff',
     justifyContent: 'center',
     minHeight: 44,
   },
   dropdownText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.primary,
   },
   dropdownTextPlaceholder: {
-    color: colors.text.secondary,
+    // Color set dynamically
   },
   photoActions: {
     flexDirection: 'row',
@@ -1456,10 +1577,8 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     padding: spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   pickerItem: {
     flexDirection: 'row',
@@ -1468,12 +1587,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3],
     paddingHorizontal: spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
     gap: spacing[2],
   },
   pickerItemText: {
     flex: 1,
     fontSize: typography.fontSize.base,
-    color: colors.text.primary,
   },
 });

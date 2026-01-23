@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "bf1ed2bc-56e3-4258-b378-bbae5bdd0f44"
+      }
+    },
+    "android": {
+      "package": "com.wasifali9.restexpress"
+    }
+  }
+}

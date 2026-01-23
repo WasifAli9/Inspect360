@@ -31,7 +31,12 @@ export type ProfileStackParamList = {
 };
 
 export type AssetsStackParamList = {
-  AssetInventoryList: undefined;
+  AssetInventoryList: { 
+    propertyId?: string; 
+    blockId?: string; 
+    autoOpen?: boolean;
+    inspectionId?: string;
+  } | undefined;
   AssetDetail: { assetId: string; propertyId: string };
 };
 

@@ -14,19 +14,21 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { Calendar, Upload, Sparkles, X, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react-native';
+import { Upload, Sparkles, X, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { maintenanceService, type MaintenanceRequestWithDetails } from '../../services/maintenance';
 import { propertiesService } from '../../services/properties';
-import { apiRequestJson, API_URL } from '../../services/api';
+import { apiRequestJson, getAPI_URL } from '../../services/api';
 import type { MaintenanceStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import DatePicker from '../../components/ui/DatePicker';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import { colors, spacing, typography, borderRadius } from '../../theme';
-import { format } from 'date-fns';
+import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
+import { format, parse, isValid } from 'date-fns';
 
 type RoutePropType = RouteProp<MaintenanceStackParamList, 'CreateMaintenance'>;
 
@@ -38,6 +40,9 @@ export default function CreateMaintenanceScreen() {
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const params = route.params;
   const requestId = params?.requestId;
 
@@ -51,7 +56,7 @@ export default function CreateMaintenanceScreen() {
   const [propertyId, setPropertyId] = useState<string>('');
   const [blockId, setBlockId] = useState<string>('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
-  const [dueDate, setDueDate] = useState<string>('');
+  const [dueDate, setDueDate] = useState<Date | null>(null);
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -144,18 +149,18 @@ export default function CreateMaintenanceScreen() {
         const dateValue = typeof existingRequest.dueDate === 'string' 
           ? new Date(existingRequest.dueDate)
           : existingRequest.dueDate;
-        if (!isNaN(dateValue.getTime())) {
-          setDueDate(format(dateValue, 'yyyy-MM-dd'));
+        if (!isNaN(dateValue.getTime()) && isValid(dateValue)) {
+          setDueDate(dateValue);
         } else {
           console.warn('[Edit Mode] Invalid date value:', existingRequest.dueDate);
-          setDueDate('');
+          setDueDate(null);
         }
       } catch (e) {
         console.error('[Edit Mode] Error parsing due date:', e);
-        setDueDate('');
+        setDueDate(null);
       }
     } else {
-      setDueDate('');
+      setDueDate(null);
     }
     
     // Set photos and AI suggestions
@@ -188,11 +193,18 @@ export default function CreateMaintenanceScreen() {
     }
   }, [params, isEditMode]);
 
+  // Reset dueDate when switching requests
+  useEffect(() => {
+    if (requestId) {
+      setDueDate(null);
+    }
+  }, [requestId]);
+
   // Photo upload function
   const uploadPhoto = async (uri: string): Promise<string> => {
     try {
       // Get upload URL
-      const response = await fetch(`${API_URL}/api/objects/upload`, {
+      const response = await fetch(`${getAPI_URL()}/api/objects/upload`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -238,9 +250,9 @@ export default function CreateMaintenanceScreen() {
       // Set ACL
       const absoluteUrl = objectPath.startsWith('http') 
         ? objectPath 
-        : `${API_URL}${objectPath}`;
+        : `${getAPI_URL()}${objectPath}`;
       
-      await fetch(`${API_URL}/api/objects/set-acl`, {
+      await fetch(`${getAPI_URL()}/api/objects/set-acl`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -412,7 +424,7 @@ export default function CreateMaintenanceScreen() {
       propertyId: propertyId || undefined,
       blockId: blockId || undefined,
       priority,
-      dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+      dueDate: dueDate ? dueDate.toISOString() : undefined,
       photoUrls: uploadedImages.length > 0 ? uploadedImages : undefined,
       aiSuggestedFixes: aiSuggestions || undefined,
     };
@@ -433,15 +445,15 @@ export default function CreateMaintenanceScreen() {
   if (requestError && isEditMode) {
     console.error('[Edit Mode] Error loading maintenance request:', requestError);
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={[styles.header, { paddingTop: Math.max(insets.top + 16, 32) }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top + 16, 32), backgroundColor: themeColors.card.DEFAULT, borderBottomColor: themeColors.border.light }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <ArrowLeft size={24} color={colors.text.primary} />
+            <ArrowLeft size={24} color={themeColors.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Maintenance Request</Text>
+          <Text style={[styles.headerTitle, { color: themeColors.text.primary }]}>Edit Maintenance Request</Text>
         </View>
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>
+          <Text style={[styles.errorText, { color: themeColors.text.secondary }]}>
             Failed to load maintenance request.{'\n'}
             {requestError instanceof Error ? requestError.message : 'Please try again.'}
           </Text>
@@ -469,7 +481,7 @@ export default function CreateMaintenanceScreen() {
   // Tenant multi-step flow
   if (isTenant && !isEditMode) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
         <ScrollView
           contentContainerStyle={[
             styles.content,
@@ -481,8 +493,8 @@ export default function CreateMaintenanceScreen() {
         >
           {/* Step 1: Basic Form */}
           {currentStep === 'form' && (
-            <Card style={styles.card}>
-              <Text style={styles.sectionTitle}>Report Maintenance Issue</Text>
+            <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Report Maintenance Issue</Text>
               <Input
                 label="What's the issue?"
                 value={title}
@@ -490,19 +502,28 @@ export default function CreateMaintenanceScreen() {
                 placeholder="e.g., Leaking faucet"
               />
               <View style={styles.selectContainer}>
-                <Text style={styles.label}>Which property?</Text>
+                <Text style={[styles.label, { color: themeColors.text.primary }]}>Which property?</Text>
                 <TouchableOpacity
-                  style={styles.dropdownButton}
+                  style={[
+                    styles.dropdownButton,
+                    {
+                      borderColor: themeColors.border.light,
+                      backgroundColor: themeColors.input,
+                    },
+                  ]}
                   onPress={() => setShowPropertyPicker(true)}
                 >
-                  <Text style={[styles.dropdownText, !propertyId && styles.dropdownPlaceholder]}>
+                  <Text style={[
+                    styles.dropdownText,
+                    { color: propertyId ? themeColors.text.primary : themeColors.text.secondary },
+                  ]}>
                     {propertyId 
                       ? (properties.find(p => p.id === propertyId)?.address || 
                          properties.find(p => p.id === propertyId)?.name || 
                          'Select your property')
                       : 'Select your property'}
                   </Text>
-                  <Text style={styles.dropdownArrow}>▼</Text>
+                  <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
                 </TouchableOpacity>
               </View>
               <Input
@@ -514,33 +535,26 @@ export default function CreateMaintenanceScreen() {
                 numberOfLines={4}
                 style={styles.textArea}
               />
-              <View style={styles.dateContainer}>
-                <Text style={styles.label}>Due Date (Optional)</Text>
-                <View style={styles.dateInputContainer}>
-                  <Calendar size={20} color={colors.text.secondary} />
-                  <Input
-                    value={dueDate}
-                    onChangeText={setDueDate}
-                    placeholder="YYYY-MM-DD"
-                    keyboardType="numeric"
-                    style={styles.dateInput}
-                  />
-                </View>
-              </View>
+              <DatePicker
+                label="Due Date (Optional)"
+                value={dueDate}
+                onChange={setDueDate}
+                placeholder="Select due date"
+              />
               <Button
                 title="Next: Upload Photos"
                 onPress={handleSubmit}
                 variant="primary"
-                icon={<Upload size={16} color="#fff" />}
+                icon={<Upload size={16} color={themeColors.primary.foreground || '#ffffff'} />}
               />
             </Card>
           )}
 
           {/* Step 2: Image Upload */}
           {currentStep === 'images' && (
-            <Card style={styles.card}>
-              <Text style={styles.sectionTitle}>Upload Photos</Text>
-              <Text style={styles.sectionSubtitle}>
+            <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Upload Photos</Text>
+              <Text style={[styles.sectionSubtitle, { color: themeColors.text.secondary }]}>
                 Upload photos of the issue for AI analysis
               </Text>
               
@@ -564,21 +578,21 @@ export default function CreateMaintenanceScreen() {
                   {uploadedImages.map((img, idx) => (
                     <View key={idx} style={styles.photoWrapper}>
                       <Image 
-                        source={{ uri: img.startsWith('http') ? img : `${API_URL}${img}` }} 
+                        source={{ uri: img.startsWith('http') ? img : `${getAPI_URL()}${img}` }} 
                         style={styles.photo as ImageStyle}
                       />
                       <TouchableOpacity
                         style={styles.removePhotoButton}
                         onPress={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
                       >
-                        <X size={16} color="#fff" />
+                        <X size={16} color={themeColors.primary.foreground || '#ffffff'} />
                       </TouchableOpacity>
                     </View>
                   ))}
                 </View>
               )}
 
-              <Text style={styles.photoCount}>
+              <Text style={[styles.photoCount, { color: themeColors.text.secondary }]}>
                 {uploadedImages.length} image(s) uploaded
               </Text>
 
@@ -594,7 +608,7 @@ export default function CreateMaintenanceScreen() {
                   onPress={handleImageStep}
                   disabled={isAnalyzing || uploadedImages.length === 0}
                   variant="primary"
-                  icon={isAnalyzing ? <Loader2 size={16} color="#fff" /> : <Sparkles size={16} color="#fff" />}
+                  icon={isAnalyzing ? <Loader2 size={16} color={themeColors.primary.foreground || '#ffffff'} /> : <Sparkles size={16} color={themeColors.primary.foreground || '#ffffff'} />}
                   style={styles.stepButton}
                 />
               </View>
@@ -603,15 +617,15 @@ export default function CreateMaintenanceScreen() {
 
           {/* Step 3: AI Suggestions */}
           {currentStep === 'suggestions' && (
-            <Card style={styles.card}>
+            <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
               <View style={styles.aiHeader}>
-                <Sparkles size={24} color={colors.primary.DEFAULT} />
-                <Text style={styles.sectionTitle}>AI-Suggested Fixes</Text>
+                <Sparkles size={24} color={themeColors.primary.DEFAULT} />
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>AI-Suggested Fixes</Text>
               </View>
               {aiSuggestions ? (
-                <Text style={styles.aiSuggestions}>{aiSuggestions}</Text>
+                <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>{aiSuggestions}</Text>
               ) : (
-                <Text style={styles.aiSuggestions}>
+                <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>
                   AI Preventative Maintenance is disabled. You can still submit your request.
                 </Text>
               )}
@@ -642,17 +656,23 @@ export default function CreateMaintenanceScreen() {
           animationType="slide"
           onRequestClose={() => setShowBlockPicker(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Select Block</Text>
+          <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+            <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16, backgroundColor: themeColors.card.DEFAULT }]}>
+              <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Select Block</Text>
                 <TouchableOpacity onPress={() => setShowBlockPicker(false)}>
-                  <X size={24} color={colors.text.primary} />
+                  <X size={24} color={themeColors.text.primary} />
                 </TouchableOpacity>
               </View>
-              <ScrollView style={styles.modalBody}>
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
                 <TouchableOpacity
-                  style={[styles.modalItem, !blockId && styles.modalItemSelected]}
+                  style={[
+                    styles.modalItem,
+                    {
+                      backgroundColor: !blockId ? themeColors.primary.light : 'transparent',
+                      borderBottomColor: themeColors.border.light,
+                    },
+                  ]}
                   onPress={() => {
                     setBlockId('');
                     setFormBlockFilter('all');
@@ -660,15 +680,25 @@ export default function CreateMaintenanceScreen() {
                     setShowBlockPicker(false);
                   }}
                 >
-                  <Text style={[styles.modalItemText, !blockId && styles.modalItemTextSelected]}>
+                  <Text style={[
+                    styles.modalItemText,
+                    { color: !blockId ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                    !blockId && styles.modalItemTextSelected
+                  ]}>
                     None
                   </Text>
-                  {!blockId && <Text style={styles.modalItemCheck}>✓</Text>}
+                  {!blockId && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
                 </TouchableOpacity>
                 {blocks.map((block) => (
                   <TouchableOpacity
                     key={block.id}
-                    style={[styles.modalItem, blockId === block.id && styles.modalItemSelected]}
+                    style={[
+                      styles.modalItem,
+                      {
+                        backgroundColor: blockId === block.id ? themeColors.primary.light : 'transparent',
+                        borderBottomColor: themeColors.border.light,
+                      },
+                    ]}
                     onPress={() => {
                       setBlockId(block.id);
                       setFormBlockFilter(block.id);
@@ -676,10 +706,14 @@ export default function CreateMaintenanceScreen() {
                       setShowBlockPicker(false);
                     }}
                   >
-                    <Text style={[styles.modalItemText, blockId === block.id && styles.modalItemTextSelected]}>
+                    <Text style={[
+                      styles.modalItemText,
+                      { color: blockId === block.id ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                      blockId === block.id && styles.modalItemTextSelected
+                    ]}>
                       {block.name}
                     </Text>
-                    {blockId === block.id && <Text style={styles.modalItemCheck}>✓</Text>}
+                    {blockId === block.id && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -694,40 +728,60 @@ export default function CreateMaintenanceScreen() {
           animationType="slide"
           onRequestClose={() => setShowPropertyPicker(false)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Select Property</Text>
+          <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+            <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16, backgroundColor: themeColors.card.DEFAULT }]}>
+              <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Select Property</Text>
                 <TouchableOpacity onPress={() => setShowPropertyPicker(false)}>
-                  <X size={24} color={colors.text.primary} />
+                  <X size={24} color={themeColors.text.primary} />
                 </TouchableOpacity>
               </View>
-              <ScrollView style={styles.modalBody}>
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
                 <TouchableOpacity
-                  style={[styles.modalItem, !propertyId && styles.modalItemSelected]}
+                  style={[
+                    styles.modalItem,
+                    {
+                      backgroundColor: !propertyId ? themeColors.primary.light : 'transparent',
+                      borderBottomColor: themeColors.border.light,
+                    },
+                  ]}
                   onPress={() => {
                     setPropertyId('');
                     setShowPropertyPicker(false);
                   }}
                 >
-                  <Text style={[styles.modalItemText, !propertyId && styles.modalItemTextSelected]}>
+                  <Text style={[
+                    styles.modalItemText,
+                    { color: !propertyId ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                    !propertyId && styles.modalItemTextSelected
+                  ]}>
                     {blockId ? 'None (Block-level only)' : 'Select a property'}
                   </Text>
-                  {!propertyId && <Text style={styles.modalItemCheck}>✓</Text>}
+                  {!propertyId && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
                 </TouchableOpacity>
                 {(isTenant ? properties : filteredProperties).map((property) => (
                   <TouchableOpacity
                     key={property.id}
-                    style={[styles.modalItem, propertyId === property.id && styles.modalItemSelected]}
+                    style={[
+                      styles.modalItem,
+                      {
+                        backgroundColor: propertyId === property.id ? themeColors.primary.light : 'transparent',
+                        borderBottomColor: themeColors.border.light,
+                      },
+                    ]}
                     onPress={() => {
                       setPropertyId(property.id);
                       setShowPropertyPicker(false);
                     }}
                   >
-                    <Text style={[styles.modalItemText, propertyId === property.id && styles.modalItemTextSelected]}>
+                    <Text style={[
+                      styles.modalItemText,
+                      { color: propertyId === property.id ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                      propertyId === property.id && styles.modalItemTextSelected
+                    ]}>
                       {property.name}{property.address ? ` - ${property.address}` : ''}
                     </Text>
-                    {propertyId === property.id && <Text style={styles.modalItemCheck}>✓</Text>}
+                    {propertyId === property.id && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -740,7 +794,7 @@ export default function CreateMaintenanceScreen() {
 
   // Standard form for non-tenants or edit mode
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -750,8 +804,8 @@ export default function CreateMaintenanceScreen() {
           },
         ]}
       >
-        <Card style={styles.card}>
-          <Text style={styles.sectionTitle}>
+        <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+          <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>
             {isEditMode ? 'Edit Maintenance Request' : 'Create Maintenance Request'}
           </Text>
 
@@ -764,41 +818,59 @@ export default function CreateMaintenanceScreen() {
 
           {/* Block Selection */}
           <View style={styles.selectContainer}>
-            <Text style={styles.label}>Block (Optional)</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Block (Optional)</Text>
             <TouchableOpacity
-              style={styles.dropdownButton}
+              style={[
+                styles.dropdownButton,
+                {
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: themeColors.input,
+                },
+              ]}
               onPress={() => setShowBlockPicker(true)}
             >
-              <Text style={[styles.dropdownText, !blockId && styles.dropdownPlaceholder]}>
+              <Text style={[
+                styles.dropdownText,
+                { color: blockId ? themeColors.text.primary : themeColors.text.secondary },
+              ]}>
                 {blockId ? blocks.find(b => b.id === blockId)?.name || 'Select a block' : 'Select a block...'}
               </Text>
-              <Text style={styles.dropdownArrow}>▼</Text>
+              <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
             </TouchableOpacity>
           </View>
 
           {/* Property Selection */}
           <View style={styles.selectContainer}>
-            <Text style={styles.label}>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>
               Property {blockId ? '(Optional if block selected)' : '(Optional)'}
             </Text>
             <TouchableOpacity
-              style={styles.dropdownButton}
+              style={[
+                styles.dropdownButton,
+                {
+                  borderColor: themeColors.border.light,
+                  backgroundColor: themeColors.input,
+                },
+              ]}
               onPress={() => setShowPropertyPicker(true)}
             >
-              <Text style={[styles.dropdownText, !propertyId && styles.dropdownPlaceholder]}>
+              <Text style={[
+                styles.dropdownText,
+                { color: propertyId ? themeColors.text.primary : themeColors.text.secondary },
+              ]}>
                 {propertyId 
                   ? (properties.find(p => p.id === propertyId)?.address || 
                      properties.find(p => p.id === propertyId)?.name || 
                      'Select a property')
                   : (blockId ? 'None (Block-level only)' : 'Select a property')}
               </Text>
-              <Text style={styles.dropdownArrow}>▼</Text>
+              <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
             </TouchableOpacity>
           </View>
 
           {/* Priority Selection */}
           <View style={styles.selectContainer}>
-            <Text style={styles.label}>Priority</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Priority</Text>
             <View style={styles.priorityContainer}>
               {(['low', 'medium', 'high'] as const).map((p) => (
                 <Button
@@ -813,19 +885,12 @@ export default function CreateMaintenanceScreen() {
           </View>
 
           {/* Due Date */}
-          <View style={styles.dateContainer}>
-            <Text style={styles.label}>Due Date (Optional)</Text>
-            <View style={styles.dateInputContainer}>
-              <Calendar size={20} color={colors.text.secondary} />
-              <Input
-                value={dueDate}
-                onChangeText={setDueDate}
-                placeholder="YYYY-MM-DD"
-                keyboardType="numeric"
-                style={styles.dateInput}
-              />
-            </View>
-          </View>
+          <DatePicker
+            label="Due Date (Optional)"
+            value={dueDate}
+            onChange={setDueDate}
+            placeholder="Select due date"
+          />
 
           {/* Description */}
           <Input
@@ -840,20 +905,20 @@ export default function CreateMaintenanceScreen() {
 
           {/* Photo Upload Section */}
           <View style={styles.photoSection}>
-            <Text style={styles.label}>Photos (Optional)</Text>
+            <Text style={[styles.label, { color: themeColors.text.primary }]}>Photos (Optional)</Text>
             <View style={styles.photoActions}>
               <Button
                 title="Pick from Library"
                 onPress={handlePickPhoto}
                 variant="outline"
-                icon={<Upload size={16} color={colors.text.primary} />}
+                icon={<Upload size={16} color={themeColors.text.primary} />}
                 style={styles.photoButton}
               />
               <Button
                 title="Take Photo"
                 onPress={handleTakePhoto}
                 variant="outline"
-                icon={<Upload size={16} color={colors.text.primary} />}
+                icon={<Upload size={16} color={themeColors.text.primary} />}
                 style={styles.photoButton}
               />
             </View>
@@ -863,7 +928,7 @@ export default function CreateMaintenanceScreen() {
                 {uploadedImages.map((img, idx) => (
                   <View key={idx} style={styles.photoWrapper}>
                     <Image 
-                      source={{ uri: img.startsWith('http') ? img : `${API_URL}${img}` }} 
+                      source={{ uri: img.startsWith('http') ? img : `${getAPI_URL()}${img}` }} 
                       style={styles.photo as ImageStyle}
                     />
                     <TouchableOpacity
@@ -893,19 +958,19 @@ export default function CreateMaintenanceScreen() {
                 }}
                 disabled={isAnalyzing}
                 variant="outline"
-                icon={isAnalyzing ? <Loader2 size={16} color={colors.text.primary} /> : <Sparkles size={16} color={colors.text.primary} />}
+                icon={isAnalyzing ? <Loader2 size={16} color={themeColors.text.primary} /> : <Sparkles size={16} color={themeColors.text.primary} />}
                 style={styles.aiButton}
               />
             )}
 
             {/* AI Suggestions Display */}
             {aiSuggestions && (
-              <Card style={styles.aiCard}>
+              <Card style={[styles.aiCard, { backgroundColor: themeColors.card.DEFAULT, borderColor: themeColors.border.light }]}>
                 <View style={styles.aiHeader}>
-                  <Sparkles size={20} color={colors.primary.DEFAULT} />
-                  <Text style={styles.aiTitle}>AI-Suggested Fixes</Text>
+                  <Sparkles size={20} color={themeColors.primary.DEFAULT} />
+                  <Text style={[styles.aiTitle, { color: themeColors.text.primary }]}>AI-Suggested Fixes</Text>
                 </View>
-                <Text style={styles.aiSuggestions}>{aiSuggestions}</Text>
+                <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>{aiSuggestions}</Text>
               </Card>
             )}
           </View>
@@ -930,17 +995,23 @@ export default function CreateMaintenanceScreen() {
         animationType="slide"
         onRequestClose={() => setShowBlockPicker(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Block</Text>
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0, 0, 0, 0.5)' }]}>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16, backgroundColor: themeColors.card.DEFAULT }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Select Block</Text>
               <TouchableOpacity onPress={() => setShowBlockPicker(false)}>
-                <X size={24} color={colors.text.primary} />
+                <X size={24} color={themeColors.text.primary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
               <TouchableOpacity
-                style={[styles.modalItem, !blockId && styles.modalItemSelected]}
+                style={[
+                  styles.modalItem,
+                  {
+                    backgroundColor: !blockId ? themeColors.primary.light : 'transparent',
+                    borderBottomColor: themeColors.border.light,
+                  },
+                ]}
                 onPress={() => {
                   setBlockId('');
                   setFormBlockFilter('all');
@@ -948,15 +1019,25 @@ export default function CreateMaintenanceScreen() {
                   setShowBlockPicker(false);
                 }}
               >
-                <Text style={[styles.modalItemText, !blockId && styles.modalItemTextSelected]}>
+                <Text style={[
+                  styles.modalItemText,
+                  { color: !blockId ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                  !blockId && styles.modalItemTextSelected
+                ]}>
                   None
                 </Text>
-                {!blockId && <Text style={styles.modalItemCheck}>✓</Text>}
+                {!blockId && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
               </TouchableOpacity>
               {blocks.map((block) => (
                 <TouchableOpacity
                   key={block.id}
-                  style={[styles.modalItem, blockId === block.id && styles.modalItemSelected]}
+                  style={[
+                    styles.modalItem,
+                    {
+                      backgroundColor: blockId === block.id ? themeColors.primary.light : 'transparent',
+                      borderBottomColor: themeColors.border.light,
+                    },
+                  ]}
                   onPress={() => {
                     setBlockId(block.id);
                     setFormBlockFilter(block.id);
@@ -964,10 +1045,14 @@ export default function CreateMaintenanceScreen() {
                     setShowBlockPicker(false);
                   }}
                 >
-                  <Text style={[styles.modalItemText, blockId === block.id && styles.modalItemTextSelected]}>
+                  <Text style={[
+                    styles.modalItemText,
+                    { color: blockId === block.id ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                    blockId === block.id && styles.modalItemTextSelected
+                  ]}>
                     {block.name}
                   </Text>
-                  {blockId === block.id && <Text style={styles.modalItemCheck}>✓</Text>}
+                  {blockId === block.id && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -983,39 +1068,59 @@ export default function CreateMaintenanceScreen() {
         onRequestClose={() => setShowPropertyPicker(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Property</Text>
+          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 16, backgroundColor: themeColors.card.DEFAULT }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Select Property</Text>
               <TouchableOpacity onPress={() => setShowPropertyPicker(false)}>
-                <X size={24} color={colors.text.primary} />
+                <X size={24} color={themeColors.text.primary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalBody}>
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={true}>
               <TouchableOpacity
-                style={[styles.modalItem, !propertyId && styles.modalItemSelected]}
+                style={[
+                  styles.modalItem,
+                  {
+                    backgroundColor: !propertyId ? themeColors.primary.light : 'transparent',
+                    borderBottomColor: themeColors.border.light,
+                  },
+                ]}
                 onPress={() => {
                   setPropertyId('');
                   setShowPropertyPicker(false);
                 }}
               >
-                <Text style={[styles.modalItemText, !propertyId && styles.modalItemTextSelected]}>
+                <Text style={[
+                  styles.modalItemText,
+                  { color: !propertyId ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                  !propertyId && styles.modalItemTextSelected
+                ]}>
                   {blockId ? 'None (Block-level only)' : 'Select a property'}
                 </Text>
-                {!propertyId && <Text style={styles.modalItemCheck}>✓</Text>}
+                {!propertyId && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
               </TouchableOpacity>
               {filteredProperties.map((property) => (
                 <TouchableOpacity
                   key={property.id}
-                  style={[styles.modalItem, propertyId === property.id && styles.modalItemSelected]}
+                  style={[
+                    styles.modalItem,
+                    {
+                      backgroundColor: propertyId === property.id ? themeColors.primary.light : 'transparent',
+                      borderBottomColor: themeColors.border.light,
+                    },
+                  ]}
                   onPress={() => {
                     setPropertyId(property.id);
                     setShowPropertyPicker(false);
                   }}
                 >
-                  <Text style={[styles.modalItemText, propertyId === property.id && styles.modalItemTextSelected]}>
+                  <Text style={[
+                    styles.modalItemText,
+                    { color: propertyId === property.id ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                    propertyId === property.id && styles.modalItemTextSelected
+                  ]}>
                     {property.name}{property.address ? ` - ${property.address}` : ''}
                   </Text>
-                  {propertyId === property.id && <Text style={styles.modalItemCheck}>✓</Text>}
+                  {propertyId === property.id && <Text style={[styles.modalItemCheck, { color: themeColors.primary.DEFAULT }]}>✓</Text>}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1029,7 +1134,6 @@ export default function CreateMaintenanceScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   errorContainer: {
     flex: 1,
@@ -1039,7 +1143,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: spacing[4],
     lineHeight: 22,
@@ -1061,14 +1164,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   headerTitle: {
     fontSize: typography.fontSize.lg,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
     marginLeft: spacing[2],
   },
   loadingContainer: {
@@ -1080,25 +1180,23 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   card: {
-    padding: 16,
-    marginBottom: 16,
+    padding: spacing[4],
+    marginBottom: spacing[4],
+    ...shadows.md,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000',
-    marginBottom: 16,
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+    marginBottom: spacing[4],
   },
   sectionSubtitle: {
-    fontSize: 14,
-    color: colors.text.secondary,
-    marginBottom: 16,
+    fontSize: typography.fontSize.sm,
+    marginBottom: spacing[4],
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 8,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing[2],
   },
   textArea: {
     minHeight: 100,
@@ -1111,37 +1209,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
     borderWidth: 1,
-    borderColor: colors.border.light,
     borderRadius: borderRadius.md,
-    backgroundColor: '#fff',
     minHeight: 48,
   },
   dropdownText: {
     flex: 1,
     fontSize: 14,
-    color: colors.text.primary,
   },
   dropdownPlaceholder: {
-    color: colors.text.secondary,
   },
   dropdownArrow: {
     fontSize: 12,
-    color: colors.text.secondary,
     marginLeft: 8,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '80%',
+    ...shadows.lg,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1149,12 +1241,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000',
   },
   modalBody: {
     padding: 16,
@@ -1166,23 +1256,19 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   modalItemSelected: {
-    backgroundColor: colors.primary.DEFAULT + '10',
+    // Colors set dynamically
   },
   modalItemText: {
     flex: 1,
     fontSize: 16,
-    color: colors.text.primary,
   },
   modalItemTextSelected: {
-    color: colors.primary.DEFAULT,
     fontWeight: '600',
   },
   modalItemCheck: {
     fontSize: 18,
-    color: colors.primary.DEFAULT,
     fontWeight: 'bold',
     marginLeft: 8,
   },
@@ -1194,23 +1280,6 @@ const styles = StyleSheet.create({
   priorityButton: {
     flex: 1,
     minWidth: 80,
-  },
-  dateContainer: {
-    marginBottom: 16,
-  },
-  dateInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: colors.border.light,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: 12,
-    backgroundColor: '#fff',
-  },
-  dateInput: {
-    flex: 1,
-    borderWidth: 0,
   },
   photoSection: {
     marginBottom: 16,
@@ -1249,16 +1318,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   photoCount: {
-    fontSize: 12,
-    color: colors.text.secondary,
-    marginBottom: 8,
+    fontSize: typography.fontSize.xs,
+    marginBottom: spacing[2],
+    // Color set dynamically in component
   },
   aiButton: {
     marginBottom: 16,
   },
   aiCard: {
-    padding: 16,
-    backgroundColor: '#f9f9f9',
+    padding: spacing[4],
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing[3],
   },
   aiHeader: {
     flexDirection: 'row',
@@ -1269,11 +1340,9 @@ const styles = StyleSheet.create({
   aiTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
   },
   aiSuggestions: {
     fontSize: 14,
-    color: colors.text.primary,
     lineHeight: 20,
   },
   stepActions: {

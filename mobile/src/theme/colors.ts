@@ -85,35 +85,86 @@ export const colors = {
   },
 };
 
-// Dark mode colors (for future support)
+// Dark mode colors - matching web app's dark theme
+// Card background matches reference image (dark gray/charcoal, not pure black)
 export const darkColors = {
+  // Base colors
   background: '#0a0a0a',
   foreground: '#fafafa',
   border: '#262626',
   input: '#262626',
   
+  // Card colors - using darker gray (#1a1a1a) to match reference image
   card: {
-    DEFAULT: '#171717',
+    DEFAULT: '#1a1a1a', // Dark gray/charcoal for cards and navigation
     foreground: '#fafafa',
     border: '#262626',
   },
   
+  // Primary colors (teal-blue theme - slightly brighter in dark mode)
   primary: {
-    DEFAULT: '#3b82f6',
+    DEFAULT: '#00CED1', // Keep same teal for brand consistency
     foreground: '#ffffff',
-    border: '#2563eb',
+    border: '#00A8B0',
+    light: '#1a3a3b', // Darker teal for dark mode backgrounds
+    dark: '#00A8B0',
   },
   
+  // Secondary colors
   secondary: {
     DEFAULT: '#262626',
     foreground: '#fafafa',
     border: '#404040',
   },
   
+  // Muted colors
   muted: {
     DEFAULT: '#262626',
-    foreground: '#a3a3a3',
+    foreground: '#737373',
     border: '#404040',
+  },
+  
+  // Accent colors
+  accent: {
+    DEFAULT: '#262626',
+    foreground: '#fafafa',
+    border: '#404040',
+  },
+  
+  // Destructive (error) colors
+  destructive: {
+    DEFAULT: '#ef4444',
+    foreground: '#ffffff',
+    border: '#dc2626',
+  },
+  
+  // Status colors
+  status: {
+    online: '#22c55e',
+    away: '#fbbf24',
+    busy: '#ef4444',
+    offline: '#9ca3af',
+  },
+  
+  // Success color
+  success: '#22c55e',
+  
+  // Warning color
+  warning: '#fbbf24',
+  
+  // Text colors
+  text: {
+    primary: '#fafafa',
+    secondary: '#a3a3a3',
+    muted: '#737373',
+    inverse: '#0a0a0a',
+  },
+  
+  // Border colors
+  border: {
+    DEFAULT: '#262626',
+    light: '#171717',
+    dark: '#404040',
   },
 };
 

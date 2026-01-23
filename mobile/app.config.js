@@ -6,7 +6,7 @@ export default {
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
-    userInterfaceStyle: "light",
+    userInterfaceStyle: "automatic", // Supports automatic dark mode based on system settings
     newArchEnabled: true,
     scheme: "inspect360",
     splash: {
@@ -44,7 +44,12 @@ export default {
       bundler: "metro"
     },
     extra: {
-      apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:5005"
+      // API URL - Must be set in .env file as EXPO_PUBLIC_API_URL
+      // No hardcoded fallback - must be explicitly configured
+      apiUrl: process.env.EXPO_PUBLIC_API_URL,
+      eas: {
+        projectId: "e8d871f6-af78-4846-a1c0-7a55edc54312"
+      }
     },
     plugins: [
       [

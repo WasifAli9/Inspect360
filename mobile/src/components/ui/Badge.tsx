@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
 import { colors, spacing, typography, borderRadius } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface BadgeProps {
   children: React.ReactNode;
@@ -17,16 +18,78 @@ export default function Badge({
   style,
   textStyle,
 }: BadgeProps) {
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
+
+  const getVariantStyle = () => {
+    switch (variant) {
+      case 'primary':
+      case 'default':
+        return {
+          backgroundColor: themeColors.primary.DEFAULT,
+        };
+      case 'secondary':
+        return {
+          backgroundColor: themeColors.secondary.DEFAULT,
+        };
+      case 'outline':
+        return {
+          backgroundColor: 'transparent',
+          borderWidth: 1,
+          borderColor: themeColors.border.DEFAULT,
+        };
+      case 'destructive':
+        return {
+          backgroundColor: themeColors.destructive.DEFAULT,
+        };
+      case 'success':
+        return {
+          backgroundColor: themeColors.success,
+        };
+      case 'warning':
+        return {
+          backgroundColor: themeColors.warning,
+          opacity: 0.9,
+        };
+      default:
+        return {
+          backgroundColor: themeColors.primary.DEFAULT,
+        };
+    }
+  };
+
+  const getTextColor = () => {
+    switch (variant) {
+      case 'primary':
+      case 'default':
+        return themeColors.primary.foreground || '#ffffff';
+      case 'secondary':
+        return themeColors.secondary.foreground;
+      case 'outline':
+        return themeColors.text.primary;
+      case 'destructive':
+        return themeColors.destructive.foreground;
+      case 'success':
+      case 'warning':
+        return '#ffffff';
+      default:
+        return themeColors.primary.foreground || '#ffffff';
+    }
+  };
+
   const badgeStyle = [
     styles.badge,
-    styles[variant === 'default' || variant === 'primary' ? 'variantDefault' : variant] || styles.variantDefault,
+    getVariantStyle(),
     styles[`size_${size}`],
     style,
   ];
 
   const badgeTextStyle = [
     styles.text,
-    styles[`${variant}Text`] || styles.defaultText,
+    {
+      color: getTextColor(),
+    },
     styles[`text_${size}`],
     textStyle,
   ];
@@ -56,30 +119,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
   },
-  variantDefault: {
-    backgroundColor: colors.primary.DEFAULT,
-  },
-  secondary: {
-    backgroundColor: colors.secondary.DEFAULT,
-  },
-  outline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.border.DEFAULT,
-  },
-  destructive: {
-    backgroundColor: colors.destructive.DEFAULT,
-  },
-  success: {
-    backgroundColor: colors.success,
-  },
-  warning: {
-    backgroundColor: colors.warning,
-    opacity: 0.9, // Slightly lighter appearance
-  },
-  primary: {
-    backgroundColor: colors.primary.DEFAULT,
-  },
   size_sm: {
     paddingHorizontal: spacing[1],
     paddingVertical: 2,
@@ -96,27 +135,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.semibold, // Bolder for better visibility
     fontFamily: typography.fontFamily.sans,
     letterSpacing: 0.2,
-  },
-  defaultText: {
-    color: colors.primary.foreground || '#ffffff',
-  },
-  primaryText: {
-    color: colors.primary.foreground || '#ffffff',
-  },
-  secondaryText: {
-    color: colors.secondary.foreground,
-  },
-  outlineText: {
-    color: colors.text.primary,
-  },
-  destructiveText: {
-    color: colors.destructive.foreground,
-  },
-  successText: {
-    color: '#ffffff',
-  },
-  warningText: {
-    color: '#ffffff',
   },
   text_sm: {
     fontSize: typography.fontSize.xs,

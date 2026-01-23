@@ -13,12 +13,13 @@ import {
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Upload, Plus, X, FileText, Trash2, User as UserIcon } from 'lucide-react-native';
+import { Upload, Plus, X, FileText, Trash2, User as UserIcon, Mail, Shield, LogOut } from 'lucide-react-native';
 import { profileService, type UpdateProfileData, type UserDocument } from '../../services/profile';
-import { apiRequestJson, API_URL } from '../../services/api';
+import { apiRequestJson, getAPI_URL } from '../../services/api';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Card from '../../components/ui/Card';
@@ -26,6 +27,8 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
+import { Moon, Sun, Monitor } from 'lucide-react-native';
 
 const DOCUMENT_TYPES = [
   { value: 'license', label: 'License' },
@@ -36,6 +39,11 @@ const DOCUMENT_TYPES = [
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+  const isOnline = useOnlineStatus();
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
+  const { themeMode, setThemeMode, isDark } = theme;
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
   const queryClient = useQueryClient();
   
@@ -258,7 +266,7 @@ export default function ProfileScreen() {
   const uploadImageFile = async (uri: string) => {
     try {
       // Get upload URL
-      const uploadUrlResponse = await fetch(`${API_URL}/api/objects/upload`, {
+      const uploadUrlResponse = await fetch(`${getAPI_URL()}/api/objects/upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -298,7 +306,7 @@ export default function ProfileScreen() {
         let urlToParse = uploadURL;
         // If it's a relative URL, make it absolute for parsing
         if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
-          urlToParse = `${API_URL}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
+          urlToParse = `${getAPI_URL()}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
         }
         
         const urlObj = new URL(urlToParse);
@@ -413,7 +421,8 @@ export default function ProfileScreen() {
         await uploadDocumentFile(asset.uri, asset.mimeType || 'application/octet-stream');
       }
     } catch (error: any) {
-      if (DocumentPicker.isCancel(error)) {
+      // Check if user canceled - DocumentPicker throws a specific error type
+      if (error?.code === 'DOCUMENT_PICKER_CANCELED' || error?.message?.includes('cancel')) {
         // User canceled, do nothing
         return;
       }
@@ -424,7 +433,7 @@ export default function ProfileScreen() {
   const uploadDocumentFile = async (uri: string, mimeType: string = 'application/octet-stream') => {
     try {
       // Get upload URL
-      const uploadUrlResponse = await fetch(`${API_URL}/api/objects/upload`, {
+      const uploadUrlResponse = await fetch(`${getAPI_URL()}/api/objects/upload`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -464,7 +473,7 @@ export default function ProfileScreen() {
         let urlToParse = uploadURL;
         // If it's a relative URL, make it absolute for parsing
         if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
-          urlToParse = `${API_URL}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
+          urlToParse = `${getAPI_URL()}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
         }
         
         const urlObj = new URL(urlToParse);
@@ -563,7 +572,7 @@ export default function ProfileScreen() {
       const cleanUrl = profileImageUrl.startsWith('/') ? profileImageUrl : `/${profileImageUrl}`;
       
       // Construct full URL
-      let fullUrl = `${API_URL}${cleanUrl}`;
+      let fullUrl = `${getAPI_URL()}${cleanUrl}`;
       
       // Remove any double slashes in the URL
       fullUrl = fullUrl.replace(/([^:]\/)\/+/g, '$1');
@@ -583,7 +592,7 @@ export default function ProfileScreen() {
     }
     // Construct full URL for relative paths
     const cleanUrl = fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`;
-    return `${API_URL}${cleanUrl}`;
+    return `${getAPI_URL()}${cleanUrl}`;
   };
 
   const handleViewDocument = async (doc: UserDocument) => {
@@ -703,7 +712,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: themeColors.background }]}
       contentContainerStyle={[
         styles.content,
         { 
@@ -716,20 +725,20 @@ export default function ProfileScreen() {
       {/* Page Header */}
       <View style={styles.pageHeader}>
         <View style={styles.headerContent}>
-          <UserIcon size={28} color={colors.primary.DEFAULT} />
+          <UserIcon size={28} color={themeColors.primary.DEFAULT} />
           <View style={styles.headerText}>
-            <Text style={styles.pageTitle}>Profile</Text>
-            <Text style={styles.pageSubtitle}>Manage your personal information and settings</Text>
+            <Text style={[styles.pageTitle, { color: themeColors.text.primary }]}>Profile</Text>
+            <Text style={[styles.pageSubtitle, { color: themeColors.text.secondary }]}>Manage your personal information and settings</Text>
           </View>
         </View>
       </View>
 
       {/* Personal Information */}
       <Card style={styles.card}>
-        <View style={styles.cardHeader}>
+        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
           <View>
-            <Text style={styles.cardTitle}>Personal Information</Text>
-            <Text style={styles.cardSubtitle}>Update your profile details below</Text>
+            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Personal Information</Text>
+            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Update your profile details below</Text>
           </View>
         </View>
 
@@ -753,18 +762,18 @@ export default function ProfileScreen() {
                   resizeMode="cover"
                 />
               ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary.DEFAULT }]}>
-                  <Text style={styles.avatarText}>{getUserInitials()}</Text>
+                <View style={[styles.avatarPlaceholder, { backgroundColor: themeColors.primary.DEFAULT }]}>
+                  <Text style={[styles.avatarText, { color: themeColors.primary.foreground }]}>{getUserInitials()}</Text>
             </View>
           )}
             </View>
             <TouchableOpacity
-              style={styles.avatarOverlay}
+              style={[styles.avatarOverlay, { backgroundColor: themeColors.primary.DEFAULT, borderColor: themeColors.background }]}
               onPress={handleUploadPhoto}
               activeOpacity={0.8}
             >
               <View style={styles.avatarOverlayContent}>
-                <Upload size={20} color="#ffffff" />
+                <Upload size={20} color={themeColors.primary.foreground} />
               </View>
             </TouchableOpacity>
           </View>
@@ -809,10 +818,10 @@ export default function ProfileScreen() {
 
       {/* Skills */}
       <Card style={styles.card}>
-        <View style={styles.cardHeader}>
+        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
           <View>
-            <Text style={styles.cardTitle}>Skills</Text>
-            <Text style={styles.cardSubtitle}>Add your professional skills</Text>
+            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Skills</Text>
+            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Add your professional skills</Text>
           </View>
         </View>
 
@@ -825,24 +834,30 @@ export default function ProfileScreen() {
             onSubmitEditing={handleAddSkill}
           />
           <TouchableOpacity
-            style={styles.addButton}
+            style={[styles.addButton, { backgroundColor: themeColors.primary.DEFAULT }]}
             onPress={handleAddSkill}
             activeOpacity={0.7}
           >
-            <Plus size={20} color={colors.primary.foreground} />
+            <Plus size={20} color={themeColors.primary.foreground} />
           </TouchableOpacity>
         </View>
 
         {skills.length > 0 && (
           <View style={styles.tagsContainer}>
             {skills.map((skill, index) => (
-              <View key={index} style={styles.tag}>
-                <Text style={styles.tagText}>{skill}</Text>
+              <View key={index} style={[
+                styles.tag,
+                { 
+                  backgroundColor: themeColors.primary.light,
+                  borderColor: themeColors.primary.DEFAULT + '30'
+                }
+              ]}>
+                <Text style={[styles.tagText, { color: themeColors.text.primary }]}>{skill}</Text>
                 <TouchableOpacity
                   onPress={() => handleRemoveSkill(skill)}
                   style={styles.tagRemove}
                 >
-                  <X size={14} color={colors.text.secondary} />
+                  <X size={14} color={themeColors.text.secondary} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -860,10 +875,10 @@ export default function ProfileScreen() {
 
       {/* Qualifications */}
       <Card style={styles.card}>
-        <View style={styles.cardHeader}>
+        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
           <View>
-            <Text style={styles.cardTitle}>Qualifications</Text>
-            <Text style={styles.cardSubtitle}>Add your qualifications and certifications</Text>
+            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Qualifications</Text>
+            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Add your qualifications and certifications</Text>
           </View>
         </View>
 
@@ -876,24 +891,30 @@ export default function ProfileScreen() {
             onSubmitEditing={handleAddQualification}
           />
           <TouchableOpacity
-            style={styles.addButton}
+            style={[styles.addButton, { backgroundColor: themeColors.primary.DEFAULT }]}
             onPress={handleAddQualification}
             activeOpacity={0.7}
           >
-            <Plus size={20} color={colors.primary.foreground} />
+            <Plus size={20} color={themeColors.primary.foreground} />
           </TouchableOpacity>
         </View>
 
         {qualifications.length > 0 && (
           <View style={styles.tagsContainer}>
             {qualifications.map((qual, index) => (
-              <View key={index} style={styles.tag}>
-                <Text style={styles.tagText}>{qual}</Text>
+              <View key={index} style={[
+                styles.tag,
+                { 
+                  backgroundColor: themeColors.primary.light,
+                  borderColor: themeColors.primary.DEFAULT + '30'
+                }
+              ]}>
+                <Text style={[styles.tagText, { color: themeColors.text.primary }]}>{qual}</Text>
                 <TouchableOpacity
                   onPress={() => handleRemoveQualification(qual)}
                   style={styles.tagRemove}
                 >
-                  <X size={14} color={colors.text.secondary} />
+                  <X size={14} color={themeColors.text.secondary} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -911,19 +932,19 @@ export default function ProfileScreen() {
 
       {/* Documents */}
       <Card style={styles.card}>
-        <View style={styles.cardHeader}>
+        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
           <View>
             <View style={styles.cardTitleRow}>
               <View style={styles.cardTitleContainer}>
-                <Text style={styles.cardTitle}>Documents</Text>
-                <Text style={styles.cardSubtitle}>Upload and manage your professional documents</Text>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Documents</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Upload and manage your professional documents</Text>
               </View>
               <Button
                 title="Upload"
                 onPress={handleUploadDocument}
                 variant="primary"
                 size="sm"
-                icon={<Upload size={16} color={colors.primary.foreground || '#ffffff'} />}
+                icon={<Upload size={16} color={themeColors.primary.foreground} />}
                 style={styles.uploadDocumentButton}
               />
             </View>
@@ -934,22 +955,28 @@ export default function ProfileScreen() {
           <LoadingSpinner />
         ) : documents.length === 0 ? (
           <View style={styles.emptyState}>
-            <FileText size={48} color={colors.text.muted} />
-            <Text style={styles.emptyText}>No documents uploaded yet</Text>
+            <FileText size={48} color={themeColors.text.muted} />
+            <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>No documents uploaded yet</Text>
           </View>
         ) : (
           <View style={styles.documentsList}>
             {documents.map((doc) => (
-              <View key={doc.id} style={styles.documentItem}>
+              <View key={doc.id} style={[
+                styles.documentItem,
+                { 
+                  backgroundColor: themeColors.card.DEFAULT,
+                  borderColor: themeColors.border.light
+                }
+              ]}>
                 <TouchableOpacity
                   style={styles.documentInfo}
                   onPress={() => handleViewDocument(doc)}
                   activeOpacity={0.7}
                 >
-                  <FileText size={20} color={colors.primary.DEFAULT} />
+                  <FileText size={20} color={themeColors.primary.DEFAULT} />
                   <View style={styles.documentDetails}>
-                    <Text style={styles.documentName}>{doc.documentName}</Text>
-                    <Text style={styles.documentType}>
+                    <Text style={[styles.documentName, { color: themeColors.text.primary }]}>{doc.documentName}</Text>
+                    <Text style={[styles.documentType, { color: themeColors.text.secondary }]}>
                       {DOCUMENT_TYPES.find((t) => t.value === doc.documentType)?.label || doc.documentType}
                     </Text>
                   </View>
@@ -958,7 +985,7 @@ export default function ProfileScreen() {
                   onPress={() => handleDeleteDocument(doc.id, doc.documentName)}
                   style={styles.deleteButton}
                 >
-                  <Trash2 size={18} color={colors.destructive.DEFAULT} />
+                  <Trash2 size={18} color={themeColors.destructive.DEFAULT} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -966,46 +993,171 @@ export default function ProfileScreen() {
         )}
       </Card>
 
-      {/* Account Information */}
+      {/* Appearance Settings */}
       <Card style={styles.card}>
         <View style={styles.cardHeader}>
           <View>
-            <Text style={styles.cardTitle}>Account Information</Text>
-            <Text style={styles.cardSubtitle}>These details cannot be changed from this page</Text>
+            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Appearance</Text>
+            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Choose your preferred theme</Text>
           </View>
         </View>
 
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Email</Text>
-          <Text style={styles.infoValue}>{displayUser?.email || 'N/A'}</Text>
+        <View style={styles.themeOptions}>
+          <TouchableOpacity
+            style={[
+              styles.themeOption,
+              themeMode === 'light' && styles.themeOptionSelected,
+              { 
+                backgroundColor: themeMode === 'light' ? themeColors.primary.light : themeColors.card.DEFAULT,
+                borderColor: themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+              }
+            ]}
+            onPress={() => setThemeMode('light')}
+            activeOpacity={0.7}
+          >
+            <Sun size={24} color={themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+            <Text style={[
+              styles.themeOptionText,
+              { color: themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.text.primary }
+            ]}>
+              Light
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.themeOption,
+              themeMode === 'dark' && styles.themeOptionSelected,
+              { 
+                backgroundColor: themeMode === 'dark' ? themeColors.primary.light : themeColors.card.DEFAULT,
+                borderColor: themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+              }
+            ]}
+            onPress={() => setThemeMode('dark')}
+            activeOpacity={0.7}
+          >
+            <Moon size={24} color={themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+            <Text style={[
+              styles.themeOptionText,
+              { color: themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.text.primary }
+            ]}>
+              Dark
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.themeOption,
+              themeMode === 'auto' && styles.themeOptionSelected,
+              { 
+                backgroundColor: themeMode === 'auto' ? themeColors.primary.light : themeColors.card.DEFAULT,
+                borderColor: themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+              }
+            ]}
+            onPress={() => setThemeMode('auto')}
+            activeOpacity={0.7}
+          >
+            <Monitor size={24} color={themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+            <Text style={[
+              styles.themeOptionText,
+              { color: themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.text.primary }
+            ]}>
+              System
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+
+      {/* Account Information */}
+      <Card style={styles.card}>
+        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
+          <View>
+            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Account Information</Text>
+            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>These details cannot be changed from this page</Text>
+          </View>
         </View>
 
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Username</Text>
-          <Text style={styles.infoValue}>{displayUser?.username || 'N/A'}</Text>
-        </View>
+        <View style={styles.infoContainer}>
+          <View style={[styles.infoRow, { borderBottomColor: themeColors.border.light }]}>
+            <View style={styles.infoLeft}>
+              <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
+                <Mail size={18} color={themeColors.primary.DEFAULT} />
+              </View>
+              <View style={styles.infoTextContainer}>
+                <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Email</Text>
+                <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={1}>
+                  {displayUser?.email || 'N/A'}
+                </Text>
+              </View>
+            </View>
+          </View>
 
-        <View style={[styles.infoRow, styles.infoRowLast]}>
-          <Text style={styles.infoLabel}>Role</Text>
-          <Text style={styles.infoValue}>
-            {displayUser?.role === 'owner'
-              ? 'Owner'
-              : displayUser?.role === 'clerk'
-              ? 'Clerk'
-              : displayUser?.role === 'compliance'
-              ? 'Compliance'
-              : displayUser?.role || 'N/A'}
-          </Text>
+          <View style={[styles.infoRow, { borderBottomColor: themeColors.border.light }]}>
+            <View style={styles.infoLeft}>
+              <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
+                <UserIcon size={18} color={themeColors.primary.DEFAULT} />
+              </View>
+              <View style={styles.infoTextContainer}>
+                <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Username</Text>
+                <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={1}>
+                  {displayUser?.username || 'N/A'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.infoRow}>
+            <View style={styles.infoLeft}>
+              <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
+                <Shield size={18} color={themeColors.primary.DEFAULT} />
+              </View>
+              <View style={styles.infoTextContainer}>
+                <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Role</Text>
+                <Text style={[styles.infoValue, { color: themeColors.text.primary }]}>
+                  {displayUser?.role === 'owner'
+                    ? 'Owner'
+                    : displayUser?.role === 'clerk'
+                    ? 'Clerk'
+                    : displayUser?.role === 'compliance'
+                    ? 'Compliance'
+                    : displayUser?.role || 'N/A'}
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
       </Card>
 
       {/* Sign Out Button */}
-      <Button
-        title="Sign Out"
-        onPress={logout}
-        variant="destructive"
-        style={styles.logoutButton}
-      />
+      <TouchableOpacity
+        style={[
+          styles.logoutButton,
+          {
+            backgroundColor: themeColors.destructive.DEFAULT,
+            borderColor: themeColors.destructive.DEFAULT,
+            opacity: isOnline ? 1 : 0.5,
+          }
+        ]}
+        onPress={() => {
+          if (!isOnline) {
+            Alert.alert(
+              'Offline',
+              'You cannot sign out while offline. Please connect to the internet and try again.'
+            );
+            return;
+          }
+          logout();
+        }}
+        disabled={!isOnline}
+        activeOpacity={0.8}
+      >
+        <View style={styles.logoutButtonContent}>
+          <LogOut size={20} color="#ffffff" />
+          <Text style={styles.logoutButtonText}>
+            {isOnline ? 'Sign Out' : 'Sign Out (Online only)'}
+          </Text>
+        </View>
+      </TouchableOpacity>
 
       {/* Document Form Modal */}
       <Modal
@@ -1015,21 +1167,27 @@ export default function ProfileScreen() {
         onRequestClose={() => setShowDocumentForm(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom || 0, spacing[4]) }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Document</Text>
+          <View style={[
+            styles.modalContent, 
+            { 
+              backgroundColor: themeColors.background,
+              paddingBottom: Math.max(insets.bottom || 0, spacing[4]) 
+            }
+          ]}>
+            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Add Document</Text>
               <TouchableOpacity 
                 onPress={() => setShowDocumentForm(false)}
-                style={styles.modalCloseButton}
+                style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
               >
-                <Text style={styles.modalClose}>✕</Text>
+                <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalBody}>
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Document Name *</Text>
+                <Text style={[styles.label, { color: themeColors.text.primary }]}>Document Name *</Text>
                 <Input
                   value={documentName}
                   onChangeText={setDocumentName}
@@ -1046,14 +1204,18 @@ export default function ProfileScreen() {
                     <TouchableOpacity
                       style={[
                         styles.modalItem,
-                        documentType === item.value && styles.modalItemSelected,
+                        { 
+                          backgroundColor: documentType === item.value ? themeColors.primary.light : themeColors.card.DEFAULT,
+                          borderColor: documentType === item.value ? themeColors.primary.DEFAULT : themeColors.border.light
+                        },
+                        documentType === item.value && { borderWidth: 2 }
                       ]}
                       onPress={() => setDocumentType(item.value)}
                     >
                       <Text
                         style={[
                           styles.modalItemText,
-                          documentType === item.value && styles.modalItemTextSelected,
+                          { color: documentType === item.value ? themeColors.primary.DEFAULT : themeColors.text.primary }
                         ]}
                       >
                         {item.label}
@@ -1081,7 +1243,6 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
     padding: spacing[4],
@@ -1101,12 +1262,10 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontSize: typography.fontSize['3xl'] || 28,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     marginBottom: spacing[1],
   },
   pageSubtitle: {
     fontSize: typography.fontSize.base,
-    color: colors.text.secondary,
     lineHeight: 20,
   },
   card: {
@@ -1117,7 +1276,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing[5],
     paddingBottom: spacing[3],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   cardHeaderContent: {
     flexDirection: 'row',
@@ -1137,13 +1295,11 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: typography.fontSize.xl || 20,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     marginBottom: spacing[1],
     letterSpacing: 0.2,
   },
   cardSubtitle: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
     lineHeight: 18,
   },
   avatarSection: {
@@ -1171,7 +1327,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.primary.DEFAULT,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
@@ -1195,7 +1350,6 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    color: colors.primary.foreground,
   },
   uploadButton: {
     marginTop: spacing[2],
@@ -1203,7 +1357,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[5],
     paddingVertical: spacing[3],
     borderRadius: borderRadius.xl || 16,
-    backgroundColor: colors.primary.DEFAULT,
     ...shadows.md,
   },
   formGroup: {
@@ -1221,7 +1374,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.primary.DEFAULT,
     justifyContent: 'center',
     alignItems: 'center',
     ...shadows.xs,
@@ -1235,7 +1387,6 @@ const styles = StyleSheet.create({
   tag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary.light,
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
@@ -1246,7 +1397,6 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.primary,
   },
   tagRemove: {
     padding: spacing[1],
@@ -1267,7 +1417,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.muted,
     marginTop: spacing[3],
     fontWeight: typography.fontWeight.medium,
   },
@@ -1279,7 +1428,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: spacing[4],
-    backgroundColor: colors.card?.DEFAULT || '#fafafa',
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     borderColor: colors.border.light,
@@ -1300,44 +1448,74 @@ const styles = StyleSheet.create({
   documentName: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
     marginBottom: spacing[1],
   },
   documentType: {
     fontSize: typography.fontSize.sm,
-    color: colors.text.secondary,
   },
   deleteButton: {
     padding: spacing[2],
   },
+  infoContainer: {
+    gap: spacing[1],
+  },
   infoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing[4],
+    paddingHorizontal: spacing[2],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   infoRowLast: {
     borderBottomWidth: 0,
   },
+  infoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing[3],
+  },
+  infoIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoTextContainer: {
+    flex: 1,
+    gap: spacing[1],
+  },
   infoLabel: {
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   infoValue: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semibold,
-    color: colors.text.primary,
   },
   logoutButton: {
     marginTop: spacing[4],
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.lg || 12,
-    minWidth: 140,
+    marginBottom: spacing[4],
+    width: '100%',
+    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[4],
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    ...shadows.md,
+  },
+  logoutButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+  },
+  logoutButtonText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    color: '#ffffff',
   },
   modalOverlay: {
     flex: 1,
@@ -1345,7 +1523,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: colors.background,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '85%',
@@ -1360,17 +1537,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing[4],
     paddingBottom: spacing[4],
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
   },
   modalTitle: {
     fontSize: typography.fontSize.xl || 20,
     fontWeight: typography.fontWeight.bold,
-    color: colors.text.primary,
     letterSpacing: 0.3,
   },
   modalClose: {
     fontSize: typography.fontSize.xl || 20,
-    color: colors.text.secondary,
     fontWeight: typography.fontWeight.bold,
   },
   modalCloseButton: {
@@ -1391,25 +1565,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing[2],
     borderWidth: 1,
     borderColor: colors.border.light,
-    backgroundColor: colors.card?.DEFAULT || '#fafafa',
   },
   modalItemSelected: {
-    backgroundColor: colors.primary.light,
     borderColor: colors.primary.DEFAULT,
     borderWidth: 2,
   },
   modalItemText: {
     fontSize: typography.fontSize.base,
-    color: colors.text.primary,
   },
   modalItemTextSelected: {
-    color: colors.primary.DEFAULT,
     fontWeight: typography.fontWeight.medium,
   },
   label: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    color: colors.text.primary,
     marginBottom: spacing[2],
   },
   uploadDocumentButton: {
@@ -1417,7 +1586,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
     borderRadius: borderRadius.xl || 16,
-    backgroundColor: colors.primary.DEFAULT,
     ...shadows.md,
     minWidth: 100,
   },
@@ -1428,5 +1596,29 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg || 12,
     minWidth: 140,
     marginTop: spacing[2],
+  },
+  themeOptions: {
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[2],
+  },
+  themeOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[3],
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    ...shadows.xs,
+  },
+  themeOptionSelected: {
+    ...shadows.sm,
+  },
+  themeOptionText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
   },
 });

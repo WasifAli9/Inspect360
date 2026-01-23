@@ -8,13 +8,17 @@ import { maintenanceService } from '../../services/maintenance';
 import type { MaintenanceStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import { spacing } from '../../theme';
+import { colors, spacing } from '../../theme';
+import { useTheme } from '../../contexts/ThemeContext';
 
 type RoutePropType = RouteProp<MaintenanceStackParamList, 'MaintenanceDetail'>;
 
 export default function MaintenanceDetailScreen() {
   const route = useRoute<RoutePropType>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
+  const theme = useTheme();
+  // Ensure themeColors is always defined - use default colors if theme not available
+  const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const { requestId } = route.params;
 
   const { data: request, isLoading } = useQuery({
@@ -28,14 +32,14 @@ export default function MaintenanceDetailScreen() {
 
   if (!request) {
     return (
-      <View style={styles.container}>
-        <Text>Maintenance request not found</Text>
+      <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+        <Text style={{ color: themeColors.text.primary }}>Maintenance request not found</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView 
         contentContainerStyle={[
           styles.content,
@@ -46,31 +50,31 @@ export default function MaintenanceDetailScreen() {
         ]}
       >
       <Card>
-        <Text style={styles.title}>{request.title}</Text>
+        <Text style={[styles.title, { color: themeColors.text.primary }]}>{request.title}</Text>
         <View style={styles.badgeContainer}>
-          <View style={[styles.badge, { backgroundColor: '#fbbf24' }]}> {/* Lighter amber-400 */}
-            <Text style={styles.badgeText}>{request.status}</Text>
+          <View style={[styles.badge, { backgroundColor: themeColors.warning + '40' }]}>
+            <Text style={[styles.badgeText, { color: themeColors.warning }]}>{request.status}</Text>
           </View>
-          <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
-            <Text style={styles.badgeText}>{request.priority}</Text>
+          <View style={[styles.badge, { backgroundColor: themeColors.destructive.DEFAULT + '40' }]}>
+            <Text style={[styles.badgeText, { color: themeColors.destructive.DEFAULT }]}>{request.priority}</Text>
           </View>
         </View>
       </Card>
 
       {request.description && (
         <Card>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{request.description}</Text>
+          <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Description</Text>
+          <Text style={[styles.description, { color: themeColors.text.secondary }]}>{request.description}</Text>
         </Card>
       )}
 
       <Card>
-        <Text style={styles.sectionTitle}>Details</Text>
-        <Text style={styles.label}>
+        <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Details</Text>
+        <Text style={[styles.label, { color: themeColors.text.secondary }]}>
           Created: {new Date(request.createdAt).toLocaleString()}
         </Text>
         {request.updatedAt && (
-          <Text style={styles.label}>
+          <Text style={[styles.label, { color: themeColors.text.secondary }]}>
             Updated: {new Date(request.updatedAt).toLocaleString()}
           </Text>
         )}
@@ -83,7 +87,6 @@ export default function MaintenanceDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   content: {
     padding: 16,
@@ -92,7 +95,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 12,
-    color: '#000',
   },
   badgeContainer: {
     flexDirection: 'row',
@@ -104,7 +106,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   badgeText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'capitalize',
@@ -113,16 +114,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#000',
   },
   description: {
     fontSize: 16,
-    color: '#333',
     lineHeight: 24,
   },
   label: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 4,
   },
 });
