@@ -1,5 +1,5 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, View } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, View, StyleProp, useWindowDimensions } from 'react-native';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getButtonHeight, moderateScale, getFontSize } from '../../utils/responsive';
@@ -11,8 +11,8 @@ interface ButtonProps {
   size?: 'sm' | 'md' | 'lg' | 'icon';
   disabled?: boolean;
   loading?: boolean;
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
   icon?: React.ReactNode;
 }
 
@@ -28,9 +28,10 @@ export default function Button({
   icon,
 }: ButtonProps) {
   const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
   // Ensure themeColors is always defined - use default colors if theme not available
   const themeColors = (theme && theme.colors) ? theme.colors : colors;
-  
+
   // Ensure disabled and loading are actual booleans (not strings)
   const safeDisabled = typeof disabled === 'boolean' ? disabled : disabled === true || disabled === 'true';
   const safeLoading = typeof loading === 'boolean' ? loading : loading === true || loading === 'true';
@@ -89,13 +90,63 @@ export default function Button({
     }
   };
 
+  // Calculate responsive styles dynamically based on current screen width
+  const smHeight = getButtonHeight('sm', screenWidth);
+  const mdHeight = getButtonHeight('md', screenWidth);
+  const lgHeight = getButtonHeight('lg', screenWidth);
+  const iconSize = moderateScale(36, 0.2, screenWidth);
+
+  const getSizeStyle = () => {
+    switch (size) {
+      case 'sm':
+        return {
+          paddingVertical: moderateScale(spacing[2], 0.3, screenWidth),
+          paddingHorizontal: moderateScale(spacing[3], 0.3, screenWidth),
+          minHeight: smHeight,
+        };
+      case 'lg':
+        return {
+          paddingVertical: moderateScale(spacing[3], 0.3, screenWidth),
+          paddingHorizontal: moderateScale(spacing[8], 0.3, screenWidth),
+          minHeight: lgHeight,
+        };
+      case 'icon':
+        return {
+          width: iconSize,
+          height: iconSize,
+          padding: 0,
+          minHeight: iconSize,
+        };
+      default: // 'md'
+        return {
+          paddingVertical: moderateScale(spacing[2], 0.3, screenWidth),
+          paddingHorizontal: moderateScale(spacing[4], 0.3, screenWidth),
+          minHeight: mdHeight,
+        };
+    }
+  };
+
+  const getTextSizeStyle = () => {
+    switch (size) {
+      case 'sm':
+        return { fontSize: getFontSize(typography.fontSize.xs, screenWidth) };
+      case 'lg':
+        return { fontSize: getFontSize(typography.fontSize.base, screenWidth) };
+      case 'icon':
+        return { fontSize: 0 };
+      default: // 'md'
+        return { fontSize: getFontSize(typography.fontSize.sm, screenWidth) };
+    }
+  };
+
   const buttonStyle = [
     styles.button,
     {
       ...getVariantStyle(),
       borderWidth: variant === 'ghost' ? 0 : 1.5,
+      borderRadius: moderateScale(borderRadius.xl, 0.2, screenWidth),
     },
-    styles[`size_${size}`],
+    getSizeStyle(),
     safeDisabled && styles.disabled,
     !safeDisabled && variant !== 'ghost' && variant !== 'outline' && shadows.sm,
     style,
@@ -106,8 +157,9 @@ export default function Button({
     {
       color: getTextColor(),
       fontWeight: variant === 'outline' ? typography.fontWeight.medium : typography.fontWeight.semibold,
+      letterSpacing: moderateScale(0.3, 0.2, screenWidth),
     },
-    styles[`text_${size}`],
+    getTextSizeStyle(),
     textStyle,
   ];
 
@@ -128,8 +180,8 @@ export default function Button({
       {safeLoading ? (
         <ActivityIndicator color={getIndicatorColor()} size="small" />
       ) : (
-        <View style={styles.content}>
-          {icon && <View style={styles.icon}>{icon}</View>}
+        <View style={[styles.content, { gap: moderateScale(spacing[1], 0.3, screenWidth) }]}>
+          {icon && <View style={[styles.icon, { marginRight: moderateScale(spacing[1], 0.3, screenWidth) }]}>{icon}</View>}
           {size !== 'icon' && <Text style={buttonTextStyle}>{title}</Text>}
         </View>
       )}
@@ -137,71 +189,25 @@ export default function Button({
   );
 }
 
-// Create responsive styles function
-const createStyles = () => {
-  const smHeight = getButtonHeight('sm');
-  const mdHeight = getButtonHeight('md');
-  const lgHeight = getButtonHeight('lg');
-  const iconSize = moderateScale(36, 0.2);
-
-  return StyleSheet.create({
-    button: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: moderateScale(borderRadius.xl, 0.2),
-      minHeight: mdHeight, // Default to medium
-    },
-    content: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: moderateScale(spacing[1], 0.3),
-    },
-    icon: {
-      marginRight: moderateScale(spacing[1], 0.3),
-    },
-    size_sm: {
-      paddingVertical: moderateScale(spacing[2], 0.3),
-      paddingHorizontal: moderateScale(spacing[3], 0.3),
-      minHeight: smHeight,
-    },
-    size_md: {
-      paddingVertical: moderateScale(spacing[2], 0.3),
-      paddingHorizontal: moderateScale(spacing[4], 0.3),
-      minHeight: mdHeight,
-    },
-    size_lg: {
-      paddingVertical: moderateScale(spacing[3], 0.3),
-      paddingHorizontal: moderateScale(spacing[8], 0.3),
-      minHeight: lgHeight,
-    },
-    size_icon: {
-      width: iconSize,
-      height: iconSize,
-      padding: 0,
-      minHeight: iconSize,
-    },
-    disabled: {
-      opacity: 0.5,
-    },
-    text: {
-      fontFamily: typography.fontFamily.sans,
-      letterSpacing: moderateScale(0.3, 0.2),
-    },
-    text_sm: {
-      fontSize: getFontSize(typography.fontSize.xs),
-    },
-    text_md: {
-      fontSize: getFontSize(typography.fontSize.sm),
-    },
-    text_lg: {
-      fontSize: getFontSize(typography.fontSize.base),
-    },
-    text_icon: {
-      fontSize: 0,
-    },
-  });
-};
-
-const styles = createStyles();
+// Static styles that don't need responsive scaling
+const styles = StyleSheet.create({
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  icon: {
+    // Margin will be applied dynamically
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  text: {
+    fontFamily: typography.fontFamily.sans,
+  },
+});

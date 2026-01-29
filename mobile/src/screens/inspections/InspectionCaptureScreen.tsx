@@ -8,6 +8,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Platform,
+  KeyboardAvoidingView,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRoute, useNavigation, CommonActions } from '@react-navigation/native';
@@ -21,18 +24,16 @@ import type { InspectionsStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
-import Input from '../../components/ui/Input';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { FieldWidget } from '../../components/inspections/FieldWidget';
 import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight, Save, CheckCircle2, Sparkles, Wifi, WifiOff, Check, Cloud, X, AlertCircle } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, CheckCircle2, Sparkles, Wifi, WifiOff, Check, Cloud, AlertCircle } from 'lucide-react-native';
 import Badge from '../../components/ui/Badge';
 import Progress from '../../components/ui/Progress';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
 import { moderateScale, getFontSize, getButtonHeight } from '../../utils/responsive';
-import Constants from 'expo-constants';
 import { localDatabase } from '../../services/localDatabase';
 import { photoStorage } from '../../services/photoStorage';
 import { syncManager } from '../../services/syncManager';
@@ -81,11 +82,15 @@ export default function InspectionCaptureScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [copyImages, setCopyImages] = useState(false);
   const [copyNotes, setCopyNotes] = useState(false);
-  const [copiedImageKeys, setCopiedImageKeys] = useState<Set<string>>(new Set());
-  const [copiedNoteKeys, setCopiedNoteKeys] = useState<Set<string>>(new Set());
   const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'syncing'>('synced');
   const [conflictEntryId, setConflictEntryId] = useState<string | null>(null);
   const [conflictData, setConflictData] = useState<{ local: any; server: any } | null>(null);
+
+  // Use a ref to store entries for access in callbacks without triggering re-renders or dependency changes
+  const entriesRef = useRef<Record<string, InspectionEntry>>(entries);
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
 
   // Initialize local database on mount
   useEffect(() => {
@@ -93,7 +98,7 @@ export default function InspectionCaptureScreen() {
       try {
         await localDatabase.initialize();
         await photoStorage.initialize();
-        
+
         // Load pending count
         const count = await syncManager.getPendingCount();
         setPendingCount(count);
@@ -104,13 +109,21 @@ export default function InspectionCaptureScreen() {
     initLocalDB();
   }, []);
 
-  // Monitor sync progress
+  // Monitor sync progress and trigger refreshes
   useEffect(() => {
     const unsubscribe = syncManager.addProgressListener((progress) => {
-      setIsSyncing(progress.current < progress.total);
+      const currentlySyncing = progress.current < progress.total;
+      setIsSyncing(currentlySyncing);
+      setPendingCount(progress.pending);
+
+      // If sync just finished, refresh data to show latest server URLs/final states
+      if (!currentlySyncing && progress.current > 0) {
+        queryClient.invalidateQueries({ queryKey: ['local-entries', inspectionId] });
+        queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
+      }
     });
     return unsubscribe;
-  }, []);
+  }, [inspectionId, queryClient]);
 
   // Check for conflicts, completed, or deleted inspection when coming online
   useEffect(() => {
@@ -125,7 +138,7 @@ export default function InspectionCaptureScreen() {
             // Check if inspection was deleted (404 error)
             if (error.status === 404 || error.message?.includes('not found') || error.message?.includes('404')) {
               const localInspection = await localDatabase.getInspection(inspectionId);
-              
+
               if (localInspection) {
                 // Inspection was deleted on server while user was offline
                 Alert.alert(
@@ -142,20 +155,20 @@ export default function InspectionCaptureScreen() {
                             await localDatabase.updateEntrySyncStatus(entry.id, 'conflict');
                           }
                         }
-                        
+
                         // Mark inspection as deleted locally (soft delete)
                         await localDatabase.updateInspectionStatus(inspectionId, 'deleted');
                         await localDatabase.updateInspectionSyncStatus(inspectionId, 'synced');
-                        
+
                         // Clear sync queue for this inspection
                         const entryOps = await localDatabase.getSyncQueueByEntity('entry', inspectionId);
                         const photoOps = await localDatabase.getSyncQueueByEntity('photo', inspectionId);
                         const inspectionOps = await localDatabase.getSyncQueueByEntity('inspection', inspectionId);
-                        
+
                         for (const op of [...entryOps, ...photoOps, ...inspectionOps]) {
                           await localDatabase.removeFromSyncQueue(op.id);
                         }
-                        
+
                         // Navigate back to list
                         navigation.goBack();
                       },
@@ -168,12 +181,12 @@ export default function InspectionCaptureScreen() {
             // For other errors, continue with normal flow
             throw error;
           }
-          
+
           const localInspection = await localDatabase.getInspection(inspectionId);
-          
-          if (serverInspection.status === 'completed' && 
-              localInspection && 
-              localInspection.status !== 'completed') {
+
+          if (serverInspection.status === 'completed' &&
+            localInspection &&
+            localInspection.status !== 'completed') {
             // Inspection was completed on server while user was offline
             Alert.alert(
               'Inspection Already Completed',
@@ -185,7 +198,7 @@ export default function InspectionCaptureScreen() {
                     // Update local inspection status
                     await localDatabase.updateInspectionStatus(inspectionId, 'completed');
                     await localDatabase.updateInspectionSyncStatus(inspectionId, 'synced');
-                    
+
                     // Mark all pending entries as conflict
                     const entries = await localDatabase.getEntries(inspectionId);
                     for (const entry of entries) {
@@ -193,7 +206,7 @@ export default function InspectionCaptureScreen() {
                         await localDatabase.updateEntrySyncStatus(entry.id, 'conflict');
                       }
                     }
-                    
+
                     // Refresh the screen
                     queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}`] });
                     queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
@@ -205,7 +218,7 @@ export default function InspectionCaptureScreen() {
             );
             return;
           }
-          
+
           // Check for entry conflicts
           const entries = await localDatabase.getEntries(inspectionId);
           for (const entry of entries) {
@@ -239,11 +252,11 @@ export default function InspectionCaptureScreen() {
         // For merge, keep local version (user's offline changes take precedence)
         await syncManager.resolveConflictKeepLocal(conflictEntryId);
       }
-      
+
       // Refresh entries
       queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
       queryClient.invalidateQueries({ queryKey: ['local-entries', inspectionId] });
-      
+
       setConflictEntryId(null);
       setConflictData(null);
     } catch (error: any) {
@@ -287,39 +300,66 @@ export default function InspectionCaptureScreen() {
     queryKey: ['local-entries', inspectionId],
     queryFn: async () => {
       const entries = await localDatabase.getEntries(inspectionId);
+      // Load ALL photos for this inspection in one go to be more efficient
+      const allInspectionPhotos = await localDatabase.getPhotosByInspection(inspectionId);
+
       const entriesWithPhotos = await Promise.all(entries.map(async (entry) => {
-        // Load photos for this entry
-        const photos = await localDatabase.getPhotos(entry.id);
-        const photoUrls = await Promise.all(photos.map(async (photo) => {
-          // Check if local file exists first
+        // Filter photos for this specific entry
+        const entryPhotos = allInspectionPhotos.filter(p => p.entry_id === entry.id);
+
+        const photoUrls = await Promise.all(entryPhotos.map(async (photo) => {
+          // Check if local file exists first (prioritize local for offline/pending)
           if (photo.local_path) {
             try {
-              const fileInfo = await FileSystem.getInfoAsync(photo.local_path);
+              // Ensure we have file:// prefix for Android local paths
+              const localUri = photo.local_path.startsWith('file://') ? photo.local_path : `file://${photo.local_path}`;
+              const fileInfo = await FileSystem.getInfoAsync(localUri);
               if (fileInfo.exists) {
-                // Local file exists - use it (works offline and online)
-                return photo.local_path;
+                return localUri;
               }
             } catch (error) {
               console.warn('[InspectionCapture] Error checking local photo file:', error);
             }
           }
-          
-          // If local file doesn't exist or we're online, use server URL if available
-          if (photo.upload_status === 'uploaded' && photo.server_url) {
+
+          if (photo.server_url) {
             // Construct full URL if it's a relative path
             if (photo.server_url.startsWith('/')) {
               return `${getAPI_URL()}${photo.server_url}`;
-            } else if (photo.server_url.startsWith('http://') || photo.server_url.startsWith('https://')) {
-              return photo.server_url;
-            } else {
-              return `${getAPI_URL()}/objects/${photo.server_url}`;
             }
+            return photo.server_url;
           }
-          
-          // Fallback to local path even if file might not exist
+
           return photo.local_path;
         }));
-        
+
+        // Parse valueJson to get any server-side photos
+        let serverPhotos: string[] = [];
+        if (entry.value_json) {
+          try {
+            const val = JSON.parse(entry.value_json);
+            if (val && Array.isArray(val.photos)) {
+              serverPhotos = val.photos.map((p: string) => {
+                if (p.startsWith('/')) return `${getAPI_URL()}${p}`;
+                if (p.startsWith('http')) return p;
+                return `${getAPI_URL()}/objects/${p}`;
+              });
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+
+        // Merge local and server photos, avoiding duplicates
+        const allPhotos = [...photoUrls];
+        serverPhotos.forEach(sp => {
+          // Add if not already present (as a server URL or local path)
+          const alreadyPresent = allPhotos.some(ap => ap === sp || ap.includes(sp.split('/').pop() || 'nothing'));
+          if (!alreadyPresent) {
+            allPhotos.push(sp);
+          }
+        });
+
         return {
           id: entry.id,
           inspectionId: entry.inspection_id,
@@ -328,12 +368,13 @@ export default function InspectionCaptureScreen() {
           fieldType: entry.field_type,
           valueJson: entry.value_json ? JSON.parse(entry.value_json) : undefined,
           note: entry.note || undefined,
-          photos: photoUrls,
+          photos: allPhotos,
           maintenanceFlag: entry.maintenance_flag === 1,
           markedForReview: entry.marked_for_review === 1,
+          syncStatus: entry.sync_status,
         };
       }));
-      
+
       return entriesWithPhotos;
     },
     enabled: !!inspectionId, // Always load local entries (both online and offline)
@@ -347,14 +388,14 @@ export default function InspectionCaptureScreen() {
     queryFn: async () => {
       try {
         const serverInspection = await inspectionsService.getInspection(inspectionId);
-        
+
         // Save to local DB when online
         try {
           await localDatabase.saveInspection(serverInspection);
         } catch (saveError) {
           console.error('[InspectionCapture] Failed to save inspection to local DB:', saveError);
         }
-        
+
         return serverInspection;
       } catch (error: any) {
         // Check if inspection was deleted (404 error)
@@ -383,11 +424,11 @@ export default function InspectionCaptureScreen() {
 
   // Use local inspection when offline, fallback to server inspection when online
   const effectiveInspection = (!isOnline && localInspection) ? localInspection : (inspection || localInspection);
-  
+
   // Check if inspection is deleted
-  const isDeleted = effectiveInspection?.status === 'deleted' || 
-                    (inspectionError as any)?.isDeleted ||
-                    (inspectionError as any)?.status === 404;
+  const isDeleted = effectiveInspection?.status === 'deleted' ||
+    (inspectionError as any)?.isDeleted ||
+    (inspectionError as any)?.status === 404;
 
   // Fetch property details (only when online and inspection exists)
   const { data: property } = useQuery({
@@ -414,13 +455,14 @@ export default function InspectionCaptureScreen() {
   });
 
   // Fetch inspector details (only when online and inspection exists)
+  const inspectorId = (effectiveInspection as any)?.clerkId || (effectiveInspection as any)?.inspectorId || (effectiveInspection as any)?.assignedToId;
   const { data: inspector } = useQuery({
-    queryKey: [`/api/users/${effectiveInspection?.assignedToId}`],
+    queryKey: [`/api/users/${inspectorId}`],
     queryFn: () => {
-      if (!effectiveInspection?.assignedToId) throw new Error('Assigned To ID not available');
-      return authService.getUser(effectiveInspection.assignedToId);
+      if (!inspectorId) throw new Error('Inspector ID not available');
+      return authService.getUser(inspectorId);
     },
-    enabled: !!effectiveInspection?.assignedToId && isOnline,
+    enabled: !!inspectorId && isOnline,
     retry: 1,
     staleTime: 60000,
   });
@@ -442,21 +484,36 @@ export default function InspectionCaptureScreen() {
     queryKey: [`/api/inspections/${inspectionId}/entries`],
     queryFn: async () => {
       const entries = await inspectionsService.getInspectionEntries(inspectionId);
-      
+
       // Save to local DB when online
       if (isOnline && effectiveInspection) {
         try {
           await localDatabase.saveInspection(effectiveInspection);
+
+          // Get current local entries to check sync status
+          const currentLocalEntries = await localDatabase.getEntries(inspectionId);
+          const localEntriesMap = new Map(currentLocalEntries.map(e => [`${e.section_ref}-${e.field_key}`, e]));
+
           for (const entry of entries) {
             if (entry.id) {
-              await localDatabase.saveEntry({ ...entry, id: entry.id });
+              const localKey = `${entry.sectionRef}-${entry.fieldKey}`;
+              const localEntry = localEntriesMap.get(localKey);
+
+              // Only overwrite if local entry doesn't exist or is already synced
+              if (!localEntry || localEntry.sync_status !== 'pending') {
+                await localDatabase.saveEntry({ ...entry, id: entry.id });
+              } else {
+                console.log(`[InspectionCapture] Skipping save of server entry for ${localKey} because local version is pending sync`);
+              }
             }
           }
+          // Invalidate local entries to trigger refetch with many potential updates from server
+          queryClient.invalidateQueries({ queryKey: ['local-entries', inspectionId] });
         } catch (error) {
           console.error('[InspectionCapture] Failed to save to local DB:', error);
         }
       }
-      
+
       return entries;
     },
     enabled: !!inspectionId && isOnline,
@@ -466,8 +523,34 @@ export default function InspectionCaptureScreen() {
     refetchOnReconnect: false,
   });
 
-  // Use local entries when offline, otherwise use server entries
-  const effectiveEntries = (!isOnline && localEntries.length > 0) ? localEntries : (existingEntries || localEntries);
+  // Merge local entries and server entries to ensure all fields are shown while preserving local offline changes
+  const effectiveEntries = useMemo(() => {
+    const combinedMap = new Map<string, any>();
+
+    // 1. Add server entries as base
+    if (existingEntries && existingEntries.length > 0) {
+      existingEntries.forEach(entry => {
+        const key = `${entry.sectionRef}-${entry.fieldKey}`;
+        combinedMap.set(key, entry);
+      });
+    }
+
+    // 2. Overlay local entries (source of truth for photos and pending changes)
+    if (localEntries && localEntries.length > 0) {
+      localEntries.forEach((local: any) => {
+        const key = `${local.sectionRef}-${local.fieldKey}`;
+        const existing = combinedMap.get(key);
+
+        if (existing) {
+          combinedMap.set(key, { ...existing, ...local });
+        } else {
+          combinedMap.set(key, local);
+        }
+      });
+    }
+
+    return Array.from(combinedMap.values());
+  }, [existingEntries, localEntries]);
 
   // Fetch most recent check-in for check-out inspections (only when online)
   const { data: checkInData } = useQuery({
@@ -524,6 +607,7 @@ export default function InspectionCaptureScreen() {
         photos: entry.photos || [],
         maintenanceFlag: entry.maintenanceFlag,
         markedForReview: entry.markedForReview,
+        syncStatus: entry.syncStatus || entry.sync_status || 'synced',
       };
     });
 
@@ -533,21 +617,24 @@ export default function InspectionCaptureScreen() {
       Object.keys(entriesMap).forEach(key => {
         const serverEntry = entriesMap[key];
         const localEntry = merged[key];
-        
+
         // Always update if entry doesn't exist
         if (!localEntry) {
           merged[key] = serverEntry;
         } else {
+          // If entry is currently pending sync locally, be more conservative about overwriting its value
+          const isPendingLocally = localEntry.syncStatus === 'pending';
+
           // Update entry with server data (especially important after copy from check-in)
           // Merge photos and notes from server to ensure copied data is shown
           const mergedEntry: InspectionEntry = {
             ...localEntry,
             ...serverEntry,
-            // Preserve any local unsaved changes for valueJson if entry hasn't been copied
-            valueJson: serverEntry.valueJson !== undefined ? serverEntry.valueJson : localEntry.valueJson,
-            // Always use server photos and notes when they exist (from copy operation)
-            photos: serverEntry.photos && serverEntry.photos.length > 0 ? serverEntry.photos : localEntry.photos,
-            note: serverEntry.note !== undefined ? serverEntry.note : localEntry.note,
+            // Preserve local unsaved changes for valueJson if entry is pending and has a value
+            valueJson: (isPendingLocally && localEntry.valueJson !== undefined) ? localEntry.valueJson : serverEntry.valueJson,
+            // Merge photos: prefer local/enriched ones, add server ones if not present
+            photos: Array.from(new Set([...(localEntry.photos || []), ...(serverEntry.photos || [])])),
+            note: (isPendingLocally && localEntry.note !== undefined) ? localEntry.note : (serverEntry.note !== undefined ? serverEntry.note : localEntry.note),
           };
           merged[key] = mergedEntry;
         }
@@ -651,16 +738,16 @@ export default function InspectionCaptureScreen() {
         try {
           const result = await inspectionsService.saveInspectionEntry({
             ...entryWithId,
-        inspectionId,
-      });
-          
+            inspectionId,
+          });
+
           // Update local entry with server ID
           if (result.id && result.id !== entryId) {
             await localDatabase.updateEntrySyncStatus(entryId, 'synced', result.id);
           } else {
             await localDatabase.updateEntrySyncStatus(entryId, 'synced', result.id || entryId);
           }
-          
+
           setSyncStatus('synced');
           return result;
         } catch (error: any) {
@@ -676,29 +763,29 @@ export default function InspectionCaptureScreen() {
         const count = await syncManager.getPendingCount();
         setPendingCount(count);
         setSyncStatus('pending');
-        
+
         // Return the entry with local ID
         return entryWithId;
       }
     },
     onSuccess: () => {
       if (isOnline) {
-      queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}`] });
       }
     },
     onError: (error: any) => {
       // Only show error if online, offline errors are expected
       if (isOnline) {
-      Alert.alert('Error', error.message || 'Failed to save field');
+        Alert.alert('Error', error.message || 'Failed to save field');
       }
     },
   });
 
   // Update inspection status mutation
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ status, startedAt, completedDate, submittedAt }: { 
-      status: string; 
+    mutationFn: async ({ status, startedAt, completedDate, submittedAt }: {
+      status: string;
       startedAt?: string;
       completedDate?: string;
       submittedAt?: string;
@@ -731,28 +818,13 @@ export default function InspectionCaptureScreen() {
       return inspectionsService.copyFromCheckIn(inspectionId, data.copyImages, data.copyNotes);
     },
     onSuccess: async (data) => {
-      if (data.modifiedImageKeys?.length) {
-        setCopiedImageKeys((prev: Set<string>) => {
-          const next = new Set(prev);
-          data.modifiedImageKeys!.forEach((k: string) => next.add(k));
-          return next;
-        });
-      }
-      if (data.modifiedNoteKeys?.length) {
-        setCopiedNoteKeys((prev: Set<string>) => {
-          const next = new Set(prev);
-          data.modifiedNoteKeys!.forEach((k: string) => next.add(k));
-          return next;
-        });
-      }
-
       // Invalidate and refetch entries to get updated data with copied photos/notes
       queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
-      
+
       // Wait a bit for the server to finish processing, then refetch
       setTimeout(async () => {
-        const result = await queryClient.refetchQueries({ 
-          queryKey: [`/api/inspections/${inspectionId}/entries`] 
+        const result = await queryClient.refetchQueries({
+          queryKey: [`/api/inspections/${inspectionId}/entries`]
         });
         console.log('[Copy] Refetched entries result:', result);
         // Force reload by invalidating again to ensure UI updates
@@ -789,7 +861,7 @@ export default function InspectionCaptureScreen() {
         startedAt: new Date().toISOString(),
       });
     }
-  }, [effectiveInspection, hasAutoStarted, isOnline]);
+  }, [effectiveInspection, hasAutoStarted, isOnline, updateStatusMutation]);
 
   // Track if copy has been triggered to prevent re-triggering
   const copyTriggeredRef = useRef<{ copyImages: boolean; copyNotes: boolean }>({ copyImages: false, copyNotes: false });
@@ -804,18 +876,18 @@ export default function InspectionCaptureScreen() {
     // Check if either checkbox is checked and hasn't been triggered yet
     const shouldCopyImages = copyImages && !copyTriggeredRef.current.copyImages;
     const shouldCopyNotes = copyNotes && !copyTriggeredRef.current.copyNotes;
-    
+
     // If both are checked at the same time, copy both in one call
     if ((shouldCopyImages || shouldCopyNotes) && !copyFromCheckIn.isPending) {
       if (shouldCopyImages) copyTriggeredRef.current.copyImages = true;
       if (shouldCopyNotes) copyTriggeredRef.current.copyNotes = true;
-      
+
       // Use setTimeout to debounce and prevent rapid firing
       const timeoutId = setTimeout(() => {
         // Copy both if both are checked, otherwise copy individually
-        copyFromCheckIn.mutate({ 
-          copyImages: copyImages, 
-          copyNotes: copyNotes 
+        copyFromCheckIn.mutate({
+          copyImages: copyImages,
+          copyNotes: copyNotes
         });
       }, 300);
       return () => clearTimeout(timeoutId);
@@ -856,7 +928,7 @@ export default function InspectionCaptureScreen() {
   const [showRightFade, setShowRightFade] = useState(sections.length > 0);
   const tabsScrollViewRef = useRef<ScrollView>(null);
 
-  const handleTabsScroll = (event: any) => {
+  const handleTabsScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const isScrolledToEnd = contentOffset.x + layoutMeasurement.width >= contentSize.width - 10;
     setShowRightFade(!isScrolledToEnd);
@@ -868,17 +940,24 @@ export default function InspectionCaptureScreen() {
     setShowRightFade(sections.length > 2); // Show fade if more than 2 tabs (rough estimate)
   }, [sections.length]);
 
-  const handleFieldChange = React.useCallback((sectionRef: string, fieldKey: string, value: any, note?: string, photos?: string[]) => {
+  const handleFieldChange = React.useCallback((
+    sectionRef: string,
+    fieldKey: string,
+    value: any,
+    note?: string,
+    photos?: string[],
+    markedForReview?: boolean
+  ) => {
     // Prevent changes if inspection is completed
     if (effectiveInspection?.status === 'completed') {
       Alert.alert(
         'Inspection Completed',
-        'This inspection has been completed. You cannot make changes to a completed inspection.',
+        'This inspection has been completed. You cannot make changes.',
         [{ text: 'OK' }]
       );
       return;
     }
-    
+
     // Prevent changes if inspection is deleted
     if (isDeleted || effectiveInspection?.status === 'deleted') {
       Alert.alert(
@@ -890,40 +969,31 @@ export default function InspectionCaptureScreen() {
     }
 
     const key = `${sectionRef}-${fieldKey}`;
+    const existingEntry = entriesRef.current[key];
+    const fieldType = sections.find(s => s.id === sectionRef)?.fields.find(f => f.id === fieldKey || f.key === fieldKey)?.type || 'text';
 
-    setEntries(prev => {
-      const existingEntry = prev[key];
-      const fieldType = sections.find(s => s.id === sectionRef)?.fields.find(f => f.id === fieldKey || f.key === fieldKey)?.type || 'text';
+    const newEntry: InspectionEntry = {
+      ...existingEntry,
+      id: existingEntry?.id,
+      inspectionId,
+      sectionRef,
+      fieldKey,
+      fieldType,
+      valueJson: value !== undefined ? value : existingEntry?.valueJson,
+      note: note !== undefined ? note : existingEntry?.note,
+      photos: photos !== undefined ? photos : (existingEntry?.photos || []),
+      markedForReview: markedForReview !== undefined ? markedForReview : (existingEntry?.markedForReview || false),
+      maintenanceFlag: existingEntry?.maintenanceFlag || false,
+    };
 
-      const newEntry: InspectionEntry = {
-        ...existingEntry,
-        inspectionId,
-        sectionRef,
-        fieldKey,
-        fieldType,
-        valueJson: value,
-        note,
-        photos: photos || existingEntry?.photos || [],
-      };
+    // Update local state immediately for snappy UI
+    setEntries(prev => ({ ...prev, [key]: newEntry }));
 
-      // Auto-save using mutation
-      updateEntry.mutate(newEntry);
-
-      return { ...prev, [key]: newEntry };
-    });
+    // Auto-save mutation
+    updateEntry.mutate(newEntry);
   }, [inspectionId, sections, updateEntry, effectiveInspection, isDeleted]);
 
   const handleComplete = async () => {
-    // Prevent completion when offline
-    if (!isOnline) {
-      Alert.alert(
-        'Offline Mode',
-        'You cannot complete inspections while offline. Please connect to the internet to complete this inspection.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
     // Check if progress is less than 100%
     const progressPercentage = Math.round(progress);
     const isIncomplete = progressPercentage < 100;
@@ -931,10 +1001,10 @@ export default function InspectionCaptureScreen() {
     const completeInspection = async () => {
       try {
         const now = new Date().toISOString();
-        
+
         // Update local DB
         await localDatabase.updateInspectionStatus(inspectionId, 'completed');
-        
+
         if (isOnline) {
           try {
             await updateStatusMutation.mutateAsync({
@@ -943,7 +1013,7 @@ export default function InspectionCaptureScreen() {
               submittedAt: now,
             });
             await localDatabase.updateInspectionSyncStatus(inspectionId, 'synced');
-            
+
             Alert.alert(
               'Success',
               'Inspection marked as completed.',
@@ -951,7 +1021,7 @@ export default function InspectionCaptureScreen() {
                 {
                   text: 'OK',
                   onPress: () => {
-      navigation.navigate('InspectionReview', { inspectionId });
+                    navigation.navigate('InspectionReview', { inspectionId });
                   },
                 },
               ]
@@ -965,7 +1035,7 @@ export default function InspectionCaptureScreen() {
             }, 10); // High priority
             const count = await syncManager.getPendingCount();
             setPendingCount(count);
-            
+
             Alert.alert(
               'Saved Locally',
               'Inspection marked as completed. It will be synced when you go online.',
@@ -988,7 +1058,7 @@ export default function InspectionCaptureScreen() {
           }, 10); // High priority
           const count = await syncManager.getPendingCount();
           setPendingCount(count);
-          
+
           Alert.alert(
             'Saved Locally',
             'Inspection marked as completed. It will be synced when you go online.',
@@ -1002,8 +1072,8 @@ export default function InspectionCaptureScreen() {
             ]
           );
         }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to complete inspection');
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to complete inspection');
       }
     };
 
@@ -1042,6 +1112,7 @@ export default function InspectionCaptureScreen() {
       if (result.success > 0) {
         Alert.alert('Sync Complete', `${result.success} ${result.success === 1 ? 'operation' : 'operations'} synced successfully`);
         queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
+        queryClient.invalidateQueries({ queryKey: ['local-entries', inspectionId] });
       }
       if (result.failed > 0) {
         Alert.alert('Sync Issues', `${result.failed} ${result.failed === 1 ? 'operation' : 'operations'} failed to sync`);
@@ -1082,7 +1153,7 @@ export default function InspectionCaptureScreen() {
   const hasAutoSyncedRef = useRef(false);
   const lastSyncTimeRef = useRef(0);
   const syncInProgressRef = useRef(false);
-  
+
   useEffect(() => {
     const autoSync = async () => {
       // Prevent multiple simultaneous syncs
@@ -1090,9 +1161,9 @@ export default function InspectionCaptureScreen() {
         return;
       }
 
-    const now = Date.now();
-    const timeSinceLastSync = now - lastSyncTimeRef.current;
-    
+      const now = Date.now();
+      const timeSinceLastSync = now - lastSyncTimeRef.current;
+
       // Only auto-sync if:
       // 1. We're online
       // 2. There are pending items
@@ -1101,18 +1172,18 @@ export default function InspectionCaptureScreen() {
       // 5. Haven't already auto-synced for this online session
       if (isOnline && pendingCount > 0 && !isSyncing && !hasAutoSyncedRef.current && timeSinceLastSync > 5000) {
         syncInProgressRef.current = true;
-      hasAutoSyncedRef.current = true;
-      lastSyncTimeRef.current = now;
-      
+        hasAutoSyncedRef.current = true;
+        lastSyncTimeRef.current = now;
+
         try {
           // Use syncManager directly to avoid UI blocking
           const result = await syncManager.startSync();
-          
+
           // Update pending count after sync
           const count = await syncManager.getPendingCount();
           setPendingCount(count);
           setSyncStatus(count > 0 ? 'pending' : 'synced');
-          
+
           // Invalidate queries to refresh data
           if (result.success > 0) {
             queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
@@ -1123,14 +1194,14 @@ export default function InspectionCaptureScreen() {
         } finally {
           syncInProgressRef.current = false;
           // Reset auto-sync flag after 30 seconds to allow re-sync if needed
-        setTimeout(() => {
-          hasAutoSyncedRef.current = false;
-        }, 30000);
+          setTimeout(() => {
+            hasAutoSyncedRef.current = false;
+          }, 30000);
         }
-    } else if (!isOnline) {
+      } else if (!isOnline) {
         // Reset when going offline
-      hasAutoSyncedRef.current = false;
-    }
+        hasAutoSyncedRef.current = false;
+      }
     };
 
     autoSync();
@@ -1149,14 +1220,14 @@ export default function InspectionCaptureScreen() {
   if (inspectionError && isOnline && !localInspection) {
     const error = inspectionError as any;
     const isDeleted = error.status === 404 || error.isDeleted || error.message?.includes('deleted');
-    
+
     return (
       <View style={[styles.container, styles.centerContent]}>
         <Text style={[styles.errorText, { color: themeColors.text.primary }]}>
           {isDeleted ? 'Inspection Deleted' : 'Failed to load inspection'}
         </Text>
         <Text style={[styles.errorSubtext, { color: themeColors.text.secondary }]}>
-          {isDeleted 
+          {isDeleted
             ? 'This inspection has been deleted. Your local changes cannot be synced.'
             : error.message || 'An error occurred while loading the inspection.'}
         </Text>
@@ -1175,7 +1246,7 @@ export default function InspectionCaptureScreen() {
       <View style={[styles.container, styles.centerContent]}>
         <Text style={[styles.errorText, { color: themeColors.text.primary }]}>Inspection not found</Text>
         <Text style={[styles.errorSubtext, { color: themeColors.text.secondary }]}>
-          {isOnline 
+          {isOnline
             ? 'This inspection could not be found. It may have been deleted.'
             : 'This inspection is not available offline. Please connect to the internet to load it.'}
         </Text>
@@ -1220,18 +1291,18 @@ export default function InspectionCaptureScreen() {
             }}
           />
         )}
-        
+
         {/* Fixed Header - Only Back Button and Title */}
         <View style={[
           styles.header,
           {
-            paddingTop: Math.max(insets.top, spacing[3]),
+            paddingTop: insets.top,
             backgroundColor: themeColors.card.DEFAULT,
             borderBottomColor: themeColors.border.light,
           },
         ]}>
           <View style={styles.headerTop}>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => navigation.goBack()}
               style={styles.backButton}
               activeOpacity={0.7}
@@ -1246,8 +1317,8 @@ export default function InspectionCaptureScreen() {
                 {property?.address || block?.address || (effectiveInspection?.propertyId ? 'Property' : 'Block') + ' Inspection'}
               </Text>
             </View>
-            </View>
           </View>
+        </View>
 
         {/* Offline/Sync Status Banner */}
         {!isOnline && (
@@ -1373,10 +1444,10 @@ export default function InspectionCaptureScreen() {
             <View style={styles.aiProgressHeader}>
               <View style={styles.aiProgressHeaderLeft}>
                 <Sparkles size={16} color={themeColors.primary.DEFAULT} />
-                <Text style={[styles.aiProgressTitle, { color: themeColors.text.primary }]}>AI Analysis in Progress</Text>
+                <Text style={[styles.aiProgressTitleText, { color: themeColors.text.primary }]}>AI Analysis in Progress</Text>
               </View>
               <Text style={[styles.aiProgressCount, { color: themeColors.text.primary }]}>
-                {aiAnalysisStatus.progress} / {aiAnalysisStatus.totalFields} fields
+                {aiAnalysisStatus.progress} / {aiAnalysisStatus.totalFields}
               </Text>
             </View>
             <Progress value={(aiAnalysisStatus.progress / (aiAnalysisStatus.totalFields || 1)) * 100} height={8} />
@@ -1425,7 +1496,7 @@ export default function InspectionCaptureScreen() {
                     disabled={!!copyFromCheckIn.isPending}
                   >
                     <View style={[
-                      styles.checkbox, 
+                      styles.checkbox,
                       { borderColor: themeColors.primary.DEFAULT },
                       copyImages && { backgroundColor: themeColors.primary.DEFAULT }
                     ]}>
@@ -1439,7 +1510,7 @@ export default function InspectionCaptureScreen() {
                     disabled={!!copyFromCheckIn.isPending}
                   >
                     <View style={[
-                      styles.checkbox, 
+                      styles.checkbox,
                       { borderColor: themeColors.primary.DEFAULT },
                       copyNotes && { backgroundColor: themeColors.primary.DEFAULT }
                     ]}>
@@ -1470,362 +1541,341 @@ export default function InspectionCaptureScreen() {
         )}
 
         {/* Content */}
-          <ScrollView
-          style={styles.content} 
-          contentContainerStyle={[
-            styles.contentContainer,
-            { 
-              paddingTop: Math.max(insets.top + spacing[4], spacing[8]),
-              paddingBottom: Math.max(insets.bottom + 80, spacing[8]) 
-            }
-          ]}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
         >
-          {/* Quick Actions Row */}
-          <View style={styles.quickActionsRow}>
-            {/* Online/Offline Badge */}
-            <View style={styles.statusBadge}>
-            <Badge variant={isOnline ? 'default' : 'secondary'} size="sm">
-                {isOnline ? <Wifi size={12} color={isOnline ? themeColors.primary.foreground : themeColors.text.primary} /> : <WifiOff size={12} color={themeColors.text.primary} />}
-              <Text style={[styles.badgeText, { color: isOnline ? (themeColors.primary.foreground || '#ffffff') : themeColors.text.primary }]}>{isOnline ? 'Online' : 'Offline'}</Text>
-            </Badge>
-            </View>
-
-            {/* Pending Sync Badge */}
-            {pendingCount > 0 && (
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={[
+              styles.contentContainer,
+              {
+                paddingTop: spacing[4],
+                paddingBottom: Math.max(insets.bottom + 80, spacing[8])
+              }
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Quick Actions Row */}
+            <View style={styles.quickActionsRow}>
+              {/* Online/Offline Badge */}
               <View style={styles.statusBadge}>
-              <Badge variant="outline" size="sm">
-                  <Cloud size={12} color={themeColors.text.primary} />
-                <Text style={[styles.badgeText, { color: themeColors.text.primary }]}>{pendingCount} pending</Text>
-              </Badge>
+                <Badge variant={isOnline ? 'default' : 'secondary'} size="sm">
+                  {isOnline ? <Wifi size={12} color={isOnline ? themeColors.primary.foreground : themeColors.text.primary} /> : <WifiOff size={12} color={themeColors.text.primary} />}
+                  <Text style={[styles.badgeText, { color: isOnline ? (themeColors.primary.foreground || '#ffffff') : themeColors.text.primary }]}>{isOnline ? 'Online' : 'Offline'}</Text>
+                </Badge>
               </View>
-            )}
 
-            {/* Manual Sync Button */}
-            {isOnline && pendingCount > 0 && (
-              <Button
-                title={isSyncing ? 'Syncing...' : 'Sync'}
-                onPress={handleSync}
-                disabled={!!isSyncing}
-                variant="outline"
-                size="sm"
-                style={styles.actionButton}
-              />
-            )}
+              {/* Pending Sync Badge */}
+              {pendingCount > 0 && (
+                <View style={styles.statusBadge}>
+                  <Badge variant="outline" size="sm">
+                    <Cloud size={12} color={themeColors.text.primary} />
+                    <Text style={[styles.badgeText, { color: themeColors.text.primary }]}>{pendingCount} pending</Text>
+                  </Badge>
+                </View>
+              )}
 
-            {/* Progress Badge */}
-            <View style={styles.statusBadge}>
-            <Badge variant="secondary" size="sm">
-                <Text style={[styles.badgeText, { color: themeColors.text.primary }]}>{completedFields}/{totalFields}</Text>
-            </Badge>
+              {/* Manual Sync Button */}
+              {isOnline && pendingCount > 0 && (
+                <Button
+                  title={isSyncing ? 'Syncing...' : 'Sync'}
+                  onPress={handleSync}
+                  disabled={!!isSyncing}
+                  variant="outline"
+                  size="sm"
+                  style={styles.actionButton}
+                />
+              )}
+
+              {/* Progress Badge */}
+              <View style={styles.statusBadge}>
+                <Badge variant="secondary" size="sm">
+                  <Text style={[styles.badgeText, { color: themeColors.text.primary }]}>{completedFields}/{totalFields}</Text>
+                </Badge>
+              </View>
             </View>
-          </View>
 
-          {/* Main Action Buttons */}
-          <View style={styles.mainActionsRow}>
-            {/* AI Analysis Button */}
-            {aiAnalysisStatus?.status === 'processing' ? (
-              <View style={styles.actionButtonContainer}>
-                <Badge variant="outline" size="sm" style={[
-                  styles.aiProgressBadge,
-                  {
-                    backgroundColor: themeColors.primary.light,
-                    borderColor: themeColors.primary.DEFAULT,
-                  }
-                ]}>
-                <ActivityIndicator size="small" color={themeColors.primary.DEFAULT} />
-                <Text style={[styles.badgeText, { color: themeColors.text.primary }]}>
-                  Analysing ({aiAnalysisStatus.progress}/{aiAnalysisStatus.totalFields})
-                </Text>
-              </Badge>
-              </View>
-            ) : aiAnalysisStatus?.status === 'completed' ? (
+            {/* Main Action Buttons */}
+            <View style={styles.mainActionsRow}>
+              {/* AI Analysis Button */}
+              {aiAnalysisStatus?.status === 'processing' ? (
+                <View style={styles.actionButtonContainer}>
+                  <Badge variant="outline" size="sm" style={[
+                    styles.aiProgressBadge,
+                    {
+                      backgroundColor: themeColors.primary.light,
+                      borderColor: themeColors.primary.DEFAULT,
+                    }
+                  ]}>
+                    <ActivityIndicator size="small" color={themeColors.primary.DEFAULT} />
+                    <Text style={[styles.badgeText, { color: themeColors.text.primary }]}>
+                      Analyzing ({aiAnalysisStatus.progress}/{aiAnalysisStatus.totalFields})
+                    </Text>
+                  </Badge>
+                </View>
+              ) : aiAnalysisStatus?.status === 'completed' ? (
+                <View style={styles.actionButtonContainer}>
+                  <Button
+                    title="AI Complete"
+                    onPress={() => { }}
+                    disabled={true}
+                    variant="default"
+                    size="sm"
+                    icon={<CheckCircle2 size={14} color="#ffffff" />}
+                    style={[
+                      styles.actionButton,
+                      {
+                        backgroundColor: themeColors.success || '#22c55e',
+                        borderColor: themeColors.success || '#22c55e',
+                      }
+                    ]}
+                    textStyle={{ color: '#ffffff' }}
+                  />
+                </View>
+              ) : (
+                <View style={styles.actionButtonContainer}>
+                  <Button
+                    title="AI Analyze"
+                    onPress={() => startAIAnalysis.mutate()}
+                    disabled={!!(startAIAnalysis.isPending || !isOnline)}
+                    variant="default"
+                    size="sm"
+                    icon={<Sparkles size={14} color={themeColors.primary.foreground || '#ffffff'} />}
+                    style={styles.actionButton}
+                    textStyle={styles.actionButtonText}
+                  />
+                </View>
+              )}
+
+              {/* Complete Inspection Button */}
               <View style={styles.actionButtonContainer}>
                 <Button
-                  title="AI Complete"
-                  onPress={() => {}}
-                  disabled={true}
+                  title="Complete"
+                  onPress={handleComplete}
+                  disabled={!!updateStatusMutation.isPending || !isOnline}
                   variant="default"
                   size="sm"
-                  icon={<CheckCircle2 size={14} color="#ffffff" />}
-                  style={[
-                    styles.actionButton,
-                    {
-                      backgroundColor: themeColors.success || '#22c55e',
-                      borderColor: themeColors.success || '#22c55e',
-                    }
-                  ]}
-                  textStyle={{ color: '#ffffff' }}
-                />
-              </View>
-            ) : (
-              <View style={styles.actionButtonContainer}>
-              <Button
-                title="AI Analyse"
-                onPress={() => startAIAnalysis.mutate()}
-                disabled={!!(startAIAnalysis.isPending || !isOnline)}
-                variant="default"
-                size="sm"
-                  icon={<Sparkles size={14} color={themeColors.primary.foreground} />}
-                  style={styles.actionButton}
-                  textStyle={styles.actionButtonText}
-            />
-              </View>
-            )}
-
-            {/* Complete Inspection Button */}
-            <View style={styles.actionButtonContainer}>
-            <Button
-              title="Complete"
-              onPress={handleComplete}
-                  disabled={!!updateStatusMutation.isPending || !isOnline}
-              variant="default"
-              size="sm"
                   icon={<CheckCircle2 size={14} color={themeColors.primary.foreground} />}
-              loading={updateStatusMutation.isPending}
+                  loading={updateStatusMutation.isPending}
                   style={styles.actionButton}
                   textStyle={styles.actionButtonText}
-            />
-            </View>
-          </View>
-
-          {/* Progress Bar */}
-          <View style={[styles.progressContainer, { backgroundColor: themeColors.card.DEFAULT }]}>
-            <View style={styles.progressHeader}>
-              <Text style={[styles.progressLabel, { color: themeColors.text.primary }]}>Progress</Text>
-              <Text style={[styles.progressPercent, { color: themeColors.primary.DEFAULT }]}>{Math.round(progress)}%</Text>
-            </View>
-            <Progress value={progress} height={10} style={styles.progressBar} />
-          </View>
-
-          {/* Section Tabs */}
-          <View style={styles.tabsContainerWrapper}>
-            <View style={styles.tabsContainerInner}>
-          <ScrollView
-                ref={tabsScrollViewRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tabsContainer}
-            contentContainerStyle={styles.tabsContent}
-                onScroll={handleTabsScroll}
-                scrollEventThrottle={16}
-                onContentSizeChange={() => {
-                  // Check initial scroll position
-                  tabsScrollViewRef.current?.scrollTo({ x: 0, animated: false });
-                }}
-          >
-            {sections.map((section, index) => (
-                  <TouchableOpacity
-                    key={section.id}
-                    onPress={() => {
-                      setCurrentSectionIndex(index);
-                      // Scroll the tab into view
-                      const tabWidth = 120; // Approximate tab width
-                      const scrollPosition = index * (tabWidth + spacing[2]);
-                      tabsScrollViewRef.current?.scrollTo({ x: scrollPosition, animated: true });
-                    }}
-                    style={[
-                      styles.tabButton,
-                      { 
-                        backgroundColor: index === currentSectionIndex ? themeColors.primary.DEFAULT : themeColors.card.DEFAULT,
-                        borderColor: index === currentSectionIndex ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
-                      },
-                    ]}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.tabButtonText,
-                        { 
-                          color: index === currentSectionIndex 
-                            ? (themeColors.primary.foreground || '#ffffff')
-                            : themeColors.text.primary 
-                        },
-                        index === currentSectionIndex && styles.tabButtonTextActive
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {section.title}
-                    </Text>
-                    {index === currentSectionIndex && <View style={styles.tabIndicator} />}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {/* Right Fade Indicator */}
-              {showRightFade && (
-                <View 
-                  style={[
-                    styles.tabsFadeRight,
-                    { backgroundColor: themeColors.card.DEFAULT }
-                  ]} 
-                  pointerEvents="none" 
                 />
-              )}
-                </View>
-                  </View>
+              </View>
+            </View>
 
-          {currentSection && currentSection.fields && (
-            <>
-              {currentSection.description && (
-                <Card style={[
-                  styles.sectionDescriptionCard,
-                  {
-                    backgroundColor: themeColors.primary.light || `${themeColors.primary.DEFAULT}15`,
-                    borderColor: `${themeColors.primary.DEFAULT}40`,
+            {/* Progress Bar */}
+            <View style={[styles.progressContainer, { backgroundColor: themeColors.card.DEFAULT }]}>
+              <View style={styles.progressHeader}>
+                <Text style={[styles.progressLabel, { color: themeColors.text.primary }]}>Progress</Text>
+                <Text style={[styles.progressPercent, { color: themeColors.primary.DEFAULT }]}>{Math.round(progress)}%</Text>
+              </View>
+              <Progress value={progress} height={10} style={styles.progressBar} />
+            </View>
+
+            {/* Section Tabs */}
+            <View style={styles.tabsContainerWrapper}>
+              <View style={styles.tabsContainerInner}>
+                <ScrollView
+                  ref={tabsScrollViewRef}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.tabsContainer}
+                  contentContainerStyle={styles.tabsContent}
+                  onScroll={handleTabsScroll}
+                  scrollEventThrottle={16}
+                  onContentSizeChange={() => {
+                    // Check initial scroll position
+                    tabsScrollViewRef.current?.scrollTo({ x: 0, animated: false });
+                  }}
+                >
+                  {sections.map((section, index) => (
+                    <TouchableOpacity
+                      key={section.id}
+                      onPress={() => {
+                        setCurrentSectionIndex(index);
+                        // Scroll the tab into view
+                        const tabWidth = 120; // Approximate tab width
+                        const scrollPosition = index * (tabWidth + spacing[2]);
+                        tabsScrollViewRef.current?.scrollTo({ x: scrollPosition, animated: true });
+                      }}
+                      style={[
+                        styles.tabButton,
+                        {
+                          backgroundColor: index === currentSectionIndex ? themeColors.primary.DEFAULT : themeColors.card.DEFAULT,
+                          borderColor: index === currentSectionIndex ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                        },
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.tabButtonText,
+                          {
+                            color: index === currentSectionIndex
+                              ? (themeColors.primary.foreground || '#ffffff')
+                              : themeColors.text.primary
+                          },
+                          index === currentSectionIndex && styles.tabButtonTextActive
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {section.title}
+                      </Text>
+                      {index === currentSectionIndex && <View style={styles.tabIndicator} />}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                {/* Right Fade Indicator */}
+                {showRightFade && (
+                  <View
+                    style={[
+                      styles.tabsFadeRight,
+                      { backgroundColor: themeColors.card.DEFAULT }
+                    ]}
+                    pointerEvents="none"
+                  />
+                )}
+              </View>
+            </View>
+
+            {currentSection && currentSection.fields && (
+              <>
+                {currentSection.description && (
+                  <Card style={[
+                    styles.sectionDescriptionCard,
+                    {
+                      backgroundColor: themeColors.primary.light || `${themeColors.primary.DEFAULT}15`,
+                      borderColor: `${themeColors.primary.DEFAULT}40`,
+                    }
+                  ]}>
+                    <Text style={[styles.sectionDescription, { color: themeColors.text.primary }]}>{currentSection.description}</Text>
+                  </Card>
+                )}
+
+                {currentSection.fields.map((field, fieldIndex) => {
+                  if (!field || !field.id && !field.key) {
+                    console.warn('Invalid field found:', field);
+                    return null;
                   }
-                ]}>
-                <Text style={[styles.sectionDescription, { color: themeColors.text.primary }]}>{currentSection.description}</Text>
-                </Card>
-              )}
 
-              {currentSection.fields.map((field, fieldIndex) => {
-                if (!field || !field.id && !field.key) {
-                  console.warn('Invalid field found:', field);
-                  return null;
-                }
+                  try {
+                    const key = `${currentSection.id}-${field.id || field.key}`;
+                    const entry = entries[key];
 
-                try {
-                  const key = `${currentSection.id}-${field.id || field.key}`;
-                  const entry = entries[key];
-
-                  return (
-                    <View key={field.id || field.key || `field-${Math.random()}`} style={styles.fieldContainer}>
-                    <FieldWidget
-                      field={field}
-                      value={entry?.valueJson}
-                      note={entry?.note}
-                      photos={entry?.photos}
-                      inspectionId={inspectionId}
-                      entryId={entry?.id}
-                      sectionName={currentSection.title}
-                      isCheckOut={effectiveInspection?.type === 'check_out'}
-                      markedForReview={entry?.markedForReview || false}
-                        disabled={effectiveInspection?.status === 'completed' || isDeleted}
-                      autoContext={{
-                        inspectorName: inspector?.fullName || inspector?.username || inspector?.firstName || '',
-                        address: property
-                          ? [property.address, property.city, property.state, property.postalCode].filter(Boolean).join(', ')
-                          : block
-                            ? [block.address, block.city, block.state, block.postalCode].filter(Boolean).join(', ')
-                            : '',
-                        tenantNames: Array.isArray(tenants)
-                          ? tenants
-                            .filter((t: any) => t.status === 'active')
-                            .map((t: any) => t.tenantName || t.name || `${t?.firstName || ''} ${t?.lastName || ''}`)
-                            .filter(Boolean)
-                            .join(', ')
-                          : '',
-                        inspectionDate: new Date(effectiveInspection?.scheduledDate || (effectiveInspection as any)?.startedAt || new Date().toISOString()).toISOString().split('T')[0],
-                      }}
-                      onChange={(value, note, photos) =>
-                        handleFieldChange(currentSection.id, field.id || field.key || '', value, note, photos)
-                      }
-                      onMarkedForReviewChange={async (marked) => {
-                        const key = `${currentSection.id}-${field.id || field.key || ''}`;
-                        const existingEntry = entries[key];
-
-                        // Update local state optimistically
-                        setEntries(prev => ({
-                          ...prev,
-                          [key]: {
-                            ...prev[key],
-                            markedForReview: marked,
+                    return (
+                      <View key={field.id || field.key || `field-${Math.random()}`} style={styles.fieldContainer}>
+                        <FieldWidget
+                          field={field}
+                          value={entry?.valueJson}
+                          note={entry?.note}
+                          photos={entry?.photos}
+                          inspectionId={inspectionId}
+                          entryId={entry?.id}
+                          sectionName={currentSection.title}
+                          isCheckOut={effectiveInspection?.type === 'check_out'}
+                          markedForReview={entry?.markedForReview || false}
+                          disabled={effectiveInspection?.status === 'completed' || isDeleted}
+                          autoContext={{
+                            inspectorName: inspector?.fullName || inspector?.username || inspector?.firstName || '',
+                            address: property
+                              ? [property.address, property.city, property.state, property.postalCode].filter(Boolean).join(', ')
+                              : block
+                                ? [block.address, block.city, block.state, block.postalCode].filter(Boolean).join(', ')
+                                : '',
+                            tenantNames: Array.isArray(tenants)
+                              ? tenants
+                                .filter((t: any) => t.status === 'active')
+                                .map((t: any) => t.tenantName || t.name || `${t?.firstName || ''} ${t?.lastName || ''}`)
+                                .filter(Boolean)
+                                .join(', ')
+                              : '',
+                            inspectionDate: new Date(effectiveInspection?.scheduledDate || (effectiveInspection as any)?.startedAt || new Date().toISOString()).toISOString().split('T')[0],
+                          }}
+                          onChange={(value, note, photos) =>
+                            handleFieldChange(currentSection.id, field.id || field.key || '', value, note, photos)
                           }
-                        }));
-
-                        if (existingEntry?.id) {
-                          // Update on server
-                          try {
-                            await inspectionsService.updateInspectionEntry(existingEntry.id, { markedForReview: marked });
-                            queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
-                          } catch (error: any) {
-                            Alert.alert('Error', 'Failed to update mark for review');
-                            // Revert optimistic update
-                            setEntries(prev => ({
-                              ...prev,
-                              [key]: {
-                                ...prev[key],
-                                markedForReview: !marked,
-                              }
-                            }));
-                          }
-                        }
-                      }}
-                      onLogMaintenance={(fieldLabel, photos) => {
-                        // Navigate to maintenance creation with context from inspection
-                        // Navigate from RootStack -> Main -> Maintenance -> CreateMaintenance
-                        try {
-                          // Get the root navigator (RootStack)
-                          const rootNavigator = navigation.getParent()?.getParent();
-                          if (rootNavigator) {
-                            rootNavigator.dispatch(
-                              CommonActions.navigate({
-                                name: 'Main',
-                                params: {
-                                  screen: 'Maintenance',
-                                  params: {
+                          onMarkedForReviewChange={(marked) => {
+                            handleFieldChange(currentSection.id, field.id || field.key || '', undefined, undefined, undefined, marked);
+                          }}
+                          onLogMaintenance={(fieldLabel, photos) => {
+                            // Navigate to maintenance creation with context from inspection
+                            // Navigate from RootStack -> Main -> Maintenance -> CreateMaintenance
+                            try {
+                              // Get the root navigator (RootStack)
+                              const rootNavigator = navigation.getParent()?.getParent();
+                              if (rootNavigator) {
+                                rootNavigator.dispatch(
+                                  CommonActions.navigate({
+                                    name: 'Main',
+                                    params: {
+                                      screen: 'Maintenance',
+                                      params: {
+                                        screen: 'CreateMaintenance',
+                                        params: {
+                                          inspectionId,
+                                          propertyId: effectiveInspection?.propertyId,
+                                          blockId: effectiveInspection?.blockId,
+                                          fieldLabel,
+                                          photos,
+                                          entryId: entry?.id,
+                                          sectionTitle: currentSection?.title,
+                                        },
+                                      },
+                                    },
+                                  })
+                                );
+                              } else {
+                                // Fallback: try tab navigator directly
+                                const tabNavigator = navigation.getParent();
+                                if (tabNavigator) {
+                                  (tabNavigator as any).navigate('Maintenance', {
                                     screen: 'CreateMaintenance',
                                     params: {
-                          inspectionId,
+                                      inspectionId,
                                       propertyId: effectiveInspection?.propertyId,
                                       blockId: effectiveInspection?.blockId,
-                          fieldLabel,
-                          photos,
+                                      fieldLabel,
+                                      photos,
                                       entryId: entry?.id,
                                       sectionTitle: currentSection?.title,
                                     },
-                                  },
-                                },
-                              })
-                            );
-                          } else {
-                            // Fallback: try tab navigator directly
-                            const tabNavigator = navigation.getParent();
-                            if (tabNavigator) {
-                              (tabNavigator as any).navigate('Maintenance', {
-                                screen: 'CreateMaintenance',
-                                params: {
-                                  inspectionId,
-                                  propertyId: inspection?.propertyId,
-                                  blockId: inspection?.blockId,
-                                  fieldLabel,
-                                  photos,
-                                  entryId: entry?.id,
-                                  sectionTitle: currentSection?.title,
-                                },
-                              });
-                            } else {
-                              console.error('[InspectionCapture] Could not find navigator');
+                                  });
+                                } else {
+                                  console.error('[InspectionCapture] Could not find navigator');
+                                }
+                              }
+                            } catch (error) {
+                              console.error('[InspectionCapture] Navigation error:', error);
                             }
-                          }
-                        } catch (error) {
-                          console.error('[InspectionCapture] Navigation error:', error);
-                        }
-                      }}
-                    />
-                    </View>
-                  );
-                } catch (error) {
-                  console.error('Error rendering field:', field, error);
-                  return (
-                    <Card key={`error-${field.id || field.key || Math.random()}`} style={styles.fieldContainer}>
-                      <Text style={[styles.errorText, { color: themeColors.text.primary }]}>Error rendering field: {field.label || field.id || field.key}</Text>
-                    </Card>
-                  );
-                }
-              })}
-            </>
-          )}
-          {!currentSection && (
-            <View style={styles.centerContent}>
-              <Text style={[styles.errorText, { color: themeColors.text.primary }]}>No section selected</Text>
-            </View>
-          )}
-        </ScrollView>
+                          }}
+                        />
+                      </View>
+                    );
+                  } catch (error) {
+                    console.error('Error rendering field:', field, error);
+                    return (
+                      <Card key={`error-${field.id || field.key || Math.random()}`} style={styles.fieldContainer}>
+                        <Text style={[styles.errorText, { color: themeColors.text.primary }]}>Error rendering field: {field.label || field.id || field.key}</Text>
+                      </Card>
+                    );
+                  }
+                })}
+              </>
+            )}
+            {!currentSection && (
+              <View style={styles.centerContent}>
+                <Text style={[styles.errorText, { color: themeColors.text.primary }]}>No section selected</Text>
+              </View>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         {/* Footer Navigation */}
         <View style={[
-          styles.footer, 
-          { 
+          styles.footer,
+          {
             paddingBottom: Math.max(insets.bottom, spacing[3]),
             backgroundColor: themeColors.card.DEFAULT,
             borderTopColor: themeColors.border.light,
@@ -1937,10 +1987,9 @@ const styles = StyleSheet.create({
     // Color applied dynamically via Badge component
   },
   aiProgressBadge: {
-    // Colors applied dynamically via themeColors
-  },
-  aiCompleteBadge: {
-    // Colors applied dynamically via themeColors
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[2],
   },
   progressContainer: {
     paddingHorizontal: spacing[4],
@@ -1996,10 +2045,6 @@ const styles = StyleSheet.create({
     minHeight: moderateScale(36, 0.2),
     justifyContent: 'center',
     alignItems: 'center',
-    // Colors applied dynamically via themeColors
-  },
-  tabButtonActive: {
-    ...shadows.xs,
     // Colors applied dynamically via themeColors
   },
   tabButtonText: {
@@ -2081,11 +2126,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing[2],
-  },
-  aiProgressTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
   },
   aiProgressTitleText: {
     fontSize: typography.fontSize.sm,

@@ -6,19 +6,33 @@ import { useTheme } from '../../contexts/ThemeContext';
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
+  required?: boolean | string;
 }
 
-export default function Input({ label, error, style, multiline, secureTextEntry, editable, autoCorrect, required, ...props }: InputProps) {
+export default function Input({
+  label,
+  error,
+  style,
+  multiline,
+  secureTextEntry,
+  editable,
+  autoCorrect,
+  required,
+  ...props
+}: InputProps) {
   const theme = useTheme();
   // Ensure themeColors is always defined - use default colors if theme not available
   const themeColors = (theme && theme.colors) ? theme.colors : colors;
-  // Ensure boolean props are actually booleans, not strings
-  const safeMultiline = typeof multiline === 'boolean' ? multiline : multiline === true || multiline === 'true';
-  const safeSecureTextEntry = typeof secureTextEntry === 'boolean' ? secureTextEntry : secureTextEntry === true || secureTextEntry === 'true';
-  const safeEditable = typeof editable === 'boolean' ? editable : editable !== false && editable !== 'false';
-  const safeAutoCorrect = typeof autoCorrect === 'boolean' ? autoCorrect : autoCorrect !== false && autoCorrect !== 'false';
+  // Ensure boolean props are actually booleans, and handle string 'true'/'false' values
+  const isTrue = (val: any) => val === true || val === 'true';
+  const isNotFalse = (val: any) => val !== false && val !== 'false';
+
+  const safeMultiline = isTrue(multiline);
+  const safeSecureTextEntry = isTrue(secureTextEntry);
+  const safeEditable = isNotFalse(editable);
+  const safeAutoCorrect = isNotFalse(autoCorrect);
   // required is just for display, not passed to TextInput
-  const safeRequired = typeof required === 'boolean' ? required : required === true || required === 'true';
+  const safeRequired = isTrue(required);
 
   // Convert any boolean props in the spread props to actual booleans
   const safeProps: any = { ...props };

@@ -18,22 +18,23 @@ export interface ConflictData {
 
 class SyncManager {
   private isSyncing = false;
-  private syncListeners: Array<(progress: { current: number; total: number }) => void> = [];
+  private syncListeners: Array<(progress: { current: number; total: number; pending: number }) => void> = [];
 
   /**
    * Add a progress listener
    */
-  addProgressListener(listener: (progress: { current: number; total: number }) => void): () => void {
+  addProgressListener(listener: (progress: { current: number; total: number; pending: number }) => void): () => void {
     this.syncListeners.push(listener);
     return () => {
       this.syncListeners = this.syncListeners.filter(l => l !== listener);
     };
   }
 
-  private notifyProgress(current: number, total: number): void {
+  private async notifyProgress(current: number, total: number): Promise<void> {
+    const pending = await this.getPendingCount();
     this.syncListeners.forEach(listener => {
       try {
-        listener({ current, total });
+        listener({ current, total, pending });
       } catch (error) {
         console.error('[SyncManager] Error in progress listener:', error);
       }
@@ -72,140 +73,158 @@ class SyncManager {
     const result: SyncResult = { success: 0, failed: 0, errors: [] };
 
     try {
-      const queue = await localDatabase.getSyncQueue();
-      const total = queue.length;
+      let syncCompleted = false;
+      let iterations = 0;
+      const MAX_ITERATIONS = 10; // Prevent infinite loops
 
-      console.log(`[SyncManager] Starting sync of ${total} operations`);
+      while (!syncCompleted && iterations < MAX_ITERATIONS) {
+        iterations++;
+        const queue = await localDatabase.getSyncQueue();
+        const total = queue.length;
 
-      let abortSync = false;
-      for (let i = 0; i < queue.length; i++) {
-        if (abortSync) break;
-        const operation = queue[i];
-        this.notifyProgress(i, total);
+        if (total === 0) {
+          syncCompleted = true;
+          break;
+        }
 
-        try {
-          await this.syncOperation(operation);
-          await localDatabase.removeFromSyncQueue(operation.id);
-          result.success++;
-        } catch (error: any) {
-          console.error(`[SyncManager] Failed to sync operation ${operation.id}:`, error);
+        console.log(`[SyncManager] Sync iteration ${iterations}: Processing ${total} operations`);
 
-          const status = (error && typeof error === 'object') ? (error.status as number | undefined) : undefined;
-          const message = (error?.message || '').toString();
+        let abortSync = false;
+        for (let i = 0; i < queue.length; i++) {
+          if (abortSync) break;
+          const operation = queue[i];
+          await this.notifyProgress(i, total);
 
-          // Auth / permission errors: stop sync and keep operations in queue until user logs in again.
-          if (status === 401 || status === 403 || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('access denied')) {
-            await localDatabase.updateSyncQueueOperation(operation.id, {
-              error_message: message || 'Authentication required',
-              last_attempt_at: new Date().toISOString(),
-            });
+          try {
+            await this.syncOperation(operation);
+            await localDatabase.removeFromSyncQueue(operation.id);
+            result.success++;
+          } catch (error: any) {
+            console.error(`[SyncManager] Failed to sync operation ${operation.id}:`, error);
 
-            result.failed++;
-            result.errors.push({
-              operationId: operation.id,
-              error: message || 'Authentication required. Please sign in again and retry sync.',
-            });
+            const status = (error && typeof error === 'object') ? (error.status as number | undefined) : undefined;
+            const message = (error?.message || '').toString();
 
-            abortSync = true;
-            continue;
-          }
-          
-          // Special handling for completed or deleted inspection errors
-          if (error.message?.includes('already been completed') || error.message?.includes('has been deleted')) {
-            // Inspection was completed - remove all related operations from queue
-            let inspectionId: string | null = null;
-            
-            // Try to get inspection ID from operation
-            if (operation.entity_type === 'inspection') {
-              inspectionId = operation.entity_id;
-            } else {
-              // For entry/photo operations, get inspection_id from payload or local DB
-              try {
-                const payload = JSON.parse(operation.payload);
-                inspectionId = payload.inspection_id || payload.inspectionId;
-              } catch {
-                // If payload parsing fails, try to get from local entry/photo
-                if (operation.entity_type === 'entry') {
-                  const localEntry = await localDatabase.getEntry(operation.entity_id);
-                  inspectionId = localEntry?.inspection_id || null;
-                } else if (operation.entity_type === 'photo') {
-                  try {
-                    const payload = JSON.parse(operation.payload);
-                    inspectionId = payload.inspection_id || null;
-                  } catch {
-                    // Can't get inspection ID, just remove this operation
+            // Auth / permission errors: stop sync and keep operations in queue until user logs in again.
+            if (status === 401 || status === 403 || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('access denied')) {
+              await localDatabase.updateSyncQueueOperation(operation.id, {
+                error_message: message || 'Authentication required',
+                last_attempt_at: new Date().toISOString(),
+              });
+
+              result.failed++;
+              result.errors.push({
+                operationId: operation.id,
+                error: message || 'Authentication required. Please sign in again and retry sync.',
+              });
+
+              abortSync = true;
+              syncCompleted = true; // Stop all iterations
+              continue;
+            }
+            // ... (rest of error handling)
+
+            // Special handling for completed or deleted inspection errors
+            if (error.message?.includes('already been completed') || error.message?.includes('has been deleted')) {
+              // Inspection was completed - remove all related operations from queue
+              let inspectionId: string | null = null;
+
+              // Try to get inspection ID from operation
+              if (operation.entity_type === 'inspection') {
+                inspectionId = operation.entity_id;
+              } else {
+                // For entry/photo operations, get inspection_id from payload or local DB
+                try {
+                  const payload = JSON.parse(operation.payload);
+                  inspectionId = payload.inspection_id || payload.inspectionId;
+                } catch {
+                  // If payload parsing fails, try to get from local entry/photo
+                  if (operation.entity_type === 'entry') {
+                    const localEntry = await localDatabase.getEntry(operation.entity_id);
+                    inspectionId = localEntry?.inspection_id || null;
+                  } else if (operation.entity_type === 'photo') {
+                    try {
+                      const payload = JSON.parse(operation.payload);
+                      inspectionId = payload.inspection_id || null;
+                    } catch {
+                      // Can't get inspection ID, just remove this operation
+                    }
                   }
                 }
               }
-            }
-            
-            if (inspectionId) {
-              // Remove all operations for this inspection
-              const entryOps = await localDatabase.getSyncQueueByEntity('entry', inspectionId);
-              const photoOps = await localDatabase.getSyncQueueByEntity('photo', inspectionId);
-              const inspectionOps = await localDatabase.getSyncQueueByEntity('inspection', inspectionId);
-              
-              for (const op of [...entryOps, ...photoOps, ...inspectionOps]) {
-                await localDatabase.removeFromSyncQueue(op.id);
-              }
-            }
-            
-            // Remove this operation
-            await localDatabase.removeFromSyncQueue(operation.id);
-            result.failed++;
-            result.errors.push({
-              operationId: operation.id,
-              error: error.message || 'Inspection already completed or deleted',
-            });
-            continue;
-          }
 
-          // Non-retryable request errors (validation / conflict / payload too large): mark entity and drop the operation.
-          // - 409: server has newer version / conflict
-          // - 400/422: invalid payload (usually schema mismatch)
-          // - 413: payload too large (usually photo)
-          if (status === 409 || status === 400 || status === 422 || status === 413) {
-            try {
-              if (operation.entity_type === 'entry') {
-                await localDatabase.updateEntrySyncStatus(operation.entity_id, 'conflict');
-              } else if (operation.entity_type === 'photo') {
-                await localDatabase.updatePhotoUploadStatus(operation.entity_id, 'failed');
+              if (inspectionId) {
+                // Remove all operations for this inspection
+                const entryOps = await localDatabase.getSyncQueueByEntity('entry', inspectionId);
+                const photoOps = await localDatabase.getSyncQueueByEntity('photo', inspectionId);
+                const inspectionOps = await localDatabase.getSyncQueueByEntity('inspection', inspectionId);
+
+                for (const op of [...entryOps, ...photoOps, ...inspectionOps]) {
+                  await localDatabase.removeFromSyncQueue(op.id);
+                }
               }
-            } catch (markError) {
-              console.warn('[SyncManager] Failed to mark local entity after non-retryable error:', markError);
+
+              // Remove this operation
+              await localDatabase.removeFromSyncQueue(operation.id);
+              result.failed++;
+              result.errors.push({
+                operationId: operation.id,
+                error: error.message || 'Inspection already completed or deleted',
+              });
+              continue;
             }
 
-            await localDatabase.removeFromSyncQueue(operation.id);
-            result.failed++;
-            result.errors.push({
-              operationId: operation.id,
-              error: message || `Non-retryable sync error (status ${status})`,
-            });
-            continue;
-          }
-          
-          const retryCount = operation.retry_count + 1;
-          if (retryCount >= operation.max_retries) {
-            // Max retries reached, remove from queue
-            await localDatabase.removeFromSyncQueue(operation.id);
-            result.failed++;
-            result.errors.push({
-              operationId: operation.id,
-              error: error.message || 'Unknown error',
-            });
-          } else {
-            // Update retry count and error message
-            await localDatabase.updateSyncQueueOperation(operation.id, {
-              retry_count: retryCount,
-              error_message: error.message || 'Unknown error',
-              last_attempt_at: new Date().toISOString(),
-            });
+            // Non-retryable request errors (validation / conflict / payload too large): mark entity and drop the operation.
+            if (status === 409 || status === 400 || status === 422 || status === 413) {
+              try {
+                if (operation.entity_type === 'entry') {
+                  await localDatabase.updateEntrySyncStatus(operation.entity_id, 'conflict');
+                } else if (operation.entity_type === 'photo') {
+                  await localDatabase.updatePhotoUploadStatus(operation.entity_id, 'failed');
+                }
+              } catch (markError) {
+                console.warn('[SyncManager] Failed to mark local entity after non-retryable error:', markError);
+              }
+
+              await localDatabase.removeFromSyncQueue(operation.id);
+              result.failed++;
+              result.errors.push({
+                operationId: operation.id,
+                error: message || `Non-retryable sync error (status ${status})`,
+              });
+              continue;
+            }
+
+            const retryCount = operation.retry_count + 1;
+            if (retryCount >= operation.max_retries) {
+              // Max retries reached, remove from queue
+              await localDatabase.removeFromSyncQueue(operation.id);
+              result.failed++;
+              result.errors.push({
+                operationId: operation.id,
+                error: error.message || 'Unknown error',
+              });
+            } else {
+              // Update retry count and error message
+              await localDatabase.updateSyncQueueOperation(operation.id, {
+                retry_count: retryCount,
+                error_message: error.message || 'Unknown error',
+                last_attempt_at: new Date().toISOString(),
+              });
+            }
           }
         }
+
+        // If we finished the loop naturally and everything succeeded, we check again
+        // If we aborted or had failures, we might want to stop or continue based on policy.
+        // For now, if abortSync is true, we stop all iterations.
+        if (abortSync) break;
+
+        // Re-check queue at start of next while iteration
       }
 
-      this.notifyProgress(total, total);
-      console.log(`[SyncManager] Sync completed: ${result.success} success, ${result.failed} failed`);
+      await this.notifyProgress(1, 1);
+      console.log(`[SyncManager] Overall sync completed: ${result.success} success, ${result.failed} failed`);
     } finally {
       this.isSyncing = false;
     }
@@ -213,16 +232,12 @@ class SyncManager {
     return result;
   }
 
-  /**
-   * Sync a single operation
-   */
   private async syncOperation(operation: SyncOperation): Promise<void> {
     switch (operation.operation_type) {
       case 'update_entry':
-        await this.syncEntry(operation.entity_id, JSON.parse(operation.payload));
+        await this.syncEntry(operation.entity_id);
         break;
       case 'upload_photo':
-        // Photo data is stored in payload
         const photoData = JSON.parse(operation.payload) as LocalInspectionPhoto;
         await this.syncPhotoWithData(photoData);
         break;
@@ -230,7 +245,7 @@ class SyncManager {
         await this.syncCompleteInspection(operation.entity_id, JSON.parse(operation.payload));
         break;
       case 'update_entry_status':
-        await this.syncEntryStatus(operation.entity_id, JSON.parse(operation.payload));
+        await this.syncEntry(operation.entity_id);
         break;
       default:
         throw new Error(`Unknown operation type: ${operation.operation_type}`);
@@ -240,7 +255,7 @@ class SyncManager {
   /**
    * Sync an inspection entry
    */
-  async syncEntry(entryId: string, entryData?: any): Promise<void> {
+  async syncEntry(entryId: string): Promise<void> {
     const localEntry = await localDatabase.getEntry(entryId);
     if (!localEntry) {
       throw new Error(`Entry not found: ${entryId}`);
@@ -249,77 +264,55 @@ class SyncManager {
     // Check if inspection exists and is not completed on server
     try {
       const serverInspection = await inspectionsService.getInspection(localEntry.inspection_id);
-      
+
       if (serverInspection.status === 'completed') {
         // Inspection is already completed - cannot modify entries
-        // Update local inspection status to match server
         await localDatabase.updateInspectionStatus(localEntry.inspection_id, 'completed');
         await localDatabase.updateInspectionSyncStatus(localEntry.inspection_id, 'synced');
-        
-        // Mark this entry as conflict (inspection completed before sync)
         await localDatabase.updateEntrySyncStatus(entryId, 'conflict');
-        
+
         throw new Error(
-          `Inspection has already been completed. Your changes to this field cannot be synced. ` +
-          `The inspection was completed while you were offline.`
+          `Inspection has already been completed. Your changes to this field cannot be synced.`
         );
       }
     } catch (error: any) {
-      // Check if inspection was deleted (404 error)
-      if (error.status === 404 || error.message?.includes('not found') || error.message?.includes('404')) {
-        // Inspection was deleted - cannot sync entries
+      if (error.status === 404 || error.message?.includes('not found')) {
         await localDatabase.updateEntrySyncStatus(entryId, 'conflict');
-        
-        throw new Error(
-          `Inspection has been deleted. Your changes to this field cannot be synced. ` +
-          `The inspection was deleted while you were offline.`
-        );
+        throw new Error(`Inspection has been deleted. Your changes to this field cannot be synced.`);
       }
-      
-      // If error is about completed inspection, re-throw it
-      if (error.message?.includes('already been completed')) {
+      if (error.message?.includes('already been completed') || error.message?.includes('deleted')) {
         throw error;
       }
-      
-      // If error is about deleted inspection, re-throw it
-      if (error.message?.includes('has been deleted')) {
-        throw error;
-      }
-      
-      // For other errors (network, etc.), continue with sync attempt
       console.warn('[SyncManager] Could not check inspection status, proceeding with sync:', error.message);
     }
 
-    // If entry has a server_id, update it; otherwise create new
+    // Get photos for this entry and filter only uploaded ones
+    const photos = await localDatabase.getPhotos(entryId);
+    const serverPhotos = photos
+      .filter(p => (p.upload_status === 'uploaded' || p.server_url) && p.server_url)
+      .map(p => p.server_url as string);
+
+    // Always prefer the current local state from DB over the stale payload
+    const updateData: InspectionEntry = {
+      id: entryId,
+      inspectionId: localEntry.inspection_id,
+      sectionRef: localEntry.section_ref,
+      fieldKey: localEntry.field_key,
+      fieldType: localEntry.field_type,
+      valueJson: localEntry.value_json ? JSON.parse(localEntry.value_json) : undefined,
+      note: localEntry.note || undefined,
+      photos: serverPhotos,
+      maintenanceFlag: localEntry.maintenance_flag === 1,
+      markedForReview: localEntry.marked_for_review === 1,
+    };
+
     if (localEntry.server_id) {
       // Update existing entry
-      const updateData: Partial<InspectionEntry> = {
-        valueJson: localEntry.value_json ? JSON.parse(localEntry.value_json) : undefined,
-        note: localEntry.note || undefined,
-        maintenanceFlag: localEntry.maintenance_flag === 1,
-        markedForReview: localEntry.marked_for_review === 1,
-      };
-
       const updated = await inspectionsService.updateInspectionEntry(localEntry.server_id, updateData);
-      
       await localDatabase.updateEntrySyncStatus(entryId, 'synced', updated.id);
     } else {
       // Create new entry
-      const entry: InspectionEntry = {
-        id: entryId,
-        inspectionId: localEntry.inspection_id,
-        sectionRef: localEntry.section_ref,
-        fieldKey: localEntry.field_key,
-        fieldType: localEntry.field_type,
-        valueJson: localEntry.value_json ? JSON.parse(localEntry.value_json) : undefined,
-        note: localEntry.note || undefined,
-        maintenanceFlag: localEntry.maintenance_flag === 1,
-        markedForReview: localEntry.marked_for_review === 1,
-        ...entryData,
-      };
-
-      const created = await inspectionsService.saveInspectionEntry(entry);
-      
+      const created = await inspectionsService.saveInspectionEntry(updateData);
       // Update local entry with server ID
       await localDatabase.updateEntrySyncStatus(entryId, 'synced', created.id || entryId);
     }
@@ -332,11 +325,11 @@ class SyncManager {
     // Try to find photo by ID from all inspections
     // We need to search across all inspections since we don't have inspectionId in the queue
     // For better performance, we could store inspectionId in the sync queue payload
-    
+
     // Get all pending photos and find by ID
     // Since we can't easily query by photo ID across all inspections,
     // we'll need to get it from the payload or search through entries
-    
+
     // For now, throw an error indicating we need photo data from payload
     // The syncPhotoWithData method should be called directly with photo data
     throw new Error('syncPhoto requires photo data. Use syncPhotoWithData instead.');
@@ -353,13 +346,13 @@ class SyncManager {
     // Check if inspection exists and is not completed on server
     try {
       const serverInspection = await inspectionsService.getInspection(photo.inspection_id);
-      
+
       if (serverInspection.status === 'completed') {
         // Inspection is already completed - cannot upload photos
         await localDatabase.updateInspectionStatus(photo.inspection_id, 'completed');
         await localDatabase.updateInspectionSyncStatus(photo.inspection_id, 'synced');
         await localDatabase.updatePhotoUploadStatus(photo.id, 'failed');
-        
+
         throw new Error(
           `Inspection has already been completed. This photo cannot be uploaded. ` +
           `The inspection was completed while you were offline.`
@@ -370,23 +363,23 @@ class SyncManager {
       if (error.status === 404 || error.message?.includes('not found') || error.message?.includes('404')) {
         // Inspection was deleted - cannot upload photos
         await localDatabase.updatePhotoUploadStatus(photo.id, 'failed');
-        
+
         throw new Error(
           `Inspection has been deleted. This photo cannot be uploaded. ` +
           `The inspection was deleted while you were offline.`
         );
       }
-      
+
       // If error is about completed inspection, re-throw it
       if (error.message?.includes('already been completed')) {
         throw error;
       }
-      
+
       // If error is about deleted inspection, re-throw it
       if (error.message?.includes('has been deleted')) {
         throw error;
       }
-      
+
       // For other errors, continue with upload attempt
       console.warn('[SyncManager] Could not check inspection status, proceeding with photo upload:', error.message);
     }
@@ -452,24 +445,51 @@ class SyncManager {
 
         // Update entry photos array if needed
         const entry = await localDatabase.getEntry(photo.entry_id);
-        if (entry && entry.value_json) {
+        if (entry) {
           try {
-            const valueJson = JSON.parse(entry.value_json);
+            // Update valueJson if it exists
+            let valueJson: any = {};
+            if (entry.value_json) {
+              valueJson = JSON.parse(entry.value_json);
+            }
+
             if (Array.isArray(valueJson.photos)) {
-              // Replace local path with server URL
-              const photos = valueJson.photos.map((p: string) => 
+              // Replace local path with server URL in valueJson
+              valueJson.photos = valueJson.photos.map((p: string) =>
                 p === photo.local_path ? serverUrl : p
               );
-              valueJson.photos = photos;
-              await localDatabase.updateEntry(entry.id, { valueJson });
             }
+
+            // Also update the dedicated photos array if we were storing it there
+            let entryPhotos: string[] = [];
+            if (entry.photos) {
+              entryPhotos = JSON.parse(entry.photos);
+            }
+            if (Array.isArray(entryPhotos)) {
+              entryPhotos = entryPhotos.map((p: string) =>
+                p === photo.local_path ? serverUrl : p
+              );
+            }
+
+            await localDatabase.updateEntry(entry.id, {
+              valueJson,
+              photos: entryPhotos
+            } as any);
+
+            // Queue an entry update to push the new photo URL to the server
+            // Use current data but ensure NO local paths are included
+            await this.queueOperation('update_entry', 'entry', entry.id, {
+              ...entry,
+              valueJson: JSON.stringify(valueJson),
+              photos: entryPhotos.filter(p => !p.startsWith('file://'))
+            }, 1); // Higher priority
           } catch (e) {
             console.error('[SyncManager] Error updating entry photos:', e);
           }
         }
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
-        
+
         if (fetchError.name === 'AbortError') {
           throw new Error('Upload timeout. Please check your internet connection.');
         }
@@ -491,7 +511,7 @@ class SyncManager {
         statusData.status,
         statusData.completedDate || statusData.submittedAt
       );
-      
+
       await localDatabase.updateInspectionSyncStatus(inspectionId, 'synced');
     } catch (error: any) {
       // Check if inspection was deleted (404 error)
@@ -499,7 +519,7 @@ class SyncManager {
         // Mark as deleted locally
         await localDatabase.updateInspectionStatus(inspectionId, 'deleted');
         await localDatabase.updateInspectionSyncStatus(inspectionId, 'synced');
-        
+
         throw new Error(
           `Inspection has been deleted. Cannot complete a deleted inspection. ` +
           `The inspection was deleted while you were offline.`
@@ -512,9 +532,8 @@ class SyncManager {
   /**
    * Sync entry status update
    */
-  async syncEntryStatus(entryId: string, statusData: any): Promise<void> {
-    // This can be used for status updates if needed
-    await this.syncEntry(entryId, statusData);
+  async syncEntryStatus(entryId: string): Promise<void> {
+    await this.syncEntry(entryId);
   }
 
   /**
@@ -601,7 +620,7 @@ class SyncManager {
       if (serverEntry) {
         // Update local entry with server data
         await localDatabase.saveEntry({
-          id: serverEntry.id || localEntry.id,
+          id: entryId, // Use current entry ID so data is saved to the row we're about to reconcile
           inspectionId: serverEntry.inspectionId,
           sectionRef: serverEntry.sectionRef,
           fieldKey: serverEntry.fieldKey,
@@ -682,16 +701,16 @@ class SyncManager {
     const photos = await localDatabase.getPhotosByInspection(inspectionId);
     const pendingPhotos = photos.filter(p => p.upload_status === 'pending' || p.upload_status === 'failed');
 
-      // Sync photos (max 3 concurrent)
-      const concurrentLimit = 3;
-      for (let i = 0; i < pendingPhotos.length; i += concurrentLimit) {
-        const batch = pendingPhotos.slice(i, i + concurrentLimit);
-        await Promise.all(batch.map(photo => this.syncPhotoWithData(photo).catch(error => {
-          console.error(`[SyncManager] Failed to sync photo ${photo.id}:`, error);
-          // Re-queue photo for retry if it failed
-          syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
-        })));
-      }
+    // Sync photos (max 3 concurrent)
+    const concurrentLimit = 3;
+    for (let i = 0; i < pendingPhotos.length; i += concurrentLimit) {
+      const batch = pendingPhotos.slice(i, i + concurrentLimit);
+      await Promise.all(batch.map(photo => this.syncPhotoWithData(photo).catch(error => {
+        console.error(`[SyncManager] Failed to sync photo ${photo.id}:`, error);
+        // Re-queue photo for retry if it failed
+        syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
+      })));
+    }
 
     // Process sync queue operations
     const allOperations = [...queue, ...entryQueue, ...photoQueue];

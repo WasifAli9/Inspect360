@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, TextStyle, StyleProp } from 'react-native';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -7,8 +7,8 @@ interface BadgeProps {
   children: React.ReactNode;
   variant?: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning' | 'primary';
   size?: 'sm' | 'md' | 'lg';
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
 }
 
 export default function Badge({

@@ -51,12 +51,12 @@ const InspectionReportScreen = () => {
     const route = useRoute<RouteProp<InspectionsStackParamList, 'InspectionReport'>>();
     const navigation = useNavigation();
     const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
-    
+
     // Get theme colors with fallback - hooks must be called unconditionally
     const theme = useTheme();
     // Ensure themeColors is always defined - use default colors if theme not available
     const themeColors = (theme && theme.colors) ? theme.colors : colors;
-    
+
     const { inspectionId } = route.params;
     const { user } = useAuth();
     const [expandedPhotos, setExpandedPhotos] = useState<Record<string, boolean>>({});
@@ -148,7 +148,7 @@ const InspectionReportScreen = () => {
             // Get response as arrayBuffer and convert to base64
             const arrayBuffer = await response.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
-            
+
             // Convert Uint8Array to base64 string (React Native compatible)
             // Manual base64 encoding for React Native
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -158,9 +158,9 @@ const InspectionReportScreen = () => {
                 const a = uint8Array[i++];
                 const b = i < uint8Array.length ? uint8Array[i++] : 0;
                 const c = i < uint8Array.length ? uint8Array[i++] : 0;
-                
+
                 const bitmap = (a << 16) | (b << 8) | c;
-                
+
                 base64 += chars.charAt((bitmap >> 18) & 63);
                 base64 += chars.charAt((bitmap >> 12) & 63);
                 base64 += i - 2 < uint8Array.length ? chars.charAt((bitmap >> 6) & 63) : '=';
@@ -171,7 +171,7 @@ const InspectionReportScreen = () => {
             const propertyName = (inspection.property?.name || inspection.block?.name || 'inspection').replace(/[^a-zA-Z0-9]/g, '_');
             const fileName = `${propertyName}_report_${new Date().toISOString().split('T')[0]}.pdf`;
             const fileUri = `${FileSystem.documentDirectory}${fileName}`;
-            
+
             // Use encoding as string literal (FileSystem.EncodingType might not be available)
             await FileSystem.writeAsStringAsync(fileUri, base64, {
                 encoding: 'base64' as any,
@@ -198,14 +198,14 @@ const InspectionReportScreen = () => {
     // Helper functions for condition/cleanliness
     const getConditionColor = (condition: string | number | null | undefined): string => {
         if (condition === null || condition === undefined) return '#9ca3af';
-        
+
         if (typeof condition === 'number') {
             if (condition >= 4) return '#22c55e'; // green
             if (condition === 3) return '#eab308'; // yellow
             if (condition === 2) return '#fbbf24'; // lighter amber-400
             if (condition <= 1) return '#ef4444'; // red
         }
-        
+
         const conditionStr = String(condition).toLowerCase();
         if (conditionStr === 'new' || conditionStr === 'excellent' || conditionStr === '5') return '#22c55e';
         if (conditionStr === 'good' || conditionStr === '4') return '#22c55e';
@@ -218,14 +218,14 @@ const InspectionReportScreen = () => {
 
     const getCleanlinessColor = (cleanliness: string | number | null | undefined): string => {
         if (cleanliness === null || cleanliness === undefined) return '#9ca3af';
-        
+
         if (typeof cleanliness === 'number') {
             if (cleanliness >= 4) return '#22c55e';
             if (cleanliness === 3) return '#eab308';
             if (cleanliness === 2) return '#fbbf24'; // lighter amber-400
             if (cleanliness <= 1) return '#ef4444';
         }
-        
+
         const cleanlinessStr = String(cleanliness).toLowerCase();
         if (cleanlinessStr === 'excellent' || cleanlinessStr === '5') return '#22c55e';
         if (cleanlinessStr === 'good' || cleanlinessStr === '4') return '#22c55e';
@@ -320,37 +320,37 @@ const InspectionReportScreen = () => {
         <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
             {/* Header */}
             <View style={[
-              styles.header,
-              {
-                paddingTop: Math.max(insets.top, spacing[3]),
-                backgroundColor: themeColors.card.DEFAULT,
-                borderBottomColor: themeColors.border.DEFAULT,
-              },
+                styles.header,
+                {
+                    paddingTop: 0,
+                    backgroundColor: themeColors.card.DEFAULT,
+                    borderBottomColor: themeColors.border.DEFAULT,
+                },
             ]}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
                     <ChevronLeft size={24} color={themeColors.text.primary} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: themeColors.text.primary }]}>Inspection Report</Text>
                 <View style={styles.headerActions}>
-                    <TouchableOpacity 
-                        onPress={handlePrint} 
+                    <TouchableOpacity
+                        onPress={handlePrint}
                         style={[styles.iconButton, isGeneratingPDF && styles.iconButtonDisabled]}
                         disabled={isGeneratingPDF}
                     >
                         <Printer size={24} color={isGeneratingPDF ? themeColors.text.muted : themeColors.primary.DEFAULT} />
                     </TouchableOpacity>
-                <TouchableOpacity onPress={handleShare} style={styles.iconButton}>
-                    <Share2 size={24} color={themeColors.primary.DEFAULT} />
-                </TouchableOpacity>
+                    <TouchableOpacity onPress={handleShare} style={styles.iconButton}>
+                        <Share2 size={24} color={themeColors.primary.DEFAULT} />
+                    </TouchableOpacity>
                 </View>
             </View>
 
-            <ScrollView 
+            <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
-                    { 
-                      paddingTop: Math.max(insets.top + spacing[4], spacing[8]),
-                      paddingBottom: Math.max(insets.bottom + 80, spacing[8]) 
+                    {
+                        paddingTop: spacing[4],
+                        paddingBottom: Math.max(insets.bottom + 80, spacing[8])
                     }
                 ]}
             >
@@ -409,8 +409,8 @@ const InspectionReportScreen = () => {
                                     {inspection.completedDate
                                         ? format(new Date(inspection.completedDate), 'MMMM dd, yyyy')
                                         : inspection.scheduledDate
-                                        ? format(new Date(inspection.scheduledDate), 'MMMM dd, yyyy')
-                                        : 'Not scheduled'}
+                                            ? format(new Date(inspection.scheduledDate), 'MMMM dd, yyyy')
+                                            : 'Not scheduled'}
                                 </Text>
                             </View>
                         </View>
@@ -574,25 +574,25 @@ const InspectionReportScreen = () => {
                                 const isExpanded = expandedSections[section.id] !== false;
 
                                 return (
-                    <View key={section.id} style={styles.sectionContainer}>
+                                    <View key={section.id} style={styles.sectionContainer}>
                                         {/* Section Header */}
-                        <TouchableOpacity
+                                        <TouchableOpacity
                                             style={[styles.sectionHeaderRow, { borderBottomColor: themeColors.border.light }]}
-                            onPress={() => toggleSection(section.id)}
-                            activeOpacity={0.7}
-                        >
+                                            onPress={() => toggleSection(section.id)}
+                                            activeOpacity={0.7}
+                                        >
                                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>{section.title}</Text>
+                                                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>{section.title}</Text>
                                                 {section.description && (
                                                     <Text style={[styles.sectionDescription, { color: themeColors.text.secondary }]}>{section.description}</Text>
                                                 )}
-                            </View>
+                                            </View>
                                             {isExpanded ? (
-                                <ChevronUp size={20} color={themeColors.text.secondary} />
-                            ) : (
-                                <ChevronDown size={20} color={themeColors.text.secondary} />
-                            )}
-                        </TouchableOpacity>
+                                                <ChevronUp size={20} color={themeColors.text.secondary} />
+                                            ) : (
+                                                <ChevronDown size={20} color={themeColors.text.secondary} />
+                                            )}
+                                        </TouchableOpacity>
 
                                         {isExpanded && (
                                             <View style={styles.tableContainer}>
@@ -601,7 +601,7 @@ const InspectionReportScreen = () => {
                                                     <View style={[styles.tableHeaderCell, { width: width * 0.25 }]}>
                                                         <Text style={[styles.tableHeaderText, { color: themeColors.text.primary }]} numberOfLines={2}>Room/Space</Text>
                                                     </View>
-                                                    <View style={[styles.tableHeaderCell, { 
+                                                    <View style={[styles.tableHeaderCell, {
                                                         width: width * (sectionHasCondition && sectionHasCleanliness ? 0.35 : sectionHasCondition || sectionHasCleanliness ? 0.40 : 0.50)
                                                     }]}>
                                                         <Text style={[styles.tableHeaderText, { color: themeColors.text.secondary }]} numberOfLines={2}>Description</Text>
@@ -646,7 +646,7 @@ const InspectionReportScreen = () => {
 
                                                     const photoCount = entry.photos?.length || 0;
 
-                                    return (
+                                                    return (
                                                         <View key={field.id || field.key || field.label} style={[styles.tableRow, { borderBottomColor: themeColors.border.light, backgroundColor: themeColors.background }]}>
                                                             <View style={[styles.tableCell, { width: width * 0.25 }]}>
                                                                 <TouchableOpacity
@@ -654,15 +654,15 @@ const InspectionReportScreen = () => {
                                                                     activeOpacity={photoCount > 0 ? 0.7 : 1}
                                                                 >
                                                                     <Text style={[
-                                                                      styles.roomSpaceText,
-                                                                      { color: photoCount > 0 ? themeColors.primary.DEFAULT : themeColors.text.primary },
-                                                                      photoCount > 0 && styles.roomSpaceLink
+                                                                        styles.roomSpaceText,
+                                                                        { color: photoCount > 0 ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                                                                        photoCount > 0 && styles.roomSpaceLink
                                                                     ]} numberOfLines={2}>
                                                                         {field.label}
                                                                     </Text>
                                                                 </TouchableOpacity>
                                                             </View>
-                                                            <View style={[styles.tableCell, { 
+                                                            <View style={[styles.tableCell, {
                                                                 width: width * (sectionHasCondition && sectionHasCleanliness ? 0.35 : sectionHasCondition || sectionHasCleanliness ? 0.40 : 0.50)
                                                             }]}>
                                                                 <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
@@ -677,15 +677,15 @@ const InspectionReportScreen = () => {
                                                                             <Text style={[styles.conditionText, { color: themeColors.text.primary }]} numberOfLines={1}>
                                                                                 {formatCondition(condition)}
                                                                             </Text>
-                                                                                <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
+                                                                            <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
                                                                                 ({getConditionScore(condition)})
-                                                </Text>
-                                            </View>
+                                                                            </Text>
+                                                                        </View>
                                                                     ) : (
                                                                         <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
-                                                    )}
-                                                </View>
-                                            )}
+                                                                    )}
+                                                                </View>
+                                                            )}
                                                             {sectionHasCleanliness && (
                                                                 <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
                                                                     {field.includeCleanliness && cleanliness !== null && cleanliness !== undefined ? (
@@ -694,15 +694,15 @@ const InspectionReportScreen = () => {
                                                                             <Text style={[styles.conditionText, { color: themeColors.text.primary }]} numberOfLines={1}>
                                                                                 {formatCleanliness(cleanliness)}
                                                                             </Text>
-                                                                                <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
+                                                                            <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
                                                                                 ({getCleanlinessScore(cleanliness)})
                                                                             </Text>
                                                                         </View>
                                                                     ) : (
                                                                         <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
                                                                     )}
-                                                </View>
-                                            )}
+                                                                </View>
+                                                            )}
                                                             <View style={[styles.tableCell, { width: width * 0.10, alignItems: 'center', justifyContent: 'center' }]}>
                                                                 {photoCount > 0 ? (
                                                                     <TouchableOpacity
@@ -725,31 +725,31 @@ const InspectionReportScreen = () => {
                                                                 <View style={[styles.photoExpansionContainer, { borderTopColor: themeColors.border.light }]}>
                                                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScrollView}>
                                                                         {entry.photos?.map((photo: string, photoIdx: number) => {
-                                                                            const photoUrl = photo.startsWith('http') 
-                                                                                ? photo 
+                                                                            const photoUrl = photo.startsWith('http')
+                                                                                ? photo
                                                                                 : photo.startsWith('/')
-                                                                                ? `${getAPI_URL()}${photo}`
-                                                                                : `${getAPI_URL()}/objects/${photo}`;
+                                                                                    ? `${getAPI_URL()}${photo}`
+                                                                                    : `${getAPI_URL()}/objects/${photo}`;
                                                                             return (
-                                                        <Image
+                                                                                <Image
                                                                                     key={photoIdx}
                                                                                     source={{ uri: photoUrl }}
                                                                                     style={styles.photoThumbnail as ImageStyle}
-                                                        />
+                                                                                />
                                                                             );
                                                                         })}
-                                                </ScrollView>
+                                                                    </ScrollView>
                                                                 </View>
-                                            )}
-                                        </View>
-                                    );
-                                })}
-                            </View>
-                        )}
+                                                            )}
+                                                        </View>
+                                                    );
+                                                })}
+                                            </View>
+                                        )}
                                     </View>
                                 );
                             })}
-                    </View>
+                        </View>
                     )}
                 </Card>
             </ScrollView>

@@ -9,13 +9,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar,
+  useWindowDimensions,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Eye, EyeOff } from 'lucide-react-native';
 import Logo from '../../components/ui/Logo';
 import { colors, spacing, typography, borderRadius } from '../../theme';
+import { moderateScale, getButtonHeight, getFontSize } from '../../utils/responsive';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -24,6 +27,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const { login, isLoading } = useAuth();
   const theme = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
   // Ensure themeColors is always defined - use default colors if theme not available
   const themeColors = (theme && theme.colors) ? theme.colors : colors;
   // Ensure text colors are always defined for visibility
@@ -44,21 +48,21 @@ export default function LoginScreen() {
       // Use the error message directly - it should already be user-friendly
       // from api.ts and AuthContext error handling
       let errorMessage = 'Email or password is incorrect. Please try again.';
-      
+
       if (err?.message) {
         // Use the error message if it's user-friendly
         errorMessage = err.message;
       } else if (err?.name === 'AbortError') {
         errorMessage = 'Request timeout. Please check your internet connection.';
       }
-      
+
       setError(errorMessage);
     }
   };
 
   return (
-    <>
-      <StatusBar barStyle={theme?.theme === 'dark' ? "light-content" : "dark-content"} backgroundColor={themeColors.background} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: themeColors.background }}>
+      <StatusBar style={theme?.theme === 'dark' ? 'light' : 'dark'} />
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: themeColors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -77,8 +81,8 @@ export default function LoginScreen() {
 
             {/* Login Card */}
             <View style={[
-              styles.card, 
-              { 
+              styles.card,
+              {
                 backgroundColor: themeColors.card.DEFAULT,
                 borderColor: themeColors.border.DEFAULT,
                 shadowColor: theme?.theme === 'dark' ? '#000000' : '#000000',
@@ -94,10 +98,10 @@ export default function LoginScreen() {
                 <View style={styles.inputContainer}>
                   <Text style={[styles.label, { color: textPrimary }]}>Email Address</Text>
                   <TextInput
-                    style={[styles.input, { 
+                    style={[styles.input, {
                       borderColor: themeColors.border.DEFAULT,
                       backgroundColor: themeColors.input,
-                      color: themeColors.text.primary 
+                      color: themeColors.text.primary
                     }]}
                     placeholder="Enter your email address"
                     placeholderTextColor={themeColors.text.muted}
@@ -114,10 +118,10 @@ export default function LoginScreen() {
                   <Text style={[styles.label, { color: textPrimary }]}>Password</Text>
                   <View style={styles.passwordContainer}>
                     <TextInput
-                      style={[styles.passwordInput, { 
+                      style={[styles.passwordInput, {
                         borderColor: themeColors.border.DEFAULT,
                         backgroundColor: themeColors.input,
-                        color: themeColors.text.primary 
+                        color: themeColors.text.primary
                       }]}
                       placeholder="Enter your password"
                       placeholderTextColor={themeColors.text.muted}
@@ -152,7 +156,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
 
                 {error && (
-                  <View style={[styles.errorContainer, { 
+                  <View style={[styles.errorContainer, {
                     backgroundColor: themeColors.destructive.DEFAULT + '15',
                     borderColor: themeColors.destructive.DEFAULT + '30'
                   }]}>
@@ -162,9 +166,17 @@ export default function LoginScreen() {
 
                 <TouchableOpacity
                   style={[
-                    styles.button, 
-                    { backgroundColor: themeColors.primary.DEFAULT },
-                    isLoading && styles.buttonDisabled
+                    {
+                      backgroundColor: themeColors.primary.DEFAULT,
+                      borderRadius: moderateScale(borderRadius.md, 0.2, screenWidth),
+                      paddingVertical: moderateScale(spacing[4], 0.3, screenWidth),
+                      paddingHorizontal: moderateScale(spacing[4], 0.3, screenWidth),
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: getButtonHeight('md', screenWidth),
+                      marginTop: moderateScale(spacing[2], 0.3, screenWidth),
+                    },
+                    isLoading && { opacity: 0.6 }
                   ]}
                   onPress={handleLogin}
                   disabled={!!isLoading}
@@ -173,7 +185,13 @@ export default function LoginScreen() {
                   {isLoading ? (
                     <ActivityIndicator color={themeColors.primary.foreground} />
                   ) : (
-                    <Text style={[styles.buttonText, { color: themeColors.primary.foreground }]}>Sign in</Text>
+                    <Text style={[
+                      {
+                        fontSize: getFontSize(typography.fontSize.base, screenWidth),
+                        fontWeight: typography.fontWeight.semibold,
+                        color: themeColors.primary.foreground,
+                      }
+                    ]}>Sign in</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -181,7 +199,7 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </>
+    </SafeAreaView>
   );
 }
 
@@ -290,21 +308,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: typography.fontSize.sm,
     textAlign: 'center',
-  },
-  button: {
-    borderRadius: borderRadius.md,
-    padding: spacing[4],
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 50,
-    marginTop: spacing[2],
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
   },
 });
 

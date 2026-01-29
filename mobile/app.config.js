@@ -17,10 +17,17 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.inspect360.mobile",
+      buildNumber: "1",
+      requiresFullScreen: false,
       infoPlist: {
         NSCameraUsageDescription: "This app needs access to your camera to capture inspection photos.",
         NSPhotoLibraryUsageDescription: "This app needs access to your photo library to select images for inspections.",
-        NSPhotoLibraryAddUsageDescription: "This app needs access to save photos to your library."
+        NSPhotoLibraryAddUsageDescription: "This app needs access to save photos to your library.",
+        UIViewControllerBasedStatusBarAppearance: true,
+        UIStatusBarStyle: "UIStatusBarStyleDefault"
+      },
+      config: {
+        usesNonExemptEncryption: false
       }
     },
     android: {

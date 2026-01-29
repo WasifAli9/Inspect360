@@ -10,11 +10,13 @@ import {
   Modal,
   FlatList,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Upload, Plus, X, FileText, Trash2, User as UserIcon, Mail, Shield, LogOut } from 'lucide-react-native';
@@ -46,7 +48,7 @@ export default function ProfileScreen() {
   const { themeMode, setThemeMode, isDark } = theme;
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
   const queryClient = useQueryClient();
-  
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -78,29 +80,29 @@ export default function ProfileScreen() {
 
   // Initialize form data from profile or user (auth context) - prefer profile, fall back to user
   const initializedRef = React.useRef<string | null>(null);
-  
+
   useEffect(() => {
     // Prefer profile data (more complete), fall back to user from auth context
     const dataSource = profile || user;
-    
+
     if (dataSource) {
       // Initialize fields only once when data first becomes available
       // Use a unique identifier to avoid re-initializing (profile ID or user ID)
       const dataId = profile?.id || user?.id || 'default';
-      
+
       // Only initialize if we haven't initialized with this data yet
       if (initializedRef.current !== dataId) {
         setFirstName(dataSource.firstName || '');
         setLastName(dataSource.lastName || '');
         setPhone(dataSource.phone || '');
         setProfileImageUrl(dataSource.profileImageUrl || null);
-        
+
         // Skills and qualifications - only from profile (not in user object)
         if (profile) {
           setSkills(profile.skills || []);
           setQualifications(profile.qualifications || []);
         }
-        
+
         initializedRef.current = dataId;
       } else if (profile && initializedRef.current === user?.id) {
         // If we initialized from user but now have profile, update once
@@ -128,8 +130,9 @@ export default function ProfileScreen() {
       await queryClient.refetchQueries({ queryKey: ['/api/auth/profile'] });
       await queryClient.refetchQueries({ queryKey: ['/api/auth/user'] });
       // Also invalidate any user-related queries that might be cached
-      queryClient.invalidateQueries({ predicate: (query) => 
-        query.queryKey.some(key => typeof key === 'string' && (key.includes('/api/auth') || key.includes('profile') || key.includes('user')))
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey.some(key => typeof key === 'string' && (key.includes('/api/auth') || key.includes('profile') || key.includes('user')))
       });
     },
     onError: (error: any) => {
@@ -177,30 +180,30 @@ export default function ProfileScreen() {
 
   const handleSaveProfile = () => {
     const data: UpdateProfileData = {};
-    
+
     // Only include firstName if it has a non-empty value (schema requires min(1))
     const trimmedFirstName = firstName.trim();
     if (trimmedFirstName && trimmedFirstName.length > 0) {
       data.firstName = trimmedFirstName;
     }
-    
+
     // Only include lastName if it has a non-empty value (schema requires min(1))
     const trimmedLastName = lastName.trim();
     if (trimmedLastName && trimmedLastName.length > 0) {
       data.lastName = trimmedLastName;
     }
-    
+
     // Phone is optional
     const trimmedPhone = phone.trim();
     if (trimmedPhone && trimmedPhone.length > 0) {
       data.phone = trimmedPhone;
     }
-    
+
     // Profile image URL
     if (profileImageUrl) {
       data.profileImageUrl = profileImageUrl;
     }
-    
+
     // Only include arrays if they have items
     if (skills.length > 0) {
       data.skills = skills;
@@ -208,13 +211,13 @@ export default function ProfileScreen() {
     if (qualifications.length > 0) {
       data.qualifications = qualifications;
     }
-    
+
     // Ensure we have at least one field to update
     if (Object.keys(data).length === 0) {
       Alert.alert('No Changes', 'Please make some changes before saving');
       return;
     }
-    
+
     updateMutation.mutate(data);
   };
 
@@ -300,7 +303,7 @@ export default function ProfileScreen() {
       // The uploadURL format is: /api/objects/upload-direct?objectId=xxx or full URL
       // We need to extract the objectId and construct: /objects/xxx
       let fileUrl: string;
-      
+
       try {
         // Parse the upload URL to extract objectId
         let urlToParse = uploadURL;
@@ -308,10 +311,10 @@ export default function ProfileScreen() {
         if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
           urlToParse = `${getAPI_URL()}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
         }
-        
+
         const urlObj = new URL(urlToParse);
         const objectId = urlObj.searchParams.get('objectId');
-        
+
         if (objectId) {
           // Construct the file URL as /objects/{objectId}
           fileUrl = `/objects/${objectId}`;
@@ -338,31 +341,31 @@ export default function ProfileScreen() {
 
       // Update state with the properly formatted URL
       setProfileImageUrl(fileUrl);
-      
+
       // Auto-save the profile with the new image URL to reflect changes immediately
       // Build data according to schema: only include non-empty fields
       const updateData: UpdateProfileData = {
         profileImageUrl: fileUrl,
       };
-      
+
       // Only add firstName if it has a non-empty value (schema requires min(1))
       const trimmedFirstName = firstName.trim();
       if (trimmedFirstName && trimmedFirstName.length > 0) {
         updateData.firstName = trimmedFirstName;
       }
-      
+
       // Only add lastName if it has a non-empty value (schema requires min(1))
       const trimmedLastName = lastName.trim();
       if (trimmedLastName && trimmedLastName.length > 0) {
         updateData.lastName = trimmedLastName;
       }
-      
+
       // Phone is optional and can be empty
       const trimmedPhone = phone.trim();
       if (trimmedPhone && trimmedPhone.length > 0) {
         updateData.phone = trimmedPhone;
       }
-      
+
       // Only include arrays if they have items
       if (skills.length > 0) {
         updateData.skills = skills;
@@ -370,7 +373,7 @@ export default function ProfileScreen() {
       if (qualifications.length > 0) {
         updateData.qualifications = qualifications;
       }
-      
+
       updateMutation.mutate(updateData, {
         onSuccess: () => {
           Alert.alert('Success', 'Profile photo updated successfully');
@@ -416,7 +419,7 @@ export default function ProfileScreen() {
           else if (asset.mimeType.includes('vnd.openxmlformats-officedocument.wordprocessingml')) fileExtension = 'docx';
           else if (asset.mimeType.includes('text')) fileExtension = 'txt';
         }
-        
+
         setPendingDocFileExtension(fileExtension);
         await uploadDocumentFile(asset.uri, asset.mimeType || 'application/octet-stream');
       }
@@ -467,7 +470,7 @@ export default function ProfileScreen() {
       // The uploadURL format is: /api/objects/upload-direct?objectId=xxx or full URL
       // We need to extract the objectId and construct: /objects/xxx
       let fileUrl: string;
-      
+
       try {
         // Parse the upload URL to extract objectId
         let urlToParse = uploadURL;
@@ -475,10 +478,10 @@ export default function ProfileScreen() {
         if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
           urlToParse = `${getAPI_URL()}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
         }
-        
+
         const urlObj = new URL(urlToParse);
         const objectId = urlObj.searchParams.get('objectId');
-        
+
         if (objectId) {
           // Construct the file URL as /objects/{objectId}
           fileUrl = `/objects/${objectId}`;
@@ -567,16 +570,16 @@ export default function ProfileScreen() {
         const separator = profileImageUrl.includes('?') ? '&' : '?';
         return `${profileImageUrl}${separator}_t=${Date.now()}`;
       }
-      
+
       // Ensure the URL starts with / for relative paths
       const cleanUrl = profileImageUrl.startsWith('/') ? profileImageUrl : `/${profileImageUrl}`;
-      
+
       // Construct full URL
       let fullUrl = `${getAPI_URL()}${cleanUrl}`;
-      
+
       // Remove any double slashes in the URL
       fullUrl = fullUrl.replace(/([^:]\/)\/+/g, '$1');
-      
+
       // Add cache busting to force refresh
       const separator = fullUrl.includes('?') ? '&' : '?';
       return `${fullUrl}${separator}_t=${Date.now()}`;
@@ -598,7 +601,7 @@ export default function ProfileScreen() {
   const handleViewDocument = async (doc: UserDocument) => {
     try {
       const documentUrl = getDocumentUrl(doc.fileUrl);
-      
+
       // Download the document with authentication
       const response = await fetch(documentUrl, {
         method: 'GET',
@@ -615,7 +618,7 @@ export default function ProfileScreen() {
       // Get the response as arrayBuffer (React Native compatible)
       const arrayBuffer = await response.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
-      
+
       // Convert to base64 manually (btoa not available in React Native)
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
       let base64 = '';
@@ -643,7 +646,7 @@ export default function ProfileScreen() {
           }
         }
       }
-      
+
       // Determine MIME type from extension
       let mimeType = 'application/pdf'; // default
       switch (extension) {
@@ -678,7 +681,7 @@ export default function ProfileScreen() {
       // Save to file system
       const fileName = `${doc.documentName.replace(/[^a-zA-Z0-9.-]/g, '_') || 'document'}.${extension}`;
       const fileUri = `${FileSystem.documentDirectory}${fileName}`;
-      
+
       await FileSystem.writeAsStringAsync(fileUri, base64, {
         encoding: 'base64' as any,
       });
@@ -711,532 +714,541 @@ export default function ProfileScreen() {
   const displayUser = profile || user;
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: themeColors.background }]}
-      contentContainerStyle={[
-        styles.content,
-        { 
-          paddingTop: Math.max(insets.top + spacing[4], spacing[8]),
-          paddingBottom: Math.max(insets.bottom + 80, spacing[8]) 
-        },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Page Header */}
-      <View style={styles.pageHeader}>
-        <View style={styles.headerContent}>
-          <UserIcon size={28} color={themeColors.primary.DEFAULT} />
-          <View style={styles.headerText}>
-            <Text style={[styles.pageTitle, { color: themeColors.text.primary }]}>Profile</Text>
-            <Text style={[styles.pageSubtitle, { color: themeColors.text.secondary }]}>Manage your personal information and settings</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Personal Information */}
-      <Card style={styles.card}>
-        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
-          <View>
-            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Personal Information</Text>
-            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Update your profile details below</Text>
-          </View>
-        </View>
-
-        <View style={styles.avatarSection}>
-          <View style={styles.avatarWrapper}>
-            <View style={styles.avatarContainer}>
-              {getProfileImageUrl() ? (
-                <Image 
-                  source={{ uri: getProfileImageUrl() || '' }} 
-                  style={styles.avatarImage}
-                  key={profileImageUrl} // Force re-render when URL changes
-                  onError={(e) => {
-                    // Log error but don't clear URL - it might be a temporary network issue
-                    // The placeholder will show automatically when getProfileImageUrl returns null
-                    // Suppress console errors for unknown format - might be a temporary issue
-                    const error = e.nativeEvent?.error;
-                    if (error && !error.message?.includes('Unknown')) {
-                      console.error('Image load error for URL:', profileImageUrl);
-                    }
-                  }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: themeColors.primary.DEFAULT }]}>
-                  <Text style={[styles.avatarText, { color: themeColors.primary.foreground }]}>{getUserInitials()}</Text>
-            </View>
-          )}
-            </View>
-            <TouchableOpacity
-              style={[styles.avatarOverlay, { backgroundColor: themeColors.primary.DEFAULT, borderColor: themeColors.background }]}
-              onPress={handleUploadPhoto}
-              activeOpacity={0.8}
-            >
-              <View style={styles.avatarOverlayContent}>
-                <Upload size={20} color={themeColors.primary.foreground} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: themeColors.background }} edges={['top', 'left', 'right']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: themeColors.background }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <ScrollView
+          style={[styles.container, { backgroundColor: themeColors.background }]}
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: spacing[4],
+              paddingBottom: Math.max(insets.bottom + 80, spacing[8])
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Page Header */}
+          <View style={styles.pageHeader}>
+            <View style={styles.headerContent}>
+              <UserIcon size={28} color={themeColors.primary.DEFAULT} />
+              <View style={styles.headerText}>
+                <Text style={[styles.pageTitle, { color: themeColors.text.primary }]}>Profile</Text>
+                <Text style={[styles.pageSubtitle, { color: themeColors.text.secondary }]}>Manage your personal information and settings</Text>
               </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.formGroup}>
-          <Input
-            label="First Name"
-            value={firstName}
-            onChangeText={setFirstName}
-            placeholder="Enter first name"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Input
-            label="Last Name"
-            value={lastName}
-            onChangeText={setLastName}
-            placeholder="Enter last name"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Input
-            label="Phone Number"
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Enter phone number"
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <Button
-          title="Save Changes"
-          onPress={handleSaveProfile}
-          variant="primary"
-          loading={updateMutation.isPending}
-          style={styles.saveButton}
-        />
-      </Card>
-
-      {/* Skills */}
-      <Card style={styles.card}>
-        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
-          <View>
-            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Skills</Text>
-            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Add your professional skills</Text>
-          </View>
-        </View>
-
-        <View style={styles.inputRow}>
-          <Input
-            value={newSkill}
-            onChangeText={setNewSkill}
-            placeholder="Add a skill..."
-            style={styles.flexInput}
-            onSubmitEditing={handleAddSkill}
-          />
-          <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: themeColors.primary.DEFAULT }]}
-            onPress={handleAddSkill}
-            activeOpacity={0.7}
-          >
-            <Plus size={20} color={themeColors.primary.foreground} />
-          </TouchableOpacity>
-        </View>
-
-        {skills.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {skills.map((skill, index) => (
-              <View key={index} style={[
-                styles.tag,
-                { 
-                  backgroundColor: themeColors.primary.light,
-                  borderColor: themeColors.primary.DEFAULT + '30'
-                }
-              ]}>
-                <Text style={[styles.tagText, { color: themeColors.text.primary }]}>{skill}</Text>
-                <TouchableOpacity
-                  onPress={() => handleRemoveSkill(skill)}
-                  style={styles.tagRemove}
-                >
-                  <X size={14} color={themeColors.text.secondary} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        <Button
-          title="Save Changes"
-          onPress={handleSaveProfile}
-          variant="primary"
-          loading={updateMutation.isPending}
-          style={styles.saveButton}
-        />
-      </Card>
-
-      {/* Qualifications */}
-      <Card style={styles.card}>
-        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
-          <View>
-            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Qualifications</Text>
-            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Add your qualifications and certifications</Text>
-          </View>
-        </View>
-
-        <View style={styles.inputRow}>
-          <Input
-            value={newQualification}
-            onChangeText={setNewQualification}
-            placeholder="Add a qualification..."
-            style={styles.flexInput}
-            onSubmitEditing={handleAddQualification}
-          />
-          <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: themeColors.primary.DEFAULT }]}
-            onPress={handleAddQualification}
-            activeOpacity={0.7}
-          >
-            <Plus size={20} color={themeColors.primary.foreground} />
-          </TouchableOpacity>
-        </View>
-
-        {qualifications.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {qualifications.map((qual, index) => (
-              <View key={index} style={[
-                styles.tag,
-                { 
-                  backgroundColor: themeColors.primary.light,
-                  borderColor: themeColors.primary.DEFAULT + '30'
-                }
-              ]}>
-                <Text style={[styles.tagText, { color: themeColors.text.primary }]}>{qual}</Text>
-                <TouchableOpacity
-                  onPress={() => handleRemoveQualification(qual)}
-                  style={styles.tagRemove}
-                >
-                  <X size={14} color={themeColors.text.secondary} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        <Button
-          title="Save Changes"
-          onPress={handleSaveProfile}
-          variant="primary"
-          loading={updateMutation.isPending}
-          style={styles.saveButton}
-        />
-      </Card>
-
-      {/* Documents */}
-      <Card style={styles.card}>
-        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
-          <View>
-            <View style={styles.cardTitleRow}>
-              <View style={styles.cardTitleContainer}>
-                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Documents</Text>
-                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Upload and manage your professional documents</Text>
-              </View>
-              <Button
-                title="Upload"
-                onPress={handleUploadDocument}
-                variant="primary"
-                size="sm"
-                icon={<Upload size={16} color={themeColors.primary.foreground} />}
-                style={styles.uploadDocumentButton}
-              />
             </View>
           </View>
-        </View>
 
-        {documentsLoading ? (
-          <LoadingSpinner />
-        ) : documents.length === 0 ? (
-          <View style={styles.emptyState}>
-            <FileText size={48} color={themeColors.text.muted} />
-            <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>No documents uploaded yet</Text>
-          </View>
-        ) : (
-          <View style={styles.documentsList}>
-            {documents.map((doc) => (
-              <View key={doc.id} style={[
-                styles.documentItem,
-                { 
-                  backgroundColor: themeColors.card.DEFAULT,
-                  borderColor: themeColors.border.light
-                }
-              ]}>
+          {/* Personal Information */}
+          <Card style={styles.card}>
+            <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
+              <View>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Personal Information</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Update your profile details below</Text>
+              </View>
+            </View>
+
+            <View style={styles.avatarSection}>
+              <View style={styles.avatarWrapper}>
+                <View style={styles.avatarContainer}>
+                  {getProfileImageUrl() ? (
+                    <Image
+                      source={{ uri: getProfileImageUrl() || '' }}
+                      style={styles.avatarImage}
+                      key={profileImageUrl} // Force re-render when URL changes
+                      onError={(e) => {
+                        // Log error but don't clear URL - it might be a temporary network issue
+                        // The placeholder will show automatically when getProfileImageUrl returns null
+                        // Suppress console errors for unknown format - might be a temporary issue
+                        const error = e.nativeEvent?.error;
+                        if (error && !error.message?.includes('Unknown')) {
+                          console.error('Image load error for URL:', profileImageUrl);
+                        }
+                      }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.avatarPlaceholder, { backgroundColor: themeColors.primary.DEFAULT }]}>
+                      <Text style={[styles.avatarText, { color: themeColors.primary.foreground }]}>{getUserInitials()}</Text>
+                    </View>
+                  )}
+                </View>
                 <TouchableOpacity
-                  style={styles.documentInfo}
-                  onPress={() => handleViewDocument(doc)}
-                  activeOpacity={0.7}
+                  style={[styles.avatarOverlay, { backgroundColor: themeColors.primary.DEFAULT, borderColor: themeColors.background }]}
+                  onPress={handleUploadPhoto}
+                  activeOpacity={0.8}
                 >
-                  <FileText size={20} color={themeColors.primary.DEFAULT} />
-                  <View style={styles.documentDetails}>
-                    <Text style={[styles.documentName, { color: themeColors.text.primary }]}>{doc.documentName}</Text>
-                    <Text style={[styles.documentType, { color: themeColors.text.secondary }]}>
-                      {DOCUMENT_TYPES.find((t) => t.value === doc.documentType)?.label || doc.documentType}
-                    </Text>
+                  <View style={styles.avatarOverlayContent}>
+                    <Upload size={20} color={themeColors.primary.foreground} />
                   </View>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleDeleteDocument(doc.id, doc.documentName)}
-                  style={styles.deleteButton}
-                >
-                  <Trash2 size={18} color={themeColors.destructive.DEFAULT} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      {/* Appearance Settings */}
-      <Card style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View>
-            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Appearance</Text>
-            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Choose your preferred theme</Text>
-          </View>
-        </View>
-
-        <View style={styles.themeOptions}>
-          <TouchableOpacity
-            style={[
-              styles.themeOption,
-              themeMode === 'light' && styles.themeOptionSelected,
-              { 
-                backgroundColor: themeMode === 'light' ? themeColors.primary.light : themeColors.card.DEFAULT,
-                borderColor: themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
-              }
-            ]}
-            onPress={() => setThemeMode('light')}
-            activeOpacity={0.7}
-          >
-            <Sun size={24} color={themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
-            <Text style={[
-              styles.themeOptionText,
-              { color: themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.text.primary }
-            ]}>
-              Light
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.themeOption,
-              themeMode === 'dark' && styles.themeOptionSelected,
-              { 
-                backgroundColor: themeMode === 'dark' ? themeColors.primary.light : themeColors.card.DEFAULT,
-                borderColor: themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
-              }
-            ]}
-            onPress={() => setThemeMode('dark')}
-            activeOpacity={0.7}
-          >
-            <Moon size={24} color={themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
-            <Text style={[
-              styles.themeOptionText,
-              { color: themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.text.primary }
-            ]}>
-              Dark
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.themeOption,
-              themeMode === 'auto' && styles.themeOptionSelected,
-              { 
-                backgroundColor: themeMode === 'auto' ? themeColors.primary.light : themeColors.card.DEFAULT,
-                borderColor: themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
-              }
-            ]}
-            onPress={() => setThemeMode('auto')}
-            activeOpacity={0.7}
-          >
-            <Monitor size={24} color={themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
-            <Text style={[
-              styles.themeOptionText,
-              { color: themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.text.primary }
-            ]}>
-              System
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </Card>
-
-      {/* Account Information */}
-      <Card style={styles.card}>
-        <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
-          <View>
-            <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Account Information</Text>
-            <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>These details cannot be changed from this page</Text>
-          </View>
-        </View>
-
-        <View style={styles.infoContainer}>
-          <View style={[styles.infoRow, { borderBottomColor: themeColors.border.light }]}>
-            <View style={styles.infoLeft}>
-              <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
-                <Mail size={18} color={themeColors.primary.DEFAULT} />
-              </View>
-              <View style={styles.infoTextContainer}>
-                <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Email</Text>
-                <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={1}>
-                  {displayUser?.email || 'N/A'}
-                </Text>
               </View>
             </View>
-          </View>
 
-          <View style={[styles.infoRow, { borderBottomColor: themeColors.border.light }]}>
-            <View style={styles.infoLeft}>
-              <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
-                <UserIcon size={18} color={themeColors.primary.DEFAULT} />
-              </View>
-              <View style={styles.infoTextContainer}>
-                <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Username</Text>
-                <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={1}>
-                  {displayUser?.username || 'N/A'}
-                </Text>
+            <View style={styles.formGroup}>
+              <Input
+                label="First Name"
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="Enter first name"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Input
+                label="Last Name"
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Enter last name"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Input
+                label="Phone Number"
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Enter phone number"
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <Button
+              title="Save Changes"
+              onPress={handleSaveProfile}
+              variant="primary"
+              loading={updateMutation.isPending}
+              style={styles.saveButton}
+            />
+          </Card>
+
+          {/* Skills */}
+          <Card style={styles.card}>
+            <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
+              <View>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Skills</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Add your professional skills</Text>
               </View>
             </View>
-          </View>
 
-          <View style={styles.infoRow}>
-            <View style={styles.infoLeft}>
-              <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
-                <Shield size={18} color={themeColors.primary.DEFAULT} />
-              </View>
-              <View style={styles.infoTextContainer}>
-                <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Role</Text>
-                <Text style={[styles.infoValue, { color: themeColors.text.primary }]}>
-            {displayUser?.role === 'owner'
-              ? 'Owner'
-              : displayUser?.role === 'clerk'
-              ? 'Clerk'
-              : displayUser?.role === 'compliance'
-              ? 'Compliance'
-              : displayUser?.role || 'N/A'}
-          </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Card>
-
-      {/* Sign Out Button */}
-      <TouchableOpacity
-        style={[
-          styles.logoutButton,
-          {
-            backgroundColor: themeColors.destructive.DEFAULT,
-            borderColor: themeColors.destructive.DEFAULT,
-            opacity: isOnline ? 1 : 0.5,
-          }
-        ]}
-        onPress={() => {
-          if (!isOnline) {
-            Alert.alert(
-              'Offline',
-              'You cannot sign out while offline. Please connect to the internet and try again.'
-            );
-            return;
-          }
-          logout();
-        }}
-        disabled={!isOnline}
-        activeOpacity={0.8}
-      >
-        <View style={styles.logoutButtonContent}>
-          <LogOut size={20} color="#ffffff" />
-          <Text style={styles.logoutButtonText}>
-            {isOnline ? 'Sign Out' : 'Sign Out (Online only)'}
-          </Text>
-        </View>
-      </TouchableOpacity>
-
-      {/* Document Form Modal */}
-      <Modal
-        visible={showDocumentForm}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowDocumentForm(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[
-            styles.modalContent, 
-            { 
-              backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[4]) 
-            }
-          ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Add Document</Text>
-              <TouchableOpacity 
-                onPress={() => setShowDocumentForm(false)}
-                style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
+            <View style={styles.inputRow}>
+              <Input
+                value={newSkill}
+                onChangeText={setNewSkill}
+                placeholder="Add a skill..."
+                style={styles.flexInput}
+                onSubmitEditing={handleAddSkill}
+              />
+              <TouchableOpacity
+                style={[styles.addButton, { backgroundColor: themeColors.primary.DEFAULT }]}
+                onPress={handleAddSkill}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
+                <Plus size={20} color={themeColors.primary.foreground} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalBody}>
-              <View style={styles.formGroup}>
-                <Text style={[styles.label, { color: themeColors.text.primary }]}>Document Name *</Text>
-                <Input
-                  value={documentName}
-                  onChangeText={setDocumentName}
-                  placeholder="Enter document name"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Document Type *</Text>
-                <FlatList
-                  data={DOCUMENT_TYPES}
-                  keyExtractor={(item) => item.value}
-                  renderItem={({ item }) => (
+            {skills.length > 0 && (
+              <View style={styles.tagsContainer}>
+                {skills.map((skill, index) => (
+                  <View key={index} style={[
+                    styles.tag,
+                    {
+                      backgroundColor: themeColors.primary.light,
+                      borderColor: themeColors.primary.DEFAULT + '30'
+                    }
+                  ]}>
+                    <Text style={[styles.tagText, { color: themeColors.text.primary }]}>{skill}</Text>
                     <TouchableOpacity
-                      style={[
-                        styles.modalItem,
-                        { 
-                          backgroundColor: documentType === item.value ? themeColors.primary.light : themeColors.card.DEFAULT,
-                          borderColor: documentType === item.value ? themeColors.primary.DEFAULT : themeColors.border.light
-                        },
-                        documentType === item.value && { borderWidth: 2 }
-                      ]}
-                      onPress={() => setDocumentType(item.value)}
+                      onPress={() => handleRemoveSkill(skill)}
+                      style={styles.tagRemove}
                     >
-                      <Text
-                        style={[
-                          styles.modalItemText,
-                          { color: documentType === item.value ? themeColors.primary.DEFAULT : themeColors.text.primary }
-                        ]}
-                      >
-                        {item.label}
-                      </Text>
+                      <X size={14} color={themeColors.text.secondary} />
                     </TouchableOpacity>
-                  )}
-                />
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Button
+              title="Save Changes"
+              onPress={handleSaveProfile}
+              variant="primary"
+              loading={updateMutation.isPending}
+              style={styles.saveButton}
+            />
+          </Card>
+
+          {/* Qualifications */}
+          <Card style={styles.card}>
+            <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
+              <View>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Qualifications</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Add your qualifications and certifications</Text>
+              </View>
+            </View>
+
+            <View style={styles.inputRow}>
+              <Input
+                value={newQualification}
+                onChangeText={setNewQualification}
+                placeholder="Add a qualification..."
+                style={styles.flexInput}
+                onSubmitEditing={handleAddQualification}
+              />
+              <TouchableOpacity
+                style={[styles.addButton, { backgroundColor: themeColors.primary.DEFAULT }]}
+                onPress={handleAddQualification}
+                activeOpacity={0.7}
+              >
+                <Plus size={20} color={themeColors.primary.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            {qualifications.length > 0 && (
+              <View style={styles.tagsContainer}>
+                {qualifications.map((qual, index) => (
+                  <View key={index} style={[
+                    styles.tag,
+                    {
+                      backgroundColor: themeColors.primary.light,
+                      borderColor: themeColors.primary.DEFAULT + '30'
+                    }
+                  ]}>
+                    <Text style={[styles.tagText, { color: themeColors.text.primary }]}>{qual}</Text>
+                    <TouchableOpacity
+                      onPress={() => handleRemoveQualification(qual)}
+                      style={styles.tagRemove}
+                    >
+                      <X size={14} color={themeColors.text.secondary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Button
+              title="Save Changes"
+              onPress={handleSaveProfile}
+              variant="primary"
+              loading={updateMutation.isPending}
+              style={styles.saveButton}
+            />
+          </Card>
+
+          {/* Documents */}
+          <Card style={styles.card}>
+            <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
+              <View>
+                <View style={styles.cardTitleRow}>
+                  <View style={styles.cardTitleContainer}>
+                    <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Documents</Text>
+                    <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Upload and manage your professional documents</Text>
+                  </View>
+                  <Button
+                    title="Upload"
+                    onPress={handleUploadDocument}
+                    variant="primary"
+                    size="sm"
+                    icon={<Upload size={16} color={themeColors.primary.foreground} />}
+                    style={styles.uploadDocumentButton}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {documentsLoading ? (
+              <LoadingSpinner />
+            ) : documents.length === 0 ? (
+              <View style={styles.emptyState}>
+                <FileText size={48} color={themeColors.text.muted} />
+                <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>No documents uploaded yet</Text>
+              </View>
+            ) : (
+              <View style={styles.documentsList}>
+                {documents.map((doc) => (
+                  <View key={doc.id} style={[
+                    styles.documentItem,
+                    {
+                      backgroundColor: themeColors.card.DEFAULT,
+                      borderColor: themeColors.border.light
+                    }
+                  ]}>
+                    <TouchableOpacity
+                      style={styles.documentInfo}
+                      onPress={() => handleViewDocument(doc)}
+                      activeOpacity={0.7}
+                    >
+                      <FileText size={20} color={themeColors.primary.DEFAULT} />
+                      <View style={styles.documentDetails}>
+                        <Text style={[styles.documentName, { color: themeColors.text.primary }]}>{doc.documentName}</Text>
+                        <Text style={[styles.documentType, { color: themeColors.text.secondary }]}>
+                          {DOCUMENT_TYPES.find((t) => t.value === doc.documentType)?.label || doc.documentType}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteDocument(doc.id, doc.documentName)}
+                      style={styles.deleteButton}
+                    >
+                      <Trash2 size={18} color={themeColors.destructive.DEFAULT} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Card>
+
+          {/* Appearance Settings */}
+          <Card style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Appearance</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>Choose your preferred theme</Text>
+              </View>
+            </View>
+
+            <View style={styles.themeOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'light' && styles.themeOptionSelected,
+                  {
+                    backgroundColor: themeMode === 'light' ? themeColors.primary.light : themeColors.card.DEFAULT,
+                    borderColor: themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                  }
+                ]}
+                onPress={() => setThemeMode('light')}
+                activeOpacity={0.7}
+              >
+                <Sun size={24} color={themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+                <Text style={[
+                  styles.themeOptionText,
+                  { color: themeMode === 'light' ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                ]}>
+                  Light
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'dark' && styles.themeOptionSelected,
+                  {
+                    backgroundColor: themeMode === 'dark' ? themeColors.primary.light : themeColors.card.DEFAULT,
+                    borderColor: themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                  }
+                ]}
+                onPress={() => setThemeMode('dark')}
+                activeOpacity={0.7}
+              >
+                <Moon size={24} color={themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+                <Text style={[
+                  styles.themeOptionText,
+                  { color: themeMode === 'dark' ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                ]}>
+                  Dark
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'auto' && styles.themeOptionSelected,
+                  {
+                    backgroundColor: themeMode === 'auto' ? themeColors.primary.light : themeColors.card.DEFAULT,
+                    borderColor: themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                  }
+                ]}
+                onPress={() => setThemeMode('auto')}
+                activeOpacity={0.7}
+              >
+                <Monitor size={24} color={themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.text.secondary} />
+                <Text style={[
+                  styles.themeOptionText,
+                  { color: themeMode === 'auto' ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                ]}>
+                  System
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+
+          {/* Account Information */}
+          <Card style={styles.card}>
+            <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
+              <View>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Account Information</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>These details cannot be changed from this page</Text>
+              </View>
+            </View>
+
+            <View style={styles.infoContainer}>
+              <View style={[styles.infoRow, { borderBottomColor: themeColors.border.light }]}>
+                <View style={styles.infoLeft}>
+                  <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT} 15` }]}>
+                    <Mail size={18} color={themeColors.primary.DEFAULT} />
+                  </View>
+                  <View style={styles.infoTextContainer}>
+                    <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Email</Text>
+                    <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={1}>
+                      {displayUser?.email || 'N/A'}
+                    </Text>
+                  </View>
+                </View>
               </View>
 
-              <Button
-                title="Save Document"
-                onPress={handleSaveDocument}
-                variant="primary"
-                loading={createDocumentMutation.isPending}
-                style={styles.modalSaveButton}
-              />
+              <View style={[styles.infoRow, { borderBottomColor: themeColors.border.light }]}>
+                <View style={styles.infoLeft}>
+                  <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT} 15` }]}>
+                    <UserIcon size={18} color={themeColors.primary.DEFAULT} />
+                  </View>
+                  <View style={styles.infoTextContainer}>
+                    <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Username</Text>
+                    <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={1}>
+                      {displayUser?.username || 'N/A'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.infoRow}>
+                <View style={styles.infoLeft}>
+                  <View style={[styles.infoIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT} 15` }]}>
+                    <Shield size={18} color={themeColors.primary.DEFAULT} />
+                  </View>
+                  <View style={styles.infoTextContainer}>
+                    <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Role</Text>
+                    <Text style={[styles.infoValue, { color: themeColors.text.primary }]}>
+                      {displayUser?.role === 'owner'
+                        ? 'Owner'
+                        : displayUser?.role === 'clerk'
+                          ? 'Clerk'
+                          : displayUser?.role === 'compliance'
+                            ? 'Compliance'
+                            : displayUser?.role || 'N/A'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
-          </View>
-        </View>
-      </Modal>
-    </ScrollView>
+          </Card>
+
+          {/* Sign Out Button */}
+          <TouchableOpacity
+            style={[
+              styles.logoutButton,
+              {
+                backgroundColor: themeColors.destructive.DEFAULT,
+                borderColor: themeColors.destructive.DEFAULT,
+                opacity: isOnline ? 1 : 0.5,
+              }
+            ]}
+            onPress={() => {
+              if (!isOnline) {
+                Alert.alert(
+                  'Offline',
+                  'You cannot sign out while offline. Please connect to the internet and try again.'
+                );
+                return;
+              }
+              logout();
+            }}
+            disabled={!isOnline}
+            activeOpacity={0.8}
+          >
+            <View style={styles.logoutButtonContent}>
+              <LogOut size={20} color="#ffffff" />
+              <Text style={styles.logoutButtonText}>
+                {isOnline ? 'Sign Out' : 'Sign Out (Online only)'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Document Form Modal */}
+          <Modal
+            visible={showDocumentForm}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowDocumentForm(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[
+                styles.modalContent,
+                {
+                  backgroundColor: themeColors.background,
+                  paddingBottom: Math.max(insets.bottom || 0, spacing[4])
+                }
+              ]}>
+                <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                  <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Add Document</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowDocumentForm(false)}
+                    style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.modalBody}>
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.label, { color: themeColors.text.primary }]}>Document Name *</Text>
+                    <Input
+                      value={documentName}
+                      onChangeText={setDocumentName}
+                      placeholder="Enter document name"
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Document Type *</Text>
+                    <FlatList
+                      data={DOCUMENT_TYPES}
+                      keyExtractor={(item) => item.value}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[
+                            styles.modalItem,
+                            {
+                              backgroundColor: documentType === item.value ? themeColors.primary.light : themeColors.card.DEFAULT,
+                              borderColor: documentType === item.value ? themeColors.primary.DEFAULT : themeColors.border.light
+                            },
+                            documentType === item.value && { borderWidth: 2 }
+                          ]}
+                          onPress={() => setDocumentType(item.value)}
+                        >
+                          <Text
+                            style={[
+                              styles.modalItemText,
+                              { color: documentType === item.value ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                            ]}
+                          >
+                            {item.label}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+
+                  <Button
+                    title="Save Document"
+                    onPress={handleSaveDocument}
+                    variant="primary"
+                    loading={createDocumentMutation.isPending}
+                    style={styles.modalSaveButton}
+                  />
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

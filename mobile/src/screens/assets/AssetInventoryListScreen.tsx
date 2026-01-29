@@ -12,6 +12,8 @@ import {
   Image,
   TextInput,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -39,6 +41,7 @@ import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { assetsService, type AssetInventory } from '../../services/assets';
 import { propertiesService } from '../../services/properties';
+import type { Property, Block } from '../../types';
 import { apiRequestJson, getAPI_URL } from '../../services/api';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
@@ -90,7 +93,7 @@ const assetCategories = [
 
 const normalizePhotoUrl = (url: string | null | undefined): string | null => {
   if (!url) return null;
-  
+
   // Replace localhost URLs with API_URL for mobile compatibility
   // On mobile devices, localhost refers to the device itself, not the server
   if (url.includes('localhost') || url.includes('127.0.0.1')) {
@@ -107,22 +110,22 @@ const normalizePhotoUrl = (url: string | null | undefined): string | null => {
       }
     }
   }
-  
+
   // If already absolute URL, return as is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
-  
+
   // If relative path starting with /, make it absolute
   if (url.startsWith('/')) {
     return `${getAPI_URL()}${url}`;
   }
-  
+
   // If it's an object path like /objects/xxx, make it absolute
   if (url.startsWith('objects/')) {
     return `${getAPI_URL()}/${url}`;
   }
-  
+
   // Otherwise, assume it's a relative path and prepend API_URL
   return `${getAPI_URL()}/${url}`;
 };
@@ -136,13 +139,13 @@ export default function AssetInventoryListScreen() {
   const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  
+
   // Get route params
   const routeParams = route.params;
   const propertyIdFromRoute = routeParams?.propertyId;
   const blockIdFromRoute = routeParams?.blockId;
   const autoOpen = routeParams?.autoOpen;
-  
+
   const [refreshing, setRefreshing] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<AssetInventory | null>(null);
@@ -212,7 +215,7 @@ export default function AssetInventoryListScreen() {
         }
         setFormData(initialFormData);
         setIsDialogOpen(true);
-        
+
         // Clear route params after opening to prevent re-opening on re-render
         if (navigation) {
           (navigation as any).setParams({ autoOpen: false });
@@ -507,11 +510,11 @@ export default function AssetInventoryListScreen() {
     return <LoadingSpinner />;
   }
 
-    return (
+  return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Fixed Header */}
-      <View style={[styles.fixedHeader, { 
-        paddingTop: Math.max(insets.top + spacing[2], spacing[6]),
+      <View style={[styles.fixedHeader, {
+        paddingTop: insets.top + spacing[2],
         backgroundColor: themeColors.card.DEFAULT,
       }]}>
         <View style={[styles.header, { backgroundColor: themeColors.card.DEFAULT }]}>
@@ -527,12 +530,13 @@ export default function AssetInventoryListScreen() {
             icon={<Plus size={16} color="#ffffff" />}
           />
         </View>
-        
+
         {/* Fixed Search Bar */}
         <View style={[
           styles.searchContainer,
           {
             borderColor: themeColors.border.DEFAULT,
+            backgroundColor: themeColors.background,
           }
         ]}>
           <Search size={16} color={themeColors.text.secondary} style={styles.searchIcon} />
@@ -648,7 +652,7 @@ export default function AssetInventoryListScreen() {
                 {searchTerm || filterCategory !== 'all' || filterCondition !== 'all' || filterLocation !== 'all'
                   ? 'Try adjusting your search or filters'
                   : 'Get started by adding your first asset'}
-            </Text>
+              </Text>
               {!searchTerm && filterCategory === 'all' && filterCondition === 'all' && filterLocation === 'all' && (
                 <Button
                   title="Add Your First Asset"
@@ -681,10 +685,10 @@ export default function AssetInventoryListScreen() {
                           asset.condition === 'excellent'
                             ? 'primary'
                             : asset.condition === 'good'
-                            ? 'secondary'
-                            : asset.condition === 'fair'
-                            ? 'outline'
-                            : 'destructive'
+                              ? 'secondary'
+                              : asset.condition === 'fair'
+                                ? 'outline'
+                                : 'destructive'
                         }
                         size="sm"
                       >
@@ -736,14 +740,14 @@ export default function AssetInventoryListScreen() {
                   }
 
                   // Add cache busting to ensure fresh images
-                  const photoUrlWithCache = firstPhoto.includes('?') 
-                    ? `${firstPhoto}&_t=${Date.now()}` 
+                  const photoUrlWithCache = firstPhoto.includes('?')
+                    ? `${firstPhoto}&_t=${Date.now()}`
                     : `${firstPhoto}?_t=${Date.now()}`;
-                  
+
                   return (
                     <View style={styles.assetPhotoContainer}>
-                      <Image 
-                        source={{ uri: photoUrlWithCache }} 
+                      <Image
+                        source={{ uri: photoUrlWithCache }}
                         style={styles.assetPhoto}
                         resizeMode="cover"
                         onError={(error) => {
@@ -784,17 +788,17 @@ export default function AssetInventoryListScreen() {
 
                   {asset.datePurchased && (() => {
                     try {
-                      const date = asset.datePurchased instanceof Date 
-                        ? asset.datePurchased 
+                      const date = asset.datePurchased instanceof Date
+                        ? asset.datePurchased
                         : new Date(asset.datePurchased);
                       if (!isNaN(date.getTime())) {
                         return (
-                    <View style={styles.assetDetailRow}>
+                          <View style={styles.assetDetailRow}>
                             <Calendar size={14} color={themeColors.text.secondary} />
                             <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]}>
                               Purchased: {format(date, 'MMM d, yyyy')}
-                      </Text>
-                    </View>
+                            </Text>
+                          </View>
                         );
                       }
                     } catch (e) {
@@ -805,17 +809,17 @@ export default function AssetInventoryListScreen() {
 
                   {asset.lastMaintenanceDate && (() => {
                     try {
-                      const date = asset.lastMaintenanceDate instanceof Date 
-                        ? asset.lastMaintenanceDate 
+                      const date = asset.lastMaintenanceDate instanceof Date
+                        ? asset.lastMaintenanceDate
                         : new Date(asset.lastMaintenanceDate);
                       if (!isNaN(date.getTime())) {
                         return (
-                    <View style={styles.assetDetailRow}>
+                          <View style={styles.assetDetailRow}>
                             <Wrench size={14} color={themeColors.text.secondary} />
                             <Text style={[styles.assetDetailText, { color: themeColors.text.secondary }]}>
                               Last Maintained: {format(date, 'MMM d, yyyy')}
-                      </Text>
-                    </View>
+                            </Text>
+                          </View>
                         );
                       }
                     } catch (e) {
@@ -865,327 +869,334 @@ export default function AssetInventoryListScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            style={styles.modalScrollView}
-            contentContainerStyle={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]}
-            showsVerticalScrollIndicator={true}
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
           >
-            {/* Basic Information */}
-            <Card style={styles.formCard}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Basic Information</Text>
-              <Input
-                label="Asset Name *"
-                value={formData.name || ''}
-                onChangeText={(value) => setFormData({ ...formData, name: value })}
-                placeholder="e.g., Refrigerator - Unit 101"
-              />
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownButton,
-                      {
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: themeColors.input,
-                      }
-                    ]}
-                    onPress={() => setShowCategoryPicker(true)}
-                  >
-                    <Text style={[
-                      styles.dropdownText,
-                      { color: formData.category ? themeColors.text.primary : themeColors.text.muted }
-                    ]}>
-                      {formData.category || 'Category'}
-                    </Text>
-                  </TouchableOpacity>
+            <ScrollView
+              style={styles.modalScrollView}
+              contentContainerStyle={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Basic Information */}
+              <Card style={styles.formCard}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Basic Information</Text>
+                <Input
+                  label="Asset Name *"
+                  value={formData.name || ''}
+                  onChangeText={(value) => setFormData({ ...formData, name: value })}
+                  placeholder="e.g., Refrigerator - Unit 101"
+                />
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: themeColors.input,
+                        }
+                      ]}
+                      onPress={() => setShowCategoryPicker(true)}
+                    >
+                      <Text style={[
+                        styles.dropdownText,
+                        { color: formData.category ? themeColors.text.primary : themeColors.text.muted }
+                      ]}>
+                        {formData.category || 'Category'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: themeColors.input,
+                        }
+                      ]}
+                      onPress={() => setShowConditionPicker(true)}
+                    >
+                      <Text style={[
+                        styles.dropdownText,
+                        { color: formData.condition ? themeColors.text.primary : themeColors.text.muted }
+                      ]}>
+                        {formData.condition ? conditionLabels[formData.condition] : 'Condition *'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.pickerHalf}>
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownButton,
-                      {
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: themeColors.input,
-                      }
-                    ]}
-                    onPress={() => setShowConditionPicker(true)}
-                  >
-                    <Text style={[
-                      styles.dropdownText,
-                      { color: formData.condition ? themeColors.text.primary : themeColors.text.muted }
-                    ]}>
-                      {formData.condition ? conditionLabels[formData.condition] : 'Condition *'}
-                    </Text>
-                  </TouchableOpacity>
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: themeColors.input,
+                        }
+                      ]}
+                      onPress={() => setShowCleanlinessPicker(true)}
+                    >
+                      <Text style={[
+                        styles.dropdownText,
+                        { color: formData.cleanliness ? themeColors.text.primary : themeColors.text.muted }
+                      ]}>
+                        {formData.cleanliness ? cleanlinessLabels[formData.cleanliness] : 'Cleanliness'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownButton,
-                      {
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: themeColors.input,
-                      }
-                    ]}
-                    onPress={() => setShowCleanlinessPicker(true)}
-                  >
-                    <Text style={[
-                      styles.dropdownText,
-                      { color: formData.cleanliness ? themeColors.text.primary : themeColors.text.muted }
-                    ]}>
-                      {formData.cleanliness ? cleanlinessLabels[formData.cleanliness] : 'Cleanliness'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <Input
-                label="Description"
-                value={formData.description || ''}
-                onChangeText={(value) => setFormData({ ...formData, description: value })}
-                placeholder="Detailed description..."
-                multiline
-                numberOfLines={3}
-              />
-            </Card>
+                <Input
+                  label="Description"
+                  value={formData.description || ''}
+                  onChangeText={(value) => setFormData({ ...formData, description: value })}
+                  placeholder="Detailed description..."
+                  multiline
+                  numberOfLines={3}
+                />
+              </Card>
 
-            {/* Location & Assignment */}
-            <Card style={styles.formCard}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Location & Assignment</Text>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownButton,
-                      {
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: themeColors.input,
-                      }
-                    ]}
-                    onPress={() => setShowPropertyPicker(true)}
-                  >
-                    <Text style={[
-                      styles.dropdownText,
-                      { color: formData.propertyId ? themeColors.text.primary : themeColors.text.muted }
-                    ]}>
-                      {formData.propertyId
-                        ? properties.find(p => p.id === formData.propertyId)?.address || 'Property'
-                        : 'Property'}
-                    </Text>
-                  </TouchableOpacity>
+              {/* Location & Assignment */}
+              <Card style={styles.formCard}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Location & Assignment</Text>
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: themeColors.input,
+                        }
+                      ]}
+                      onPress={() => setShowPropertyPicker(true)}
+                    >
+                      <Text style={[
+                        styles.dropdownText,
+                        { color: formData.propertyId ? themeColors.text.primary : themeColors.text.muted }
+                      ]}>
+                        {formData.propertyId
+                          ? properties.find(p => p.id === formData.propertyId)?.address || 'Property'
+                          : 'Property'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: themeColors.input,
+                        }
+                      ]}
+                      onPress={() => setShowBlockPicker(true)}
+                    >
+                      <Text style={[
+                        styles.dropdownText,
+                        { color: formData.blockId ? themeColors.text.primary : themeColors.text.muted }
+                      ]}>
+                        {formData.blockId
+                          ? blocks.find(b => b.id === formData.blockId)?.name || 'Block'
+                          : 'Block'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.pickerHalf}>
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownButton,
-                      {
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: themeColors.input,
-                      }
-                    ]}
-                    onPress={() => setShowBlockPicker(true)}
-                  >
-                    <Text style={[
-                      styles.dropdownText,
-                      { color: formData.blockId ? themeColors.text.primary : themeColors.text.muted }
-                    ]}>
-                      {formData.blockId
-                        ? blocks.find(b => b.id === formData.blockId)?.name || 'Block'
-                        : 'Block'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              <Input
-                label="Specific Location"
-                value={formData.location || ''}
-                onChangeText={(value) => setFormData({ ...formData, location: value })}
-                placeholder="e.g., Unit 101 - Kitchen"
-              />
-            </Card>
+                <Input
+                  label="Specific Location"
+                  value={formData.location || ''}
+                  onChangeText={(value) => setFormData({ ...formData, location: value })}
+                  placeholder="e.g., Unit 101 - Kitchen"
+                />
+              </Card>
 
-            {/* Purchase & Financial */}
-            <Card style={styles.formCard}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Purchase & Financial Information</Text>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <DatePicker
-                    label="Date Purchased"
-                    value={formData.datePurchased}
-                    onChange={(date) => setFormData({ ...formData, datePurchased: date as any })}
-                    placeholder="Select date"
-                  />
+              {/* Purchase & Financial */}
+              <Card style={styles.formCard}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Purchase & Financial Information</Text>
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <DatePicker
+                      label="Date Purchased"
+                      value={formData.datePurchased}
+                      onChange={(date) => setFormData({ ...formData, datePurchased: date as any })}
+                      placeholder="Select date"
+                    />
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Purchase Price (£)"
+                      value={formData.purchasePrice?.toString() || ''}
+                      onChangeText={(value) => setFormData({ ...formData, purchasePrice: value ? parseFloat(value) : null })}
+                      placeholder="0.00"
+                      keyboardType="numeric"
+                    />
+                  </View>
                 </View>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Purchase Price (£)"
-                    value={formData.purchasePrice?.toString() || ''}
-                    onChangeText={(value) => setFormData({ ...formData, purchasePrice: value ? parseFloat(value) : null })}
-                    placeholder="0.00"
-                    keyboardType="numeric"
-                  />
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Expected Lifespan (years)"
+                      value={formData.expectedLifespanYears?.toString() || ''}
+                      onChangeText={(value) => setFormData({ ...formData, expectedLifespanYears: value ? parseInt(value) : null })}
+                      placeholder="10"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Depreciation per Year (£)"
+                      value={formData.depreciationPerYear?.toString() || ''}
+                      onChangeText={(value) => setFormData({ ...formData, depreciationPerYear: value ? parseFloat(value) : null })}
+                      placeholder="0.00"
+                      keyboardType="numeric"
+                    />
+                  </View>
                 </View>
-              </View>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Expected Lifespan (years)"
-                    value={formData.expectedLifespanYears?.toString() || ''}
-                    onChangeText={(value) => setFormData({ ...formData, expectedLifespanYears: value ? parseInt(value) : null })}
-                    placeholder="10"
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Depreciation per Year (£)"
-                    value={formData.depreciationPerYear?.toString() || ''}
-                    onChangeText={(value) => setFormData({ ...formData, depreciationPerYear: value ? parseFloat(value) : null })}
-                    placeholder="0.00"
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-            </Card>
+              </Card>
 
-            {/* Supplier & Product */}
-            <Card style={styles.formCard}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Supplier & Product Information</Text>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Supplier"
-                    value={formData.supplier || ''}
-                    onChangeText={(value) => setFormData({ ...formData, supplier: value })}
-                    placeholder="e.g., Home Depot"
-                  />
+              {/* Supplier & Product */}
+              <Card style={styles.formCard}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Supplier & Product Information</Text>
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Supplier"
+                      value={formData.supplier || ''}
+                      onChangeText={(value) => setFormData({ ...formData, supplier: value })}
+                      placeholder="e.g., Home Depot"
+                    />
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Supplier Contact"
+                      value={formData.supplierContact || ''}
+                      onChangeText={(value) => setFormData({ ...formData, supplierContact: value })}
+                      placeholder="Phone or email"
+                    />
+                  </View>
                 </View>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Supplier Contact"
-                    value={formData.supplierContact || ''}
-                    onChangeText={(value) => setFormData({ ...formData, supplierContact: value })}
-                    placeholder="Phone or email"
-                  />
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Serial Number"
+                      value={formData.serialNumber || ''}
+                      onChangeText={(value) => setFormData({ ...formData, serialNumber: value })}
+                      placeholder="SN-123456"
+                    />
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <Input
+                      label="Model Number"
+                      value={formData.modelNumber || ''}
+                      onChangeText={(value) => setFormData({ ...formData, modelNumber: value })}
+                      placeholder="Model-XYZ"
+                    />
+                  </View>
                 </View>
-              </View>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Serial Number"
-                    value={formData.serialNumber || ''}
-                    onChangeText={(value) => setFormData({ ...formData, serialNumber: value })}
-                    placeholder="SN-123456"
-                  />
-                </View>
-                <View style={styles.pickerHalf}>
-                  <Input
-                    label="Model Number"
-                    value={formData.modelNumber || ''}
-                    onChangeText={(value) => setFormData({ ...formData, modelNumber: value })}
-                    placeholder="Model-XYZ"
-                  />
-                </View>
-              </View>
-              <DatePicker
-                label="Warranty Expiry Date"
-                value={formData.warrantyExpiryDate}
-                onChange={(date) => setFormData({ ...formData, warrantyExpiryDate: date as any })}
-                placeholder="Select date"
-              />
-            </Card>
+                <DatePicker
+                  label="Warranty Expiry Date"
+                  value={formData.warrantyExpiryDate}
+                  onChange={(date) => setFormData({ ...formData, warrantyExpiryDate: date as any })}
+                  placeholder="Select date"
+                />
+              </Card>
 
-            {/* Maintenance */}
-            <Card style={styles.formCard}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Maintenance Information</Text>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerHalf}>
-                  <DatePicker
-                    label="Last Maintenance Date"
-                    value={formData.lastMaintenanceDate}
-                    onChange={(date) => setFormData({ ...formData, lastMaintenanceDate: date as any })}
-                    placeholder="Select date"
-                  />
+              {/* Maintenance */}
+              <Card style={styles.formCard}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Maintenance Information</Text>
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerHalf}>
+                    <DatePicker
+                      label="Last Maintenance Date"
+                      value={formData.lastMaintenanceDate}
+                      onChange={(date) => setFormData({ ...formData, lastMaintenanceDate: date as any })}
+                      placeholder="Select date"
+                    />
+                  </View>
+                  <View style={styles.pickerHalf}>
+                    <DatePicker
+                      label="Next Maintenance Date"
+                      value={formData.nextMaintenanceDate}
+                      onChange={(date) => setFormData({ ...formData, nextMaintenanceDate: date as any })}
+                      placeholder="Select date"
+                    />
+                  </View>
                 </View>
-                <View style={styles.pickerHalf}>
-                  <DatePicker
-                    label="Next Maintenance Date"
-                    value={formData.nextMaintenanceDate}
-                    onChange={(date) => setFormData({ ...formData, nextMaintenanceDate: date as any })}
-                    placeholder="Select date"
-                  />
-                </View>
-              </View>
-              <Input
-                label="Maintenance Notes"
-                value={formData.maintenanceNotes || ''}
-                onChangeText={(value) => setFormData({ ...formData, maintenanceNotes: value })}
-                placeholder="Maintenance history or requirements..."
-                multiline
-                numberOfLines={3}
-              />
-            </Card>
+                <Input
+                  label="Maintenance Notes"
+                  value={formData.maintenanceNotes || ''}
+                  onChangeText={(value) => setFormData({ ...formData, maintenanceNotes: value })}
+                  placeholder="Maintenance history or requirements..."
+                  multiline
+                  numberOfLines={3}
+                />
+              </Card>
 
-            {/* Photos */}
-            <Card style={styles.formCard}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Photos</Text>
-              {uploadedPhotos.length > 0 && (
-                <View style={styles.photosGrid}>
-                  {uploadedPhotos.map((url, index) => {
-                    const photoUrl = normalizePhotoUrl(url);
-  return (
-                      <View key={index} style={styles.photoWrapper}>
-                        {photoUrl && (
-                          <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} />
-                        )}
-                        <TouchableOpacity
-                          style={styles.removePhotoButton}
-                          onPress={() => setUploadedPhotos(prev => prev.filter((_, i) => i !== index))}
-                        >
-                          <X size={14} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
+              {/* Photos */}
+              <Card style={styles.formCard}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Photos</Text>
+                {uploadedPhotos.length > 0 && (
+                  <View style={styles.photosGrid}>
+                    {uploadedPhotos.map((url, index) => {
+                      const photoUrl = normalizePhotoUrl(url);
+                      return (
+                        <View key={index} style={styles.photoWrapper}>
+                          {photoUrl && (
+                            <Image source={{ uri: photoUrl }} style={styles.photoThumbnail} />
+                          )}
+                          <TouchableOpacity
+                            style={styles.removePhotoButton}
+                            onPress={() => setUploadedPhotos(prev => prev.filter((_, i) => i !== index))}
+                          >
+                            <X size={14} color="#fff" />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                <View style={styles.photoActions}>
+                  <Button
+                    title="Pick from Library"
+                    onPress={handlePickPhoto}
+                    variant="outline"
+                    size="sm"
+                    style={styles.photoButton}
+                  />
+                  <Button
+                    title="Take Photo"
+                    onPress={handleTakePhoto}
+                    variant="outline"
+                    size="sm"
+                    style={styles.photoButton}
+                  />
                 </View>
-              )}
-              <View style={styles.photoActions}>
+              </Card>
+
+              <View style={styles.modalActions}>
                 <Button
-                  title="Pick from Library"
-                  onPress={handlePickPhoto}
+                  title="Cancel"
+                  onPress={handleCloseDialog}
                   variant="outline"
-                  size="sm"
-                  style={styles.photoButton}
+                  size="md"
+                  style={styles.modalButton}
                 />
                 <Button
-                  title="Take Photo"
-                  onPress={handleTakePhoto}
-                  variant="outline"
-                  size="sm"
-                  style={styles.photoButton}
+                  title={editingAsset ? 'Update Asset' : 'Create Asset'}
+                  onPress={handleSubmit}
+                  variant="primary"
+                  size="md"
+                  style={styles.modalButton}
+                  disabled={saveMutation.isPending}
                 />
               </View>
-            </Card>
-
-            <View style={styles.modalActions}>
-              <Button
-                title="Cancel"
-                onPress={handleCloseDialog}
-                variant="outline"
-                size="md"
-                style={styles.modalButton}
-              />
-              <Button
-                title={editingAsset ? 'Update Asset' : 'Create Asset'}
-                onPress={handleSubmit}
-                variant="primary"
-                size="md"
-                style={styles.modalButton}
-                disabled={saveMutation.isPending}
-              />
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1298,11 +1309,11 @@ export default function AssetInventoryListScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]}>
             <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Location</Text>
-      <FlatList
+            <FlatList
               data={[{ id: 'all', name: 'All Locations', type: 'property' as const }, ...locations]}
               showsVerticalScrollIndicator={true}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
                   onPress={() => {
@@ -1328,7 +1339,7 @@ export default function AssetInventoryListScreen() {
           <View style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]}>
             <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Property</Text>
             <FlatList
-              data={[{ id: '', name: 'None' }, ...properties]}
+              data={[{ id: '', name: 'None', address: '', status: 'active' } as Property, ...properties]}
               showsVerticalScrollIndicator={true}
               keyExtractor={(item) => item.id || 'none'}
               renderItem={({ item }) => (
@@ -1339,7 +1350,9 @@ export default function AssetInventoryListScreen() {
                     setShowPropertyPicker(false);
                   }}
                 >
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{item.name || item.address || 'None'}</Text>
+                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
+                    {item.id === '' ? 'None' : (item.name || item.address)}
+                  </Text>
                   {formData.propertyId === item.id && <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />}
                 </TouchableOpacity>
               )}
@@ -1422,15 +1435,19 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     borderWidth: 1,
     paddingHorizontal: spacing[3],
-    ...shadows.sm,
+    minHeight: 44,
   },
   searchIcon: {
     marginRight: spacing[2],
   },
   searchInput: {
     flex: 1,
-    height: 44,
     fontSize: typography.fontSize.base,
+  },
+  filterLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    marginBottom: spacing[2],
   },
   filterRow: {
     flexDirection: 'row',

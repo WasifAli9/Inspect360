@@ -9,19 +9,23 @@ import OfflineIndicator from './src/components/OfflineIndicator';
 import { queryClient } from './src/services/queryClient';
 import { ErrorBoundary } from './src/components/ui/ErrorBoundary';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 export default function App() {
   return (
     <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-      <AuthProvider>
-        <View style={styles.container}>
-          <AppNavigator />
-          <OfflineIndicator />
-        </View>
-      </AuthProvider>
-        </ThemeProvider>
-    </QueryClientProvider>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <AuthProvider>
+              <View style={styles.container}>
+                <AppNavigator />
+                <OfflineIndicator />
+              </View>
+            </AuthProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

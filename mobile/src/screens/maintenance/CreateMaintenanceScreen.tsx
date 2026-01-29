@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   Modal,
   ImageStyle,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -83,13 +85,13 @@ export default function CreateMaintenanceScreen() {
   });
 
   // Filter properties by block
-  const filteredProperties = formBlockFilter === 'all' 
-    ? properties 
+  const filteredProperties = formBlockFilter === 'all'
+    ? properties
     : properties.filter(p => p.blockId === formBlockFilter);
 
   // Load existing request data for edit mode - use ref to prevent re-initialization after user changes
   const initializedRef = useRef<string | null>(null);
-  
+
   // Reset ref when requestId changes (different request being edited)
   useEffect(() => {
     if (requestId) {
@@ -106,20 +108,20 @@ export default function CreateMaintenanceScreen() {
       setFormBlockFilter('all');
     }
   }, [requestId]);
-  
+
   // Load existing request data for edit mode
   useEffect(() => {
     // Only initialize if we have data, are in edit mode, and haven't already initialized for this request
     if (!existingRequest || !isEditMode || !requestId) {
       return;
     }
-    
+
     // Check if we've already initialized for this request
     if (initializedRef.current === requestId) {
       console.log('[Edit Mode] Already initialized for request:', requestId);
       return;
     }
-    
+
     console.log('[Edit Mode] Initializing form with maintenance request data:', {
       requestId,
       title: existingRequest.title,
@@ -128,25 +130,25 @@ export default function CreateMaintenanceScreen() {
       priority: existingRequest.priority,
       dueDate: existingRequest.dueDate,
     });
-    
+
     // Populate form fields
     setTitle(existingRequest.title || '');
     setDescription(existingRequest.description || '');
     setPropertyId(existingRequest.propertyId || '');
     setBlockId(existingRequest.blockId || '');
-    
+
     // Handle priority - convert 'urgent' to 'high' for UI
-    const priorityValue = existingRequest.priority === 'urgent' 
-      ? 'high' 
+    const priorityValue = existingRequest.priority === 'urgent'
+      ? 'high'
       : (existingRequest.priority === 'low' || existingRequest.priority === 'medium' || existingRequest.priority === 'high'
-        ? existingRequest.priority 
+        ? existingRequest.priority
         : 'medium');
     setPriority(priorityValue as 'low' | 'medium' | 'high');
-    
+
     // Handle due date - support both string and Date formats
     if (existingRequest.dueDate) {
       try {
-        const dateValue = typeof existingRequest.dueDate === 'string' 
+        const dateValue = typeof existingRequest.dueDate === 'string'
           ? new Date(existingRequest.dueDate)
           : existingRequest.dueDate;
         if (!isNaN(dateValue.getTime()) && isValid(dateValue)) {
@@ -162,15 +164,15 @@ export default function CreateMaintenanceScreen() {
     } else {
       setDueDate(null);
     }
-    
+
     // Set photos and AI suggestions
     setUploadedImages(existingRequest.photoUrls || []);
     setAiSuggestions(existingRequest.aiSuggestedFixes || '');
     setFormBlockFilter(existingRequest.blockId || 'all');
-    
+
     // Mark as initialized
     initializedRef.current = requestId;
-    
+
     console.log('[Edit Mode] Form fields populated successfully:', {
       title: existingRequest.title || '(empty)',
       description: existingRequest.description ? `${existingRequest.description.substring(0, 30)}...` : '(empty)',
@@ -185,39 +187,39 @@ export default function CreateMaintenanceScreen() {
 
   // Auto-populate from inspection context - use ref to track initialization per inspection
   const inspectionInitializedRef = useRef<string | null>(null);
-  
+
   useEffect(() => {
     // Only initialize from inspection context if not in edit mode
     if (isEditMode) {
       return;
     }
-    
+
     // Reset initialization if inspectionId changed
     const currentInspectionId = params?.inspectionId || 'new';
     if (inspectionInitializedRef.current !== currentInspectionId) {
       inspectionInitializedRef.current = null;
     }
-    
+
     // Skip if already initialized for this inspection
     if (inspectionInitializedRef.current === currentInspectionId) {
       return;
     }
-    
+
     let hasChanges = false;
-    
+
     // Pre-fill property and block from inspection context
     if (params?.propertyId && !propertyId) {
       setPropertyId(params.propertyId);
       hasChanges = true;
     }
-    
+
     // Set block filter if blockId is provided
     if (params?.blockId && !blockId) {
       setBlockId(params.blockId);
       setFormBlockFilter(params.blockId);
       hasChanges = true;
     }
-    
+
     // Pre-fill title, description, and photos from field context
     if (params?.fieldLabel) {
       const sectionInfo = params.sectionTitle ? ` in ${params.sectionTitle}` : '';
@@ -229,7 +231,7 @@ export default function CreateMaintenanceScreen() {
       }
       hasChanges = true;
     }
-    
+
     // Mark as initialized if we made any changes
     if (hasChanges) {
       inspectionInitializedRef.current = currentInspectionId;
@@ -291,10 +293,10 @@ export default function CreateMaintenanceScreen() {
       }
 
       // Set ACL
-      const absoluteUrl = objectPath.startsWith('http') 
-        ? objectPath 
+      const absoluteUrl = objectPath.startsWith('http')
+        ? objectPath
         : `${getAPI_URL()}${objectPath}`;
-      
+
       await fetch(`${getAPI_URL()}/api/objects/set-acl`, {
         method: 'PUT',
         credentials: 'include',
@@ -368,8 +370,8 @@ export default function CreateMaintenanceScreen() {
       setIsAnalyzing(true);
       // Use longer timeout for AI analysis (2 minutes)
       return apiRequestJson<{ suggestedFixes: string }>(
-        'POST', 
-        '/api/maintenance/analyze-image', 
+        'POST',
+        '/api/maintenance/analyze-image',
         {
           imageUrl,
           issueDescription: description,
@@ -483,7 +485,7 @@ export default function CreateMaintenanceScreen() {
   if (isLoadingRequest && isEditMode) {
     return <LoadingSpinner />;
   }
-  
+
   // Show error if request failed to load - but allow retry
   if (requestError && isEditMode) {
     console.error('[Edit Mode] Error loading maintenance request:', requestError);
@@ -525,172 +527,179 @@ export default function CreateMaintenanceScreen() {
   if (isTenant && !isEditMode) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
-        <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            {
-              paddingTop: Math.max(insets.top + 16, 32),
-              paddingBottom: Math.max(insets.bottom + 80, 32),
-            },
-          ]}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
-          {/* Step 1: Basic Form */}
-          {currentStep === 'form' && (
-            <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Report Maintenance Issue</Text>
-              <Input
-                label="What's the issue?"
-                value={title}
-                onChangeText={setTitle}
-                placeholder="e.g., Leaking faucet"
-              />
-              <View style={styles.selectContainer}>
-                <Text style={[styles.label, { color: themeColors.text.primary }]}>Which property?</Text>
-                <TouchableOpacity
-                  style={[
-                    styles.dropdownButton,
-                    {
-                      borderColor: themeColors.border.light,
-                      backgroundColor: themeColors.input,
-                    },
-                  ]}
-                  onPress={() => setShowPropertyPicker(true)}
-                >
-                  <Text style={[
-                    styles.dropdownText,
-                    { color: propertyId ? themeColors.text.primary : themeColors.text.secondary },
-                  ]}>
-                    {propertyId 
-                      ? (properties.find(p => p.id === propertyId)?.address || 
-                         properties.find(p => p.id === propertyId)?.name || 
-                         'Select your property')
-                      : 'Select your property'}
-                  </Text>
-                  <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
-                </TouchableOpacity>
-              </View>
-              <Input
-                label="Details"
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Describe the issue..."
-                multiline
-                numberOfLines={4}
-                style={styles.textArea}
-              />
-              <DatePicker
-                label="Due Date (Optional)"
-                    value={dueDate}
-                onChange={setDueDate}
-                placeholder="Select due date"
-              />
-              <Button
-                title="Next: Upload Photos"
-                onPress={handleSubmit}
-                variant="primary"
-                icon={<Upload size={16} color={themeColors.primary.foreground || '#ffffff'} />}
-              />
-            </Card>
-          )}
-
-          {/* Step 2: Image Upload */}
-          {currentStep === 'images' && (
-            <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
-              <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Upload Photos</Text>
-              <Text style={[styles.sectionSubtitle, { color: themeColors.text.secondary }]}>
-                Upload photos of the issue for AI analysis
-              </Text>
-              
-              <View style={styles.photoActions}>
-                <Button
-                  title="Pick from Library"
-                  onPress={handlePickPhoto}
-                  variant="outline"
-                  style={styles.photoButton}
+          <ScrollView
+            contentContainerStyle={[
+              styles.content,
+              {
+                paddingTop: spacing[4],
+                paddingBottom: Math.max(insets.bottom + 80, 32),
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Step 1: Basic Form */}
+            {currentStep === 'form' && (
+              <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Report Maintenance Issue</Text>
+                <Input
+                  label="What's the issue?"
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder="e.g., Leaking faucet"
                 />
-                <Button
-                  title="Take Photo"
-                  onPress={handleTakePhoto}
-                  variant="outline"
-                  style={styles.photoButton}
-                />
-              </View>
-
-              {uploadedImages.length > 0 && (
-                <View style={styles.photosGrid}>
-                  {uploadedImages.map((img, idx) => (
-                    <View key={idx} style={styles.photoWrapper}>
-                      <Image 
-                        source={{ uri: img.startsWith('http') ? img : `${getAPI_URL()}${img}` }} 
-                        style={styles.photo as ImageStyle}
-                      />
-                      <TouchableOpacity
-                        style={styles.removePhotoButton}
-                        onPress={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
-                      >
-                        <X size={16} color={themeColors.primary.foreground || '#ffffff'} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+                <View style={styles.selectContainer}>
+                  <Text style={[styles.label, { color: themeColors.text.primary }]}>Which property?</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.dropdownButton,
+                      {
+                        borderColor: themeColors.border.light,
+                        backgroundColor: themeColors.input,
+                      },
+                    ]}
+                    onPress={() => setShowPropertyPicker(true)}
+                  >
+                    <Text style={[
+                      styles.dropdownText,
+                      { color: propertyId ? themeColors.text.primary : themeColors.text.secondary },
+                    ]}>
+                      {propertyId
+                        ? (properties.find(p => p.id === propertyId)?.address ||
+                          properties.find(p => p.id === propertyId)?.name ||
+                          'Select your property')
+                        : 'Select your property'}
+                    </Text>
+                    <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
+                  </TouchableOpacity>
                 </View>
-              )}
-
-              <Text style={[styles.photoCount, { color: themeColors.text.secondary }]}>
-                {uploadedImages.length} image(s) uploaded
-              </Text>
-
-              <View style={styles.stepActions}>
-                <Button
-                  title="Back"
-                  onPress={() => setCurrentStep('form')}
-                  variant="outline"
-                  style={styles.stepButton}
+                <Input
+                  label="Details"
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Describe the issue..."
+                  multiline
+                  numberOfLines={4}
+                  style={styles.textArea}
+                />
+                <DatePicker
+                  label="Due Date (Optional)"
+                  value={dueDate}
+                  onChange={setDueDate}
+                  placeholder="Select due date"
                 />
                 <Button
-                  title={isAnalyzing ? 'Analyzing...' : 'Get AI Suggestions'}
-                  onPress={handleImageStep}
-                  disabled={isAnalyzing || uploadedImages.length === 0}
-                  variant="primary"
-                  icon={isAnalyzing ? <Loader2 size={16} color={themeColors.primary.foreground || '#ffffff'} /> : <Sparkles size={16} color={themeColors.primary.foreground || '#ffffff'} />}
-                  style={styles.stepButton}
-                />
-              </View>
-            </Card>
-          )}
-
-          {/* Step 3: AI Suggestions */}
-          {currentStep === 'suggestions' && (
-            <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
-              <View style={styles.aiHeader}>
-                <Sparkles size={24} color={themeColors.primary.DEFAULT} />
-                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>AI-Suggested Fixes</Text>
-              </View>
-              {aiSuggestions ? (
-                <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>{aiSuggestions}</Text>
-              ) : (
-                <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>
-                  AI Preventative Maintenance is disabled. You can still submit your request.
-                </Text>
-              )}
-              
-              <View style={styles.stepActions}>
-                <Button
-                  title="Back"
-                  onPress={() => setCurrentStep('images')}
-                  variant="outline"
-                  style={styles.stepButton}
-                />
-                <Button
-                  title={createMutation.isPending ? 'Submitting...' : 'Submit Request'}
+                  title="Next: Upload Photos"
                   onPress={handleSubmit}
-                  disabled={createMutation.isPending}
                   variant="primary"
-                  style={styles.stepButton}
+                  icon={<Upload size={16} color={themeColors.primary.foreground || '#ffffff'} />}
                 />
-              </View>
-            </Card>
-          )}
-        </ScrollView>
+              </Card>
+            )}
+
+            {/* Step 2: Image Upload */}
+            {currentStep === 'images' && (
+              <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+                <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Upload Photos</Text>
+                <Text style={[styles.sectionSubtitle, { color: themeColors.text.secondary }]}>
+                  Upload photos of the issue for AI analysis
+                </Text>
+
+                <View style={styles.photoActions}>
+                  <Button
+                    title="Pick from Library"
+                    onPress={handlePickPhoto}
+                    variant="outline"
+                    style={styles.photoButton}
+                  />
+                  <Button
+                    title="Take Photo"
+                    onPress={handleTakePhoto}
+                    variant="outline"
+                    style={styles.photoButton}
+                  />
+                </View>
+
+                {uploadedImages.length > 0 && (
+                  <View style={styles.photosGrid}>
+                    {uploadedImages.map((img, idx) => (
+                      <View key={idx} style={styles.photoWrapper}>
+                        <Image
+                          source={{ uri: img.startsWith('http') ? img : `${getAPI_URL()}${img}` }}
+                          style={styles.photo as ImageStyle}
+                        />
+                        <TouchableOpacity
+                          style={styles.removePhotoButton}
+                          onPress={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
+                        >
+                          <X size={16} color={themeColors.primary.foreground || '#ffffff'} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                <Text style={[styles.photoCount, { color: themeColors.text.secondary }]}>
+                  {uploadedImages.length} image(s) uploaded
+                </Text>
+
+                <View style={styles.stepActions}>
+                  <Button
+                    title="Back"
+                    onPress={() => setCurrentStep('form')}
+                    variant="outline"
+                    style={styles.stepButton}
+                  />
+                  <Button
+                    title={isAnalyzing ? 'Analyzing...' : 'Get AI Suggestions'}
+                    onPress={handleImageStep}
+                    disabled={isAnalyzing || uploadedImages.length === 0}
+                    variant="primary"
+                    icon={isAnalyzing ? <Loader2 size={16} color={themeColors.primary.foreground || '#ffffff'} /> : <Sparkles size={16} color={themeColors.primary.foreground || '#ffffff'} />}
+                    style={styles.stepButton}
+                  />
+                </View>
+              </Card>
+            )}
+
+            {/* Step 3: AI Suggestions */}
+            {currentStep === 'suggestions' && (
+              <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+                <View style={styles.aiHeader}>
+                  <Sparkles size={24} color={themeColors.primary.DEFAULT} />
+                  <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>AI-Suggested Fixes</Text>
+                </View>
+                {aiSuggestions ? (
+                  <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>{aiSuggestions}</Text>
+                ) : (
+                  <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>
+                    AI Preventative Maintenance is disabled. You can still submit your request.
+                  </Text>
+                )}
+
+                <View style={styles.stepActions}>
+                  <Button
+                    title="Back"
+                    onPress={() => setCurrentStep('images')}
+                    variant="outline"
+                    style={styles.stepButton}
+                  />
+                  <Button
+                    title={createMutation.isPending ? 'Submitting...' : 'Submit Request'}
+                    onPress={handleSubmit}
+                    disabled={createMutation.isPending}
+                    variant="primary"
+                    style={styles.stepButton}
+                  />
+                </View>
+              </Card>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
 
         {/* Block Picker Modal */}
         <Modal
@@ -838,198 +847,205 @@ export default function CreateMaintenanceScreen() {
   // Standard form for non-tenants or edit mode
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: Math.max(insets.top + 16, 32),
-            paddingBottom: Math.max(insets.bottom + 80, 32),
-          },
-        ]}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
-          <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>
-            {isEditMode ? 'Edit Maintenance Request' : 'Create Maintenance Request'}
-          </Text>
-
-          <Input
-            label="Title"
-            value={title}
-            onChangeText={setTitle}
-            placeholder="e.g., Leaking faucet"
-          />
-
-          {/* Block Selection */}
-          <View style={styles.selectContainer}>
-            <Text style={[styles.label, { color: themeColors.text.primary }]}>Block (Optional)</Text>
-            <TouchableOpacity
-              style={[
-                styles.dropdownButton,
-                {
-                  borderColor: themeColors.border.DEFAULT,
-                  backgroundColor: themeColors.input,
-                },
-              ]}
-              onPress={() => setShowBlockPicker(true)}
-            >
-              <Text style={[
-                styles.dropdownText,
-                { color: blockId ? themeColors.text.primary : themeColors.text.secondary },
-              ]}>
-                {blockId ? blocks.find(b => b.id === blockId)?.name || 'Select a block' : 'Select a block...'}
-              </Text>
-              <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Property Selection */}
-          <View style={styles.selectContainer}>
-            <Text style={[styles.label, { color: themeColors.text.primary }]}>
-              Property {blockId ? '(Optional if block selected)' : '(Optional)'}
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: spacing[4],
+              paddingBottom: Math.max(insets.bottom + 80, 32),
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Card style={[styles.card, { backgroundColor: themeColors.card.DEFAULT }]}>
+            <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>
+              {isEditMode ? 'Edit Maintenance Request' : 'Create Maintenance Request'}
             </Text>
-            <TouchableOpacity
-              style={[
-                styles.dropdownButton,
-                {
-                  borderColor: themeColors.border.light,
-                  backgroundColor: themeColors.input,
-                },
-              ]}
-              onPress={() => setShowPropertyPicker(true)}
-            >
-              <Text style={[
-                styles.dropdownText,
-                { color: propertyId ? themeColors.text.primary : themeColors.text.secondary },
-              ]}>
-                {propertyId 
-                  ? (properties.find(p => p.id === propertyId)?.address || 
-                     properties.find(p => p.id === propertyId)?.name || 
-                     'Select a property')
-                  : (blockId ? 'None (Block-level only)' : 'Select a property')}
+
+            <Input
+              label="Title"
+              value={title}
+              onChangeText={setTitle}
+              placeholder="e.g., Leaking faucet"
+            />
+
+            {/* Block Selection */}
+            <View style={styles.selectContainer}>
+              <Text style={[styles.label, { color: themeColors.text.primary }]}>Block (Optional)</Text>
+              <TouchableOpacity
+                style={[
+                  styles.dropdownButton,
+                  {
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: themeColors.input,
+                  },
+                ]}
+                onPress={() => setShowBlockPicker(true)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  { color: blockId ? themeColors.text.primary : themeColors.text.secondary },
+                ]}>
+                  {blockId ? blocks.find(b => b.id === blockId)?.name || 'Select a block' : 'Select a block...'}
+                </Text>
+                <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Property Selection */}
+            <View style={styles.selectContainer}>
+              <Text style={[styles.label, { color: themeColors.text.primary }]}>
+                Property {blockId ? '(Optional if block selected)' : '(Optional)'}
               </Text>
-              <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Priority Selection */}
-          <View style={styles.selectContainer}>
-            <Text style={[styles.label, { color: themeColors.text.primary }]}>Priority</Text>
-            <View style={styles.priorityContainer}>
-              {(['low', 'medium', 'high'] as const).map((p) => (
-                <Button
-                  key={p}
-                  title={p.charAt(0).toUpperCase() + p.slice(1)}
-                  onPress={() => setPriority(p)}
-                  variant={priority === p ? 'primary' : 'outline'}
-                  style={styles.priorityButton}
-                />
-              ))}
-            </View>
-          </View>
-
-          {/* Due Date */}
-          <DatePicker
-            label="Due Date (Optional)"
-                value={dueDate}
-            onChange={setDueDate}
-            placeholder="Select due date"
-          />
-
-          {/* Description */}
-          <Input
-            label="Description"
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Provide details..."
-            multiline
-            numberOfLines={4}
-            style={styles.textArea}
-          />
-
-          {/* Photo Upload Section */}
-          <View style={styles.photoSection}>
-            <Text style={[styles.label, { color: themeColors.text.primary }]}>Photos (Optional)</Text>
-            <View style={styles.photoActions}>
-              <Button
-                title="Pick from Library"
-                onPress={handlePickPhoto}
-                variant="outline"
-                icon={<Upload size={16} color={themeColors.text.primary} />}
-                style={styles.photoButton}
-              />
-              <Button
-                title="Take Photo"
-                onPress={handleTakePhoto}
-                variant="outline"
-                icon={<Upload size={16} color={themeColors.text.primary} />}
-                style={styles.photoButton}
-              />
+              <TouchableOpacity
+                style={[
+                  styles.dropdownButton,
+                  {
+                    borderColor: themeColors.border.light,
+                    backgroundColor: themeColors.input,
+                  },
+                ]}
+                onPress={() => setShowPropertyPicker(true)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  { color: propertyId ? themeColors.text.primary : themeColors.text.secondary },
+                ]}>
+                  {propertyId
+                    ? (properties.find(p => p.id === propertyId)?.address ||
+                      properties.find(p => p.id === propertyId)?.name ||
+                      'Select a property')
+                    : (blockId ? 'None (Block-level only)' : 'Select a property')}
+                </Text>
+                <Text style={[styles.dropdownArrow, { color: themeColors.text.secondary }]}>▼</Text>
+              </TouchableOpacity>
             </View>
 
-            {uploadedImages.length > 0 && (
-              <View style={styles.photosGrid}>
-                {uploadedImages.map((img, idx) => (
-                  <View key={idx} style={styles.photoWrapper}>
-                    <Image 
-                      source={{ uri: img.startsWith('http') ? img : `${getAPI_URL()}${img}` }} 
-                      style={styles.photo as ImageStyle}
-                    />
-                    <TouchableOpacity
-                      style={styles.removePhotoButton}
-                      onPress={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
-                    >
-                      <X size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+            {/* Priority Selection */}
+            <View style={styles.selectContainer}>
+              <Text style={[styles.label, { color: themeColors.text.primary }]}>Priority</Text>
+              <View style={styles.priorityContainer}>
+                {(['low', 'medium', 'high'] as const).map((p) => (
+                  <Button
+                    key={p}
+                    title={p.charAt(0).toUpperCase() + p.slice(1)}
+                    onPress={() => setPriority(p)}
+                    variant={priority === p ? 'primary' : 'outline'}
+                    style={styles.priorityButton}
+                  />
                 ))}
               </View>
-            )}
+            </View>
 
-            {/* AI Analysis Button */}
-            {uploadedImages.length > 0 && !aiSuggestions && (
-              <Button
-                title={isAnalyzing ? 'Analyzing...' : 'Get AI Suggestions'}
-                onPress={async () => {
-                  try {
-                    await analyzeMutation.mutateAsync({
-                      imageUrl: uploadedImages[0],
-                      description: description || title,
-                    });
-                  } catch (error) {
-                    // Error is already handled in mutation's onError
-                  }
-                }}
-                disabled={isAnalyzing}
-                variant="outline"
-                icon={isAnalyzing ? <Loader2 size={16} color={themeColors.text.primary} /> : <Sparkles size={16} color={themeColors.text.primary} />}
-                style={styles.aiButton}
-              />
-            )}
+            {/* Due Date */}
+            <DatePicker
+              label="Due Date (Optional)"
+              value={dueDate}
+              onChange={setDueDate}
+              placeholder="Select due date"
+            />
 
-            {/* AI Suggestions Display */}
-            {aiSuggestions && (
-              <Card style={[styles.aiCard, { backgroundColor: themeColors.card.DEFAULT, borderColor: themeColors.border.light }]}>
-                <View style={styles.aiHeader}>
-                  <Sparkles size={20} color={themeColors.primary.DEFAULT} />
-                  <Text style={[styles.aiTitle, { color: themeColors.text.primary }]}>AI-Suggested Fixes</Text>
+            {/* Description */}
+            <Input
+              label="Description"
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Provide details..."
+              multiline
+              numberOfLines={4}
+              style={styles.textArea}
+            />
+
+            {/* Photo Upload Section */}
+            <View style={styles.photoSection}>
+              <Text style={[styles.label, { color: themeColors.text.primary }]}>Photos (Optional)</Text>
+              <View style={styles.photoActions}>
+                <Button
+                  title="Pick from Library"
+                  onPress={handlePickPhoto}
+                  variant="outline"
+                  icon={<Upload size={16} color={themeColors.text.primary} />}
+                  style={styles.photoButton}
+                />
+                <Button
+                  title="Take Photo"
+                  onPress={handleTakePhoto}
+                  variant="outline"
+                  icon={<Upload size={16} color={themeColors.text.primary} />}
+                  style={styles.photoButton}
+                />
+              </View>
+
+              {uploadedImages.length > 0 && (
+                <View style={styles.photosGrid}>
+                  {uploadedImages.map((img, idx) => (
+                    <View key={idx} style={styles.photoWrapper}>
+                      <Image
+                        source={{ uri: img.startsWith('http') ? img : `${getAPI_URL()}${img}` }}
+                        style={styles.photo as ImageStyle}
+                      />
+                      <TouchableOpacity
+                        style={styles.removePhotoButton}
+                        onPress={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
+                      >
+                        <X size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
-                <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>{aiSuggestions}</Text>
-              </Card>
-            )}
-          </View>
+              )}
 
-          {/* Submit Button */}
-          <Button
-            title={createMutation.isPending || updateMutation.isPending
-              ? (isEditMode ? 'Updating...' : 'Creating...')
-              : (isEditMode ? 'Update Request' : 'Create Request')}
-            onPress={handleSubmit}
-            disabled={createMutation.isPending || updateMutation.isPending}
-            variant="primary"
-            loading={createMutation.isPending || updateMutation.isPending}
-          />
-        </Card>
-      </ScrollView>
+              {/* AI Analysis Button */}
+              {uploadedImages.length > 0 && !aiSuggestions && (
+                <Button
+                  title={isAnalyzing ? 'Analyzing...' : 'Get AI Suggestions'}
+                  onPress={async () => {
+                    try {
+                      await analyzeMutation.mutateAsync({
+                        imageUrl: uploadedImages[0],
+                        description: description || title,
+                      });
+                    } catch (error) {
+                      // Error is already handled in mutation's onError
+                    }
+                  }}
+                  disabled={isAnalyzing}
+                  variant="outline"
+                  icon={isAnalyzing ? <Loader2 size={16} color={themeColors.text.primary} /> : <Sparkles size={16} color={themeColors.text.primary} />}
+                  style={styles.aiButton}
+                />
+              )}
+
+              {/* AI Suggestions Display */}
+              {aiSuggestions && (
+                <Card style={[styles.aiCard, { backgroundColor: themeColors.card.DEFAULT, borderColor: themeColors.border.light }]}>
+                  <View style={styles.aiHeader}>
+                    <Sparkles size={20} color={themeColors.primary.DEFAULT} />
+                    <Text style={[styles.aiTitle, { color: themeColors.text.primary }]}>AI-Suggested Fixes</Text>
+                  </View>
+                  <Text style={[styles.aiSuggestions, { color: themeColors.text.primary }]}>{aiSuggestions}</Text>
+                </Card>
+              )}
+            </View>
+
+            {/* Submit Button */}
+            <Button
+              title={createMutation.isPending || updateMutation.isPending
+                ? (isEditMode ? 'Updating...' : 'Creating...')
+                : (isEditMode ? 'Update Request' : 'Create Request')}
+              onPress={handleSubmit}
+              disabled={createMutation.isPending || updateMutation.isPending}
+              variant="primary"
+              loading={createMutation.isPending || updateMutation.isPending}
+            />
+          </Card>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Block Picker Modal */}
       <Modal

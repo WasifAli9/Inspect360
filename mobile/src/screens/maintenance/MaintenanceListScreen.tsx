@@ -194,13 +194,13 @@ export default function MaintenanceListScreen() {
         const blockName = r.block?.name?.toLowerCase() || '';
         const status = r.status?.toLowerCase() || '';
         const priority = r.priority?.toLowerCase() || '';
-        
+
         return title.includes(searchLower) ||
-               description.includes(searchLower) ||
-               propertyName.includes(searchLower) ||
-               blockName.includes(searchLower) ||
-               status.includes(searchLower) ||
-               priority.includes(searchLower);
+          description.includes(searchLower) ||
+          propertyName.includes(searchLower) ||
+          blockName.includes(searchLower) ||
+          status.includes(searchLower) ||
+          priority.includes(searchLower);
       });
     }
 
@@ -244,7 +244,7 @@ export default function MaintenanceListScreen() {
 
   const handleSubmitWorkOrder = () => {
     if (!selectedRequestForWorkOrder) return;
-    
+
     if (!workOrderTeamId && !workOrderContractorId) {
       Alert.alert('Error', 'Please select either a team or contractor');
       return;
@@ -519,8 +519,8 @@ export default function MaintenanceListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Fixed Header */}
-      <View style={[styles.fixedHeader, { 
-        paddingTop: Math.max(insets.top + spacing[2], spacing[6]),
+      <View style={[styles.fixedHeader, {
+        paddingTop: insets.top + spacing[2],
         backgroundColor: themeColors.card.DEFAULT,
       }]}>
         <View style={styles.headerContent}>
@@ -537,7 +537,7 @@ export default function MaintenanceListScreen() {
             />
           </View>
         </View>
-        
+
         {/* Fixed Search Bar */}
         {activeTab === 'requests' && user?.role !== 'tenant' && (
           <View style={[
@@ -573,85 +573,85 @@ export default function MaintenanceListScreen() {
           {/* Filters */}
           <View style={[styles.filtersContainer, { backgroundColor: themeColors.background }]}>
             <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Filter by:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                {
-                  borderColor: themeColors.border.DEFAULT,
-                  backgroundColor: selectedStatus !== 'all' ? themeColors.primary.light : themeColors.background,
-                },
-                selectedStatus !== 'all' && { borderColor: themeColors.primary.DEFAULT }
-              ]}
-              onPress={() => setShowStatusFilter(true)}
-            >
-              <Text style={[
-                styles.filterChipText,
-                { color: selectedStatus !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-              ]}>
-                Status: {selectedStatus === 'all' ? 'All' : selectedStatus === 'in_progress' ? 'In Progress' : selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                {
-                  borderColor: themeColors.border.DEFAULT,
-                  backgroundColor: filterBlock !== 'all' ? themeColors.primary.light : themeColors.background,
-                },
-                filterBlock !== 'all' && { borderColor: themeColors.primary.DEFAULT }
-              ]}
-              onPress={() => setShowBlockFilter(true)}
-            >
-              <Text style={[
-                styles.filterChipText,
-                { color: filterBlock !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-              ]}>
-                Block: {filterBlock !== 'all' ? blocks.find(b => b.id === filterBlock)?.name || 'All' : 'All'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                {
-                  borderColor: themeColors.border.DEFAULT,
-                  backgroundColor: filterProperty !== 'all' ? themeColors.primary.light : themeColors.background,
-                },
-                filterProperty !== 'all' && { borderColor: themeColors.primary.DEFAULT }
-              ]}
-              onPress={() => setShowPropertyFilter(true)}
-            >
-              <Text style={[
-                styles.filterChipText,
-                { color: filterProperty !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-              ]}>
-                Property: {filterProperty !== 'all' ? properties.find(p => p.id === filterProperty)?.name || 'All' : 'All'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                {
-                  borderColor: themeColors.border.DEFAULT,
-                  backgroundColor: filterPriority !== 'all' ? themeColors.primary.light : themeColors.background,
-                },
-                filterPriority !== 'all' && { borderColor: themeColors.primary.DEFAULT }
-              ]}
-              onPress={() => setShowPriorityFilter(true)}
-            >
-              <Text style={[
-                styles.filterChipText,
-                { color: filterPriority !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-              ]}>
-                Priority: {filterPriority === 'all' ? 'All' : filterPriority.charAt(0).toUpperCase() + filterPriority.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  {
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: selectedStatus !== 'all' ? themeColors.primary.light : themeColors.background,
+                  },
+                  selectedStatus !== 'all' && { borderColor: themeColors.primary.DEFAULT }
+                ]}
+                onPress={() => setShowStatusFilter(true)}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  { color: selectedStatus !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+                ]}>
+                  Status: {selectedStatus === 'all' ? 'All' : selectedStatus === 'in_progress' ? 'In Progress' : selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  {
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: filterBlock !== 'all' ? themeColors.primary.light : themeColors.background,
+                  },
+                  filterBlock !== 'all' && { borderColor: themeColors.primary.DEFAULT }
+                ]}
+                onPress={() => setShowBlockFilter(true)}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  { color: filterBlock !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+                ]}>
+                  Block: {filterBlock !== 'all' ? blocks.find(b => b.id === filterBlock)?.name || 'All' : 'All'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  {
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: filterProperty !== 'all' ? themeColors.primary.light : themeColors.background,
+                  },
+                  filterProperty !== 'all' && { borderColor: themeColors.primary.DEFAULT }
+                ]}
+                onPress={() => setShowPropertyFilter(true)}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  { color: filterProperty !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+                ]}>
+                  Property: {filterProperty !== 'all' ? properties.find(p => p.id === filterProperty)?.name || 'All' : 'All'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  {
+                    borderColor: themeColors.border.DEFAULT,
+                    backgroundColor: filterPriority !== 'all' ? themeColors.primary.light : themeColors.background,
+                  },
+                  filterPriority !== 'all' && { borderColor: themeColors.primary.DEFAULT }
+                ]}
+                onPress={() => setShowPriorityFilter(true)}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  { color: filterPriority !== 'all' ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+                ]}>
+                  Priority: {filterPriority === 'all' ? 'All' : filterPriority.charAt(0).toUpperCase() + filterPriority.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-          
+
           {/* Content List */}
           {filteredRequests.length === 0 ? (
             <EmptyState
@@ -709,15 +709,15 @@ export default function MaintenanceListScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[
-            styles.modalContent, 
-            { 
+            styles.modalContent,
+            {
               backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
             }
           ]}>
             <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
               <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Status</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setShowStatusFilter(false)}
                 style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
@@ -732,7 +732,7 @@ export default function MaintenanceListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    { 
+                    {
                       backgroundColor: selectedStatus === item ? themeColors.primary.light : themeColors.card.DEFAULT,
                       borderColor: selectedStatus === item ? themeColors.primary.DEFAULT : 'transparent',
                       borderWidth: selectedStatus === item ? 1 : 0,
@@ -770,15 +770,15 @@ export default function MaintenanceListScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[
-            styles.modalContent, 
-            { 
+            styles.modalContent,
+            {
               backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
             }
           ]}>
             <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
               <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Block</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setShowBlockFilter(false)}
                 style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
@@ -793,7 +793,7 @@ export default function MaintenanceListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    { 
+                    {
                       backgroundColor: filterBlock === item.id ? themeColors.primary.light : themeColors.card.DEFAULT,
                       borderColor: filterBlock === item.id ? themeColors.primary.DEFAULT : 'transparent',
                       borderWidth: filterBlock === item.id ? 1 : 0,
@@ -831,15 +831,15 @@ export default function MaintenanceListScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[
-            styles.modalContent, 
-            { 
+            styles.modalContent,
+            {
               backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
             }
           ]}>
             <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
               <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Property</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setShowPropertyFilter(false)}
                 style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
@@ -854,7 +854,7 @@ export default function MaintenanceListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    { 
+                    {
                       backgroundColor: filterProperty === item.id ? themeColors.primary.light : themeColors.card.DEFAULT,
                       borderColor: filterProperty === item.id ? themeColors.primary.DEFAULT : 'transparent',
                       borderWidth: filterProperty === item.id ? 1 : 0,
@@ -892,15 +892,15 @@ export default function MaintenanceListScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[
-            styles.modalContent, 
-            { 
+            styles.modalContent,
+            {
               backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
+              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
             }
           ]}>
             <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
               <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Priority</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setShowPriorityFilter(false)}
                 style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
                 activeOpacity={0.7}
@@ -915,7 +915,7 @@ export default function MaintenanceListScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    { 
+                    {
                       backgroundColor: filterPriority === item ? themeColors.primary.light : themeColors.card.DEFAULT,
                       borderColor: filterPriority === item ? themeColors.primary.DEFAULT : 'transparent',
                       borderWidth: filterPriority === item ? 1 : 0,

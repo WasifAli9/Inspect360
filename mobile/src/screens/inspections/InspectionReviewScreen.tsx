@@ -161,12 +161,12 @@ export default function InspectionReviewScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={[
           styles.content,
-          { 
-            paddingTop: Math.max(insets.top + spacing[4], spacing[8]),
-            paddingBottom: Math.max(insets.bottom + 80, spacing[8]) 
+          {
+            paddingTop: spacing[4],
+            paddingBottom: Math.max(insets.bottom + 80, spacing[8])
           }
         ]}
       >
@@ -204,8 +204,8 @@ export default function InspectionReviewScreen() {
                   'This action cannot be undone. This will permanently delete the inspection and all associated data.',
                   [
                     { text: 'Cancel', style: 'cancel' },
-                    { 
-                      text: 'Delete', 
+                    {
+                      text: 'Delete',
                       style: 'destructive',
                       onPress: () => {
                         // TODO: Implement delete functionality
@@ -309,7 +309,7 @@ export default function InspectionReviewScreen() {
                     Alert.alert('Error', 'Inspection data not loaded yet');
                     return;
                   }
-                  
+
                   // Navigate to Asset Inventory with auto-open and pre-filled property/block
                   // Navigate from RootStack -> Main -> Assets -> AssetInventoryList
                   try {
@@ -407,8 +407,8 @@ export default function InspectionReviewScreen() {
                       {item.photoUrl && (
                         <View style={styles.itemPhotoContainer}>
                           <Image
-                            source={{ 
-                              uri: item.photoUrl.startsWith('/objects/') 
+                            source={{
+                              uri: item.photoUrl.startsWith('/objects/')
                                 ? `${getAPI_URL()}${item.photoUrl}`
                                 : `${getAPI_URL()}/objects/${item.photoUrl}`
                             }}
@@ -417,13 +417,13 @@ export default function InspectionReviewScreen() {
                           />
                         </View>
                       )}
-                      
+
                       {item.notes && (
                         <View style={styles.itemNotesContainer}>
                           <Text style={styles.itemNotes}>{item.notes}</Text>
                         </View>
                       )}
-                      
+
                       {item.aiAnalysis && (
                         <View style={styles.itemAiContainer}>
                           <View style={styles.itemAiHeader}>

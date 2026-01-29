@@ -12,16 +12,16 @@ import {
   TextInput,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { 
-  MapPin, 
-  Calendar, 
-  User, 
-  Play, 
-  FileText, 
+import {
+  MapPin,
+  Calendar,
+  User,
+  Play,
+  FileText,
   Copy as CopyIcon,
   Filter,
   CheckCircle2,
@@ -87,38 +87,38 @@ const getStatusBadge = (status: string, themeColors?: any) => {
   if (themeColors && typeof themeColors === 'object' && themeColors !== null) {
     safeThemeColors = themeColors;
   }
-  
+
   try {
-  switch (status) {
-    case 'in_progress':
-      return (
-        <Badge variant="warning" size="sm" style={styles.statusBadge}>
-          In Progress
-        </Badge>
-      );
-    case 'completed':
-      return (
-        <Badge variant="primary" size="sm" style={styles.statusBadge}>
-          Completed
-        </Badge>
-      );
-    case 'scheduled':
-      return (
-        <Badge 
-          variant="outline" 
-          size="sm" 
+    switch (status) {
+      case 'in_progress':
+        return (
+          <Badge variant="warning" size="sm" style={styles.statusBadge}>
+            In Progress
+          </Badge>
+        );
+      case 'completed':
+        return (
+          <Badge variant="primary" size="sm" style={styles.statusBadge}>
+            Completed
+          </Badge>
+        );
+      case 'scheduled':
+        return (
+          <Badge
+            variant="outline"
+            size="sm"
             style={{ ...styles.statusBadge, borderColor: (safeThemeColors?.primary?.DEFAULT || colors.primary.DEFAULT), borderWidth: 1 }}
-        >
+          >
             <Text style={{ color: (safeThemeColors?.primary?.DEFAULT || colors.primary.DEFAULT), fontSize: 10 }}>Scheduled</Text>
-        </Badge>
-      );
-    case 'draft':
-      return (
-        <Badge variant="outline" size="sm" style={styles.statusBadge}>
+          </Badge>
+        );
+      case 'draft':
+        return (
+          <Badge variant="outline" size="sm" style={styles.statusBadge}>
             <Text style={{ color: (safeThemeColors?.text?.secondary || colors.text.secondary), fontSize: 10 }}>Draft</Text>
-        </Badge>
-      );
-    default:
+          </Badge>
+        );
+      default:
         return (
           <Badge variant="outline" size="sm" style={styles.statusBadge}>
             <Text style={{ color: (safeThemeColors?.text?.secondary || colors.text.secondary), fontSize: 10 }}>{status}</Text>
@@ -128,11 +128,11 @@ const getStatusBadge = (status: string, themeColors?: any) => {
   } catch (error) {
     // Fallback in case of any errors - return a simple badge
     console.warn('Error in getStatusBadge:', error);
-      return (
-        <Badge variant="outline" size="sm" style={styles.statusBadge}>
-          <Text style={{ color: colors.text.secondary, fontSize: 10 }}>{status}</Text>
-        </Badge>
-      );
+    return (
+      <Badge variant="outline" size="sm" style={styles.statusBadge}>
+        <Text style={{ color: colors.text.secondary, fontSize: 10 }}>{status}</Text>
+      </Badge>
+    );
   }
 };
 
@@ -200,12 +200,12 @@ const STATUS_OPTIONS = [
 export default function InspectionsListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
-  
+
   // Get theme colors with fallback - hooks must be called unconditionally
   const theme = useTheme();
   // Ensure themeColors is always defined - use default colors if theme not available
   const themeColors = (theme && theme.colors) ? theme.colors : colors;
-  
+
   const { isAuthenticated, user } = useAuth();
   const isOnline = useOnlineStatus();
   const [refreshing, setRefreshing] = useState(false);
@@ -217,12 +217,12 @@ export default function InspectionsListScreen() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterOverdue, setFilterOverdue] = useState(false);
   const [filterDueSoon, setFilterDueSoon] = useState(false);
-  
+
   // Filter modal states
   const [showBlockFilter, setShowBlockFilter] = useState(false);
   const [showPropertyFilter, setShowPropertyFilter] = useState(false);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
-  
+
   // Copy inspection modal state
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [inspectionToCopy, setInspectionToCopy] = useState<Inspection | null>(null);
@@ -263,12 +263,12 @@ export default function InspectionsListScreen() {
           try {
             const templateData = JSON.parse(local.template_snapshot_json);
             const metadata = templateData._metadata || {};
-            
+
             return {
-        id: local.id,
-        type: local.type,
-        status: local.status,
-        scheduledDate: local.scheduled_date || undefined,
+              id: local.id,
+              type: local.type,
+              status: local.status,
+              scheduledDate: local.scheduled_date || undefined,
               property: metadata.property || undefined,
               block: metadata.block || undefined,
               clerk: metadata.clerk || undefined,
@@ -311,26 +311,26 @@ export default function InspectionsListScreen() {
     queryKey: ['/api/inspections/my'],
     queryFn: async () => {
       const inspections = await inspectionsService.getMyInspections();
-      
+
       // Always save ALL inspection types to local DB (both online and offline scenarios)
       // No type filtering - all types are saved for offline access
-        try {
-          await localDatabase.initialize();
+      try {
+        await localDatabase.initialize();
         for (const inspection of inspections) {
-            try {
-              // Save inspection regardless of type (check_in, check_out, routine, maintenance, etc.)
-              await localDatabase.saveInspection(inspection);
-            } catch (saveError) {
-              console.error('[InspectionsList] Failed to save inspection to local DB:', saveError);
-              // Continue with other inspections even if one fails
-            }
+          try {
+            // Save inspection regardless of type (check_in, check_out, routine, maintenance, etc.)
+            await localDatabase.saveInspection(inspection);
+          } catch (saveError) {
+            console.error('[InspectionsList] Failed to save inspection to local DB:', saveError);
+            // Continue with other inspections even if one fails
           }
+        }
         // After saving, refetch local inspections to update the UI
         queryClient.invalidateQueries({ queryKey: ['local-inspections'] });
-        } catch (error) {
-          console.error('[InspectionsList] Failed to initialize or save to local DB:', error);
-        }
-      
+      } catch (error) {
+        console.error('[InspectionsList] Failed to initialize or save to local DB:', error);
+      }
+
       return inspections;
     },
     enabled: isOnline && isAuthenticated, // Only fetch when online AND authenticated
@@ -347,7 +347,7 @@ export default function InspectionsListScreen() {
 
   // Load sync statuses for all inspections
   const [syncStatuses, setSyncStatuses] = React.useState<Record<string, { status: 'synced' | 'pending' | 'conflict'; pendingCount: number }>>({});
-  
+
   React.useEffect(() => {
     const loadSyncStatuses = async () => {
       const statuses: Record<string, { status: 'synced' | 'pending' | 'conflict'; pendingCount: number }> = {};
@@ -438,12 +438,12 @@ export default function InspectionsListScreen() {
         const type = i.type?.toLowerCase() || '';
         const status = i.status?.toLowerCase() || '';
         const propertyAddress = i.property?.address?.toLowerCase() || '';
-        
+
         return propertyName.includes(searchLower) ||
-               blockName.includes(searchLower) ||
-               type.includes(searchLower) ||
-               status.includes(searchLower) ||
-               propertyAddress.includes(searchLower);
+          blockName.includes(searchLower) ||
+          type.includes(searchLower) ||
+          status.includes(searchLower) ||
+          propertyAddress.includes(searchLower);
       });
     }
 
@@ -493,35 +493,35 @@ export default function InspectionsListScreen() {
     try {
       // Always refetch local inspections
       await refetchLocal();
-    
+
       // If online, also refetch from server and sync
-    if (isOnline) {
-      try {
-        setIsSyncing(true);
-        const result = await syncManager.startSync();
-        const count = await syncManager.getPendingCount();
-        setPendingCount(count);
-        
-        if (result.success > 0) {
-          // Refresh inspections after successful sync
+      if (isOnline) {
+        try {
+          setIsSyncing(true);
+          const result = await syncManager.startSync();
+          const count = await syncManager.getPendingCount();
+          setPendingCount(count);
+
+          if (result.success > 0) {
+            // Refresh inspections after successful sync
             await refetchServer();
             await refetchLocal();
           } else {
             // Still refetch server data even if sync had no pending items
             await refetchServer();
-        }
+          }
         } catch (syncError) {
           console.error('[InspectionsList] Sync error during refresh:', syncError);
           // Still try to refetch server data
           await refetchServer();
-      } finally {
-        setIsSyncing(false);
+        } finally {
+          setIsSyncing(false);
+        }
       }
-    }
     } catch (error) {
       console.error('[InspectionsList] Refresh error:', error);
     } finally {
-    setRefreshing(false);
+      setRefreshing(false);
     }
   };
 
@@ -558,8 +558,8 @@ export default function InspectionsListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Fixed Header */}
-      <View style={[styles.fixedHeader, { 
-        paddingTop: Math.max(insets.top + spacing[2], spacing[6]),
+      <View style={[styles.fixedHeader, {
+        paddingTop: insets.top + spacing[2],
         backgroundColor: themeColors.card.DEFAULT,
       }]}>
         <View style={styles.pageHeader}>
@@ -568,7 +568,7 @@ export default function InspectionsListScreen() {
             <Text style={[styles.subtitle, { color: themeColors.text.secondary }]}>Manage and conduct property inspections</Text>
           </View>
         </View>
-        
+
         {/* Fixed Search Bar */}
         <View style={[
           styles.searchContainer,
@@ -588,538 +588,538 @@ export default function InspectionsListScreen() {
       </View>
 
       {/* Scrollable Content */}
-    <ScrollView
+      <ScrollView
         style={styles.scrollView}
-      contentContainerStyle={[
-        styles.contentContainer,
-        { 
-          paddingBottom: Math.max(insets.bottom + 80, spacing[8]), // Tab bar height (60) + safe area + extra padding
-        },
-      ]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-    >
-      {/* Offline/Sync Status Banner */}
-      {!isOnline && (
+        contentContainerStyle={[
+          styles.contentContainer,
+          {
+            paddingBottom: Math.max(insets.bottom + 80, spacing[8]), // Tab bar height (60) + safe area + extra padding
+          },
+        ]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+        {/* Offline/Sync Status Banner */}
+        {!isOnline && (
           <Card style={{
             ...styles.offlineBanner,
             backgroundColor: themeColors.warning + '15',
             borderColor: themeColors.warning + '40',
           }}>
-          <View style={styles.offlineBannerContent}>
+            <View style={styles.offlineBannerContent}>
               <WifiOff size={16} color={themeColors.warning} />
-            <View style={styles.offlineBannerTextContainer}>
+              <View style={styles.offlineBannerTextContainer}>
                 <Text style={[styles.offlineBannerText, { color: themeColors.warning }]}>Working Offline</Text>
                 <Text style={[styles.offlineBannerDescription, { color: themeColors.text.secondary }]}>
-                You can edit existing inspections (add photos, notes, conditions). Creating new inspections or completing inspections requires internet connection.
-              </Text>
-              {pendingCount > 0 && (
-                  <Text style={[styles.offlineBannerSubtext, { color: themeColors.text.muted }]}>
-                  {pendingCount} item{pendingCount !== 1 ? 's' : ''} pending sync
+                  You can edit existing inspections (add photos, notes, conditions). Creating new inspections or completing inspections requires internet connection.
                 </Text>
-              )}
+                {pendingCount > 0 && (
+                  <Text style={[styles.offlineBannerSubtext, { color: themeColors.text.muted }]}>
+                    {pendingCount} item{pendingCount !== 1 ? 's' : ''} pending sync
+                  </Text>
+                )}
+              </View>
             </View>
-          </View>
-        </Card>
-      )}
+          </Card>
+        )}
 
         {/* Auto-sync is handled by useOfflineSync hook - no manual sync button needed */}
         {isOnline && pendingCount > 0 && isSyncing && (
-        <Card style={styles.syncBanner}>
-          <View style={styles.syncBannerContent}>
+          <Card style={styles.syncBanner}>
+            <View style={styles.syncBannerContent}>
               <Cloud size={16} color={themeColors.primary.DEFAULT} />
               <Text style={[styles.syncBannerText, { color: themeColors.text.primary }]}>
                 Syncing {pendingCount} item{pendingCount !== 1 ? 's' : ''}...
-            </Text>
-          </View>
-        </Card>
-      )}
+              </Text>
+            </View>
+          </Card>
+        )}
 
         {/* Filters */}
-      <View style={styles.filters}>
-        <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Filter by:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
-          <TouchableOpacity
-            style={[
-              styles.filterChip, 
-              { 
-                borderColor: themeColors.border.DEFAULT,
-                backgroundColor: filterBlockId ? themeColors.primary.light : themeColors.background 
-              },
-              filterBlockId && { borderColor: themeColors.primary.DEFAULT }
-            ]}
-            onPress={() => setShowBlockFilter(true)}
-          >
-            <Text style={[
-              styles.filterChipText, 
-              { color: filterBlockId ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-            ]}>
-              Block: {selectedBlock?.name || 'All'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.filterChip, 
-              { 
-                borderColor: themeColors.border.DEFAULT,
-                backgroundColor: filterPropertyId ? themeColors.primary.light : themeColors.background 
-              },
-              filterPropertyId && { borderColor: themeColors.primary.DEFAULT }
-            ]}
-            onPress={() => setShowPropertyFilter(true)}
-          >
-            <Text style={[
-              styles.filterChipText, 
-              { color: filterPropertyId ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-            ]}>
-              Property: {selectedProperty?.name || 'All'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.filterChip, 
-              { 
-                borderColor: themeColors.border.DEFAULT,
-                backgroundColor: filterStatus ? themeColors.primary.light : themeColors.background 
-              },
-              filterStatus && { borderColor: themeColors.primary.DEFAULT }
-            ]}
-            onPress={() => setShowStatusFilter(true)}
-          >
-            <Text style={[
-              styles.filterChipText, 
-              { color: filterStatus ? themeColors.primary.DEFAULT : themeColors.text.secondary }
-            ]}>
-              Status: {selectedStatusLabel}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-
-      {/* Block Filter Modal */}
-      <Modal
-        visible={showBlockFilter}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowBlockFilter(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[
-            styles.modalContent, 
-            { 
-              backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
-            }
-          ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Block</Text>
-              <TouchableOpacity 
-                onPress={() => setShowBlockFilter(false)}
-                style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-      <FlatList
-              data={[{ id: '', name: 'All Blocks' }, ...blocks]}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalItem,
-                    { 
-                      backgroundColor: filterBlockId === item.id ? themeColors.primary.light : themeColors.card.DEFAULT 
-                    },
-                    filterBlockId === item.id && styles.modalItemSelected,
-                  ]}
-                  onPress={() => handleBlockFilterChange(item.id)}
-                >
-                  <Text
-                    style={[
-                      styles.modalItemText,
-                      { color: filterBlockId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
-                    ]}
-                  >
-                    {item.name}
-                  </Text>
-                  {filterBlockId === item.id && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
+        <View style={styles.filters}>
+          <Text style={[styles.filterLabel, { color: themeColors.text.primary }]}>Filter by:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow}>
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                {
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: filterBlockId ? themeColors.primary.light : themeColors.background
+                },
+                filterBlockId && { borderColor: themeColors.primary.DEFAULT }
+              ]}
+              onPress={() => setShowBlockFilter(true)}
+            >
+              <Text style={[
+                styles.filterChipText,
+                { color: filterBlockId ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+              ]}>
+                Block: {selectedBlock?.name || 'All'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                {
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: filterPropertyId ? themeColors.primary.light : themeColors.background
+                },
+                filterPropertyId && { borderColor: themeColors.primary.DEFAULT }
+              ]}
+              onPress={() => setShowPropertyFilter(true)}
+            >
+              <Text style={[
+                styles.filterChipText,
+                { color: filterPropertyId ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+              ]}>
+                Property: {selectedProperty?.name || 'All'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                {
+                  borderColor: themeColors.border.DEFAULT,
+                  backgroundColor: filterStatus ? themeColors.primary.light : themeColors.background
+                },
+                filterStatus && { borderColor: themeColors.primary.DEFAULT }
+              ]}
+              onPress={() => setShowStatusFilter(true)}
+            >
+              <Text style={[
+                styles.filterChipText,
+                { color: filterStatus ? themeColors.primary.DEFAULT : themeColors.text.secondary }
+              ]}>
+                Status: {selectedStatusLabel}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
-      </Modal>
 
-      {/* Property Filter Modal */}
-      <Modal
-        visible={showPropertyFilter}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowPropertyFilter(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[
-            styles.modalContent, 
-            { 
-              backgroundColor: themeColors.card.DEFAULT,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
-            }
-          ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Property</Text>
-              <TouchableOpacity 
-                onPress={() => setShowPropertyFilter(false)}
-                style={styles.modalCloseButton}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={[{ id: '', name: 'All Properties' }, ...filteredProperties]}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: spacing[2] }}
-              renderItem={({ item }) => (
+        {/* Block Filter Modal */}
+        <Modal
+          visible={showBlockFilter}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowBlockFilter(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[
+              styles.modalContent,
+              {
+                backgroundColor: themeColors.background,
+                paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
+              }
+            ]}>
+              <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Block</Text>
                 <TouchableOpacity
-                  style={[
-                    styles.modalItem,
-                    { 
-                      backgroundColor: filterPropertyId === item.id ? themeColors.primary.light : themeColors.card.DEFAULT 
-                    },
-                    filterPropertyId === item.id && { borderColor: themeColors.primary.DEFAULT, borderWidth: 2 }
-                  ]}
-                  onPress={() => {
-                    setFilterPropertyId(item.id);
-                    setShowPropertyFilter(false);
-                  }}
+                  onPress={() => setShowBlockFilter(false)}
+                  style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
+                  activeOpacity={0.7}
                 >
-                  <Text
-                    style={[
-                      styles.modalItemText,
-                      { color: filterPropertyId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
-                    ]}
-                  >
-                    {item.name}
-                  </Text>
-                  {filterPropertyId === item.id && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
+                  <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
                 </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Status Filter Modal */}
-      <Modal
-        visible={showStatusFilter}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowStatusFilter(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[
-            styles.modalContent, 
-            { 
-              backgroundColor: themeColors.background,
-              paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4] 
-            }
-          ]}>
-            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Status</Text>
-              <TouchableOpacity 
-                onPress={() => setShowStatusFilter(false)}
-                style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
-              </TouchableOpacity>
-          </View>
-            <FlatList
-              data={STATUS_OPTIONS}
-              keyExtractor={(item) => item.value}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: spacing[2] }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalItem,
-                    { 
-                      backgroundColor: filterStatus === item.value ? themeColors.primary.light : themeColors.card.DEFAULT,
-                      borderColor: filterStatus === item.value ? themeColors.primary.DEFAULT : themeColors.border.light,
-                      borderWidth: filterStatus === item.value ? 2 : 1,
-                    },
-                  ]}
-                  onPress={() => {
-                    setFilterStatus(item.value);
-                    setShowStatusFilter(false);
-                  }}
-                >
-                  <Text
+              </View>
+              <FlatList
+                data={[{ id: '', name: 'All Blocks' }, ...blocks]}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
                     style={[
-                      styles.modalItemText,
-                      { color: filterStatus === item.value ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                      styles.modalItem,
+                      {
+                        backgroundColor: filterBlockId === item.id ? themeColors.primary.light : themeColors.card.DEFAULT
+                      },
+                      filterBlockId === item.id && styles.modalItemSelected,
                     ]}
+                    onPress={() => handleBlockFilterChange(item.id)}
                   >
-                    {item.label}
-                  </Text>
-                  {filterStatus === item.value && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
-                </TouchableOpacity>
-        )}
-      />
-    </View>
-        </View>
-      </Modal>
-
-      {/* Inspections List */}
-      {filteredInspections.length === 0 ? (
-        <Card style={styles.emptyCard}>
-          <EmptyState
-            title={effectiveInspections.length === 0 ? 'No inspections yet' : 'No inspections match your filters'}
-            message={
-              effectiveInspections.length === 0
-                ? 'Create your first inspection to get started'
-                : (searchTerm || filterBlockId || filterPropertyId || filterStatus || filterOverdue || filterDueSoon)
-                  ? 'Try adjusting your search or filters'
-                  : 'Try adjusting your filters'
-            }
-          />
-        </Card>
-      ) : (
-        <View style={styles.inspectionsGrid}>
-          {filteredInspections.map((inspection: Inspection) => {
-            const syncStatus = syncStatuses[inspection.id] || { status: 'synced' as const, pendingCount: 0 };
-            
-            return (
-              <Card key={inspection.id} style={styles.inspectionCard} variant="elevated">
-                <View style={styles.cardHeader}>
-                  <View style={styles.cardHeaderLeft}>
-                    <Text style={[styles.propertyName, { color: themeColors.text.primary }]}>
-                      {inspection.property?.name || inspection.block?.name || 'Unknown Property'}
+                    <Text
+                      style={[
+                        styles.modalItemText,
+                        { color: filterBlockId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                      ]}
+                    >
+                      {item.name}
                     </Text>
-                    <View style={styles.badgeRow}>
-                      {getStatusBadge(inspection.status, themeColors)}
-                      {getTenantApprovalBadge(inspection)}
-                      {syncStatus.status === 'pending' && syncStatus.pendingCount > 0 && (
-                        <Badge variant="warning" size="sm" style={styles.statusBadge}>
-                          Pending ({syncStatus.pendingCount})
-                        </Badge>
-                      )}
-                      {syncStatus.status === 'conflict' && (
-                        <Badge variant="destructive" size="sm" style={styles.statusBadge}>
-                          Conflict
-                        </Badge>
-                      )}
+                    {filterBlockId === item.id && (
+                      <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Property Filter Modal */}
+        <Modal
+          visible={showPropertyFilter}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowPropertyFilter(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[
+              styles.modalContent,
+              {
+                backgroundColor: themeColors.card.DEFAULT,
+                paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
+              }
+            ]}>
+              <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Property</Text>
+                <TouchableOpacity
+                  onPress={() => setShowPropertyFilter(false)}
+                  style={styles.modalCloseButton}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={[{ id: '', name: 'All Properties' }, ...filteredProperties]}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: spacing[2] }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.modalItem,
+                      {
+                        backgroundColor: filterPropertyId === item.id ? themeColors.primary.light : themeColors.card.DEFAULT
+                      },
+                      filterPropertyId === item.id && { borderColor: themeColors.primary.DEFAULT, borderWidth: 2 }
+                    ]}
+                    onPress={() => {
+                      setFilterPropertyId(item.id);
+                      setShowPropertyFilter(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.modalItemText,
+                        { color: filterPropertyId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                    {filterPropertyId === item.id && (
+                      <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Status Filter Modal */}
+        <Modal
+          visible={showStatusFilter}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowStatusFilter(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[
+              styles.modalContent,
+              {
+                backgroundColor: themeColors.background,
+                paddingBottom: Math.max(insets.bottom || 0, spacing[6]) + spacing[4]
+              }
+            ]}>
+              <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Filter by Status</Text>
+                <TouchableOpacity
+                  onPress={() => setShowStatusFilter(false)}
+                  style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={STATUS_OPTIONS}
+                keyExtractor={(item) => item.value}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: spacing[2] }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.modalItem,
+                      {
+                        backgroundColor: filterStatus === item.value ? themeColors.primary.light : themeColors.card.DEFAULT,
+                        borderColor: filterStatus === item.value ? themeColors.primary.DEFAULT : themeColors.border.light,
+                        borderWidth: filterStatus === item.value ? 2 : 1,
+                      },
+                    ]}
+                    onPress={() => {
+                      setFilterStatus(item.value);
+                      setShowStatusFilter(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.modalItemText,
+                        { color: filterStatus === item.value ? themeColors.primary.DEFAULT : themeColors.text.primary }
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                    {filterStatus === item.value && (
+                      <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Inspections List */}
+        {filteredInspections.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <EmptyState
+              title={effectiveInspections.length === 0 ? 'No inspections yet' : 'No inspections match your filters'}
+              message={
+                effectiveInspections.length === 0
+                  ? 'Create your first inspection to get started'
+                  : (searchTerm || filterBlockId || filterPropertyId || filterStatus || filterOverdue || filterDueSoon)
+                    ? 'Try adjusting your search or filters'
+                    : 'Try adjusting your filters'
+              }
+            />
+          </Card>
+        ) : (
+          <View style={styles.inspectionsGrid}>
+            {filteredInspections.map((inspection: Inspection) => {
+              const syncStatus = syncStatuses[inspection.id] || { status: 'synced' as const, pendingCount: 0 };
+
+              return (
+                <Card key={inspection.id} style={styles.inspectionCard} variant="elevated">
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <Text style={[styles.propertyName, { color: themeColors.text.primary }]}>
+                        {inspection.property?.name || inspection.block?.name || 'Unknown Property'}
+                      </Text>
+                      <View style={styles.badgeRow}>
+                        {getStatusBadge(inspection.status, themeColors)}
+                        {getTenantApprovalBadge(inspection)}
+                        {syncStatus.status === 'pending' && syncStatus.pendingCount > 0 && (
+                          <Badge variant="warning" size="sm" style={styles.statusBadge}>
+                            Pending ({syncStatus.pendingCount})
+                          </Badge>
+                        )}
+                        {syncStatus.status === 'conflict' && (
+                          <Badge variant="destructive" size="sm" style={styles.statusBadge}>
+                            Conflict
+                          </Badge>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
 
-              <View style={styles.cardContent}>
-                {/* Address */}
-                <View style={styles.infoRow}>
-                  <MapPin size={14} color={themeColors.text.secondary} />
-                  <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
-                    {inspection.property?.address || inspection.block?.address || 'No location'}
-                  </Text>
-                </View>
+                  <View style={styles.cardContent}>
+                    {/* Address */}
+                    <View style={styles.infoRow}>
+                      <MapPin size={14} color={themeColors.text.secondary} />
+                      <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
+                        {inspection.property?.address || inspection.block?.address || 'No location'}
+                      </Text>
+                    </View>
 
-                {/* Type */}
-                <View style={styles.infoRow}>
-                  <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Type:</Text>
-                  {getTypeBadge(inspection.type)}
-                </View>
+                    {/* Type */}
+                    <View style={styles.infoRow}>
+                      <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Type:</Text>
+                      {getTypeBadge(inspection.type)}
+                    </View>
 
-                {/* Date */}
-                {inspection.scheduledDate && (
-                  <View style={styles.infoRow}>
-                    <Calendar size={14} color={themeColors.text.secondary} />
-                    <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
-                      {format(new Date(inspection.scheduledDate), 'MMM dd, yyyy')}
-                    </Text>
+                    {/* Date */}
+                    {inspection.scheduledDate && (
+                      <View style={styles.infoRow}>
+                        <Calendar size={14} color={themeColors.text.secondary} />
+                        <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
+                          {format(new Date(inspection.scheduledDate), 'MMM dd, yyyy')}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Inspector */}
+                    {inspection.clerk && (
+                      <View style={styles.infoRow}>
+                        <User size={14} color={themeColors.text.secondary} />
+                        <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>{inspection.clerk.email}</Text>
+                      </View>
+                    )}
+
+                    {/* Action Buttons */}
+                    <View style={styles.actionButtons}>
+                      {inspection.templateSnapshotJson && inspection.status !== 'completed' && (
+                        <Button
+                          title={inspection.status === 'in_progress' ? 'Continue' : 'Start'}
+                          onPress={() => navigation.navigate('InspectionCapture', { inspectionId: inspection.id })}
+                          variant="primary"
+                          size="sm"
+                          style={styles.actionButton}
+                          icon={<Play size={14} color={themeColors.primary.foreground} />}
+                        />
+                      )}
+                      {inspection.templateSnapshotJson && (
+                        <Button
+                          title="View Report"
+                          onPress={() => navigation.navigate('InspectionReport', { inspectionId: inspection.id })}
+                          variant="outline"
+                          size="sm"
+                          style={styles.actionButton}
+                          icon={<FileText size={14} color={themeColors.text.primary} />}
+                        />
+                      )}
+                      <Button
+                        title="View Details"
+                        onPress={() => {
+                          navigation.navigate('InspectionReview', { inspectionId: inspection.id });
+                        }}
+                        variant="outline"
+                        size="sm"
+                        style={styles.actionButton}
+                      />
+                      <TouchableOpacity
+                        style={[styles.copyButton, { borderColor: themeColors.border.DEFAULT }]}
+                        onPress={() => handleCopyClick(inspection)}
+                      >
+                        <CopyIcon size={16} color={themeColors.text.secondary} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                )}
+                </Card>
+              );
+            })}
+          </View>
+        )}
 
-                {/* Inspector */}
-                {inspection.clerk && (
-                  <View style={styles.infoRow}>
-                    <User size={14} color={themeColors.text.secondary} />
-                    <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>{inspection.clerk.email}</Text>
+        {/* Copy Inspection Modal */}
+        <Modal
+          visible={showCopyModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowCopyModal(false)}
+        >
+          <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]}>
+            <View style={[styles.modalContent, { backgroundColor: themeColors.card.DEFAULT }]}>
+              <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Copy Inspection</Text>
+              </View>
+              <Text style={[styles.modalSubtitle, { color: themeColors.text.secondary }]}>
+                Create a new inspection based on {inspectionToCopy?.property?.name || inspectionToCopy?.block?.name || 'this inspection'}
+              </Text>
+
+              <View style={styles.copyForm}>
+                <View style={styles.formGroup}>
+                  <Text style={[styles.formLabel, { color: themeColors.text.primary }]}>Inspection Type *</Text>
+                  <View style={styles.typeButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: copyType === 'check_in' ? themeColors.primary.DEFAULT : themeColors.background
+                        }
+                      ]}
+                      onPress={() => setCopyType('check_in')}
+                    >
+                      <Text style={[
+                        styles.typeButtonText,
+                        { color: copyType === 'check_in' ? themeColors.primary.foreground : themeColors.text.primary }
+                      ]}>
+                        Check In
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.typeButton,
+                        {
+                          borderColor: themeColors.border.DEFAULT,
+                          backgroundColor: copyType === 'check_out' ? themeColors.primary.DEFAULT : themeColors.background
+                        }
+                      ]}
+                      onPress={() => setCopyType('check_out')}
+                    >
+                      <Text style={[
+                        styles.typeButtonText,
+                        { color: copyType === 'check_out' ? themeColors.primary.foreground : themeColors.text.primary }
+                      ]}>
+                        Check Out
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                )}
+                </View>
 
-                {/* Action Buttons */}
-                <View style={styles.actionButtons}>
-                  {inspection.templateSnapshotJson && inspection.status !== 'completed' && (
-                    <Button
-                      title={inspection.status === 'in_progress' ? 'Continue' : 'Start'}
-                      onPress={() => navigation.navigate('InspectionCapture', { inspectionId: inspection.id })}
-                      variant="primary"
-                      size="sm"
-                      style={styles.actionButton}
-                      icon={<Play size={14} color={themeColors.primary.foreground} />}
-                    />
-                  )}
-                  {inspection.templateSnapshotJson && (
-                    <Button
-                      title="View Report"
-                      onPress={() => navigation.navigate('InspectionReport', { inspectionId: inspection.id })}
-                      variant="outline"
-                      size="sm"
-                      style={styles.actionButton}
-                      icon={<FileText size={14} color={themeColors.text.primary} />}
-                    />
-                  )}
-                  <Button
-                    title="View Details"
-                    onPress={() => {
-                      navigation.navigate('InspectionReview', { inspectionId: inspection.id });
-                    }}
-                    variant="outline"
-                    size="sm"
-                    style={styles.actionButton}
+                <View style={styles.formGroup}>
+                  <DatePicker
+                    label="Scheduled Date *"
+                    value={copyScheduledDate ? new Date(copyScheduledDate) : null}
+                    onChange={(date) => setCopyScheduledDate(date ? format(date, 'yyyy-MM-dd') : '')}
+                    placeholder="Select date"
+                    required
                   />
-                  <TouchableOpacity
-                    style={[styles.copyButton, { borderColor: themeColors.border.DEFAULT }]}
-                    onPress={() => handleCopyClick(inspection)}
-                  >
-                    <CopyIcon size={16} color={themeColors.text.secondary} />
-                  </TouchableOpacity>
                 </View>
-              </View>
-            </Card>
-            );
-          })}
-        </View>
-      )}
 
-      {/* Copy Inspection Modal */}
-      <Modal
-        visible={showCopyModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowCopyModal(false)}
-      >
-        <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, spacing[4]) }]}>
-          <View style={[styles.modalContent, { backgroundColor: themeColors.card.DEFAULT }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
-              <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Copy Inspection</Text>
-            </View>
-            <Text style={[styles.modalSubtitle, { color: themeColors.text.secondary }]}>
-              Create a new inspection based on {inspectionToCopy?.property?.name || inspectionToCopy?.block?.name || 'this inspection'}
-            </Text>
-
-            <View style={styles.copyForm}>
-              <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: themeColors.text.primary }]}>Inspection Type *</Text>
-                <View style={styles.typeButtons}>
+                <View style={styles.formGroup}>
+                  <Text style={[styles.formLabel, { color: themeColors.text.primary }]}>Copy Options</Text>
                   <TouchableOpacity
-                    style={[
-                      styles.typeButton, 
-                      { 
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: copyType === 'check_in' ? themeColors.primary.DEFAULT : themeColors.background 
-                      }
-                    ]}
-                    onPress={() => setCopyType('check_in')}
+                    style={styles.checkboxRow}
+                    onPress={() => setCopyImages(!copyImages)}
                   >
-                    <Text style={[
-                      styles.typeButtonText, 
-                      { color: copyType === 'check_in' ? themeColors.primary.foreground : themeColors.text.primary }
+                    <View style={[
+                      styles.checkbox,
+                      {
+                        borderColor: themeColors.border.DEFAULT,
+                        backgroundColor: copyImages ? themeColors.primary.DEFAULT : 'transparent'
+                      }
                     ]}>
-                      Check In
-                    </Text>
+                      {copyImages && <Text style={[styles.checkmark, { color: themeColors.primary.foreground }]}>✓</Text>}
+                    </View>
+                    <Text style={[styles.checkboxLabelText, { color: themeColors.text.primary }]}>Copy images from original inspection</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[
-                      styles.typeButton, 
-                      { 
-                        borderColor: themeColors.border.DEFAULT,
-                        backgroundColor: copyType === 'check_out' ? themeColors.primary.DEFAULT : themeColors.background 
-                      }
-                    ]}
-                    onPress={() => setCopyType('check_out')}
+                    style={styles.checkboxRow}
+                    onPress={() => setCopyText(!copyText)}
                   >
-                    <Text style={[
-                      styles.typeButtonText, 
-                      { color: copyType === 'check_out' ? themeColors.primary.foreground : themeColors.text.primary }
+                    <View style={[
+                      styles.checkbox,
+                      {
+                        borderColor: themeColors.border.DEFAULT,
+                        backgroundColor: copyText ? themeColors.primary.DEFAULT : 'transparent'
+                      }
                     ]}>
-                      Check Out
-                    </Text>
+                      {copyText && <Text style={[styles.checkmark, { color: themeColors.primary.foreground }]}>✓</Text>}
+                    </View>
+                    <Text style={[styles.checkboxLabelText, { color: themeColors.text.primary }]}>Copy notes and conditions from original inspection</Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <View style={styles.formGroup}>
-                <DatePicker
-                  label="Scheduled Date *"
-                  value={copyScheduledDate ? new Date(copyScheduledDate) : null}
-                  onChange={(date) => setCopyScheduledDate(date ? format(date, 'yyyy-MM-dd') : '')}
-                  placeholder="Select date"
-                  required
+              <View style={styles.modalActions}>
+                <Button
+                  title="Cancel"
+                  onPress={() => setShowCopyModal(false)}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <Button
+                  title={copyInspection.isPending ? 'Copying...' : 'Copy Inspection'}
+                  onPress={handleCopySubmit}
+                  disabled={copyInspection.isPending}
+                  variant="default"
+                  style={styles.modalButton}
+                  loading={copyInspection.isPending}
                 />
               </View>
-
-              <View style={styles.formGroup}>
-                <Text style={[styles.formLabel, { color: themeColors.text.primary }]}>Copy Options</Text>
-                <TouchableOpacity
-                  style={styles.checkboxRow}
-                  onPress={() => setCopyImages(!copyImages)}
-                >
-                  <View style={[
-                    styles.checkbox, 
-                    { 
-                      borderColor: themeColors.border.DEFAULT,
-                      backgroundColor: copyImages ? themeColors.primary.DEFAULT : 'transparent' 
-                    }
-                  ]}>
-                    {copyImages && <Text style={[styles.checkmark, { color: themeColors.primary.foreground }]}>✓</Text>}
-                  </View>
-                  <Text style={[styles.checkboxLabelText, { color: themeColors.text.primary }]}>Copy images from original inspection</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.checkboxRow}
-                  onPress={() => setCopyText(!copyText)}
-                >
-                  <View style={[
-                    styles.checkbox, 
-                    { 
-                      borderColor: themeColors.border.DEFAULT,
-                      backgroundColor: copyText ? themeColors.primary.DEFAULT : 'transparent' 
-                    }
-                  ]}>
-                    {copyText && <Text style={[styles.checkmark, { color: themeColors.primary.foreground }]}>✓</Text>}
-                  </View>
-                  <Text style={[styles.checkboxLabelText, { color: themeColors.text.primary }]}>Copy notes and conditions from original inspection</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.modalActions}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowCopyModal(false)}
-                variant="outline"
-                style={styles.modalButton}
-              />
-              <Button
-                title={copyInspection.isPending ? 'Copying...' : 'Copy Inspection'}
-                onPress={handleCopySubmit}
-                disabled={copyInspection.isPending}
-                variant="default"
-                style={styles.modalButton}
-                loading={copyInspection.isPending}
-              />
             </View>
           </View>
-        </View>
-      </Modal>
-    </ScrollView>
+        </Modal>
+      </ScrollView>
     </View>
   );
 }

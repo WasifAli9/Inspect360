@@ -32,6 +32,8 @@ export interface LocalInspectionEntry {
   field_type: string;
   value_json: string | null;
   note: string | null;
+  photos: string | null;
+  videos: string | null;
   maintenance_flag: number;
   marked_for_review: number;
   sync_status: SyncStatus;
@@ -157,6 +159,8 @@ class LocalDatabase {
         field_type TEXT NOT NULL,
         value_json TEXT,
         note TEXT,
+        photos TEXT,
+        videos TEXT,
         maintenance_flag INTEGER DEFAULT 0,
         marked_for_review INTEGER DEFAULT 0,
         sync_status TEXT DEFAULT 'synced',
@@ -224,7 +228,7 @@ class LocalDatabase {
         return;
       }
       const templateSnapshotJson = JSON.stringify(inspection.templateSnapshotJson || {});
-      
+
       // Store property, block, and clerk data as JSON in template_snapshot_json or create a separate JSON field
       // We'll store it in a metadata field within template_snapshot_json for now
       const metadata = {
@@ -235,24 +239,38 @@ class LocalDatabase {
         tenantApprovalDeadline: inspection.tenantApprovalDeadline || null,
         tenantComments: inspection.tenantComments || null,
       };
-      
+
       // Merge metadata into template snapshot JSON
       const templateData = inspection.templateSnapshotJson || {};
       const enhancedTemplateJson = JSON.stringify({
         ...templateData,
         _metadata: metadata,
       });
-      
+
       const now = new Date().toISOString();
-      const ownerUserId = (inspection as any)?.clerk?.id || inspection.assignedToId || null;
-      const assignedToId = inspection.assignedToId || (inspection as any)?.clerk?.id || null;
+      const ownerUserId = inspection.clerkId || inspection.inspectorId || (inspection as any)?.clerk?.id || null;
+      const assignedToId = inspection.inspectorId || inspection.clerkId || (inspection as any)?.clerk?.id || null;
 
       await this.db!.runAsync(
-        `INSERT OR REPLACE INTO inspections (
+        `INSERT INTO inspections (
           id, owner_user_id, property_id, block_id, template_id, template_snapshot_json,
           assigned_to_id, scheduled_date, status, type, notes,
           sync_status, created_at, updated_at, last_synced_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          owner_user_id = excluded.owner_user_id,
+          property_id = excluded.property_id,
+          block_id = excluded.block_id,
+          template_id = excluded.template_id,
+          template_snapshot_json = excluded.template_snapshot_json,
+          assigned_to_id = excluded.assigned_to_id,
+          scheduled_date = excluded.scheduled_date,
+          status = excluded.status,
+          type = excluded.type,
+          notes = excluded.notes,
+          sync_status = excluded.sync_status,
+          updated_at = excluded.updated_at,
+          last_synced_at = excluded.last_synced_at`,
         [
           inspection.id,
           ownerUserId,
@@ -288,9 +306,9 @@ class LocalDatabase {
       }
       const result = ownerUserId
         ? await this.db!.getFirstAsync<LocalInspection>(
-            'SELECT * FROM inspections WHERE id = ? AND owner_user_id = ?',
-            [id, ownerUserId]
-          )
+          'SELECT * FROM inspections WHERE id = ? AND owner_user_id = ?',
+          [id, ownerUserId]
+        )
         : await this.db!.getFirstAsync<LocalInspection>('SELECT * FROM inspections WHERE id = ?', [id]);
       return result || null;
     } catch (error) {
@@ -303,19 +321,19 @@ class LocalDatabase {
   async getAllInspections(ownerUserId?: string): Promise<LocalInspection[]> {
     try {
       await this.ensureInitialized();
-    if (!this.db) {
+      if (!this.db) {
         console.warn('[LocalDatabase] Database not available, returning empty array');
         return [];
       }
-      
+
       // No type filtering - returns all inspection types (check_in, check_out, routine, maintenance, etc.)
       if (ownerUserId) {
         return await this.db!.getAllAsync<LocalInspection>(
           'SELECT * FROM inspections WHERE owner_user_id = ? ORDER BY updated_at DESC',
           [ownerUserId]
         );
-    }
-    return await this.db!.getAllAsync<LocalInspection>('SELECT * FROM inspections ORDER BY updated_at DESC');
+      }
+      return await this.db!.getAllAsync<LocalInspection>('SELECT * FROM inspections ORDER BY updated_at DESC');
     } catch (error) {
       console.error('[LocalDatabase] Error getting all inspections:', error);
       return [];
@@ -370,11 +388,27 @@ class LocalDatabase {
     const serverId = entry.id.startsWith('local_') ? null : entry.id;
 
     await this.db!.runAsync(
-      `INSERT OR REPLACE INTO inspection_entries (
+      `INSERT INTO inspection_entries (
         id, inspection_id, section_ref, field_key, field_type,
-        value_json, note, maintenance_flag, marked_for_review,
+        value_json, note, photos, videos, maintenance_flag, marked_for_review,
         sync_status, local_id, server_id, created_at, updated_at, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        inspection_id = excluded.inspection_id,
+        section_ref = excluded.section_ref,
+        field_key = excluded.field_key,
+        field_type = excluded.field_type,
+        value_json = COALESCE(excluded.value_json, inspection_entries.value_json),
+        note = COALESCE(excluded.note, inspection_entries.note),
+        photos = COALESCE(excluded.photos, inspection_entries.photos),
+        videos = COALESCE(excluded.videos, inspection_entries.videos),
+        maintenance_flag = excluded.maintenance_flag,
+        marked_for_review = excluded.marked_for_review,
+        sync_status = excluded.sync_status,
+        local_id = COALESCE(excluded.local_id, inspection_entries.local_id),
+        server_id = COALESCE(excluded.server_id, inspection_entries.server_id),
+        updated_at = excluded.updated_at,
+        last_synced_at = COALESCE(excluded.last_synced_at, inspection_entries.last_synced_at)`,
       [
         entryId,
         entry.inspectionId,
@@ -383,6 +417,8 @@ class LocalDatabase {
         entry.fieldType,
         entry.valueJson ? JSON.stringify(entry.valueJson) : null,
         entry.note || null,
+        entry.photos ? JSON.stringify(entry.photos) : null,
+        (entry as any).videos ? JSON.stringify((entry as any).videos) : null,
         entry.maintenanceFlag ? 1 : 0,
         entry.markedForReview ? 1 : 0,
         serverId ? 'synced' : 'pending',
@@ -443,6 +479,14 @@ class LocalDatabase {
       updatesList.push('marked_for_review = ?');
       values.push(updates.markedForReview ? 1 : 0);
     }
+    if (updates.photos !== undefined) {
+      updatesList.push('photos = ?');
+      values.push(updates.photos ? JSON.stringify(updates.photos) : null);
+    }
+    if ((updates as any).videos !== undefined) {
+      updatesList.push('videos = ?');
+      values.push((updates as any).videos ? JSON.stringify((updates as any).videos) : null);
+    }
 
     updatesList.push('updated_at = ?');
     values.push(new Date().toISOString());
@@ -461,15 +505,53 @@ class LocalDatabase {
     }
 
     const now = new Date().toISOString();
-    if (serverId) {
-      await this.db!.runAsync(
-        'UPDATE inspection_entries SET sync_status = ?, server_id = ?, last_synced_at = ?, updated_at = ? WHERE id = ? OR local_id = ?',
-        [syncStatus, serverId, now, now, entryId, entryId]
+    if (serverId && serverId !== entryId) {
+      // Reconcile local ID with server ID
+
+      // Check if a record with serverId already exists
+      const existing = await this.db!.getFirstAsync<LocalInspectionEntry>(
+        'SELECT id FROM inspection_entries WHERE id = ?',
+        [serverId]
       );
+
+      if (existing) {
+        // Conflict! serverId already exists.
+        // 1. Move all photos from entryId to serverId
+        await this.db!.runAsync(
+          'UPDATE inspection_photos SET entry_id = ? WHERE entry_id = ?',
+          [serverId, entryId]
+        );
+        // 2. Delete the temporary local record (this won't kill photos because they now point to serverId)
+        await this.db!.runAsync(
+          'DELETE FROM inspection_entries WHERE id = ?',
+          [entryId]
+        );
+        // 3. Update the existing record with the new status
+        await this.db!.runAsync(
+          'UPDATE inspection_entries SET server_id = ?, sync_status = ?, last_synced_at = ?, updated_at = ? WHERE id = ?',
+          [serverId, syncStatus, now, now, serverId]
+        );
+        console.log(`[LocalDatabase] Reconciled duplicate entry ${entryId} by moving photos to existing server ID ${serverId}`);
+      } else {
+        // Normal case: update the entry's primary key
+        await this.db!.runAsync(
+          'UPDATE inspection_entries SET id = ?, server_id = ?, sync_status = ?, last_synced_at = ?, updated_at = ? WHERE id = ? OR local_id = ?',
+          [serverId, serverId, syncStatus, now, now, entryId, entryId]
+        );
+
+        // 2. Update linked photos to use the new server ID
+        await this.db!.runAsync(
+          'UPDATE inspection_photos SET entry_id = ? WHERE entry_id = ?',
+          [serverId, entryId]
+        );
+        console.log(`[LocalDatabase] Reconciled entry ${entryId} with server ID ${serverId} and updated linked photos`);
+      }
     } else {
+      // Just update status
+      const targetId = serverId || entryId;
       await this.db!.runAsync(
         'UPDATE inspection_entries SET sync_status = ?, last_synced_at = ?, updated_at = ? WHERE id = ? OR local_id = ? OR server_id = ?',
-        [syncStatus, now, now, entryId, entryId, entryId]
+        [syncStatus, now, now, targetId, targetId, targetId]
       );
     }
   }
@@ -484,10 +566,19 @@ class LocalDatabase {
     const now = new Date().toISOString();
 
     await this.db!.runAsync(
-      `INSERT OR REPLACE INTO inspection_photos (
+      `INSERT INTO inspection_photos (
         id, entry_id, inspection_id, local_path, server_url,
         upload_status, file_size, mime_type, created_at, uploaded_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        entry_id = excluded.entry_id,
+        inspection_id = excluded.inspection_id,
+        local_path = excluded.local_path,
+        server_url = excluded.server_url,
+        upload_status = excluded.upload_status,
+        file_size = excluded.file_size,
+        mime_type = excluded.mime_type,
+        uploaded_at = excluded.uploaded_at`,
       [
         id,
         photo.entry_id,
@@ -562,6 +653,21 @@ class LocalDatabase {
       await this.ensureInitialized();
       const id = operation.id || `sync_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const now = new Date().toISOString();
+
+      // For update_entry, coalesce it if already in queue
+      if (operation.operation_type === 'update_entry') {
+        const existing = await this.db!.getFirstAsync<SyncOperation>(
+          'SELECT id FROM sync_queue WHERE operation_type = ? AND entity_id = ?',
+          [operation.operation_type, operation.entity_id]
+        );
+        if (existing) {
+          await this.db!.runAsync(
+            'UPDATE sync_queue SET payload = ? WHERE id = ?',
+            [typeof operation.payload === 'string' ? operation.payload : JSON.stringify(operation.payload), existing.id]
+          );
+          return existing.id;
+        }
+      }
 
       await this.db!.runAsync(
         `INSERT INTO sync_queue (

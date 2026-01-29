@@ -1,10 +1,10 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp, type DimensionValue } from 'react-native';
 import { colors, borderRadius } from '../../theme';
 
 interface ProgressProps {
   value: number; // 0-100
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   height?: number;
   showValue?: boolean;
 }
@@ -24,7 +24,7 @@ export default function Progress({
         <View
           style={[
             styles.fill,
-            { width: percentage, height },
+            { width: percentage as DimensionValue, height },
             showValue && styles.fillWithValue,
           ]}
         />

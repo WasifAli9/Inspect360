@@ -93,20 +93,21 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   const safeField = useMemo(() => {
     const normalized: TemplateField = { ...field };
     // Ensure all boolean properties are actual booleans, not strings
-    if (typeof normalized.required === 'string') {
-      normalized.required = normalized.required.toLowerCase() === 'true';
+    const raw = field as any;
+    if (typeof raw.required === 'string') {
+      normalized.required = raw.required.toLowerCase() === 'true';
     } else {
-      normalized.required = !!normalized.required;
+      normalized.required = !!raw.required;
     }
-    if (typeof normalized.includeCondition === 'string') {
-      normalized.includeCondition = normalized.includeCondition.toLowerCase() === 'true';
+    if (typeof raw.includeCondition === 'string') {
+      normalized.includeCondition = raw.includeCondition.toLowerCase() === 'true';
     } else {
-      normalized.includeCondition = !!normalized.includeCondition;
+      normalized.includeCondition = !!raw.includeCondition;
     }
-    if (typeof normalized.includeCleanliness === 'string') {
-      normalized.includeCleanliness = normalized.includeCleanliness.toLowerCase() === 'true';
+    if (typeof raw.includeCleanliness === 'string') {
+      normalized.includeCleanliness = raw.includeCleanliness.toLowerCase() === 'true';
     } else {
-      normalized.includeCleanliness = !!normalized.includeCleanliness;
+      normalized.includeCleanliness = !!raw.includeCleanliness;
     }
     return normalized;
   }, [field]);
@@ -127,7 +128,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   const [localPhotos, setLocalPhotos] = useState<string[]>(photos || []);
   // Store generated entryId if it doesn't exist (for photos added before field value is saved)
   const generatedEntryIdRef = useRef<string | null>(null);
-  
+
   // Update ref when entryId prop changes (when entry is created)
   useEffect(() => {
     if (entryId) {
@@ -366,7 +367,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       // This entryId will be used when the entry is created via onChange
       // Use stored generated ID if available, otherwise generate a new one
       const effectiveEntryId = entryId || generatedEntryIdRef.current || `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       // Store the generated ID for future use
       if (!entryId && !generatedEntryIdRef.current) {
         generatedEntryIdRef.current = effectiveEntryId;
@@ -376,7 +377,6 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       const fileSize = await photoStorage.getPhotoSize(localPath);
       const mimeType = photoStorage.getMimeType(localPath);
 
-      // Save photo metadata to local DB
       const photo = await localDatabase.savePhoto({
         entry_id: effectiveEntryId,
         inspection_id: inspectionId,
@@ -384,6 +384,8 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         upload_status: 'pending',
         file_size: fileSize,
         mime_type: mimeType,
+        server_url: null,
+        uploaded_at: null,
       });
 
       // If online, try to upload immediately
@@ -446,7 +448,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             return serverUrl;
           } catch (fetchError: any) {
             clearTimeout(timeoutId);
-            
+
             // Handle abort (timeout)
             if (fetchError.name === 'AbortError') {
               // Queue for later upload
@@ -456,9 +458,9 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             }
 
             // Handle network errors - queue for later upload
-            if (fetchError.message?.includes('Network request failed') || 
-                fetchError.message?.includes('Failed to fetch') ||
-                fetchError.message?.includes('ERR_CONNECTION_REFUSED')) {
+            if (fetchError.message?.includes('Network request failed') ||
+              fetchError.message?.includes('Failed to fetch') ||
+              fetchError.message?.includes('ERR_CONNECTION_REFUSED')) {
               // Queue for later upload
               await syncManager.queueOperation('upload_photo', 'photo', photo.id, photo, 0);
               await localDatabase.updatePhotoUploadStatus(photo.id, 'pending');
@@ -499,7 +501,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       Alert.alert('Inspection Completed', 'You cannot add photos to a completed inspection.');
       return;
     }
-    
+
     try {
       const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
@@ -563,7 +565,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       Alert.alert('Inspection Completed', 'You cannot add photos to a completed inspection.');
       return;
     }
-    
+
     try {
       const hasPermission = await requestMediaLibraryPermission();
       if (!hasPermission) {
@@ -617,7 +619,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         setLocalPhotos(updatedPhotos);
         const composedValue = composeValue(localValue, localCondition, localCleanliness);
         onChange(composedValue, localNote, updatedPhotos);
-        
+
         if (hasUploadError && newPhotos.length < uris.length) {
           Alert.alert(
             'Partial Success',
@@ -799,7 +801,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       case 'time':
         return (
           <View style={styles.dateContainer}>
-            <Clock size={20} color={colors.text.muted} />
+            <Clock size={20} color={themeColors.text.muted} />
             <Input
               label={safeField.label}
               value={localValue || ''}
@@ -900,7 +902,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         {!!isCheckOut && checkInPhotos.length > 0 && (
           <Card style={styles.checkInReferenceCard}>
             <View style={styles.checkInReferenceHeader}>
-              <Eye size={16} color={colors.primary.DEFAULT} />
+              <Eye size={16} color={themeColors.primary.DEFAULT} />
               <Text style={[styles.checkInReferenceTitle, { color: themeColors.text.primary }]}>Check-In Reference Photos</Text>
             </View>
             <Text style={[styles.checkInReferenceText, { color: themeColors.text.secondary }]}>
@@ -936,7 +938,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               onPress={() => setShowPhotoPicker(true)}
               activeOpacity={0.8}
             >
-              <CameraIcon size={18} color={colors.primary.foreground || '#ffffff'} />
+              <CameraIcon size={18} color={themeColors.primary.foreground || '#ffffff'} />
               <Text style={[styles.photoButtonText, { color: themeColors.primary.foreground || '#ffffff' }]}>Add Photo</Text>
             </TouchableOpacity>
           </View>
@@ -959,9 +961,6 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                   // Assume it's a server object path
                   photoUrl = `${getAPI_URL()}/objects/${photo}`;
                 }
-                
-                const hasAnalysis = aiAnalyses[photo];
-                const isAnalyzing = analyzingPhoto === photo;
 
                 return (
                   <View key={index} style={styles.photoItem}>
@@ -1028,7 +1027,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               >
                 <Star
                   size={24}
-                  color={rating <= (localCondition || 0) ? '#FFD700' : colors.text.muted}
+                  color={rating <= (localCondition || 0) ? '#FFD700' : themeColors.text.muted}
                   fill={rating <= (localCondition || 0) ? '#FFD700' : 'transparent'}
                 />
               </TouchableOpacity>
@@ -1053,7 +1052,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               >
                 <Star
                   size={24}
-                  color={rating <= (localCleanliness || 0) ? '#FFD700' : colors.text.muted}
+                  color={rating <= (localCleanliness || 0) ? '#FFD700' : themeColors.text.muted}
                   fill={rating <= (localCleanliness || 0) ? '#FFD700' : 'transparent'}
                 />
               </TouchableOpacity>
@@ -1083,7 +1082,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             </Text>
           </TouchableOpacity>
           <Text style={styles.aiButtonDescription}>
-            {analyzingField 
+            {analyzingField
               ? 'Analyzing images with AI...'
               : 'Use AI to analyze all photos and generate a detailed inspection report'}
           </Text>
@@ -1102,7 +1101,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         />
         {localNote && localNote.length > 0 && (
           <View style={styles.notesIndicator}>
-            <Sparkles size={12} color={colors.primary.DEFAULT} />
+            <Sparkles size={12} color={themeColors.primary.DEFAULT} />
             <Text style={styles.notesIndicatorText}>
               {localNote.includes('AI') || localNote.length > 200 ? 'AI Analysis added' : ''}
             </Text>
@@ -1114,9 +1113,9 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       {localPhotos.length > 0 && onLogMaintenance && (
         <TouchableOpacity
           style={styles.maintenanceButton}
-          onPress={() => onLogMaintenance(safeField.label, localPhotos)}
+          onPress={() => onLogMaintenance?.(safeField.label, localPhotos)}
         >
-          <Wrench size={16} color={colors.warning} />
+          <Wrench size={16} color={themeColors.warning} />
           <Text style={styles.maintenanceButtonText}>Log Maintenance</Text>
         </TouchableOpacity>
       )}
@@ -1379,7 +1378,7 @@ const styles = StyleSheet.create({
   },
   signatureButtonDisabled: {
     opacity: 0.5,
-    backgroundColor: colors.muted.light || colors.background,
+    backgroundColor: colors.muted.DEFAULT,
   },
   signatureButtonTextDisabled: {
     // Color applied dynamically via themeColors
@@ -1455,7 +1454,7 @@ const styles = StyleSheet.create({
   },
   checkInReferenceCard: {
     marginBottom: spacing[4],
-    backgroundColor: colors.primary.light,
+    backgroundColor: colors.primary.light || '#E0F7FA',
     borderWidth: 1,
     borderColor: colors.primary.DEFAULT,
   },
@@ -1587,7 +1586,7 @@ const styles = StyleSheet.create({
   },
   aiButtonCard: {
     marginBottom: spacing[4],
-    backgroundColor: colors.primary.light || `${colors.primary.DEFAULT}15`,
+    backgroundColor: colors.primary.light || '#E0F7FA',
     borderWidth: 1,
     borderColor: colors.primary.DEFAULT + '33',
     padding: spacing[3],
@@ -1662,7 +1661,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.card.DEFAULT,
     borderRadius: 12,
     padding: 24,
     width: '80%',

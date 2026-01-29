@@ -12,6 +12,7 @@ export interface InspectionEntry {
   photos?: string[];
   maintenanceFlag?: boolean;
   markedForReview?: boolean;
+  syncStatus?: 'synced' | 'pending' | 'conflict';
 }
 
 export interface InspectionResponse {
@@ -65,21 +66,45 @@ export const inspectionsService = {
   },
 
   async saveInspectionEntry(entry: InspectionEntry): Promise<InspectionEntry> {
+    // Filter out local paths (file://) from photos and valueJson before sending to server
+    const photos = entry.photos?.filter(p => !p.startsWith('file://')) || [];
+    let valueJson = entry.valueJson;
+    if (valueJson && typeof valueJson === 'object' && Array.isArray(valueJson.photos)) {
+      valueJson = {
+        ...valueJson,
+        photos: valueJson.photos.filter((p: string) => !p.startsWith('file://'))
+      };
+    }
+
     return apiRequestJson<InspectionEntry>('POST', '/api/inspection-entries', {
       inspectionId: entry.inspectionId,
       sectionRef: entry.sectionRef,
       fieldKey: entry.fieldKey,
       fieldType: entry.fieldType,
-      valueJson: entry.valueJson,
+      valueJson,
       note: entry.note,
-      photos: entry.photos,
+      photos,
       maintenanceFlag: entry.maintenanceFlag,
       markedForReview: entry.markedForReview,
     });
   },
 
   async updateInspectionEntry(entryId: string, updates: Partial<InspectionEntry>): Promise<InspectionEntry> {
-    return apiRequestJson<InspectionEntry>('PATCH', `/api/inspection-entries/${entryId}`, updates);
+    // Filter out local paths from updates
+    const photos = updates.photos?.filter(p => !p.startsWith('file://'));
+    let valueJson = updates.valueJson;
+    if (valueJson && typeof valueJson === 'object' && Array.isArray(valueJson.photos)) {
+      valueJson = {
+        ...valueJson,
+        photos: valueJson.photos.filter((p: string) => !p.startsWith('file://'))
+      };
+    }
+
+    return apiRequestJson<InspectionEntry>('PATCH', `/api/inspection-entries/${entryId}`, {
+      ...updates,
+      ...(photos !== undefined && { photos }),
+      ...(valueJson !== undefined && { valueJson }),
+    });
   },
 
   async saveInspectionResponse(

@@ -6,12 +6,14 @@
 import * as SQLite from 'expo-sqlite';
 import { migration_001_initial_schema } from './001_initial_schema';
 import { migration_002_add_owner_to_inspections } from './002_add_owner_to_inspections';
+import { migration_003_add_photos_to_entries } from './003_add_photos_to_entries';
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 const migrations: Array<{ version: number; migrate: (db: SQLite.SQLiteDatabase) => Promise<void> }> = [
   { version: 1, migrate: migration_001_initial_schema },
   { version: 2, migrate: migration_002_add_owner_to_inspections },
+  { version: 3, migrate: migration_003_add_photos_to_entries },
 ];
 
 export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
@@ -39,7 +41,7 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
 
   // Run pending migrations
   const pendingMigrations = migrations.filter(m => m.version > currentVersion);
-  
+
   if (pendingMigrations.length === 0) {
     console.log('[Migrations] Database is up to date');
     return;
@@ -51,13 +53,13 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     try {
       console.log(`[Migrations] Running migration ${migration.version}...`);
       await migration.migrate(db);
-      
+
       // Record migration
       await db.runAsync(
         'INSERT INTO migrations (version, applied_at) VALUES (?, ?)',
         [migration.version, new Date().toISOString()]
       );
-      
+
       console.log(`[Migrations] Migration ${migration.version} completed`);
     } catch (error) {
       console.error(`[Migrations] Failed to run migration ${migration.version}:`, error);

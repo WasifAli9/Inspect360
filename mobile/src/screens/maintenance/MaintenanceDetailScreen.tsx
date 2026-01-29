@@ -40,45 +40,45 @@ export default function MaintenanceDetailScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={[
           styles.content,
-          { 
-            paddingTop: Math.max(insets.top + spacing[4], spacing[8]),
-            paddingBottom: Math.max(insets.bottom + 80, spacing[8]) 
+          {
+            paddingTop: spacing[4],
+            paddingBottom: Math.max(insets.bottom + 80, spacing[8])
           }
         ]}
       >
-      <Card>
-        <Text style={[styles.title, { color: themeColors.text.primary }]}>{request.title}</Text>
-        <View style={styles.badgeContainer}>
-          <View style={[styles.badge, { backgroundColor: themeColors.warning + '40' }]}>
-            <Text style={[styles.badgeText, { color: themeColors.warning }]}>{request.status}</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: themeColors.destructive.DEFAULT + '40' }]}>
-            <Text style={[styles.badgeText, { color: themeColors.destructive.DEFAULT }]}>{request.priority}</Text>
-          </View>
-        </View>
-      </Card>
-
-      {request.description && (
         <Card>
-          <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Description</Text>
-          <Text style={[styles.description, { color: themeColors.text.secondary }]}>{request.description}</Text>
+          <Text style={[styles.title, { color: themeColors.text.primary }]}>{request.title}</Text>
+          <View style={styles.badgeContainer}>
+            <View style={[styles.badge, { backgroundColor: themeColors.warning + '40' }]}>
+              <Text style={[styles.badgeText, { color: themeColors.warning }]}>{request.status}</Text>
+            </View>
+            <View style={[styles.badge, { backgroundColor: themeColors.destructive.DEFAULT + '40' }]}>
+              <Text style={[styles.badgeText, { color: themeColors.destructive.DEFAULT }]}>{request.priority}</Text>
+            </View>
+          </View>
         </Card>
-      )}
 
-      <Card>
-        <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Details</Text>
-        <Text style={[styles.label, { color: themeColors.text.secondary }]}>
-          Created: {new Date(request.createdAt).toLocaleString()}
-        </Text>
-        {request.updatedAt && (
-          <Text style={[styles.label, { color: themeColors.text.secondary }]}>
-            Updated: {new Date(request.updatedAt).toLocaleString()}
-          </Text>
+        {request.description && (
+          <Card>
+            <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Description</Text>
+            <Text style={[styles.description, { color: themeColors.text.secondary }]}>{request.description}</Text>
+          </Card>
         )}
-      </Card>
+
+        <Card>
+          <Text style={[styles.sectionTitle, { color: themeColors.text.primary }]}>Details</Text>
+          <Text style={[styles.label, { color: themeColors.text.secondary }]}>
+            Created: {new Date(request.createdAt).toLocaleString()}
+          </Text>
+          {request.updatedAt && (
+            <Text style={[styles.label, { color: themeColors.text.secondary }]}>
+              Updated: {new Date(request.updatedAt).toLocaleString()}
+            </Text>
+          )}
+        </Card>
       </ScrollView>
     </SafeAreaView>
   );

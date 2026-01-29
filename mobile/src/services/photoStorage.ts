@@ -140,7 +140,7 @@ class PhotoStorage {
     try {
       const inspectionDir = `${PHOTOS_DIR}${inspectionId}/`;
       const dirInfo = await FileSystem.getInfoAsync(inspectionDir);
-      
+
       if (!dirInfo.exists) {
         return;
       }
@@ -151,13 +151,13 @@ class PhotoStorage {
       for (const entry of entries) {
         const entryPath = `${inspectionDir}${entry}`;
         const entryInfo = await FileSystem.getInfoAsync(entryPath);
-        
+
         if (entryInfo.exists && entryInfo.isDirectory) {
           const photos = await FileSystem.readDirectoryAsync(entryPath);
           for (const photo of photos) {
             const photoPath = `${entryPath}/${photo}`;
             const photoInfo = await FileSystem.getInfoAsync(photoPath);
-            
+
             if (photoInfo.exists && 'modificationTime' in photoInfo) {
               const modTime = photoInfo.modificationTime * 1000; // Convert to milliseconds
               if (modTime < cutoffTime) {
@@ -212,7 +212,7 @@ class PhotoStorage {
     try {
       const inspectionDir = `${PHOTOS_DIR}${inspectionId}/`;
       const dirInfo = await FileSystem.getInfoAsync(inspectionDir);
-      
+
       if (!dirInfo.exists) {
         return 0;
       }
@@ -223,7 +223,7 @@ class PhotoStorage {
       for (const entry of entries) {
         const entryPath = `${inspectionDir}${entry}`;
         const entryInfo = await FileSystem.getInfoAsync(entryPath);
-        
+
         if (entryInfo.exists && entryInfo.isDirectory) {
           const photos = await FileSystem.readDirectoryAsync(entryPath);
           for (const photo of photos) {

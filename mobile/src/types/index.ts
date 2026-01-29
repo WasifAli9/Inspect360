@@ -24,8 +24,10 @@ export interface Inspection {
   propertyId?: string;
   blockId?: string;
   templateId: string;
-  assignedToId?: string;
+  clerkId?: string;
+  inspectorId?: string;
   scheduledDate?: string;
+  completedDate?: string;
   status: 'scheduled' | 'in_progress' | 'completed' | 'reviewed';
   type: string;
   property?: Property;
