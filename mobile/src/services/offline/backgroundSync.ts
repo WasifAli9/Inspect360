@@ -94,7 +94,7 @@ async function performSync() {
 
     callbacks.onSyncStart?.();
 
-    const result = await syncService.syncAll(true);
+    const result = await syncService.syncAll();
 
     callbacks.onSyncComplete?.({
       success: result.success,
@@ -127,7 +127,7 @@ export async function triggerSync(): Promise<{
   callbacks.onSyncStart?.();
 
   try {
-    const result = await syncService.syncAll(true);
+    const result = await syncService.syncAll();
     callbacks.onSyncComplete?.({
       success: result.success,
       uploaded: result.uploaded,

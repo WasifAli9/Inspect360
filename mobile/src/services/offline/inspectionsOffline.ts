@@ -24,7 +24,14 @@ export const inspectionsOffline = {
   async getMyInspections(isOnline: boolean): Promise<Inspection[]> {
     // Always read from local DB first (fast, works offline)
     const localInspections = await getAllLocalInspections();
-    const localData = localInspections.map(record => JSON.parse(record.data) as Inspection);
+    let localData = localInspections.map(record => JSON.parse(record.data) as Inspection);
+    
+    // Sort by date - newest first
+    localData.sort((a, b) => {
+      const dateA = new Date((a as any).updatedAt || a.scheduledDate || (a as any).createdAt || 0).getTime();
+      const dateB = new Date((b as any).updatedAt || b.scheduledDate || (b as any).createdAt || 0).getTime();
+      return dateB - dateA; // Descending order (newest first)
+    });
 
     // If offline, return local data only
     if (!isOnline) {
@@ -83,9 +90,18 @@ export const inspectionsOffline = {
 
       // Return merged data (server data takes precedence for synced items)
       const updatedLocal = await getAllLocalInspections();
-      return updatedLocal
+      const inspections = updatedLocal
         .filter(r => !r.isDeleted)
         .map(record => JSON.parse(record.data) as Inspection);
+      
+      // Sort by date - newest first
+      inspections.sort((a, b) => {
+        const dateA = new Date((a as any).updatedAt || a.scheduledDate || (a as any).createdAt || 0).getTime();
+        const dateB = new Date((b as any).updatedAt || b.scheduledDate || (b as any).createdAt || 0).getTime();
+        return dateB - dateA; // Descending order (newest first)
+      });
+      
+      return inspections;
     } catch (error) {
       console.error('[InspectionsOffline] Error syncing from server:', error);
       // Return local data if server sync fails
@@ -97,13 +113,15 @@ export const inspectionsOffline = {
    * Get inspection by ID - reads from local DB first, then syncs from server
    */
   async getInspection(id: string, isOnline: boolean): Promise<InspectionDetail | null> {
-    // Read from local DB first
+    // ALWAYS read from local DB first - this ensures data is available offline
     const localRecord = await getLocalInspection(id);
+    
     if (localRecord) {
       const localData = JSON.parse(localRecord.data) as InspectionDetail;
 
-      // If offline, return local data
+      // If offline, ALWAYS return local data (even if stale)
       if (!isOnline) {
+        console.log(`[InspectionsOffline] Offline - returning local inspection ${id}`);
         return localData;
       }
 
@@ -115,6 +133,7 @@ export const inspectionsOffline = {
 
         // Update if server is newer
         if (!localServerUpdatedAt || serverUpdatedAt > localServerUpdatedAt) {
+          console.log(`[InspectionsOffline] Server data is newer - updating local DB for inspection ${id}`);
           await saveInspection({
             inspectionId: id,
             data: JSON.stringify(serverData),
@@ -127,14 +146,19 @@ export const inspectionsOffline = {
           return serverData;
         }
 
+        // Server is not newer - return local data
+        console.log(`[InspectionsOffline] Local data is up to date for inspection ${id}`);
         return localData;
       } catch (error: any) {
         // If inspection was deleted (404), mark as deleted locally
         if (error.status === 404) {
+          console.log(`[InspectionsOffline] Inspection ${id} not found on server - marking as deleted locally`);
           await markInspectionDeleted(id);
           return null;
         }
         console.error('[InspectionsOffline] Error fetching inspection from server:', error);
+        // Return local data as fallback
+        console.log(`[InspectionsOffline] Server error - returning local data for inspection ${id}`);
         return localData;
       }
     }
@@ -142,8 +166,10 @@ export const inspectionsOffline = {
     // Not in local DB - fetch from server if online
     if (isOnline) {
       try {
+        console.log(`[InspectionsOffline] Inspection ${id} not in local DB - fetching from server`);
         const serverData = await inspectionsService.getInspection(id);
         const now = new Date().toISOString();
+        // CRITICAL: Save to local DB immediately so it's available offline
         await saveInspection({
           inspectionId: id,
           data: JSON.stringify(serverData),
@@ -153,6 +179,7 @@ export const inspectionsOffline = {
           localUpdatedAt: now,
           isDeleted: false,
         });
+        console.log(`[InspectionsOffline] Saved inspection ${id} to local DB`);
         return serverData;
       } catch (error) {
         console.error('[InspectionsOffline] Error fetching inspection from server:', error);
@@ -160,6 +187,8 @@ export const inspectionsOffline = {
       }
     }
 
+    // Offline and not in local DB - return null
+    console.warn(`[InspectionsOffline] Inspection ${id} not found in local DB and offline`);
     return null;
   },
 

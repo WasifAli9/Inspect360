@@ -59,6 +59,8 @@ interface Inspection {
   type: string;
   status: string;
   scheduledDate?: string;
+  updatedAt?: string;
+  createdAt?: string;
   property?: {
     id: string;
     name: string;
@@ -249,16 +251,36 @@ export default function InspectionsListScreen() {
   const effectiveInspections = serverInspections;
   const isLoading = isLoadingServer;
 
-  const { data: blocks = [] } = useQuery({
+  const { data: blocks = [], isLoading: isLoadingBlocks, error: blocksError } = useQuery({
     queryKey: ['/api/blocks'],
-    queryFn: () => apiRequestJson<any[]>('GET', '/api/blocks'),
+    queryFn: async () => {
+      try {
+        const data = await apiRequestJson<any[]>('GET', '/api/blocks');
+        console.log('[InspectionsList] Fetched blocks:', data?.length || 0, data);
+        return data || [];
+      } catch (error) {
+        console.error('[InspectionsList] Error fetching blocks:', error);
+        return [];
+      }
+    },
     enabled: isAuthenticated, // Only fetch when authenticated
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
-  const { data: properties = [] } = useQuery({
+  const { data: properties = [], isLoading: isLoadingProperties, error: propertiesError } = useQuery({
     queryKey: ['/api/properties'],
-    queryFn: () => apiRequestJson<any[]>('GET', '/api/properties'),
+    queryFn: async () => {
+      try {
+        const data = await apiRequestJson<any[]>('GET', '/api/properties');
+        console.log('[InspectionsList] Fetched properties:', data?.length || 0, data);
+        return data || [];
+      } catch (error) {
+        console.error('[InspectionsList] Error fetching properties:', error);
+        return [];
+      }
+    },
     enabled: isAuthenticated, // Only fetch when authenticated
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   const copyInspection = useMutation({
@@ -282,8 +304,8 @@ export default function InspectionsListScreen() {
   });
 
   // Get selected block/property names for display
-  const selectedBlock = blocks.find((b: any) => b.id === filterBlockId);
-  const selectedProperty = properties.find((p: any) => p.id === filterPropertyId);
+  const selectedBlock = blocks?.find((b: any) => b?.id === filterBlockId);
+  const selectedProperty = properties?.find((p: any) => p?.id === filterPropertyId);
   const selectedStatusLabel = STATUS_OPTIONS.find((s) => s.value === filterStatus)?.label || 'All';
 
   // Clear property filter when block filter changes (block filter takes precedence)
@@ -297,8 +319,9 @@ export default function InspectionsListScreen() {
 
   // Filter properties by selected block
   const filteredProperties = useMemo(() => {
+    if (!properties || properties.length === 0) return [];
     if (!filterBlockId) return properties;
-    return properties.filter((p: any) => p.blockId === filterBlockId);
+    return properties.filter((p: any) => p?.blockId === filterBlockId);
   }, [properties, filterBlockId]);
 
   const filteredInspections = useMemo(() => {
@@ -359,6 +382,24 @@ export default function InspectionsListScreen() {
         return scheduled >= now && scheduled <= sevenDaysFromNow && i.status !== 'completed';
       });
     }
+
+    // Sort by date - newest first (most recent updatedAt, scheduledDate, or createdAt)
+    filtered.sort((a: Inspection, b: Inspection) => {
+      // Use updatedAt if available, otherwise use scheduledDate, otherwise use createdAt
+      const dateA = new Date(
+        a.updatedAt || 
+        a.scheduledDate || 
+        a.createdAt || 
+        0
+      ).getTime();
+      const dateB = new Date(
+        b.updatedAt || 
+        b.scheduledDate || 
+        b.createdAt || 
+        0
+      ).getTime();
+      return dateB - dateA; // Descending order (newest first)
+    });
 
     return filtered;
   }, [effectiveInspections, searchTerm, filterBlockId, filterPropertyId, filterStatus, filterOverdue, filterDueSoon, properties]);
@@ -590,8 +631,23 @@ export default function InspectionsListScreen() {
                 </TouchableOpacity>
               </View>
               <FlatList
-                data={[{ id: '', name: 'All Blocks' }, ...blocks]}
-                keyExtractor={(item) => item.id}
+                data={[{ id: '', name: 'All Blocks' }, ...(blocks || [])]}
+                keyExtractor={(item) => item?.id?.toString() || ''}
+                ListEmptyComponent={
+                  isLoadingBlocks ? (
+                    <View style={{ padding: spacing[4], alignItems: 'center' }}>
+                      <Text style={{ color: themeColors.text.secondary }}>Loading blocks...</Text>
+                    </View>
+                  ) : blocksError ? (
+                    <View style={{ padding: spacing[4], alignItems: 'center' }}>
+                      <Text style={{ color: themeColors.error || '#ef4444' }}>Error loading blocks</Text>
+                    </View>
+                  ) : (
+                    <View style={{ padding: spacing[4], alignItems: 'center' }}>
+                      <Text style={{ color: themeColors.text.secondary }}>No blocks found</Text>
+                    </View>
+                  )
+                }
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={[
@@ -609,7 +665,7 @@ export default function InspectionsListScreen() {
                         { color: filterBlockId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
                       ]}
                     >
-                      {item.name}
+                      {item?.name || item?.id || 'Unknown'}
                     </Text>
                     {filterBlockId === item.id && (
                       <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
@@ -647,10 +703,25 @@ export default function InspectionsListScreen() {
                 </TouchableOpacity>
               </View>
               <FlatList
-                data={[{ id: '', name: 'All Properties' }, ...filteredProperties]}
-                keyExtractor={(item) => item.id}
+                data={[{ id: '', name: 'All Properties' }, ...(filteredProperties || [])]}
+                keyExtractor={(item) => item?.id?.toString() || ''}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: spacing[2] }}
+                ListEmptyComponent={
+                  isLoadingProperties ? (
+                    <View style={{ padding: spacing[4], alignItems: 'center' }}>
+                      <Text style={{ color: themeColors.text.secondary }}>Loading properties...</Text>
+                    </View>
+                  ) : propertiesError ? (
+                    <View style={{ padding: spacing[4], alignItems: 'center' }}>
+                      <Text style={{ color: themeColors.error }}>Error loading properties</Text>
+                    </View>
+                  ) : (
+                    <View style={{ padding: spacing[4], alignItems: 'center' }}>
+                      <Text style={{ color: themeColors.text.secondary }}>No properties found</Text>
+                    </View>
+                  )
+                }
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={[
@@ -671,7 +742,7 @@ export default function InspectionsListScreen() {
                         { color: filterPropertyId === item.id ? themeColors.primary.DEFAULT : themeColors.text.primary }
                       ]}
                     >
-                      {item.name}
+                      {item?.name || item?.id || 'Unknown'}
                     </Text>
                     {filterPropertyId === item.id && (
                       <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />

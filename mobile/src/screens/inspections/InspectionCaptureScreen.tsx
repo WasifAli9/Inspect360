@@ -16,7 +16,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRoute, useNavigation, CommonActions } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import { inspectionsService, type InspectionEntry } from '../../services/inspections';
+import { inspectionsService, type InspectionEntry, type InspectionDetail } from '../../services/inspections';
 import { inspectionsOffline } from '../../services/offline/inspectionsOffline';
 import { propertiesService } from '../../services/properties';
 import { authService } from '../../services/auth';
@@ -98,11 +98,37 @@ export default function InspectionCaptureScreen() {
   // Fetch inspection with template snapshot (works offline)
   const { data: inspection, isLoading: inspectionLoading, error: inspectionError } = useQuery({
     queryKey: [`/api/inspections/${inspectionId}`],
-    queryFn: () => inspectionsOffline.getInspection(inspectionId, isOnline),
+    queryFn: async () => {
+      // Always try to load from local DB first, even when online
+      // This ensures data is available when going offline
+      const localData = await inspectionsOffline.getInspection(inspectionId, isOnline);
+      if (!localData && !isOnline) {
+        // If offline and no local data, try to get from cache
+        const cached = queryClient.getQueryData<InspectionDetail>([`/api/inspections/${inspectionId}`]);
+        if (cached) {
+          // Save cached data to local DB for offline access
+          const { saveInspection } = await import('../../services/offline/database');
+          await saveInspection({
+            inspectionId: inspectionId,
+            data: JSON.stringify(cached),
+            syncStatus: 'synced',
+            lastSyncedAt: new Date().toISOString(),
+            serverUpdatedAt: cached.updatedAt,
+            localUpdatedAt: new Date().toISOString(),
+            isDeleted: 0,
+          });
+          return cached;
+        }
+      }
+      return localData;
+    },
     enabled: !!inspectionId,
-    retry: 1,
-    retryDelay: 1000,
-    staleTime: 30000,
+    retry: false, // Don't retry when offline - use local data
+    staleTime: Infinity, // Keep data fresh indefinitely when offline
+    gcTime: Infinity, // Never garbage collect this data
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false, // Don't refetch on mount if we have cached data
   });
 
   const effectiveInspection = inspection;
@@ -165,14 +191,45 @@ export default function InspectionCaptureScreen() {
   const { data: existingEntries = [], error: entriesError } = useQuery({
     queryKey: [`/api/inspections/${inspectionId}/entries`],
     queryFn: async () => {
+      // Always try to load from local DB first
       const entries = await inspectionsOffline.getInspectionEntries(inspectionId, isOnline);
+      if (!entries || entries.length === 0) {
+        // If offline and no local entries, try to get from cache
+        if (!isOnline) {
+          const cached = queryClient.getQueryData<InspectionEntry[]>([`/api/inspections/${inspectionId}/entries`]);
+          if (cached && cached.length > 0) {
+            // Save cached entries to local DB for offline access
+            const { saveInspectionEntry } = await import('../../services/offline/database');
+            for (const entry of cached) {
+              await saveInspectionEntry({
+                id: entry.id,
+                entryId: entry.id || `${entry.inspectionId}-${entry.sectionRef}-${entry.fieldKey}`,
+                inspectionId: entry.inspectionId,
+                sectionRef: entry.sectionRef,
+                fieldKey: entry.fieldKey,
+                data: JSON.stringify(entry),
+                syncStatus: 'synced',
+                lastSyncedAt: new Date().toISOString(),
+                serverUpdatedAt: (entry as any).updatedAt || new Date().toISOString(),
+                localUpdatedAt: new Date().toISOString(),
+                isDeleted: 0,
+                createdAt: (entry as any).createdAt || new Date().toISOString(),
+                updatedAt: (entry as any).updatedAt || new Date().toISOString(),
+              });
+            }
+            return cached;
+          }
+        }
+      }
       return entries;
     },
     enabled: !!inspectionId,
-    retry: 1,
-    staleTime: 60000,
+    retry: false, // Don't retry when offline - use local data
+    staleTime: Infinity, // Keep data fresh indefinitely when offline
+    gcTime: Infinity, // Never garbage collect this data
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    refetchOnMount: false, // Don't refetch on mount if we have cached data
   });
 
   // Use server entries directly - no offline functionality

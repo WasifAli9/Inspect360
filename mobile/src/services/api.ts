@@ -202,7 +202,7 @@ export async function apiRequest(
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
-    console.log(`[API] ${method} ${fullUrl}`, data ? '(with data)' : '');
+    // Removed successful request logging to reduce console noise
     
     // Check network status (non-blocking, don't wait if it takes too long)
     const networkCheck = Network.getNetworkStateAsync().catch(() => ({ isConnected: true }));
@@ -237,7 +237,7 @@ export async function apiRequest(
     });
 
     clearTimeout(timeoutId);
-    console.log(`[API] Response status: ${res.status} for ${method} ${fullUrl}`);
+    // Removed successful response logging to reduce console noise
     
     // Log response headers for debugging (especially Set-Cookie for login)
     if (method === 'POST' && url.includes('/login')) {

@@ -52,7 +52,7 @@ export default function SyncProgressModal({ visible, progress, onClose }: SyncPr
                 ? hasErrors 
                   ? 'Sync Completed with Errors' 
                   : 'Sync Completed'
-                : 'Syncing...'}
+                : 'Please wait while local data is syncing to server'}
             </Text>
           </View>
 

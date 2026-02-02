@@ -754,7 +754,7 @@ export default function AssetInventoryListScreen() {
                           console.error('Error loading asset image:', photoUrlWithCache, error);
                         }}
                         onLoad={() => {
-                          console.log('Asset image loaded successfully:', photoUrlWithCache);
+                          // Removed successful image load logging to reduce console noise
                         }}
                       />
                       {asset.photos.length > 1 && (
