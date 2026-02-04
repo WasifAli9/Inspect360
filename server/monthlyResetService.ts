@@ -54,6 +54,27 @@ export class MonthlyResetService {
             });
           }
           
+          // Also expire all addon_pack batches - they should reset with the subscription plan
+          const addonPackBatches = existingBatches.filter(b => 
+            b.grantSource === 'addon_pack' && 
+            b.remainingQuantity > 0
+          );
+          
+          for (const batch of addonPackBatches) {
+            await storage.expireCreditBatch(batch.id);
+            await storage.createCreditLedgerEntry({
+              organizationId,
+              source: "expiry" as any,
+              quantity: -batch.remainingQuantity,
+              batchId: batch.id,
+              notes: `Expired ${batch.remainingQuantity} addon pack credits due to subscription plan reset (no rollover)`
+            });
+          }
+          
+          if (addonPackBatches.length > 0) {
+            console.log(`[Monthly Reset] Expired ${addonPackBatches.length} addon pack batches for org ${organizationId}`);
+          }
+          
           // Grant new quota
           await subscriptionService.grantCredits(
             organizationId,

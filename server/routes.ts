@@ -18238,11 +18238,26 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
             // Purchase exists but credits weren't granted - grant them now
             console.log(`[Process Session] Purchase record exists but credits not granted. Granting credits now for purchase ${existingPurchase.id}`);
             try {
+              // Calculate expiration date based on subscription renewal date
+              let expiresAt: Date | undefined = undefined;
+              if (instanceSub.subscriptionRenewalDate) {
+                expiresAt = new Date(instanceSub.subscriptionRenewalDate);
+              } else {
+                // If no renewal date set, calculate based on billing cycle
+                const renewalDate = new Date();
+                if (instanceSub.billingCycle === "annual") {
+                  renewalDate.setFullYear(renewalDate.getFullYear() + 1);
+                } else {
+                  renewalDate.setMonth(renewalDate.getMonth() + 1);
+                }
+                expiresAt = renewalDate;
+              }
+              
               await subService.grantCredits(
                 user.organizationId,
                 existingPurchase.quantity,
                 "addon_pack",
-                undefined,
+                expiresAt, // Expire with subscription plan
                 {
                   addonPurchaseId: existingPurchase.id,
                   adminNotes: `Addon pack purchase via Stripe session: ${sessionId} (retry)`,
@@ -18282,13 +18297,31 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         try {
           const { subscriptionService: subService } = await import("./subscriptionService");
           
-          console.log(`[Process Session] Granting ${quantity} credits to organization ${user.organizationId} for addon pack ${packId}`);
+          // Calculate expiration date based on subscription renewal date
+          // Addon pack credits should expire with the subscription plan
+          let expiresAt: Date | undefined = undefined;
+          if (instanceSub.subscriptionRenewalDate) {
+            expiresAt = new Date(instanceSub.subscriptionRenewalDate);
+            console.log(`[Process Session] Setting addon pack credits expiration to subscription renewal date: ${expiresAt.toISOString()}`);
+          } else {
+            // If no renewal date set, calculate based on billing cycle
+            const renewalDate = new Date();
+            if (instanceSub.billingCycle === "annual") {
+              renewalDate.setFullYear(renewalDate.getFullYear() + 1);
+            } else {
+              renewalDate.setMonth(renewalDate.getMonth() + 1);
+            }
+            expiresAt = renewalDate;
+            console.log(`[Process Session] Calculated addon pack credits expiration based on ${instanceSub.billingCycle} billing cycle: ${expiresAt.toISOString()}`);
+          }
+          
+          console.log(`[Process Session] Granting ${quantity} credits to organization ${user.organizationId} for addon pack ${packId} (expires: ${expiresAt.toISOString()})`);
           
           const creditBatch = await subService.grantCredits(
             user.organizationId,
             quantity,
             "addon_pack",
-            undefined, // No expiration date for addon packs
+            expiresAt, // Expire with subscription plan
             {
               addonPurchaseId: addonPurchase.id,
               adminNotes: `Addon pack purchase via Stripe session: ${sessionId}`,
