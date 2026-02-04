@@ -1,65 +1,88 @@
 import { storage } from "./storage";
 import { db } from "./db";
 import { instanceModules, instanceSubscriptions, moduleLimits, invoices, creditNotes } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { subscriptionService } from "./subscriptionService";
 
 export class BillingService {
   /**
    * Calculate and update overage charges for a module
+   * Uses database transaction with row-level locking to prevent race conditions
    */
   async calculateModuleOverage(instanceModuleId: string, organizationId?: string): Promise<number> {
-    const instanceModule = await db.select()
-      .from(instanceModules)
-      .where(eq(instanceModules.id, instanceModuleId))
-      .limit(1);
+    // Use transaction with row-level locking (SELECT FOR UPDATE) to prevent race conditions
+    return await db.transaction(async (tx) => {
+      // Lock the row for update to prevent concurrent modifications
+      // Using raw SQL with proper table reference for SELECT FOR UPDATE
+      // Note: Using table name from schema (drizzle will handle the actual table name)
+      const lockedModule = await tx.execute(sql`
+        SELECT id, "moduleId", "currentUsage", "usageLimit", "overageCharges"
+        FROM ${instanceModules}
+        WHERE id = ${instanceModuleId}
+        FOR UPDATE
+      `);
 
-    if (!instanceModule[0] || !instanceModule[0].usageLimit) {
-      return 0; // No limit set, no overage
-    }
+      if (!lockedModule.rows || lockedModule.rows.length === 0) {
+        return 0; // Module not found
+      }
 
-    const usage = instanceModule[0].currentUsage || 0;
-    const limit = instanceModule[0].usageLimit;
+      const moduleRow = lockedModule.rows[0] as any;
+      const usage = Number(moduleRow.currentUsage) || 0;
+      const limit = Number(moduleRow.usageLimit);
+      const moduleId = moduleRow.moduleId;
 
-    if (usage <= limit) {
-      return 0; // No overage
-    }
+      if (!limit || usage <= limit) {
+        return 0; // No limit set or no overage
+      }
 
-    // Get module limits to find overage pricing
-    const moduleLimitsList = await db.select()
-      .from(moduleLimits)
-      .where(eq(moduleLimits.moduleId, instanceModule[0].moduleId));
+      // Get module limits to find overage pricing
+      const moduleLimitsList = await tx.select()
+        .from(moduleLimits)
+        .where(eq(moduleLimits.moduleId, moduleId));
 
-    if (moduleLimitsList.length === 0) {
-      return 0; // No overage pricing configured
-    }
+      if (moduleLimitsList.length === 0) {
+        return 0; // No overage pricing configured
+      }
 
-    const moduleLimit = moduleLimitsList[0];
-    const overageUnits = usage - limit;
-    const overageCharge = overageUnits * moduleLimit.overagePrice;
+      const moduleLimit = moduleLimitsList[0];
+      const overageUnits = usage - limit;
+      const overageCharge = overageUnits * moduleLimit.overagePrice;
 
-    // Update overage charges in instance module
-    await db.update(instanceModules)
-      .set({ overageCharges: overageCharge })
-      .where(eq(instanceModules.id, instanceModuleId));
+      // Update overage charges in instance module (within transaction)
+      await tx.update(instanceModules)
+        .set({ overageCharges: overageCharge })
+        .where(eq(instanceModules.id, instanceModuleId));
 
-    // Send notification if overage was incurred and organizationId provided
-    if (organizationId && overageCharge > 0) {
-      const modules = await storage.getMarketplaceModules();
-      const module = modules.find(m => m.id === instanceModule[0].moduleId);
-      const instanceSub = await storage.getInstanceSubscription(organizationId);
-      const currency = instanceSub?.registrationCurrency || "GBP";
-      
-      const { notificationService } = await import("./notificationService");
-      await notificationService.sendOverageChargesAlert(
-        organizationId,
-        module?.name || "Unknown Module",
-        overageCharge,
-        currency
-      );
-    }
+      // Store moduleId for notification (outside transaction)
+      const notificationModuleId = moduleId;
 
-    return overageCharge;
+      // Send notification if overage was incurred and organizationId provided
+      // Do this outside transaction to avoid long-running transaction
+      if (organizationId && overageCharge > 0) {
+        // Use setImmediate to send notification after transaction commits
+        setImmediate(async () => {
+          try {
+            const modules = await storage.getMarketplaceModules();
+            const module = modules.find(m => m.id === notificationModuleId);
+            const instanceSub = await storage.getInstanceSubscription(organizationId);
+            const currency = instanceSub?.registrationCurrency || "GBP";
+            
+            const { notificationService } = await import("./notificationService");
+            await notificationService.sendOverageChargesAlert(
+              organizationId,
+              module?.name || "Unknown Module",
+              overageCharge,
+              currency
+            );
+          } catch (error) {
+            console.error(`[BillingService] Failed to send overage notification:`, error);
+            // Don't throw - notification failure shouldn't break the transaction
+          }
+        });
+      }
+
+      return overageCharge;
+    });
   }
 
   /**
@@ -109,7 +132,7 @@ export class BillingService {
       .where(eq(instanceModules.instanceId, instanceSub.id));
 
     // Note: Inspection usage reset is handled by the credit system
-    // via the billing cycle reset in subscriptionService.processRollover()
+    // via the billing cycle reset in subscriptionService.processCreditExpiry()
   }
 
   /**
@@ -136,6 +159,12 @@ export class BillingService {
 
   /**
    * Generate comprehensive invoice data for an organization
+   * 
+   * CURRENCY HANDLING:
+   * - All prices are returned in the instance's registration currency
+   * - pricingService methods handle currency conversion automatically (GBP -> instance currency)
+   * - Prices stored in database are in GBP, but converted on retrieval
+   * - Invoice currency matches instanceSub.registrationCurrency
    */
   async generateInvoiceData(
     organizationId: string,
@@ -152,7 +181,7 @@ export class BillingService {
       throw new Error("Organization not found");
     }
 
-    // Get tier pricing
+    // Get tier pricing (automatically converted to instance currency by pricingService)
     const pricingService = (await import("./pricingService")).pricingService;
     const tierPrice = await pricingService.calculateInstancePrice(
       organizationId,
@@ -160,6 +189,7 @@ export class BillingService {
     );
 
     // Get module pricing and usage
+    // Note: calculateModulePrice() handles currency conversion automatically
     const enabledModules = await storage.getInstanceModules(instanceSub.id);
     const modules = await storage.getMarketplaceModules();
     
@@ -170,6 +200,7 @@ export class BillingService {
           const module = modules.find(m => m.id === im.moduleId);
           if (!module) return null;
 
+          // Module price is automatically converted to instance currency
           const modulePrice = await pricingService.calculateModulePrice(
             organizationId,
             module.id,
@@ -177,6 +208,7 @@ export class BillingService {
           );
 
           // Calculate overage if applicable
+          // Note: Overage charges are in the same currency as module pricing
           const overageCharge = await this.calculateModuleOverage(im.id, organizationId);
 
           return {
@@ -200,16 +232,64 @@ export class BillingService {
 
     const addonTotal = periodAddons.reduce((sum, p) => sum + (p.totalPrice || 0), 0);
 
+    // Get active bundles and their charges
+    // Note: Bundle prices are stored in instanceBundles table at purchase time
+    // Prices are already in the instance's currency
+    const activeBundles = await storage.getInstanceBundles(instanceSub.id);
+    const bundles = await storage.getModuleBundles();
+    
+    const bundleCharges = await Promise.all(
+      activeBundles
+        .filter(b => b.isActive)
+        .map(async (b) => {
+          const bundle = bundles.find(bundle => bundle.id === b.bundleId);
+          
+          // Use stored bundle pricing (already in instance currency)
+          // If stored pricing is not available, calculate from bundle pricing table
+          let bundlePrice = 0;
+          if (b.bundlePriceMonthly && b.bundlePriceAnnual) {
+            // Use stored pricing (already in correct currency)
+            bundlePrice = instanceSub.billingCycle === "annual" 
+              ? b.bundlePriceAnnual 
+              : b.bundlePriceMonthly;
+          } else {
+            // Fallback: calculate from bundle pricing table (handles currency conversion)
+            const bundlePricing = await storage.getBundlePricing(
+              b.bundleId, 
+              instanceSub.registrationCurrency
+            );
+            if (bundlePricing) {
+              bundlePrice = instanceSub.billingCycle === "annual"
+                ? bundlePricing.priceAnnual
+                : bundlePricing.priceMonthly;
+            }
+          }
+
+          return {
+            bundleId: b.bundleId,
+            bundleName: bundle?.name || "Unknown Bundle",
+            price: bundlePrice,
+            total: bundlePrice
+          };
+        })
+    );
+
     // Calculate totals
-    const subtotal = tierPrice + moduleCharges.reduce((sum, m) => sum + (m?.total || 0), 0) + addonTotal;
+    const bundleTotal = bundleCharges.reduce((sum, b) => sum + b.total, 0);
+    const subtotal = tierPrice + 
+      moduleCharges.reduce((sum, m) => sum + (m?.total || 0), 0) + 
+      bundleTotal + 
+      addonTotal;
     
     // Apply annual discount if annual billing
+    // Note: Annual discount should only apply to tier price, not modules/addons/bundles
+    // Modules and add-ons are already priced correctly for annual billing
     let discount = 0;
     if (instanceSub.billingCycle === "annual") {
-      // Annual discount is already baked into tier pricing, but we can show it
       const tier = instanceSub.currentTierId ? await storage.getSubscriptionTier(instanceSub.currentTierId) : null;
       if (tier && tier.annualDiscountPercentage) {
-        discount = Math.round(subtotal * (parseFloat(tier.annualDiscountPercentage.toString()) / 100));
+        // Only apply discount to tier price, not modules/addons/bundles
+        discount = Math.round(tierPrice * (parseFloat(tier.annualDiscountPercentage.toString()) / 100));
       }
     }
 
@@ -228,6 +308,7 @@ export class BillingService {
         overrideApplied: !!(instanceSub.overrideMonthlyFee || instanceSub.overrideAnnualFee)
       },
       modules: moduleCharges.filter(m => m !== null),
+      bundles: bundleCharges,
       addonPacks: periodAddons.map(p => ({
         packId: p.packId,
         quantity: p.quantity,
@@ -253,6 +334,22 @@ export class BillingService {
     
     if (!instanceSub) {
       throw new Error("Instance subscription not found");
+    }
+
+    // Send invoice generated notification
+    try {
+      const { notificationService } = await import("./notificationService");
+      await notificationService.sendInvoiceGeneratedNotification(
+        organizationId,
+        "", // invoiceId will be set after creation
+        invoiceData.total,
+        instanceSub.registrationCurrency || "GBP",
+        undefined, // invoiceNumber will be set after creation
+        periodEnd
+      );
+    } catch (notifError) {
+      console.error("Error sending invoice generated notification:", notifError);
+      // Don't fail invoice generation if notification fails
     }
 
     // Generate invoice number (format: INV-YYYYMMDD-XXXXX)
@@ -287,6 +384,22 @@ export class BillingService {
       status: "draft",
       dueDate
     }).returning();
+
+    // Send invoice generated notification with actual invoice details
+    try {
+      const { notificationService } = await import("./notificationService");
+      await notificationService.sendInvoiceGeneratedNotification(
+        organizationId,
+        invoice.id,
+        invoiceData.total,
+        instanceSub.registrationCurrency || "GBP",
+        invoiceNumber,
+        dueDate
+      );
+    } catch (notifError) {
+      console.error("Error sending invoice generated notification:", notifError);
+      // Don't fail invoice generation if notification fails
+    }
 
     return invoice;
   }
@@ -327,40 +440,119 @@ export class BillingService {
    * Apply credit note to an invoice
    */
   async applyCreditNote(creditNoteId: string, invoiceId: string): Promise<void> {
+    // Use transaction to ensure atomicity
+    await db.transaction(async (tx) => {
+      const creditNote = await tx.select()
+        .from(creditNotes)
+        .where(eq(creditNotes.id, creditNoteId))
+        .limit(1);
+
+      if (!creditNote[0] || creditNote[0].status !== "issued") {
+        throw new Error("Credit note not found or already applied");
+      }
+
+      const invoice = await tx.select()
+        .from(invoices)
+        .where(eq(invoices.id, invoiceId))
+        .limit(1);
+
+      if (!invoice[0]) {
+        throw new Error("Invoice not found");
+      }
+
+      // Validate currency match
+      if (creditNote[0].currencyCode !== invoice[0].currencyCode) {
+        throw new Error(`Currency mismatch: Credit note is ${creditNote[0].currencyCode}, invoice is ${invoice[0].currencyCode}`);
+      }
+
+      // Validate organization match
+      if (creditNote[0].organizationId !== invoice[0].organizationId) {
+        throw new Error("Credit note and invoice must belong to the same organization");
+      }
+
+      // Update credit note
+      await tx.update(creditNotes)
+        .set({
+          status: "applied",
+          appliedToInvoiceId: invoiceId,
+          appliedAt: new Date()
+        })
+        .where(eq(creditNotes.id, creditNoteId));
+
+      // Reduce invoice total (if not already paid)
+      if (invoice[0].status !== "paid") {
+        const newTotal = Math.max(0, invoice[0].total - creditNote[0].amount);
+        await tx.update(invoices)
+          .set({ 
+            total: newTotal,
+            // Update subtotal if credit note is applied
+            // Note: We keep subtotal unchanged, only reduce total
+          })
+          .where(eq(invoices.id, invoiceId));
+        
+        // If invoice total becomes 0 or negative, mark as paid
+        if (newTotal <= 0) {
+          await tx.update(invoices)
+            .set({ 
+              status: "paid",
+              paidAt: new Date()
+            })
+            .where(eq(invoices.id, invoiceId));
+        }
+      } else {
+        // If invoice is already paid, create a refund/credit entry
+        // This could be handled by creating a negative invoice item in Stripe
+        console.log(`[Credit Note] Invoice ${invoiceId} is already paid. Credit note ${creditNoteId} applied but may need manual refund processing.`);
+      }
+    });
+  }
+
+  /**
+   * Get credit notes for an organization
+   */
+  async getCreditNotes(organizationId: string, status?: "issued" | "applied" | "cancelled"): Promise<any[]> {
+    const conditions: any[] = [eq(creditNotes.organizationId, organizationId)];
+    if (status) {
+      conditions.push(eq(creditNotes.status, status));
+    }
+    
+    return await db.select()
+      .from(creditNotes)
+      .where(and(...conditions))
+      .orderBy(creditNotes.createdAt);
+  }
+
+  /**
+   * Get credit note by ID
+   */
+  async getCreditNoteById(creditNoteId: string): Promise<any | null> {
+    const [note] = await db.select()
+      .from(creditNotes)
+      .where(eq(creditNotes.id, creditNoteId))
+      .limit(1);
+    return note || null;
+  }
+
+  /**
+   * Cancel a credit note (if not yet applied)
+   */
+  async cancelCreditNote(creditNoteId: string): Promise<void> {
     const creditNote = await db.select()
       .from(creditNotes)
       .where(eq(creditNotes.id, creditNoteId))
       .limit(1);
 
-    if (!creditNote[0] || creditNote[0].status !== "issued") {
-      throw new Error("Credit note not found or already applied");
+    if (!creditNote[0]) {
+      throw new Error("Credit note not found");
     }
 
-    const invoice = await db.select()
-      .from(invoices)
-      .where(eq(invoices.id, invoiceId))
-      .limit(1);
-
-    if (!invoice[0]) {
-      throw new Error("Invoice not found");
+    if (creditNote[0].status !== "issued") {
+      throw new Error("Only issued credit notes can be cancelled");
     }
 
-    // Update credit note
     await db.update(creditNotes)
-      .set({
-        status: "applied",
-        appliedToInvoiceId: invoiceId,
-        appliedAt: new Date()
-      })
+      .set({ status: "cancelled" })
       .where(eq(creditNotes.id, creditNoteId));
-
-    // Reduce invoice total (if not already paid)
-    if (invoice[0].status !== "paid") {
-      const newTotal = Math.max(0, invoice[0].total - creditNote[0].amount);
-      await db.update(invoices)
-        .set({ total: newTotal })
-        .where(eq(invoices.id, invoiceId));
-    }
   }
 
   /**

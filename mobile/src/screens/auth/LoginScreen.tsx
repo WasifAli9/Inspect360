@@ -11,12 +11,13 @@ import {
   ScrollView,
   useWindowDimensions,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { Eye, EyeOff } from 'lucide-react-native';
+import { Eye, EyeOff, AlertCircle } from 'lucide-react-native';
 import Logo from '../../components/ui/Logo';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { moderateScale, getButtonHeight, getFontSize } from '../../utils/responsive';
@@ -36,17 +37,42 @@ export default function LoginScreen() {
   const textPrimary = themeColors?.text?.primary || (theme?.theme === 'dark' ? '#fafafa' : '#0a0a0a');
   const textSecondary = themeColors?.text?.secondary || (theme?.theme === 'dark' ? '#a3a3a3' : '#737373');
 
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter both email and password');
+    // Clear previous errors
+    setError(null);
+
+    // Validate email format
+    if (!email.trim()) {
+      setError('Please enter your email address');
       return;
     }
 
-    setError(null);
+    if (!validateEmail(email.trim())) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    if (!password.trim()) {
+      setError('Please enter your password');
+      return;
+    }
+
+    if (password.trim().length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+
     try {
       console.log('[LoginScreen] Calling login function');
       await login(email.trim().toLowerCase(), password);
       console.log('[LoginScreen] Login function completed successfully');
+      // Clear error on success
+      setError(null);
       // Navigation happens automatically via AppNavigator when isAuthenticated changes
     } catch (err: any) {
       console.error('[LoginScreen] Login error caught:', {
@@ -56,17 +82,28 @@ export default function LoginScreen() {
         error: err,
       });
       
-      // Use the error message directly - it should already be user-friendly
-      // from api.ts and AuthContext error handling
-      let errorMessage = 'Email or password is incorrect. Please try again.';
+      // Determine user-friendly error message based on error type
+      let errorMessage = 'Incorrect credentials. Please try again.';
 
-      if (err?.message) {
+      // Handle specific error cases
+      if (err?.status === 401 || err?.status === 403) {
+        errorMessage = 'Incorrect email or password. Please try again.';
+      } else if (err?.status === 400) {
+        errorMessage = err?.message || 'Invalid request. Please check your credentials.';
+      } else if (err?.status === 500 || err?.status === 502 || err?.status === 503) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (err?.name === 'AbortError' || err?.message?.includes('timeout')) {
+        errorMessage = 'Request timeout. Please check your internet connection and try again.';
+      } else if (err?.message?.includes('Failed to fetch') || 
+                 err?.message?.includes('Network request failed') ||
+                 err?.message?.includes('ERR_CONNECTION_REFUSED') ||
+                 err?.message?.includes('NetworkError')) {
+        errorMessage = 'Cannot connect to server. Please check your internet connection.';
+      } else if (err?.message?.includes('SSL') || err?.message?.includes('certificate')) {
+        errorMessage = 'Connection security error. Please contact support.';
+      } else if (err?.message) {
         // Use the error message if it's user-friendly
         errorMessage = err.message;
-      } else if (err?.name === 'AbortError') {
-        errorMessage = 'Request timeout. Please check your internet connection.';
-      } else if (err?.message?.includes('Failed to fetch') || err?.message?.includes('Network request failed')) {
-        errorMessage = 'Cannot connect to server. Please check your internet connection.';
       }
 
       console.log('[LoginScreen] Setting error message:', errorMessage);
@@ -113,18 +150,25 @@ export default function LoginScreen() {
                   <Text style={[styles.label, { color: textPrimary }]}>Email Address</Text>
                   <TextInput
                     style={[styles.input, {
-                      borderColor: themeColors.border.DEFAULT,
+                      borderColor: error && !email.trim() ? themeColors.destructive.DEFAULT : themeColors.border.DEFAULT,
                       backgroundColor: themeColors.input,
                       color: themeColors.text.primary
                     }]}
                     placeholder="Enter your email address"
                     placeholderTextColor={themeColors.text.muted}
                     value={email}
-                    onChangeText={setEmail}
+                    onChangeText={(text) => {
+                      setEmail(text);
+                      // Clear error when user starts typing
+                      if (error) {
+                        setError(null);
+                      }
+                    }}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="email-address"
                     editable={!isLoading}
+                    autoComplete="email"
                   />
                 </View>
 
@@ -133,17 +177,25 @@ export default function LoginScreen() {
                   <View style={styles.passwordContainer}>
                     <TextInput
                       style={[styles.passwordInput, {
-                        borderColor: themeColors.border.DEFAULT,
+                        borderColor: error && !password.trim() ? themeColors.destructive.DEFAULT : themeColors.border.DEFAULT,
                         backgroundColor: themeColors.input,
                         color: themeColors.text.primary
                       }]}
                       placeholder="Enter your password"
                       placeholderTextColor={themeColors.text.muted}
                       value={password}
-                      onChangeText={setPassword}
+                      onChangeText={(text) => {
+                        setPassword(text);
+                        // Clear error when user starts typing
+                        if (error) {
+                          setError(null);
+                        }
+                      }}
                       secureTextEntry={!showPassword}
                       editable={!isLoading}
                       onSubmitEditing={handleLogin}
+                      autoComplete="password"
+                      textContentType="password"
                     />
                     <TouchableOpacity
                       style={styles.eyeButton}
@@ -174,7 +226,10 @@ export default function LoginScreen() {
                     backgroundColor: themeColors.destructive.DEFAULT + '15',
                     borderColor: themeColors.destructive.DEFAULT + '30'
                   }]}>
-                    <Text style={[styles.errorText, { color: themeColors.destructive.DEFAULT }]}>{error}</Text>
+                    <View style={styles.errorContent}>
+                      <AlertCircle size={16} color={themeColors.destructive.DEFAULT} style={styles.errorIcon} />
+                      <Text style={[styles.errorText, { color: themeColors.destructive.DEFAULT }]}>{error}</Text>
+                    </View>
                   </View>
                 )}
 
@@ -319,9 +374,20 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     borderWidth: 1,
   },
+  errorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+  },
+  errorIcon: {
+    marginRight: spacing[1],
+  },
   errorText: {
     fontSize: typography.fontSize.sm,
-    textAlign: 'center',
+    flex: 1,
+    textAlign: 'left',
+    fontWeight: typography.fontWeight.medium,
   },
 });
 

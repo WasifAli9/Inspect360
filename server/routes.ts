@@ -1083,8 +1083,9 @@ async function isModuleAvailableForInstance(moduleKey: string, organizationId: s
     // 3. Check if module is enabled for this instance
     const instanceModule = await storage.getInstanceModuleByModuleKey(instanceSub.id, moduleKey);
     return instanceModule?.isEnabled === true;
-  } catch (error) {
-    console.error(`Error checking module availability for ${moduleKey}:`, error?.message || error?.toString() || "Unknown error");
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : (typeof error === 'object' && error !== null && 'message' in error ? String((error as any).message) : String(error));
+    console.error(`Error checking module availability for ${moduleKey}:`, errorMessage);
     return false;
   }
 }
@@ -1158,8 +1159,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.log('[Google Maps API] API key found, returning to client (length:', apiKey.length, ')');
       res.json({ apiKey, configured: true });
-    } catch (error) {
-      console.error("Error fetching Google Maps API key:", error?.message || error?.toString() || "Unknown error");
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : (error?.message || error?.toString() || "Unknown error");
+      console.error("Error fetching Google Maps API key:", errorMessage);
       res.status(500).json({ error: "Failed to fetch API key", apiKey: null, configured: false });
     }
   });
@@ -1688,7 +1690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const organizationId = req.user.organizationId;
       const moduleId = req.params.id;
-      const { billingCycle = "monthly" } = req.body;
+      const { billingCycle = "monthly", autoCredit = false } = req.body;
 
       if (!organizationId) {
         return res.status(400).json({ message: "Organization ID is required" });
@@ -1722,6 +1724,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Module is not available" });
       }
 
+      // Check if module is already enabled
+      const instanceModules = await storage.getInstanceModules(instanceSub.id);
+      const existingModule = instanceModules.find(im => im.moduleId === moduleId && im.isEnabled);
+      if (existingModule) {
+        // Check if module is covered by a bundle (in which case purchase might be for renewal)
+        const { pricingService } = await import("./pricingService");
+        const isInBundle = await pricingService.isModuleInActiveBundle(instanceSub.id, moduleId);
+        
+        if (isInBundle) {
+          return res.status(400).json({ 
+            message: "Module is already active as part of a bundle",
+            details: {
+              moduleId: moduleId,
+              moduleName: module.name,
+              suggestion: "This module is already enabled as part of an active bundle. Bundle pricing covers this module."
+            }
+          });
+        } else {
+          return res.status(400).json({ 
+            message: "Module is already enabled",
+            details: {
+              moduleId: moduleId,
+              moduleName: module.name,
+              suggestion: "This module is already active. If you need to update your subscription, please contact support."
+            }
+          });
+        }
+      }
+
       // Get currency from subscription or organization, fallback to GBP
       const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
       const modulePricing = await storage.getModulePricing(moduleId, currency);
@@ -1732,7 +1763,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fullPrice = billingCycle === "annual" ? modulePricing.priceAnnual : modulePricing.priceMonthly;
 
       // Import pro-rata service
-      const { calculateProRata } = await import("./proRataService");
+      const { calculateProRataWithPriority } = await import("./proRataService");
       
       // Create Stripe checkout session
       const { getUncachableStripeClient } = await import("./stripeClient");
@@ -1746,45 +1777,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let proRataResult = null;
       let isProrated = false;
 
-      // Priority 1: Use instanceSubscriptions (source of truth - updated on tier changes)
-      if (instanceSub.subscriptionStartDate && instanceSub.subscriptionRenewalDate && instanceSub.billingCycle === billingCycle && instanceSub.subscriptionStatus === "active") {
-        // Use instance subscription dates for pro-rata calculation (always current/accurate)
-        const startDate = instanceSub.subscriptionStartDate;
-        const renewalDate = instanceSub.subscriptionRenewalDate;
-        
-        proRataResult = calculateProRata(
-          fullPrice,
-          startDate,
-          renewalDate,
-          billingCycle
-        );
-        
-        if (proRataResult.isProrated) {
-          finalPrice = proRataResult.proratedPrice;
-          isProrated = true;
-          console.log(`[Pro-Rata] Module ${module.name}: Using instanceSubscriptions dates - Charging ${finalPrice/100} ${currency} (prorated) instead of ${fullPrice/100} ${currency} for ${proRataResult.remainingDays} remaining days (renewal: ${renewalDate.toISOString()})`);
-        }
-      } else {
-        // Priority 2: Fall back to legacy subscription (only if instanceSubscriptions doesn't have data)
-        const existingSub = await storage.getSubscriptionByOrganization(organizationId);
-        if (existingSub?.stripeSubscriptionId && existingSub.billingInterval === billingCycle) {
-          // Use legacy subscription dates for pro-rata calculation
-          const startDate = existingSub.currentPeriodStart || existingSub.billingCycleAnchor || existingSub.createdAt;
-          const renewalDate = existingSub.currentPeriodEnd;
-          
-          proRataResult = calculateProRata(
-            fullPrice,
-            startDate,
-            renewalDate,
-            billingCycle
-          );
-          
-          if (proRataResult.isProrated) {
-            finalPrice = proRataResult.proratedPrice;
-            isProrated = true;
-            console.log(`[Pro-Rata] Module ${module.name}: Using legacy subscription dates - Charging ${finalPrice/100} ${currency} (prorated) instead of ${fullPrice/100} ${currency} for ${proRataResult.remainingDays} remaining days (renewal: ${renewalDate.toISOString()})`);
-          }
-        }
+      // Use shared function that consistently prioritizes instanceSubscriptions dates
+      const proRataData = await calculateProRataWithPriority(
+        fullPrice,
+        organizationId,
+        billingCycle,
+        storage
+      );
+
+      if (proRataData && proRataData.result.isProrated) {
+        proRataResult = proRataData.result;
+        finalPrice = proRataResult.proratedPrice;
+        isProrated = true;
+        const renewalDate = proRataData.source === "instanceSubscriptions" 
+          ? instanceSub.subscriptionRenewalDate 
+          : (await storage.getSubscriptionByOrganization(organizationId))?.currentPeriodEnd;
+        console.log(`[Pro-Rata] Module ${module.name}: Using ${proRataData.source} dates - Charging ${finalPrice/100} ${currency} (prorated) instead of ${fullPrice/100} ${currency} for ${proRataResult.remainingDays} remaining days${renewalDate ? ` (renewal: ${renewalDate.toISOString()})` : ''}`);
       }
 
       // Build description with pro-rata info if applicable
@@ -1840,7 +1848,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const organizationId = req.user.organizationId;
       const bundleId = req.params.id;
-      const { billingCycle = "monthly" } = req.body;
+      const { billingCycle = "monthly", autoCredit = false } = req.body;
 
       if (!organizationId) {
         return res.status(400).json({ message: "Organization ID is required" });
@@ -1881,6 +1889,151 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Bundle is already active" });
       }
 
+      // Validate: Check if any modules in the bundle are already purchased separately
+      // This prevents customers from paying for modules twice
+      const bundleModules = await storage.getBundleModules(bundleId);
+      const instanceModules = await storage.getInstanceModules(instanceSub.id);
+      
+      // Get all modules covered by active bundles (to exclude from check)
+      const { pricingService } = await import("./pricingService");
+      const coveredModuleIds = await pricingService.getBundledModuleIds(instanceSub.id);
+      
+      // Find modules that are already purchased separately (not covered by another bundle)
+      const alreadyPurchasedModules = bundleModules.filter(bm => {
+        const instanceModule = instanceModules.find(im => im.moduleId === bm.moduleId && im.isEnabled);
+        // Module is already purchased if:
+        // 1. It's enabled in instance modules
+        // 2. It's not covered by another active bundle
+        // 3. It has a non-zero price (not already free from another bundle)
+        if (instanceModule) {
+          const isCoveredByBundle = coveredModuleIds.has(bm.moduleId);
+          const hasPrice = (instanceModule.monthlyPrice && instanceModule.monthlyPrice > 0) ||
+                          (instanceModule.annualPrice && instanceModule.annualPrice > 0);
+          return !isCoveredByBundle && hasPrice;
+        }
+        return false;
+      });
+
+      if (alreadyPurchasedModules.length > 0) {
+        const modules = await storage.getMarketplaceModules();
+        const moduleNames = alreadyPurchasedModules.map(bm => {
+          const module = modules.find(m => m.id === bm.moduleId);
+          return module?.name || bm.moduleId;
+        }).join(", ");
+
+        // Calculate total credit for individual module purchases
+        let totalCredit = 0;
+        const moduleCredits: Array<{ moduleId: string; moduleName: string; credit: number }> = [];
+        
+        for (const bm of alreadyPurchasedModules) {
+          const instanceModule = instanceModules.find(im => im.moduleId === bm.moduleId && im.isEnabled);
+          if (instanceModule) {
+            // Calculate prorated credit based on remaining days in billing cycle
+            const { calculateProRataWithPriority } = await import("./proRataService");
+            const modulePrice = instanceSub.billingCycle === "annual" 
+              ? (instanceModule.annualPrice || 0)
+              : (instanceModule.monthlyPrice || 0);
+            
+            if (modulePrice > 0 && instanceSub.subscriptionRenewalDate) {
+              const proRataData = await calculateProRataWithPriority(
+                modulePrice,
+                organizationId,
+                instanceSub.billingCycle,
+                storage
+              );
+              
+              if (proRataData && proRataData.result.isProrated) {
+                const proratedCredit = proRataData.result.proratedPrice;
+                totalCredit += proratedCredit;
+                const module = modules.find(m => m.id === bm.moduleId);
+                moduleCredits.push({
+                  moduleId: bm.moduleId,
+                  moduleName: module?.name || bm.moduleId,
+                  credit: proratedCredit
+                });
+              }
+            }
+          }
+        }
+
+        // Offer automatic credit option
+        const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+        
+        // If autoCredit is enabled, process the credit and allow bundle purchase
+        if (autoCredit && totalCredit > 0) {
+          try {
+            // Create Stripe credit note for the prorated module purchases
+            if (org.stripeCustomerId) {
+              const { getUncachableStripeClient } = await import("./stripeClient");
+              const stripe = await getUncachableStripeClient();
+              
+              await stripe.invoiceItems.create({
+                customer: org.stripeCustomerId,
+                amount: -totalCredit, // Negative amount = credit
+                currency: currency.toLowerCase(),
+                description: `Credit for individual module purchases (${moduleNames}) - replaced by bundle`,
+                metadata: {
+                  organizationId: organizationId,
+                  type: "module_to_bundle_credit",
+                  bundleId: bundleId,
+                  modules: alreadyPurchasedModules.map(bm => bm.moduleId).join(",")
+                }
+              });
+              
+              console.log(`[Bundle Purchase] Created credit of ${(totalCredit / 100).toFixed(2)} ${currency} for individual modules replaced by bundle ${bundleId}`);
+            }
+            
+            // Disable individual modules (they'll be re-enabled by bundle purchase)
+            const { instanceModules: instanceModulesTable } = await import("@shared/schema");
+            const { db } = await import("./db");
+            const { eq } = await import("drizzle-orm");
+            
+            for (const bm of alreadyPurchasedModules) {
+              const instanceModule = instanceModules.find(im => im.moduleId === bm.moduleId);
+              if (instanceModule) {
+                await db.update(instanceModulesTable)
+                  .set({ isEnabled: false })
+                  .where(eq(instanceModulesTable.id, instanceModule.id));
+              }
+            }
+            
+            console.log(`[Bundle Purchase] Disabled ${alreadyPurchasedModules.length} individual modules to allow bundle purchase with auto-credit`);
+          } catch (creditError: any) {
+            console.error(`[Bundle Purchase] Failed to process auto-credit:`, creditError);
+            return res.status(500).json({
+              message: "Failed to process automatic credit",
+              error: creditError.message,
+              details: {
+                suggestion: "Please contact support to arrange credit manually, or disable individual modules first."
+              }
+            });
+          }
+        } else {
+          // Return error with credit option
+          return res.status(400).json({ 
+            message: "Some modules in this bundle are already purchased separately",
+            details: {
+              conflictingModules: alreadyPurchasedModules.map(bm => bm.moduleId),
+              moduleNames: moduleNames,
+              suggestion: "Please disable the individual modules first, or contact support for assistance with bundle pricing.",
+              creditOption: totalCredit > 0 ? {
+                available: true,
+                totalCredit: totalCredit / 100, // Convert to major units
+                currency: currency,
+                moduleCredits: moduleCredits.map(mc => ({
+                  moduleName: mc.moduleName,
+                  credit: mc.credit / 100
+                })),
+                message: `We can automatically credit you ${(totalCredit / 100).toFixed(2)} ${currency} for the remaining value of your individual module purchases. Add 'autoCredit: true' to your request to proceed.`
+              } : {
+                available: false,
+                message: "Contact support to arrange credit for your individual module purchases."
+              }
+            }
+          });
+        }
+      }
+
       // Get currency from subscription or organization, fallback to GBP
       const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
       const bundlePricing = await storage.getBundlePricing(bundleId, currency);
@@ -1897,48 +2050,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { getUncachableStripeClient } = await import("./stripeClient");
       const stripe = await getUncachableStripeClient();
 
+      // Import pro-rata service
+      const { calculateProRataWithPriority } = await import("./proRataService");
+
       // Check for existing subscriptions to support pro-rata
-      const existingSub = await storage.getSubscriptionByOrganization(organizationId);
-      
+      // IMPORTANT: Always prioritize instanceSubscriptions.subscriptionRenewalDate as source of truth
+      // This ensures proration uses the CURRENT subscription state (after tier changes, etc.)
+      // Only fall back to legacy subscription if instanceSubscriptions doesn't have the data
       let finalPrice = fullPrice;
       let proRataResult = null;
       let isProrated = false;
 
-      // Check if we should apply pro-rata billing
-      if (existingSub?.stripeSubscriptionId && existingSub.billingInterval === billingCycle) {
-        // Use legacy subscription dates for pro-rata calculation
-        const startDate = existingSub.currentPeriodStart || existingSub.billingCycleAnchor || existingSub.createdAt;
-        const renewalDate = existingSub.currentPeriodEnd;
-        
-        proRataResult = calculateProRata(
-          fullPrice,
-          startDate,
-          renewalDate,
-          billingCycle
-        );
-        
-        if (proRataResult.isProrated) {
-          finalPrice = proRataResult.proratedPrice;
-          isProrated = true;
-          console.log(`[Pro-Rata] Bundle ${bundle.name}: Charging ${finalPrice/100} ${currency} (prorated) instead of ${fullPrice/100} ${currency} for ${proRataResult.remainingDays} remaining days`);
-        }
-      } else if (instanceSub.subscriptionStartDate && instanceSub.billingCycle === billingCycle) {
-        // Use instance subscription dates for pro-rata calculation
-        const startDate = instanceSub.subscriptionStartDate;
-        const renewalDate = instanceSub.subscriptionRenewalDate;
-        
-        proRataResult = calculateProRata(
-          fullPrice,
-          startDate,
-          renewalDate,
-          billingCycle
-        );
-        
-        if (proRataResult.isProrated) {
-          finalPrice = proRataResult.proratedPrice;
-          isProrated = true;
-          console.log(`[Pro-Rata] Bundle ${bundle.name}: Charging ${finalPrice/100} ${currency} (prorated) instead of ${fullPrice/100} ${currency} for ${proRataResult.remainingDays} remaining days`);
-        }
+      // Use shared function that consistently prioritizes instanceSubscriptions dates
+      const proRataData = await calculateProRataWithPriority(
+        fullPrice,
+        organizationId,
+        billingCycle,
+        storage
+      );
+
+      if (proRataData && proRataData.result.isProrated) {
+        proRataResult = proRataData.result;
+        finalPrice = proRataResult.proratedPrice;
+        isProrated = true;
+        const renewalDate = proRataData.source === "instanceSubscriptions" 
+          ? instanceSub.subscriptionRenewalDate 
+          : (await storage.getSubscriptionByOrganization(organizationId))?.currentPeriodEnd;
+        console.log(`[Pro-Rata] Bundle ${bundle.name}: Using ${proRataData.source} dates - Charging ${finalPrice/100} ${currency} (prorated) instead of ${fullPrice/100} ${currency} for ${proRataResult.remainingDays} remaining days${renewalDate ? ` (renewal: ${renewalDate.toISOString()})` : ''}`);
       }
 
       // Build description with pro-rata info if applicable
@@ -1990,6 +2128,200 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Keep toggle endpoint for backward compatibility (used by admin)
+  // Deactivate a bundle
+  app.post("/api/marketplace/bundles/:id/deactivate", isAuthenticated, async (req: any, res) => {
+    try {
+      const organizationId = req.user.organizationId;
+      const bundleId = req.params.id;
+      const { immediate = false } = req.body; // If true, deactivate immediately; if false, at end of billing cycle
+
+      if (!organizationId) {
+        return res.status(400).json({ message: "Organization ID is required" });
+      }
+
+      const org = await storage.getOrganization(organizationId);
+      if (!org) {
+        return res.status(404).json({ message: "Organization not found" });
+      }
+
+      // Get instance subscription
+      let instanceSub = await storage.getInstanceSubscription(organizationId);
+      if (!instanceSub) {
+        return res.status(404).json({ message: "Instance subscription not found" });
+      }
+
+      // Get active bundles
+      const instanceBundles = await storage.getInstanceBundles(instanceSub.id);
+      const activeBundle = instanceBundles.find(ib => ib.bundleId === bundleId && ib.isActive);
+      
+      if (!activeBundle) {
+        return res.status(404).json({ 
+          message: "Bundle not found or not active",
+          details: {
+            bundleId: bundleId,
+            suggestion: "This bundle is not currently active for your organization."
+          }
+        });
+      }
+
+      // Get bundle details
+      const bundles = await storage.getModuleBundles();
+      const bundle = bundles.find(b => b.id === bundleId);
+      if (!bundle) {
+        return res.status(404).json({ message: "Bundle configuration not found" });
+      }
+
+      // Get bundle modules
+      const bundleModules = await storage.getBundleModules(bundleId);
+      if (bundleModules.length === 0) {
+        return res.status(400).json({ message: "Bundle has no modules" });
+      }
+
+      // Import required modules
+      const { instanceBundles: instanceBundlesTable, instanceModules: instanceModulesTable } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, and } = await import("drizzle-orm");
+      const { pricingService } = await import("./pricingService");
+      const { calculateProRataWithPriority } = await import("./proRataService");
+
+      // Get currency
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+
+      // Calculate proration if deactivating mid-cycle
+      let proratedRefund = null;
+      let proratedRefundMinorUnits = 0;
+      let remainingDays = 0;
+
+      if (immediate && instanceSub.subscriptionRenewalDate) {
+        const now = new Date();
+        const renewalDate = new Date(instanceSub.subscriptionRenewalDate);
+        
+        if (renewalDate > now) {
+          // Calculate remaining days in billing cycle
+          const daysRemaining = Math.ceil((renewalDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          remainingDays = daysRemaining;
+
+          // Calculate prorated refund based on bundle price
+          const bundlePrice = instanceSub.billingCycle === "annual" 
+            ? activeBundle.bundlePriceAnnual 
+            : activeBundle.bundlePriceMonthly;
+
+          if (bundlePrice && bundlePrice > 0) {
+            const daysInCycle = instanceSub.billingCycle === "annual" ? 365 : 30;
+            proratedRefundMinorUnits = Math.round((bundlePrice * daysRemaining) / daysInCycle);
+            proratedRefund = proratedRefundMinorUnits / 100; // Convert to major units
+          }
+        }
+      }
+
+      // Use transaction to ensure atomicity: bundle deactivation + module pricing updates succeed or all fail
+      await db.transaction(async (tx) => {
+        // Deactivate bundle
+        await tx.update(instanceBundlesTable)
+          .set({
+            isActive: false,
+            endDate: new Date() // Record when bundle was deactivated
+          })
+          .where(and(
+            eq(instanceBundlesTable.instanceId, instanceSub.id),
+            eq(instanceBundlesTable.bundleId, bundleId),
+            eq(instanceBundlesTable.isActive, true)
+          ));
+
+        // Revert module pricing to individual pricing (bundle no longer covers the cost)
+        // Modules remain enabled - user can continue using them but will be charged individually
+        for (const bm of bundleModules) {
+          // Get current instance module
+          const instanceModulesList = await storage.getInstanceModules(instanceSub.id);
+          const instanceModule = instanceModulesList.find(im => im.moduleId === bm.moduleId);
+          
+          if (instanceModule && instanceModule.isEnabled) {
+            // Get individual module pricing
+            const modulePricing = await storage.getModulePricing(bm.moduleId, currency);
+            
+            if (modulePricing) {
+              // Check if module is covered by another active bundle
+              const isInOtherBundle = await pricingService.isModuleInActiveBundle(instanceSub.id, bm.moduleId);
+              
+              if (!isInOtherBundle) {
+                // Revert to individual module pricing
+                await tx.update(instanceModulesTable)
+                  .set({
+                    monthlyPrice: modulePricing.priceMonthly,
+                    annualPrice: modulePricing.priceAnnual,
+                    currencyCode: currency,
+                    billingStartDate: new Date() // Reset billing start date
+                  })
+                  .where(eq(instanceModulesTable.id, instanceModule.id));
+              } else {
+                // Module is covered by another bundle, keep price at 0
+                console.log(`[Bundle Deactivation] Module ${bm.moduleId} is covered by another bundle, keeping price at 0`);
+              }
+            } else {
+              console.warn(`[Bundle Deactivation] Module pricing not found for module ${bm.moduleId} in currency ${currency}`);
+            }
+          }
+        }
+      });
+
+      // If prorated refund calculated, create invoice item credit or Stripe refund
+      if (immediate && proratedRefundMinorUnits > 0 && proratedRefund && org.stripeCustomerId) {
+        try {
+          const { getUncachableStripeClient } = await import("./stripeClient");
+          const stripe = await getUncachableStripeClient();
+          
+          // Create a negative invoice item (credit) in Stripe (will be applied to next invoice)
+          await stripe.invoiceItems.create({
+            customer: org.stripeCustomerId,
+            amount: -proratedRefundMinorUnits, // Negative amount = credit
+            currency: currency.toLowerCase(),
+            description: `Prorated refund for bundle ${bundle.name} deactivation (${remainingDays} days remaining)`,
+            metadata: {
+              organizationId: organizationId,
+              bundleId: bundleId,
+              bundleName: bundle.name,
+              type: "bundle_deactivation_refund",
+              remainingDays: remainingDays.toString()
+            }
+          });
+          
+          console.log(`[Bundle Deactivation] Created prorated refund of ${proratedRefund.toFixed(2)} ${currency} for bundle ${bundle.name}`);
+        } catch (stripeError: any) {
+          console.error(`[Bundle Deactivation] Failed to create Stripe credit:`, stripeError.message);
+          // Don't fail the deactivation if credit creation fails
+          // The bundle is already deactivated, credit can be handled manually
+        }
+      }
+
+      // Return response
+      res.json({
+        success: true,
+        bundleId: bundleId,
+        bundleName: bundle.name,
+        deactivated: true,
+        immediate: immediate,
+        proratedRefund: proratedRefund,
+        remainingDays: immediate ? remainingDays : null,
+        message: immediate 
+          ? (proratedRefund 
+              ? `Bundle ${bundle.name} deactivated. Prorated refund of ${currency} ${proratedRefund.toFixed(2)} will be applied to your account.`
+              : `Bundle ${bundle.name} deactivated.`)
+          : `Bundle ${bundle.name} will be deactivated at the end of your billing cycle.`,
+        details: {
+          modulesRemainEnabled: true,
+          modulesRevertedToIndividualPricing: true,
+          note: "Modules remain enabled but will now be charged at individual pricing. You can disable them separately if needed."
+        }
+      });
+    } catch (error: any) {
+      console.error("Error deactivating bundle:", error);
+      res.status(500).json({ 
+        message: "Failed to deactivate bundle",
+        error: error.message 
+      });
+    }
+  });
+
   app.post("/api/marketplace/modules/:id/toggle", isAuthenticated, async (req: any, res) => {
     try {
       const organizationId = req.user.organizationId;
@@ -2042,19 +2374,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Calculate prorated charge if enabling mid-cycle
       let proratedCharge = null;
       let proratedChargeMinorUnits = 0; // Store in minor units for Stripe
-      if (enable && modulePricing && instanceSub.subscriptionStartDate && instanceSub.subscriptionRenewalDate) {
-        const { calculateProRata } = await import("./proRataService");
+      if (enable && modulePricing) {
+        const { calculateProRataWithPriority } = await import("./proRataService");
         const fullPrice = instanceSub.billingCycle === "annual" ? modulePricing.priceAnnual : modulePricing.priceMonthly;
         
-        const proRataResult = calculateProRata(
+        // Use shared function that consistently prioritizes instanceSubscriptions dates
+        const proRataData = await calculateProRataWithPriority(
           fullPrice,
-          instanceSub.subscriptionStartDate,
-          instanceSub.subscriptionRenewalDate,
-          instanceSub.billingCycle
+          organizationId,
+          instanceSub.billingCycle,
+          storage
         );
         
-        if (proRataResult.isProrated) {
-          proratedChargeMinorUnits = proRataResult.proratedPrice; // Keep in minor units (pence/cents)
+        if (proRataData && proRataData.result.isProrated) {
+          proratedChargeMinorUnits = proRataData.result.proratedPrice; // Keep in minor units (pence/cents)
           proratedCharge = proratedChargeMinorUnits / 100; // Convert to major units for response
           
           // Add prorated charge to Stripe as invoice item (will be included in next invoice)
@@ -2086,18 +2419,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Validate: If disabling, check if module is part of an active bundle
+      if (!enable) {
+        const { pricingService } = await import("./pricingService");
+        const isInBundle = await pricingService.isModuleInActiveBundle(instanceSub.id, moduleId);
+        if (isInBundle) {
+          const bundles = await storage.getModuleBundles();
+          const activeBundles = await storage.getInstanceBundles(instanceSub.id);
+          const bundle = bundles.find(b => {
+            const instanceBundle = activeBundles.find(ib => ib.bundleId === b.id && ib.isActive);
+            if (!instanceBundle) return false;
+            // Check if this module is in this bundle
+            return storage.getBundleModules(b.id).then(modules => 
+              modules.some(bm => bm.moduleId === moduleId)
+            );
+          });
+          
+          // Note: We can't easily get bundle name here without async, so we'll use a generic message
+          // The module can still be disabled, but the bundle will continue to cover its cost
+          console.warn(`[Module Toggle] Attempting to disable module ${moduleId} which is part of an active bundle. Bundle will continue to cover the cost.`);
+        }
+      }
+
+      // Validate: If disabling, check if module is part of an active bundle
+      if (!enable) {
+        const { pricingService } = await import("./pricingService");
+        const isInBundle = await pricingService.isModuleInActiveBundle(instanceSub.id, moduleId);
+        if (isInBundle) {
+          // Module is in a bundle - warn but allow disabling
+          // The bundle will continue to cover the cost, but module functionality will be disabled
+          console.warn(`[Module Toggle] Disabling module ${moduleId} which is part of an active bundle. Bundle will continue to cover the cost.`);
+        }
+      }
+
       // Toggle module
       const updatedModule = await storage.toggleInstanceModule(instanceSub.id, moduleId, enable);
       
       // Update pricing info if enabling
+      // Note: If module is in a bundle, pricing should remain 0 (bundle covers the cost)
       if (enable && modulePricing) {
+        const { pricingService } = await import("./pricingService");
+        const isInBundle = await pricingService.isModuleInActiveBundle(instanceSub.id, moduleId);
+        
         const { instanceModules } = await import("@shared/schema");
         const { db } = await import("./db");
         const { eq } = await import("drizzle-orm");
+        
         await db.update(instanceModules)
           .set({
-            monthlyPrice: modulePricing.priceMonthly,
-            annualPrice: modulePricing.priceAnnual,
+            // If module is in bundle, keep price at 0 (bundle covers cost)
+            // Otherwise, set to module pricing
+            monthlyPrice: isInBundle ? 0 : modulePricing.priceMonthly,
+            annualPrice: isInBundle ? 0 : modulePricing.priceAnnual,
             currencyCode: currency,
             billingStartDate: billingStartDate ? new Date(billingStartDate) : new Date()
           })
@@ -11757,285 +12130,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  app.post("/api/stripe/webhook", async (req, res) => {
-    const sig = req.headers['stripe-signature'];
-
-    try {
-      const stripe = await getUncachableStripeClient();
-      const event = stripe.webhooks.constructEvent(
-        req.body,
-        sig!,
-        process.env.STRIPE_WEBHOOK_SECRET || "whsec_test"
-      );
-
-      if (event.type === 'checkout.session.completed') {
-        const session = event.data.object as any;
-        const organizationId = session.metadata?.organizationId;
-        const purchaseType = session.metadata?.type;
-
-        console.log(`[Webhook] Checkout session completed - Organization: ${organizationId}, Type: ${purchaseType}, Metadata:`, JSON.stringify(session.metadata, null, 2));
-
-        if (purchaseType === 'module_purchase') {
-          // Handle module purchase
-          const moduleId = session.metadata.moduleId;
-          const billingCycle = session.metadata.billingCycle || 'monthly';
-          const isProrated = session.metadata.isProrated === 'true';
-          const fullPrice = session.metadata.fullPrice ? parseInt(session.metadata.fullPrice) : null;
-          const proratedPrice = session.metadata.proratedPrice ? parseInt(session.metadata.proratedPrice) : null;
-          const remainingDays = session.metadata.remainingDays ? parseInt(session.metadata.remainingDays) : null;
-
-          if (!moduleId || !organizationId) {
-            console.error('Missing moduleId or organizationId in webhook metadata');
-            return res.json({ received: true });
-          }
-
-          // Get or create instance subscription
-          let instanceSub = await storage.getInstanceSubscription(organizationId);
-          if (!instanceSub) {
-            const org = await storage.getOrganization(organizationId);
-            if (!org) {
-              console.error(`Organization ${organizationId} not found`);
-              return res.json({ received: true });
-            }
-            instanceSub = await storage.createInstanceSubscription({
-              organizationId,
-              registrationCurrency: "GBP",
-              inspectionQuotaIncluded: 0,
-              billingCycle: "monthly",
-              subscriptionStatus: "active"
-            });
-          }
-
-          // Enable the module for this instance
-          // Get currency from subscription or organization, fallback to GBP
-          const org = await storage.getOrganization(organizationId);
-          const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
-          const modulePricing = await storage.getModulePricing(moduleId, currency);
-
-          if (modulePricing) {
-            await storage.toggleInstanceModule(instanceSub.id, moduleId, true);
-
-            // Update instance module with pricing info
-            const instanceModulesList = await storage.getInstanceModules(instanceSub.id);
-            const instanceModule = instanceModulesList.find(im => im.moduleId === moduleId);
-            if (instanceModule) {
-              await db.update(instanceModules)
-                .set({
-                  monthlyPrice: modulePricing.priceMonthly,
-                  annualPrice: modulePricing.priceAnnual,
-                  currencyCode: currency,
-                  billingStartDate: new Date()
-                })
-                .where(eq(instanceModules.id, instanceModule.id));
-            }
-          }
-
-          // Log proration information
-          if (isProrated && fullPrice && proratedPrice && remainingDays) {
-            console.log(`[Pro-Rata Webhook] Module ${moduleId} enabled for organization ${organizationId}`);
-            console.log(`[Pro-Rata Webhook] Full price: ${fullPrice/100} ${currency}, Prorated price: ${proratedPrice/100} ${currency}, Remaining days: ${remainingDays}`);
-            console.log(`[Pro-Rata Webhook] Savings: ${(fullPrice - proratedPrice)/100} ${currency}`);
-          } else {
-            console.log(`Module ${moduleId} enabled for organization ${organizationId} (full price)`);
-          }
-        } else if (purchaseType === 'addon_pack_purchase') {
-          // Handle add-on pack purchase
-          console.log(`[Webhook] Processing addon pack purchase for organization ${organizationId}`);
-          const packId = session.metadata?.packId;
-          const tierIdAtPurchase = session.metadata?.tierIdAtPurchase;
-          let quantity = parseInt(session.metadata?.quantity || "0");
-          const pricePerInspection = parseInt(session.metadata?.pricePerInspection || "0");
-          const totalPrice = parseInt(session.metadata?.totalPrice || "0");
-          const currency = session.metadata?.currency || "GBP";
-
-          // Verify quantity matches the actual pack inspectionQuantity
-          const packs = await storage.getAddonPacks();
-          const pack = packs.find(p => p.id === packId);
-          if (pack && pack.inspectionQuantity !== quantity) {
-            console.error(`[Webhook] QUANTITY MISMATCH: Pack ${packId} has inspectionQuantity=${pack.inspectionQuantity}, but metadata says quantity=${quantity}. Using pack.inspectionQuantity.`);
-            quantity = pack.inspectionQuantity;
-          }
-
-          console.log(`[Webhook] Addon pack purchase details - PackId: ${packId}, Quantity: ${quantity}, OrganizationId: ${organizationId}, TierId: ${tierIdAtPurchase}, PackName: ${pack?.name || 'N/A'}`);
-
-          if (!packId || !organizationId || !tierIdAtPurchase) {
-            console.error(`[Webhook] Missing required fields - PackId: ${packId}, OrganizationId: ${organizationId}, TierId: ${tierIdAtPurchase}`);
-            return res.json({ received: true });
-          }
-
-          if (quantity <= 0) {
-            console.error(`[Webhook] Invalid quantity: ${quantity}`);
-            return res.json({ received: true });
-          }
-
-          // Get or create instance subscription
-          let instanceSub = await storage.getInstanceSubscription(organizationId);
-          if (!instanceSub) {
-            const org = await storage.getOrganization(organizationId);
-            if (!org) {
-              console.error(`Organization ${organizationId} not found`);
-              return res.json({ received: true });
-            }
-            instanceSub = await storage.createInstanceSubscription({
-              organizationId,
-              registrationCurrency: currency,
-              inspectionQuotaIncluded: 0,
-              billingCycle: "monthly",
-              subscriptionStatus: "active"
-            });
-          }
-
-          // Create add-on purchase record
-          const addonPurchase = await storage.createInstanceAddonPurchase({
-            instanceId: instanceSub.id,
-            packId,
-            tierIdAtPurchase,
-            quantity,
-            pricePerInspection,
-            totalPrice,
-            currencyCode: currency,
-            inspectionsRemaining: quantity,
-            status: "active"
-          });
-
-          // Grant credits to the organization
-          try {
-            const { subscriptionService } = await import("./subscriptionService");
-            await subscriptionService.grantCredits(
-              organizationId,
-              quantity,
-              "addon_pack",
-              undefined, // No expiration date for addon packs
-              {
-                addonPurchaseId: addonPurchase.id,
-              },
-              pricePerInspection
-            );
-
-            console.log(`[Addon Pack Webhook] Successfully granted ${quantity} credits to organization ${organizationId} for pack ${packId}`);
-          } catch (creditError: any) {
-            console.error(`[Addon Pack Webhook] ERROR granting credits to organization ${organizationId}:`, creditError);
-            // Don't throw - log the error but still mark purchase as successful
-            // The purchase record is already created, so we can retry credit granting later if needed
-          }
-          
-          // Explicitly return success response for addon pack purchase
-          return res.json({ received: true, creditsGranted: quantity });
-        } else if (purchaseType === 'bundle_purchase') {
-          // Handle bundle purchase
-          const bundleId = session.metadata.bundleId;
-          const billingCycle = session.metadata.billingCycle || 'monthly';
-          const isProrated = session.metadata.isProrated === 'true';
-          const fullPrice = session.metadata.fullPrice ? parseInt(session.metadata.fullPrice) : null;
-          const proratedPrice = session.metadata.proratedPrice ? parseInt(session.metadata.proratedPrice) : null;
-          const remainingDays = session.metadata.remainingDays ? parseInt(session.metadata.remainingDays) : null;
-
-          if (!bundleId || !organizationId) {
-            console.error('Missing bundleId or organizationId in webhook metadata');
-            return res.json({ received: true });
-          }
-
-          // Get or create instance subscription
-          let instanceSub = await storage.getInstanceSubscription(organizationId);
-          if (!instanceSub) {
-            const org = await storage.getOrganization(organizationId);
-            if (!org) {
-              console.error(`Organization ${organizationId} not found`);
-              return res.json({ received: true });
-            }
-            instanceSub = await storage.createInstanceSubscription({
-              organizationId,
-              registrationCurrency: org?.preferredCurrency || "GBP",
-              inspectionQuotaIncluded: 0,
-              billingCycle: "monthly",
-              subscriptionStatus: "active"
-            });
-          }
-
-          // Get bundle and pricing
-          const bundles = await storage.getModuleBundles();
-          const bundle = bundles.find(b => b.id === bundleId);
-          if (!bundle) {
-            console.error(`Bundle ${bundleId} not found`);
-            return res.json({ received: true });
-          }
-
-          // Get currency from subscription or organization, fallback to GBP
-          const org = await storage.getOrganization(organizationId);
-          const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
-          const bundlePricing = await storage.getBundlePricing(bundleId, currency);
-
-          if (bundlePricing) {
-            // Import required tables and db
-            const { instanceBundles, instanceModules } = await import("@shared/schema");
-            const { db } = await import("./db");
-            const { eq } = await import("drizzle-orm");
-
-            // Create instance bundle record
-            await db.insert(instanceBundles).values({
-              instanceId: instanceSub.id,
-              bundleId: bundleId,
-              isActive: true,
-              startDate: new Date(),
-              bundlePriceMonthly: bundlePricing.priceMonthly,
-              bundlePriceAnnual: bundlePricing.priceAnnual,
-              currencyCode: currency
-            });
-
-            // Enable all modules in the bundle
-            const bundleModules = await storage.getBundleModules(bundleId);
-            for (const bm of bundleModules) {
-              await storage.toggleInstanceModule(instanceSub.id, bm.moduleId, true);
-              
-              // Update instance module pricing (modules in bundle are free)
-              const instanceModulesList = await storage.getInstanceModules(instanceSub.id);
-              const instanceModule = instanceModulesList.find(im => im.moduleId === bm.moduleId);
-              if (instanceModule) {
-                await db.update(instanceModules)
-                  .set({
-                    monthlyPrice: 0, // Bundle covers the cost
-                    annualPrice: 0,
-                    currencyCode: currency,
-                    billingStartDate: new Date()
-                  })
-                  .where(eq(instanceModules.id, instanceModule.id));
-              }
-            }
-
-            // Log proration information
-            if (isProrated && fullPrice && proratedPrice && remainingDays) {
-              console.log(`[Pro-Rata Webhook] Bundle ${bundle.name} enabled for organization ${organizationId}`);
-              console.log(`[Pro-Rata Webhook] Full price: ${fullPrice/100} ${currency}, Prorated price: ${proratedPrice/100} ${currency}, Remaining days: ${remainingDays}`);
-              console.log(`[Pro-Rata Webhook] Savings: ${(fullPrice - proratedPrice)/100} ${currency}`);
-            } else {
-              console.log(`Bundle ${bundle.name} enabled for organization ${organizationId} (full price)`);
-            }
-          }
-        } else if (session.metadata.credits) {
-          // Legacy credit purchase handling
-          const credits = parseInt(session.metadata.credits);
-
-          // Grant credits using credit batch system
-          const { subscriptionService } = await import("./subscriptionService");
-          await subscriptionService.grantCredits(
-            organizationId,
-            credits,
-            "topup",
-            undefined, // No expiration for topup credits
-            {
-              topupOrderId: session.metadata.topupOrderId || undefined,
-              adminNotes: `Purchased ${credits} credits via Stripe`,
-            }
-          );
-        }
-      }
-
-      res.json({ received: true });
-    } catch (error) {
-      console.error("Stripe webhook error:", error);
-      res.status(400).send(`Webhook Error`);
-    }
-  });
+  // NOTE: Duplicate webhook handler removed - all webhook handling consolidated into /api/billing/webhook
 
   // ==================== BLOCK ROUTES ====================
 
@@ -17934,6 +18029,152 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         }
       }
 
+      // Handle bundle purchase processing
+      if (session.metadata?.type === "bundle_purchase") {
+        try {
+          console.log(`[Process Session] BUNDLE PURCHASE DETECTED - Processing bundle purchase`);
+          const { bundleId, billingCycle, isProrated, fullPrice, proratedPrice, remainingDays } = session.metadata;
+          console.log(`[Process Session] Processing bundle purchase for org ${user.organizationId}: bundleId=${bundleId}`);
+
+          if (!bundleId) {
+            console.error(`[Process Session] Bundle ID missing in metadata`);
+            return res.status(400).json({ message: "Bundle ID is required" });
+          }
+
+          const instanceSub = await storage.getInstanceSubscription(user.organizationId);
+          if (!instanceSub) {
+            console.error(`[Process Session] Instance subscription not found for org ${user.organizationId}`);
+            return res.status(404).json({ message: "Instance subscription not found" });
+          }
+
+          // Check if bundle already exists
+          const existingBundles = await storage.getInstanceBundles(instanceSub.id);
+          const existingBundle = existingBundles.find(ib => ib.bundleId === bundleId && ib.isActive);
+          if (existingBundle) {
+            console.log(`[Process Session] Bundle ${bundleId} already active for org ${user.organizationId}`);
+            return res.json({ message: "Bundle already activated", processed: true });
+          }
+
+          // Get bundle details
+          const bundles = await storage.getModuleBundles();
+          const bundle = bundles.find(b => b.id === bundleId);
+          if (!bundle) {
+            console.error(`[Process Session] Bundle ${bundleId} not found in database`);
+            return res.status(404).json({ message: "Bundle not found" });
+          }
+
+          // Get currency from subscription or organization, fallback to GBP
+          const org = await storage.getOrganization(user.organizationId);
+          const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+          const bundlePricing = await storage.getBundlePricing(bundleId, currency);
+          if (!bundlePricing) {
+            console.error(`[Process Session] Bundle pricing not configured for bundle ${bundleId} in currency ${currency}`);
+            return res.status(404).json({ message: `Bundle pricing not configured for bundle ${bundleId} in currency ${currency}` });
+          }
+
+          // Import required tables and db
+          const { instanceBundles, instanceModules: instanceModulesTable } = await import("@shared/schema");
+          const { db } = await import("./db");
+          const { eq, and } = await import("drizzle-orm");
+
+          // Use transaction to ensure atomicity: bundle creation + all module enables succeed or all fail
+          await db.transaction(async (tx) => {
+            // Create instance bundle record with pricing
+            await tx.insert(instanceBundles).values({
+              instanceId: instanceSub.id,
+              bundleId: bundleId,
+              isActive: true,
+              startDate: new Date(),
+              purchaseDate: new Date(),
+              bundlePriceMonthly: bundlePricing.priceMonthly,
+              bundlePriceAnnual: bundlePricing.priceAnnual,
+              currencyCode: currency
+            });
+
+            // Enable all modules in the bundle and set their prices to 0 (bundle covers the cost)
+            const bundleModules = await storage.getBundleModules(bundleId);
+            const enabledModuleIds: string[] = [];
+            
+            for (const bm of bundleModules) {
+              // Check if module instance already exists (using transaction context)
+              const existingModules = await tx.select()
+                .from(instanceModulesTable)
+                .where(and(
+                  eq(instanceModulesTable.instanceId, instanceSub.id),
+                  eq(instanceModulesTable.moduleId, bm.moduleId)
+                ))
+                .limit(1);
+              
+              const existingModule = existingModules[0];
+              
+              if (existingModule) {
+                // Update existing module: enable it and set price to 0 (bundle covers the cost)
+                await tx.update(instanceModulesTable)
+                  .set({
+                    isEnabled: true,
+                    enabledDate: new Date(),
+                    disabledDate: null,
+                    monthlyPrice: 0, // Bundle covers the cost
+                    annualPrice: 0,
+                    currencyCode: currency,
+                    billingStartDate: new Date()
+                  })
+                  .where(eq(instanceModulesTable.id, existingModule.id));
+              } else {
+                // Insert new module instance: enabled with price 0 (bundle covers the cost)
+                await tx.insert(instanceModulesTable)
+                  .values({
+                    instanceId: instanceSub.id,
+                    moduleId: bm.moduleId,
+                    isEnabled: true,
+                    enabledDate: new Date(),
+                    monthlyPrice: 0, // Bundle covers the cost
+                    annualPrice: 0,
+                    currencyCode: currency,
+                    billingStartDate: new Date()
+                  });
+              }
+              
+              enabledModuleIds.push(bm.moduleId);
+            }
+            
+            console.log(`[Process Session] Successfully enabled ${enabledModuleIds.length} modules for bundle ${bundleId}`);
+          });
+
+          // Log proration information
+          if (isProrated === "true" && fullPrice && proratedPrice && remainingDays) {
+            console.log(`[Process Session] Bundle ${bundle.name} enabled for org ${user.organizationId} (PRO-RATED)`);
+            console.log(`[Process Session] Full price: ${parseInt(fullPrice)/100} ${currency}, Prorated: ${parseInt(proratedPrice)/100} ${currency}, Remaining days: ${remainingDays}`);
+          } else {
+            console.log(`[Process Session] Bundle ${bundle.name} enabled for org ${user.organizationId} (full price)`);
+          }
+
+          // Send bundle purchased notification
+          try {
+            const { notificationService } = await import("./notificationService");
+            await notificationService.sendBundlePurchasedNotification(
+              user.organizationId,
+              bundle.name || "Bundle",
+              parseInt(proratedPrice || fullPrice || "0") / 100,
+              currency,
+              (billingCycle || "monthly") as "monthly" | "annual"
+            );
+          } catch (notifError) {
+            console.error(`[Process Session] Failed to send bundle purchased notification:`, notifError);
+          }
+
+          console.log(`[Process Session] Bundle purchase completed successfully for org ${user.organizationId}`);
+          return res.json({ message: "Bundle activated successfully", processed: true });
+        } catch (error: any) {
+          console.error(`[Process Session] Error processing bundle purchase:`, error);
+          return res.status(500).json({ 
+            message: "Failed to process bundle purchase", 
+            error: error?.message || "Unknown error",
+            processed: false
+          });
+        }
+      }
+
       // Handle addon pack purchase processing
       if (session.metadata?.type === "addon_pack_purchase") {
         const packId = session.metadata?.packId;
@@ -18099,11 +18340,12 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(403).json({ message: "Session metadata does not match your organization" });
       }
 
-      // Validate metadata (allow quotation subscriptions, module purchases, and addon pack purchases to pass)
+      // Validate metadata (allow quotation subscriptions, module purchases, addon pack purchases, and bundle purchases to pass)
       if (!planId && !topupOrderId && !tierId && 
           session.metadata?.type !== "quotation_subscription" && 
           session.metadata?.type !== "module_purchase" && 
-          session.metadata?.type !== "addon_pack_purchase") {
+          session.metadata?.type !== "addon_pack_purchase" &&
+          session.metadata?.type !== "bundle_purchase") {
         console.error(`[Process Session] Missing required metadata: planId=${planId}, topupOrderId=${topupOrderId}, tierId=${tierId}, type=${session.metadata?.type}`);
         return res.status(400).json({ message: "Session metadata is incomplete. Missing planId, topupOrderId or tierId." });
       }
@@ -18564,6 +18806,24 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
               { topupOrderId, adminNotes: `Stripe webhook session: ${session.id}` }
             );
 
+            // Send credit top-up notification
+            try {
+              const org = await storage.getOrganization(organizationId);
+              const instanceSub = await storage.getInstanceSubscription(organizationId);
+              const currency = instanceSub?.registrationCurrency || org?.preferredCurrency || "GBP";
+              const amount = session.amount_total || 0;
+              
+              const { notificationService } = await import("./notificationService");
+              await notificationService.sendCreditTopUpNotification(
+                organizationId,
+                parseInt(packSize),
+                amount,
+                currency
+              );
+            } catch (notifError) {
+              console.error(`[Stripe Webhook] Failed to send credit top-up notification:`, notifError);
+            }
+
             console.log(`[Stripe Webhook] Granted ${packSize} credits to verified org ${organizationId} via top-up`);
             break;
           }
@@ -18573,23 +18833,329 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
             const { organizationId, moduleId, billingCycle, isProrated, fullPrice, proratedPrice, remainingDays } = session.metadata;
             console.log(`[Stripe Webhook] Processing module purchase for org ${organizationId}: ${moduleId}`);
 
-            const instanceSub = await storage.getInstanceSubscription(organizationId);
-            if (instanceSub) {
-              await storage.toggleInstanceModule(instanceSub.id, moduleId, true);
-              // Store Stripe info if needed
-              if (session.subscription) {
-                // Potentially track module subscription ID separately
+            if (!moduleId || !organizationId) {
+              console.error(`[Stripe Webhook] Missing moduleId or organizationId in webhook metadata`);
+              break;
+            }
+
+            // Get or create instance subscription
+            let instanceSub = await storage.getInstanceSubscription(organizationId);
+            if (!instanceSub) {
+              const org = await storage.getOrganization(organizationId);
+              if (!org) {
+                console.error(`[Stripe Webhook] Organization ${organizationId} not found`);
+                break;
               }
+              instanceSub = await storage.createInstanceSubscription({
+                organizationId,
+                registrationCurrency: org?.preferredCurrency || "GBP",
+                inspectionQuotaIncluded: 0,
+                billingCycle: "monthly",
+                subscriptionStatus: "active"
+              });
+            }
+
+            // Get currency from subscription or organization, fallback to GBP
+            const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+            const modulePricing = await storage.getModulePricing(moduleId, currency);
+
+            if (modulePricing) {
+              // Idempotency check: Verify module is not already enabled (prevents duplicate webhook processing)
+              const instanceModulesList = await storage.getInstanceModules(instanceSub.id);
+              const existingModule = instanceModulesList.find(im => im.moduleId === moduleId && im.isEnabled);
               
+              if (existingModule) {
+                // Check if this is a duplicate webhook call
+                console.log(`[Stripe Webhook] Module ${moduleId} already enabled for org ${organizationId} - skipping duplicate webhook`);
+                break;
+              }
+
+              // Enable the module for this instance
+              await storage.toggleInstanceModule(instanceSub.id, moduleId, true);
+
+              // Update instance module with pricing info
+              const { instanceModules: instanceModulesTable } = await import("@shared/schema");
+              const { db } = await import("./db");
+              const { eq } = await import("drizzle-orm");
+              // Re-fetch to get the updated module after toggle
+              const updatedInstanceModulesList = await storage.getInstanceModules(instanceSub.id);
+              const instanceModule = updatedInstanceModulesList.find(im => im.moduleId === moduleId);
+              if (instanceModule) {
+                await db.update(instanceModulesTable)
+                  .set({
+                    monthlyPrice: modulePricing.priceMonthly,
+                    annualPrice: modulePricing.priceAnnual,
+                    currencyCode: currency,
+                    billingStartDate: new Date()
+                  })
+                  .where(eq(instanceModulesTable.id, instanceModule.id));
+              }
+
               // Log proration information
               if (isProrated === "true" && fullPrice && proratedPrice && remainingDays) {
-                // Get currency from subscription or organization, fallback to GBP
-      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
                 console.log(`[Stripe Webhook] Module ${moduleId} enabled for org ${organizationId} (PRO-RATED)`);
                 console.log(`[Stripe Webhook] Full price: ${parseInt(fullPrice)/100} ${currency}, Prorated: ${parseInt(proratedPrice)/100} ${currency}, Remaining days: ${remainingDays}`);
+                console.log(`[Stripe Webhook] Savings: ${(parseInt(fullPrice) - parseInt(proratedPrice))/100} ${currency}`);
               } else {
                 console.log(`[Stripe Webhook] Module ${moduleId} enabled for org ${organizationId} (full price)`);
               }
+
+              // Send module purchased notification
+              try {
+                const modules = await storage.getMarketplaceModules();
+                const module = modules.find(m => m.id === moduleId);
+                const moduleName = module?.name || moduleId;
+                const billingCycle = instanceSub.billingCycle || "monthly";
+                const modulePrice = billingCycle === "annual" ? modulePricing.priceAnnual : modulePricing.priceMonthly;
+                
+                const { notificationService } = await import("./notificationService");
+                await notificationService.sendModulePurchasedNotification(
+                  organizationId,
+                  moduleName,
+                  modulePrice,
+                  currency,
+                  billingCycle
+                );
+              } catch (notifError) {
+                console.error(`[Stripe Webhook] Failed to send module purchased notification:`, notifError);
+              }
+            } else {
+              console.error(`[Stripe Webhook] Module pricing not found for module ${moduleId} in currency ${currency}`);
+            }
+            break;
+          }
+
+          // Handle bundle purchase
+          if (session.metadata.type === "bundle_purchase") {
+            const { organizationId, bundleId, billingCycle, isProrated, fullPrice, proratedPrice, remainingDays } = session.metadata;
+            console.log(`[Stripe Webhook] Processing bundle purchase for org ${organizationId}: ${bundleId}`);
+
+            if (!bundleId || !organizationId) {
+              console.error(`[Stripe Webhook] Missing bundleId or organizationId in webhook metadata`);
+              break;
+            }
+
+            const instanceSub = await storage.getInstanceSubscription(organizationId);
+            if (!instanceSub) {
+              console.error(`[Stripe Webhook] Instance subscription not found for org ${organizationId}`);
+              break;
+            }
+
+            // Check if bundle already exists
+            const existingBundles = await storage.getInstanceBundles(instanceSub.id);
+            const existingBundle = existingBundles.find(ib => ib.bundleId === bundleId && ib.isActive);
+            if (existingBundle) {
+              console.log(`[Stripe Webhook] Bundle ${bundleId} already active for org ${organizationId}`);
+              break;
+            }
+
+            // Get bundle details
+            const bundles = await storage.getModuleBundles();
+            const bundle = bundles.find(b => b.id === bundleId);
+            if (!bundle) {
+              console.error(`[Stripe Webhook] Bundle ${bundleId} not found`);
+              break;
+            }
+
+            // Get currency from subscription or organization, fallback to GBP
+            const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+            const bundlePricing = await storage.getBundlePricing(bundleId, currency);
+            if (!bundlePricing) {
+              console.error(`[Stripe Webhook] Bundle pricing not configured for bundle ${bundleId} in currency ${currency}`);
+              break;
+            }
+
+            // Import required tables and db
+            const { instanceBundles, instanceModules: instanceModulesTable } = await import("@shared/schema");
+            const { db } = await import("./db");
+            const { eq, and } = await import("drizzle-orm");
+
+            // Use transaction to ensure atomicity: bundle creation + all module enables succeed or all fail
+            await db.transaction(async (tx) => {
+              // Create instance bundle record with pricing
+              await tx.insert(instanceBundles).values({
+                instanceId: instanceSub.id,
+                bundleId: bundleId,
+                isActive: true,
+                startDate: new Date(),
+                purchaseDate: new Date(),
+                bundlePriceMonthly: bundlePricing.priceMonthly,
+                bundlePriceAnnual: bundlePricing.priceAnnual,
+                currencyCode: currency
+              });
+
+              // Enable all modules in the bundle and set their prices to 0 (bundle covers the cost)
+              // All operations are done within the transaction to ensure atomicity
+              const bundleModules = await storage.getBundleModules(bundleId);
+              const enabledModuleIds: string[] = [];
+              
+              for (const bm of bundleModules) {
+                try {
+                  // Check if module instance already exists (using transaction context)
+                  const existingModules = await tx.select()
+                    .from(instanceModulesTable)
+                    .where(and(
+                      eq(instanceModulesTable.instanceId, instanceSub.id),
+                      eq(instanceModulesTable.moduleId, bm.moduleId)
+                    ))
+                    .limit(1);
+                  
+                  const existingModule = existingModules[0];
+                  
+                  if (existingModule) {
+                    // Update existing module: enable it and set price to 0 (bundle covers the cost)
+                    await tx.update(instanceModulesTable)
+                      .set({
+                        isEnabled: true,
+                        enabledDate: new Date(),
+                        disabledDate: null,
+                        monthlyPrice: 0, // Bundle covers the cost
+                        annualPrice: 0,
+                        currencyCode: currency,
+                        billingStartDate: new Date()
+                      })
+                      .where(eq(instanceModulesTable.id, existingModule.id));
+                  } else {
+                    // Insert new module instance: enabled with price 0 (bundle covers the cost)
+                    await tx.insert(instanceModulesTable)
+                      .values({
+                        instanceId: instanceSub.id,
+                        moduleId: bm.moduleId,
+                        isEnabled: true,
+                        enabledDate: new Date(),
+                        monthlyPrice: 0, // Bundle covers the cost
+                        annualPrice: 0,
+                        currencyCode: currency,
+                        billingStartDate: new Date()
+                      });
+                  }
+                  
+                  enabledModuleIds.push(bm.moduleId);
+                } catch (moduleError: any) {
+                  console.error(`[Stripe Webhook] Failed to enable module ${bm.moduleId} in bundle ${bundleId}:`, moduleError);
+                  // Transaction will rollback automatically on error
+                  throw new Error(`Failed to enable module ${bm.moduleId}: ${moduleError.message}`);
+                }
+              }
+              
+              console.log(`[Stripe Webhook] Successfully enabled ${enabledModuleIds.length} modules for bundle ${bundleId}`);
+            });
+
+            // Log proration information
+            if (isProrated === "true" && fullPrice && proratedPrice && remainingDays) {
+              console.log(`[Stripe Webhook] Bundle ${bundle.name} enabled for org ${organizationId} (PRO-RATED)`);
+              console.log(`[Stripe Webhook] Full price: ${parseInt(fullPrice)/100} ${currency}, Prorated: ${parseInt(proratedPrice)/100} ${currency}, Remaining days: ${remainingDays}`);
+            } else {
+              console.log(`[Stripe Webhook] Bundle ${bundle.name} enabled for org ${organizationId} (full price)`);
+            }
+
+            break;
+          }
+
+          // Handle add-on pack purchase
+          if (session.metadata.type === "addon_pack_purchase") {
+            const organizationId = session.metadata?.organizationId;
+            console.log(`[Stripe Webhook] Processing addon pack purchase for organization ${organizationId}`);
+            
+            const packId = session.metadata?.packId;
+            const tierIdAtPurchase = session.metadata?.tierIdAtPurchase;
+            let quantity = parseInt(session.metadata?.quantity || "0");
+            const pricePerInspection = parseInt(session.metadata?.pricePerInspection || "0");
+            const totalPrice = parseInt(session.metadata?.totalPrice || "0");
+            const currency = session.metadata?.currency || "GBP";
+
+            // Verify quantity matches the actual pack inspectionQuantity
+            const packs = await storage.getAddonPacks();
+            const pack = packs.find(p => p.id === packId);
+            if (pack && pack.inspectionQuantity !== quantity) {
+              console.error(`[Stripe Webhook] QUANTITY MISMATCH: Pack ${packId} has inspectionQuantity=${pack.inspectionQuantity}, but metadata says quantity=${quantity}. Using pack.inspectionQuantity.`);
+              quantity = pack.inspectionQuantity;
+            }
+
+            console.log(`[Stripe Webhook] Addon pack purchase details - PackId: ${packId}, Quantity: ${quantity}, OrganizationId: ${organizationId}, TierId: ${tierIdAtPurchase}, PackName: ${pack?.name || 'N/A'}`);
+
+            if (!packId || !organizationId || !tierIdAtPurchase) {
+              console.error(`[Stripe Webhook] Missing required fields - PackId: ${packId}, OrganizationId: ${organizationId}, TierId: ${tierIdAtPurchase}`);
+              break;
+            }
+
+            if (quantity <= 0) {
+              console.error(`[Stripe Webhook] Invalid quantity: ${quantity}`);
+              break;
+            }
+
+            // Get or create instance subscription
+            let instanceSub = await storage.getInstanceSubscription(organizationId);
+            if (!instanceSub) {
+              const org = await storage.getOrganization(organizationId);
+              if (!org) {
+                console.error(`[Stripe Webhook] Organization ${organizationId} not found`);
+                break;
+              }
+              instanceSub = await storage.createInstanceSubscription({
+                organizationId,
+                registrationCurrency: currency,
+                inspectionQuotaIncluded: 0,
+                billingCycle: "monthly",
+                subscriptionStatus: "active"
+              });
+            }
+
+            // Create add-on purchase record
+            const addonPurchase = await storage.createInstanceAddonPurchase({
+              instanceId: instanceSub.id,
+              packId,
+              tierIdAtPurchase,
+              quantity,
+              pricePerInspection,
+              totalPrice,
+              currencyCode: currency,
+              inspectionsRemaining: quantity,
+              status: "active"
+            });
+
+            // Grant credits to the organization
+            try {
+              const { subscriptionService } = await import("./subscriptionService");
+              await subscriptionService.grantCredits(
+                organizationId,
+                quantity,
+                "addon_pack",
+                undefined, // No expiration date for addon packs
+                {
+                  addonPurchaseId: addonPurchase.id,
+                },
+                pricePerInspection
+              );
+
+              console.log(`[Stripe Webhook] Successfully granted ${quantity} credits to organization ${organizationId} for pack ${packId}`);
+            } catch (creditError: any) {
+              console.error(`[Stripe Webhook] ERROR granting credits to organization ${organizationId}:`, creditError);
+              // Don't throw - log the error but still mark purchase as successful
+              // The purchase record is already created, so we can retry credit granting later if needed
+            }
+            break;
+          }
+
+          // Handle legacy credit purchase (if credits metadata exists but no type specified)
+          if (session.metadata.credits && !session.metadata.type) {
+            const organizationId = session.metadata.organizationId;
+            const credits = parseInt(session.metadata.credits);
+
+            if (organizationId && credits > 0) {
+              // Grant credits using credit batch system
+              const { subscriptionService } = await import("./subscriptionService");
+              await subscriptionService.grantCredits(
+                organizationId,
+                credits,
+                "topup",
+                undefined, // No expiration for topup credits
+                {
+                  topupOrderId: session.metadata.topupOrderId || undefined,
+                  adminNotes: `Purchased ${credits} credits via Stripe`,
+                }
+              );
+              console.log(`[Stripe Webhook] Granted ${credits} legacy credits to organization ${organizationId}`);
             }
             break;
           }
@@ -18689,8 +19255,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 if (instanceSub) {
                   const periodEnd = new Date((subscription as any).current_period_end * 1000);
                   const { subscriptionService: subService } = await import("./subscriptionService");
-                  await subService.processRollover(organizationId, periodEnd);
-                  console.log(`[Stripe Webhook] Processed rollover for cancelled subscription (final invoice) for org ${organizationId}`);
+                  await subService.processCreditExpiry(organizationId, periodEnd);
+                  console.log(`[Stripe Webhook] Processed credit expiry for cancelled subscription (final invoice) for org ${organizationId}`);
                 }
               } else {
                 // Legacy subscription
@@ -18698,8 +19264,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 if (dbSubscription) {
                   const periodEnd = new Date((subscription as any).current_period_end * 1000);
                   const { subscriptionService: subService } = await import("./subscriptionService");
-                  await subService.processRollover(dbSubscription.organizationId, periodEnd);
-                  console.log(`[Stripe Webhook] Processed rollover for cancelled legacy subscription (final invoice) for org ${dbSubscription.organizationId}`);
+                  await subService.processCreditExpiry(dbSubscription.organizationId, periodEnd);
+                  console.log(`[Stripe Webhook] Processed credit expiry for cancelled legacy subscription (final invoice) for org ${dbSubscription.organizationId}`);
                 }
               }
               
@@ -18746,10 +19312,10 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 
                 console.log(`[Stripe Webhook] Processing tier renewal for org ${organizationId}, quota: ${quotaToGrant}`);
 
-                // Process rollover first
-                await subService.processRollover(organizationId, periodEnd);
+                // Process credit expiry first
+                await subService.processCreditExpiry(organizationId, periodEnd);
 
-                // Expire all existing plan_inclusion batches to reset quota (including any that weren't expired by processRollover)
+                // Expire all existing plan_inclusion batches to reset quota (including any that weren't expired by processCreditExpiry)
                 const existingBatches = await storage.getCreditBatchesByOrganization(organizationId);
                 const planBatches = existingBatches.filter(b => 
                   b.grantSource === 'plan_inclusion' && 
@@ -18791,12 +19357,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
                     
                     // Get active bundles to exclude modules covered by bundles
-                    const activeBundles = await storage.getInstanceBundles(instanceSub.id);
-                    const coveredModuleIds = new Set<string>();
-                    for (const bundle of activeBundles.filter(b => b.isActive)) {
-                      const bundleModules = await storage.getBundleModules(bundle.bundleId);
-                      bundleModules.forEach(bm => coveredModuleIds.add(bm.moduleId));
-                    }
+                    const coveredModuleIds = await pricingService.getBundledModuleIds(instanceSub.id);
 
                     if (enabledModules.length > 0) {
                       const stripe = await getUncachableStripeClient();
@@ -18840,6 +19401,146 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                         }
                       }
                     }
+
+                    // Add invoice items for active bundles for NEXT billing cycle
+                    // Validate bundle availability and pricing before adding charges
+                    try {
+                      const activeBundles = await storage.getInstanceBundles(instanceSub.id);
+                      const bundles = await storage.getModuleBundles();
+                      const stripe = await getUncachableStripeClient();
+                      
+                      for (const activeBundle of activeBundles.filter(b => b.isActive)) {
+                        // Validation: Check if bundle still exists and is available
+                        const bundle = bundles.find(b => b.id === activeBundle.bundleId);
+                        
+                        if (!bundle) {
+                          console.warn(`[Stripe Webhook] Bundle ${activeBundle.bundleId} not found in bundle configuration - deactivating for org ${organizationId}`);
+                          // Deactivate bundle that no longer exists
+                          const { instanceBundles: instanceBundlesTable } = await import("@shared/schema");
+                          const { eq, and } = await import("drizzle-orm");
+                          const { db } = await import("./db");
+                          await db.update(instanceBundlesTable)
+                            .set({ isActive: false, endDate: new Date() })
+                            .where(and(
+                              eq(instanceBundlesTable.id, activeBundle.id),
+                              eq(instanceBundlesTable.isActive, true)
+                            ));
+                          continue;
+                        }
+                        
+                        if (!bundle.isActive) {
+                          console.warn(`[Stripe Webhook] Bundle ${bundle.name} (${activeBundle.bundleId}) is no longer active - deactivating for org ${organizationId}`);
+                          // Deactivate bundle that has been discontinued
+                          const { instanceBundles: instanceBundlesTable } = await import("@shared/schema");
+                          const { eq, and } = await import("drizzle-orm");
+                          const { db } = await import("./db");
+                          await db.update(instanceBundlesTable)
+                            .set({ isActive: false, endDate: new Date() })
+                            .where(and(
+                              eq(instanceBundlesTable.id, activeBundle.id),
+                              eq(instanceBundlesTable.isActive, true)
+                            ));
+                          continue;
+                        }
+                        
+                          // Edge Case 5: Validate modules are still in bundle configuration
+                          const currentBundleModules = await storage.getBundleModules(activeBundle.bundleId);
+                          const instanceModules = await storage.getInstanceModules(instanceSub.id);
+                          const enabledBundleModules = instanceModules.filter(im => 
+                            im.isEnabled && currentBundleModules.some(bm => bm.moduleId === im.moduleId)
+                          );
+                          
+                          if (currentBundleModules.length === 0) {
+                            console.warn(`[Stripe Webhook] Bundle ${bundle.name} (${activeBundle.bundleId}) has no modules - deactivating for org ${instanceSub ? instanceSub.organizationId : 'unknown'}`);
+                            // Deactivate bundle that has no modules
+                            const { instanceBundles: instanceBundlesTable } = await import("@shared/schema");
+                            const { eq, and } = await import("drizzle-orm");
+                            const { db } = await import("./db");
+                            await db.update(instanceBundlesTable)
+                              .set({ isActive: false, endDate: new Date() })
+                              .where(and(
+                                eq(instanceBundlesTable.id, activeBundle.id),
+                                eq(instanceBundlesTable.isActive, true)
+                              ));
+                            continue;
+                          }
+                          
+                          // Edge Case 4: Validate currency hasn't changed
+                          if (activeBundle.currencyCode && activeBundle.currencyCode !== currency) {
+                            console.warn(`[Stripe Webhook] Currency mismatch for bundle ${bundle.name}: stored ${activeBundle.currencyCode} vs current ${currency}. Using stored currency ${activeBundle.currencyCode}.`);
+                            // Use stored currency for pricing calculation
+                            const storedCurrency = activeBundle.currencyCode;
+                            const bundlePricing = await storage.getBundlePricing(activeBundle.bundleId, storedCurrency);
+                            if (!bundlePricing) {
+                              console.error(`[Stripe Webhook] Bundle ${bundle.name} has no pricing in stored currency ${storedCurrency} - skipping renewal charge`);
+                              continue;
+                            }
+                          }
+                          
+                          // Validation: Check if bundle pricing has changed
+                          // Use stored pricing if available, otherwise fetch current pricing
+                          let bundlePrice = 0;
+                          let pricingChanged = false;
+                          
+                          if (activeBundle.bundlePriceMonthly && activeBundle.bundlePriceAnnual) {
+                            // Use stored pricing (locked at purchase time) - Edge Case 6: Pricing locked at purchase
+                            bundlePrice = instanceSub.billingCycle === "annual" 
+                              ? activeBundle.bundlePriceAnnual 
+                              : activeBundle.bundlePriceMonthly;
+                            
+                            // Check if current pricing differs from stored pricing
+                            const currentBundlePricing = await storage.getBundlePricing(activeBundle.bundleId, activeBundle.currencyCode || currency);
+                            if (currentBundlePricing) {
+                              const currentPrice = instanceSub.billingCycle === "annual"
+                                ? currentBundlePricing.priceAnnual
+                                : currentBundlePricing.priceMonthly;
+                              
+                              if (currentPrice !== bundlePrice) {
+                                pricingChanged = true;
+                                console.log(`[Stripe Webhook] Bundle ${bundle.name} pricing changed: stored ${bundlePrice/100} ${activeBundle.currencyCode || currency} → current ${currentPrice/100} ${activeBundle.currencyCode || currency}. Using stored price (locked at purchase - Edge Case 6).`);
+                              }
+                            }
+                          } else {
+                            // Fallback: fetch current pricing (shouldn't happen if bundle was purchased correctly)
+                            const bundlePricing = await storage.getBundlePricing(activeBundle.bundleId, activeBundle.currencyCode || currency);
+                            if (bundlePricing) {
+                              bundlePrice = instanceSub.billingCycle === "annual"
+                                ? bundlePricing.priceAnnual
+                                : bundlePricing.priceMonthly;
+                              console.warn(`[Stripe Webhook] Bundle ${bundle.name} has no stored pricing, using current pricing: ${bundlePrice/100} ${activeBundle.currencyCode || currency}`);
+                            } else {
+                              console.error(`[Stripe Webhook] Bundle ${bundle.name} (${activeBundle.bundleId}) has no pricing configured in currency ${activeBundle.currencyCode || currency} - skipping renewal charge`);
+                              continue;
+                            }
+                          }
+                        
+                        if (bundlePrice > 0) {
+                          try {
+                            await stripe.invoiceItems.create({
+                              customer: org.stripeCustomerId,
+                              amount: bundlePrice, // Full cycle price in minor units
+                              currency: currency.toLowerCase(),
+                              description: `${bundle.name} Bundle (${instanceSub.billingCycle} billing)${pricingChanged ? ' [Price locked at purchase]' : ''}`,
+                              metadata: {
+                                organizationId: organizationId,
+                                bundleId: activeBundle.bundleId,
+                                bundleName: bundle.name,
+                                type: "bundle_renewal",
+                                billingCycle: instanceSub.billingCycle || "monthly",
+                                pricingChanged: pricingChanged.toString()
+                              }
+                            });
+                            console.log(`[Stripe Webhook] Added bundle charge for ${bundle.name} (${bundlePrice/100} ${currency}) to next renewal invoice for org ${organizationId}`);
+                          } catch (bundleError: any) {
+                            console.error(`[Stripe Webhook] Failed to add bundle charge for ${bundle.name}:`, bundleError.message);
+                            // Don't fail renewal if bundle invoice item creation fails
+                          }
+                        }
+                      }
+                    } catch (bundleBillingError: any) {
+                      console.error(`[Stripe Webhook] Error adding bundle charges for renewal:`, bundleBillingError);
+                      // Don't fail renewal if bundle billing fails
+                    }
                   }
                 } catch (moduleBillingError: any) {
                   console.error(`[Stripe Webhook] Error adding module charges for renewal:`, moduleBillingError);
@@ -18847,6 +19548,42 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 }
 
                 console.log(`[Stripe Webhook] Tier renewal complete for org ${organizationId}, granted ${quotaToGrant} credits`);
+
+                // Send subscription renewed notification
+                try {
+                  const org = await storage.getOrganization(organizationId);
+                  const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+                  const invoiceAmount = invoice.amount_paid || 0;
+                  
+                  const { notificationService } = await import("./notificationService");
+                  await notificationService.sendSubscriptionRenewedNotification(
+                    organizationId,
+                    nextRenewalDate,
+                    invoiceAmount,
+                    currency,
+                    instanceSub.billingCycle || "monthly"
+                  );
+                } catch (notifError) {
+                  console.error(`[Stripe Webhook] Failed to send subscription renewed notification:`, notifError);
+                }
+
+                // Send invoice paid notification
+                try {
+                  const org = await storage.getOrganization(organizationId);
+                  const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+                  const invoiceAmount = invoice.amount_paid || 0;
+                  
+                  const { notificationService } = await import("./notificationService");
+                  await notificationService.sendInvoicePaidNotification(
+                    organizationId,
+                    invoice.id,
+                    invoiceAmount,
+                    currency,
+                    invoice.number || undefined
+                  );
+                } catch (notifError) {
+                  console.error(`[Stripe Webhook] Failed to send invoice paid notification:`, notifError);
+                }
               }
               break; // Exit early if handled as tier-based
             }
@@ -18882,13 +19619,13 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
               
               console.log(`[Stripe Webhook] Processing renewal for org ${dbSubscription.organizationId}, quota: ${quotaToGrant}`);
 
-              // Process rollover first (handles unused credit rollover)
-              await subService.processRollover(
+              // Process credit expiry first (expires unused credits - no rollover)
+              await subService.processCreditExpiry(
                 dbSubscription.organizationId,
                 new Date((subscription as any).current_period_end * 1000)
               );
-
-              // Expire all existing plan_inclusion batches to reset quota (including any that weren't expired by processRollover)
+              
+              // Expire all existing plan_inclusion batches to reset quota (including any that weren't expired by processCreditExpiry)
               const existingBatches = await storage.getCreditBatchesByOrganization(dbSubscription.organizationId);
               const planBatches = existingBatches.filter(b => 
                 b.grantSource === 'plan_inclusion' && 
@@ -18932,12 +19669,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
                     
                     // Get active bundles to exclude modules covered by bundles
-                    const activeBundles = await storage.getInstanceBundles(instanceSub.id);
-                    const coveredModuleIds = new Set<string>();
-                    for (const bundle of activeBundles.filter(b => b.isActive)) {
-                      const bundleModules = await storage.getBundleModules(bundle.bundleId);
-                      bundleModules.forEach(bm => coveredModuleIds.add(bm.moduleId));
-                    }
+                    const coveredModuleIds = await pricingService.getBundledModuleIds(instanceSub.id);
 
                     if (enabledModules.length > 0) {
                       const stripe = await getUncachableStripeClient();
@@ -18979,14 +19711,154 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                             // Don't fail renewal if module invoice item creation fails
                           }
                         }
+                        }
+                      }
+
+                      // Add invoice items for active bundles for NEXT billing cycle (legacy subscription)
+                      // Validate bundle availability and pricing before adding charges
+                      try {
+                        const activeBundles = await storage.getInstanceBundles(instanceSub.id);
+                        const bundles = await storage.getModuleBundles();
+                        const stripe = await getUncachableStripeClient();
+                        
+                        for (const activeBundle of activeBundles.filter(b => b.isActive)) {
+                          // Validation: Check if bundle still exists and is available
+                          const bundle = bundles.find(b => b.id === activeBundle.bundleId);
+                          
+                          if (!bundle) {
+                            console.warn(`[Stripe Webhook] Bundle ${activeBundle.bundleId} not found in bundle configuration - deactivating for org ${dbSubscription.organizationId}`);
+                            // Deactivate bundle that no longer exists
+                            const { instanceBundles: instanceBundlesTable } = await import("@shared/schema");
+                            const { eq, and } = await import("drizzle-orm");
+                            const { db } = await import("./db");
+                            await db.update(instanceBundlesTable)
+                              .set({ isActive: false, endDate: new Date() })
+                              .where(and(
+                                eq(instanceBundlesTable.id, activeBundle.id),
+                                eq(instanceBundlesTable.isActive, true)
+                              ));
+                            continue;
+                          }
+                          
+                          if (!bundle.isActive) {
+                            console.warn(`[Stripe Webhook] Bundle ${bundle.name} (${activeBundle.bundleId}) is no longer active - deactivating for org ${dbSubscription.organizationId}`);
+                            // Deactivate bundle that has been discontinued
+                            const { instanceBundles: instanceBundlesTable } = await import("@shared/schema");
+                            const { eq, and } = await import("drizzle-orm");
+                            const { db } = await import("./db");
+                            await db.update(instanceBundlesTable)
+                              .set({ isActive: false, endDate: new Date() })
+                              .where(and(
+                                eq(instanceBundlesTable.id, activeBundle.id),
+                                eq(instanceBundlesTable.isActive, true)
+                              ));
+                            continue;
+                          }
+                          
+                          // Edge Case 5: Validate modules are still in bundle configuration
+                          const currentBundleModules = await storage.getBundleModules(activeBundle.bundleId);
+                          const instanceModules = await storage.getInstanceModules(instanceSub.id);
+                          const enabledBundleModules = instanceModules.filter(im => 
+                            im.isEnabled && currentBundleModules.some(bm => bm.moduleId === im.moduleId)
+                          );
+                          
+                          if (currentBundleModules.length === 0) {
+                            console.warn(`[Stripe Webhook] Bundle ${bundle.name} (${activeBundle.bundleId}) has no modules - deactivating for org ${organizationId}`);
+                            // Deactivate bundle that has no modules
+                            const { instanceBundles: instanceBundlesTable } = await import("@shared/schema");
+                            const { eq, and } = await import("drizzle-orm");
+                            const { db } = await import("./db");
+                            await db.update(instanceBundlesTable)
+                              .set({ isActive: false, endDate: new Date() })
+                              .where(and(
+                                eq(instanceBundlesTable.id, activeBundle.id),
+                                eq(instanceBundlesTable.isActive, true)
+                              ));
+                            continue;
+                          }
+                          
+                          // Edge Case 4: Validate currency hasn't changed
+                          if (activeBundle.currencyCode && activeBundle.currencyCode !== currency) {
+                            console.warn(`[Stripe Webhook] Currency mismatch for bundle ${bundle.name}: stored ${activeBundle.currencyCode} vs current ${currency}. Using stored currency ${activeBundle.currencyCode}.`);
+                            // Use stored currency for pricing calculation
+                            const storedCurrency = activeBundle.currencyCode;
+                            const bundlePricing = await storage.getBundlePricing(activeBundle.bundleId, storedCurrency);
+                            if (!bundlePricing) {
+                              console.error(`[Stripe Webhook] Bundle ${bundle.name} has no pricing in stored currency ${storedCurrency} - skipping renewal charge`);
+                              continue;
+                            }
+                          }
+                          
+                          // Validation: Check if bundle pricing has changed
+                          // Use stored pricing if available, otherwise fetch current pricing
+                          let bundlePrice = 0;
+                          let pricingChanged = false;
+                          
+                          if (activeBundle.bundlePriceMonthly && activeBundle.bundlePriceAnnual) {
+                            // Use stored pricing (locked at purchase time) - Edge Case 6: Pricing locked at purchase
+                            bundlePrice = instanceSub.billingCycle === "annual" 
+                              ? activeBundle.bundlePriceAnnual 
+                              : activeBundle.bundlePriceMonthly;
+                            
+                            // Check if current pricing differs from stored pricing
+                            const currentBundlePricing = await storage.getBundlePricing(activeBundle.bundleId, activeBundle.currencyCode || currency);
+                            if (currentBundlePricing) {
+                              const currentPrice = instanceSub.billingCycle === "annual"
+                                ? currentBundlePricing.priceAnnual
+                                : currentBundlePricing.priceMonthly;
+                              
+                              if (currentPrice !== bundlePrice) {
+                                pricingChanged = true;
+                                console.log(`[Stripe Webhook] Bundle ${bundle.name} pricing changed: stored ${bundlePrice/100} ${activeBundle.currencyCode || currency} → current ${currentPrice/100} ${activeBundle.currencyCode || currency}. Using stored price (locked at purchase - Edge Case 6).`);
+                              }
+                            }
+                          } else {
+                            // Fallback: fetch current pricing (shouldn't happen if bundle was purchased correctly)
+                            const bundlePricing = await storage.getBundlePricing(activeBundle.bundleId, activeBundle.currencyCode || currency);
+                            if (bundlePricing) {
+                              bundlePrice = instanceSub.billingCycle === "annual"
+                                ? bundlePricing.priceAnnual
+                                : bundlePricing.priceMonthly;
+                              console.warn(`[Stripe Webhook] Bundle ${bundle.name} has no stored pricing, using current pricing: ${bundlePrice/100} ${activeBundle.currencyCode || currency}`);
+                            } else {
+                              console.error(`[Stripe Webhook] Bundle ${bundle.name} (${activeBundle.bundleId}) has no pricing configured in currency ${activeBundle.currencyCode || currency} - skipping renewal charge`);
+                              continue;
+                            }
+                          }
+                          
+                          if (bundlePrice > 0) {
+                            try {
+                              await stripe.invoiceItems.create({
+                                customer: org.stripeCustomerId,
+                                amount: bundlePrice, // Full cycle price in minor units
+                                currency: currency.toLowerCase(),
+                                description: `${bundle.name} Bundle (${instanceSub.billingCycle} billing)${pricingChanged ? ' [Price locked at purchase]' : ''}`,
+                                metadata: {
+                                  organizationId: dbSubscription.organizationId,
+                                  bundleId: activeBundle.bundleId,
+                                  bundleName: bundle.name,
+                                  type: "bundle_renewal",
+                                  billingCycle: instanceSub.billingCycle || "monthly",
+                                  pricingChanged: pricingChanged.toString()
+                                }
+                              });
+                              console.log(`[Stripe Webhook] Added bundle charge for ${bundle.name} (${bundlePrice/100} ${currency}) to next renewal invoice for org ${dbSubscription.organizationId}`);
+                            } catch (bundleError: any) {
+                              console.error(`[Stripe Webhook] Failed to add bundle charge for ${bundle.name}:`, bundleError.message);
+                              // Don't fail renewal if bundle invoice item creation fails
+                            }
+                          }
+                        }
+                      } catch (bundleBillingError: any) {
+                        console.error(`[Stripe Webhook] Error adding bundle charges for renewal (legacy):`, bundleBillingError);
+                        // Don't fail renewal if bundle billing fails
                       }
                     }
                   }
+                } catch (moduleBillingError: any) {
+                  console.error(`[Stripe Webhook] Error adding module charges for renewal (legacy):`, moduleBillingError);
+                  // Don't fail renewal if module billing fails
                 }
-              } catch (moduleBillingError: any) {
-                console.error(`[Stripe Webhook] Error adding module charges for renewal (legacy):`, moduleBillingError);
-                // Don't fail renewal if module billing fails
-              }
 
               console.log(`[Stripe Webhook] New billing cycle for org ${dbSubscription.organizationId}, granted ${quotaToGrant} credits`);
             }
@@ -19022,6 +19894,19 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
 
             // Handle tier-based subscription (instanceSubscriptions)
             const instanceSub = await storage.getInstanceSubscription(organizationId);
+
+            // Send payment failed notification
+            try {
+              const org = await storage.getOrganization(organizationId);
+              const currency = instanceSub?.registrationCurrency || org?.preferredCurrency || "GBP";
+              const amount = invoice.amount_due || 0;
+              const retryDate = invoice.next_payment_attempt ? new Date(invoice.next_payment_attempt * 1000) : undefined;
+              
+              const { notificationService } = await import("./notificationService");
+              await notificationService.sendPaymentFailedAlert(organizationId, amount, currency, retryDate);
+            } catch (notifError) {
+              console.error(`[Stripe Webhook] Failed to send payment failed notification:`, notifError);
+            }
             if (instanceSub) {
               // 1. Update instance subscription status to inactive
               await storage.updateInstanceSubscription(instanceSub.id, {
@@ -20934,6 +21819,138 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
+  // Get automated tier recommendations based on usage (authenticated)
+  app.get("/api/billing/recommend-tier", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Get current usage
+      const balance = await storage.getCreditBalance(user.organizationId);
+      const instanceSub = await storage.getInstanceSubscription(user.organizationId);
+      
+      // Calculate average monthly usage (if available)
+      let averageMonthlyUsage = 0;
+      if (instanceSub) {
+        const quotaIncluded = instanceSub.inspectionQuotaIncluded || 0;
+        const used = quotaIncluded - balance.total;
+        averageMonthlyUsage = Math.max(used, 10); // Minimum 10
+      }
+
+      // Get inspections needed from query or calculate from usage
+      const inspectionsNeeded = parseInt(req.query.inspections as string) || averageMonthlyUsage || 10;
+      const currency = ((req.query.currency as string) || instanceSub?.registrationCurrency || "GBP").toUpperCase();
+
+      // Get all available tiers (not just legacy plans)
+      const tiers = await storage.getSubscriptionTiers();
+      const activeTiers = tiers.filter(t => t.isActive !== false);
+
+      // Sort tiers by included inspections
+      const sortedTiers = [...activeTiers].sort((a, b) => a.includedInspections - b.includedInspections);
+
+      // Find the smallest tier that covers the needed inspections
+      let recommendedTier = sortedTiers[sortedTiers.length - 1]; // Default to largest
+      for (const tier of sortedTiers) {
+        if (tier.includedInspections >= inspectionsNeeded) {
+          recommendedTier = tier;
+          break;
+        }
+      }
+
+      // Get current tier
+      const currentTier = instanceSub?.currentTierId 
+        ? tiers.find(t => t.id === instanceSub.currentTierId)
+        : null;
+
+      // Calculate pricing using pricingService
+      const { pricingService } = await import("./pricingService");
+      
+      const recommendedMonthlyPrice = currentTier && instanceSub
+        ? await pricingService.calculateInstancePrice(user.organizationId, "monthly")
+        : 0;
+      const recommendedAnnualPrice = currentTier && instanceSub
+        ? await pricingService.calculateInstancePrice(user.organizationId, "annual")
+        : 0;
+
+      // Get tier pricing for recommended tier
+      const recommendedTierPricing = await storage.getTierPricing(recommendedTier.id, currency);
+      const recommendedMonthly = recommendedTierPricing?.priceMonthly || recommendedTier.basePriceMonthly || 0;
+      const recommendedAnnual = recommendedTierPricing?.priceAnnual || recommendedTier.basePriceAnnual || 0;
+
+      // Get all tier options with pricing
+      const tierOptions = await Promise.all(sortedTiers.map(async (tier) => {
+        const tierPricing = await storage.getTierPricing(tier.id, currency);
+        const monthlyPrice = tierPricing?.priceMonthly || tier.basePriceMonthly || 0;
+        const annualPrice = tierPricing?.priceAnnual || tier.basePriceAnnual || 0;
+        
+        return {
+          id: tier.id,
+          code: tier.code,
+          name: tier.name,
+          includedInspections: tier.includedInspections,
+          monthlyPrice: monthlyPrice / 100,
+          annualPrice: annualPrice / 100,
+          currency,
+          isCurrent: currentTier?.id === tier.id,
+          isRecommended: tier.id === recommendedTier.id
+        };
+      }));
+
+      // Determine if upgrade or downgrade
+      const isUpgrade = currentTier 
+        ? recommendedTier.includedInspections > currentTier.includedInspections
+        : false;
+      const isDowngrade = currentTier
+        ? recommendedTier.includedInspections < currentTier.includedInspections
+        : false;
+
+      res.json({
+        currentUsage: {
+          averageMonthly: averageMonthlyUsage,
+          currentQuota: instanceSub?.inspectionQuotaIncluded || 0,
+          remainingCredits: balance.total
+        },
+        recommendedTier: {
+          id: recommendedTier.id,
+          code: recommendedTier.code,
+          name: recommendedTier.name,
+          includedInspections: recommendedTier.includedInspections,
+          monthlyPrice: recommendedMonthly / 100,
+          annualPrice: recommendedAnnual / 100,
+          currency,
+          reason: isUpgrade 
+            ? `Your average usage (${averageMonthlyUsage}) exceeds your current plan. Upgrade recommended.`
+            : isDowngrade
+            ? `Your usage (${averageMonthlyUsage}) is below your current plan. Downgrade to save costs.`
+            : `Based on your usage of ${averageMonthlyUsage} inspections per month.`
+        },
+        allTiers: tierOptions,
+        currentTier: currentTier ? {
+          id: currentTier.id,
+          code: currentTier.code,
+          name: currentTier.name,
+          includedInspections: currentTier.includedInspections
+        } : null,
+        recommendation: {
+          action: isUpgrade ? "upgrade" : isDowngrade ? "downgrade" : "maintain",
+          savings: currentTier && isDowngrade && instanceSub
+            ? {
+                monthly: (recommendedMonthlyPrice / 100) - (recommendedMonthly / 100),
+                annual: (recommendedAnnualPrice / 100) - (recommendedAnnual / 100)
+              }
+            : null
+        },
+        inspectionsNeeded,
+        needsContactForEnterprise: inspectionsNeeded > 500,
+      });
+    } catch (error: any) {
+      console.error("Error recommending tier:", error);
+      res.status(500).json({ message: "Failed to recommend tier", error: error.message });
+    }
+  });
+
   // Get tier-based bundle pricing
   app.get("/api/billing/bundles", async (req, res) => {
     try {
@@ -21056,11 +22073,39 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
             await storage.updateInstanceSubscription(instanceSub.id, {
               subscriptionStatus: "inactive" as any,
             });
+
+            // Send subscription cancelled notification
+            try {
+              const endDate = instanceSub.subscriptionRenewalDate || new Date();
+              const { notificationService } = await import("./notificationService");
+              await notificationService.sendSubscriptionCancelledNotification(
+                user.organizationId,
+                new Date(),
+                endDate
+              );
+            } catch (notifError) {
+              console.error("Error sending subscription cancelled notification:", notifError);
+            }
           }
         } else {
           await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
             cancel_at_period_end: true,
           });
+
+          // Send subscription cancelled notification (at period end)
+          try {
+            const instanceSub = await storage.getInstanceSubscription(user.organizationId);
+            if (instanceSub && instanceSub.subscriptionRenewalDate) {
+              const { notificationService } = await import("./notificationService");
+              await notificationService.sendSubscriptionCancelledNotification(
+                user.organizationId,
+                new Date(),
+                instanceSub.subscriptionRenewalDate
+              );
+            }
+          } catch (notifError) {
+            console.error("Error sending subscription cancelled notification:", notifError);
+          }
         }
       }
 
@@ -21085,6 +22130,153 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
+  // One-click upgrade/downgrade subscription (automated)
+  app.post("/api/billing/upgrade-downgrade", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      // Only owners can change subscriptions
+      if (user.role !== "owner") {
+        return res.status(403).json({ message: "Only organization owners can change plans" });
+      }
+
+      const { tierId, billingCycle, autoRecommend = false } = req.body;
+
+      // If autoRecommend is true, get recommendation first
+      let targetTierId = tierId;
+      if (autoRecommend && !tierId) {
+        const balance = await storage.getCreditBalance(user.organizationId);
+        const instanceSub = await storage.getInstanceSubscription(user.organizationId);
+        const quotaIncluded = instanceSub?.inspectionQuotaIncluded || 0;
+        const averageUsage = Math.max(quotaIncluded - balance.total, 10);
+
+        const tiers = await storage.getSubscriptionTiers();
+        const activeTiers = tiers.filter(t => t.isActive !== false).sort((a, b) => a.includedInspections - b.includedInspections);
+        
+        for (const tier of activeTiers) {
+          if (tier.includedInspections >= averageUsage) {
+            targetTierId = tier.id;
+            break;
+          }
+        }
+
+        if (!targetTierId) {
+          targetTierId = activeTiers[activeTiers.length - 1].id; // Default to largest
+        }
+      }
+
+      if (!targetTierId) {
+        return res.status(400).json({ message: "Tier ID is required or enable autoRecommend" });
+      }
+
+      const instanceSub = await storage.getInstanceSubscription(user.organizationId);
+      if (!instanceSub) {
+        return res.status(404).json({ message: "Instance subscription not found" });
+      }
+
+      const tiers = await storage.getSubscriptionTiers();
+      const newTier = tiers.find(t => t.id === targetTierId);
+      const currentTier = instanceSub.currentTierId ? tiers.find(t => t.id === instanceSub.currentTierId) : null;
+
+      if (!newTier) {
+        return res.status(404).json({ message: "Tier not found" });
+      }
+
+      if (currentTier && currentTier.id === newTier.id) {
+        return res.status(400).json({ message: "Already on this tier" });
+      }
+
+      const isUpgrade = !currentTier || newTier.includedInspections > currentTier.includedInspections;
+      const isDowngrade = currentTier ? newTier.includedInspections < currentTier.includedInspections : false;
+
+      // Get pricing
+      const targetBillingCycle = billingCycle || instanceSub.billingCycle || "monthly";
+      const org = await storage.getOrganization(user.organizationId);
+      const currency = instanceSub.registrationCurrency || org?.preferredCurrency || "GBP";
+      
+      // Get tier pricing
+      const tierPricing = await storage.getTierPricing(newTier.id, currency);
+      const newPrice = targetBillingCycle === "annual" 
+        ? (tierPricing?.priceAnnual || newTier.basePriceAnnual || 0)
+        : (tierPricing?.priceMonthly || newTier.basePriceMonthly || 0);
+      
+      // Convert to minor units if needed (prices are stored in minor units)
+      const priceInMinorUnits = typeof newPrice === 'number' && newPrice < 1000 
+        ? Math.round(newPrice * 100) 
+        : (typeof newPrice === 'number' ? newPrice : 0);
+
+      // Create Stripe checkout session for the upgrade/downgrade
+      if (!org?.stripeCustomerId) {
+        return res.status(400).json({ message: "No Stripe customer found. Please set up payment method first." });
+      }
+
+      const stripe = await getUncachableStripeClient();
+
+      // Create checkout session for tier change
+      const checkoutSession = await stripe.checkout.sessions.create({
+        customer: org.stripeCustomerId,
+        payment_method_types: ["card"],
+        mode: "subscription",
+        line_items: [{
+          price_data: {
+            currency: currency.toLowerCase(),
+            product_data: {
+              name: newTier.name,
+              description: `${isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Change'} to ${newTier.name} (${targetBillingCycle})`
+            },
+            recurring: {
+              interval: targetBillingCycle === "annual" ? "year" : "month"
+            },
+            unit_amount: priceInMinorUnits
+          },
+          quantity: 1
+        }],
+        metadata: {
+          organizationId: user.organizationId,
+          type: "tier_change",
+          currentTierId: currentTier?.id || "",
+          newTierId: newTier.id,
+          isUpgrade: isUpgrade.toString(),
+          isDowngrade: (isDowngrade || false).toString(),
+          billingCycle: targetBillingCycle
+        },
+        success_url: `${process.env.FRONTEND_URL || "http://localhost:5173"}/billing?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.FRONTEND_URL || "http://localhost:5173"}/billing`
+      });
+
+      res.json({
+        success: true,
+        checkoutUrl: checkoutSession.url,
+        sessionId: checkoutSession.id,
+        action: isUpgrade ? "upgrade" : isDowngrade ? "downgrade" : "change",
+        currentTier: currentTier ? {
+          id: currentTier.id,
+          name: currentTier.name,
+          includedInspections: currentTier.includedInspections
+        } : null,
+        newTier: {
+          id: newTier.id,
+          name: newTier.name,
+          includedInspections: newTier.includedInspections,
+          price: priceInMinorUnits / 100,
+          currency,
+          billingCycle: targetBillingCycle
+        },
+        message: isUpgrade 
+          ? `Upgrading to ${newTier.name} will increase your monthly inspections from ${currentTier?.includedInspections || 0} to ${newTier.includedInspections}.`
+          : isDowngrade
+          ? `Downgrading to ${newTier.name} will reduce your monthly inspections from ${currentTier.includedInspections} to ${newTier.includedInspections}.`
+          : `Changing to ${newTier.name}.`
+      });
+    } catch (error: any) {
+      console.error("Error processing upgrade/downgrade:", error);
+      res.status(500).json({ message: "Failed to process upgrade/downgrade", error: error.message });
+    }
+  });
+
   // Upgrade or downgrade subscription
   app.post("/api/billing/change-plan", isAuthenticated, async (req: any, res) => {
     try {
@@ -21098,9 +22290,11 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         return res.status(403).json({ message: "Only organization owners can change plans" });
       }
 
-      const { newPlanCode, billingInterval } = req.body;
-      if (!newPlanCode) {
-        return res.status(400).json({ message: "New plan code is required" });
+      const { newPlanCode, billingInterval, tierId, autoRecommend = false } = req.body;
+      
+      // Support both legacy plan codes and new tier IDs
+      if (!newPlanCode && !tierId && !autoRecommend) {
+        return res.status(400).json({ message: "New plan code, tier ID, or autoRecommend is required" });
       }
 
       const org = await storage.getOrganization(user.organizationId);
@@ -21148,7 +22342,7 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       // Create a Stripe Price first (required for subscription updates)
       // First create or get the product
       const product = await stripe.products.create({
-              name: newPlan.name,
+        name: newPlan.name,
       });
       
       const stripePrice = await stripe.prices.create({
@@ -21282,6 +22476,309 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
+  // Export invoices to CSV
+  app.get("/api/billing/invoices/export", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { startDate, endDate, format = "csv" } = req.query;
+      
+      // Get invoices for the organization
+      const { invoices: invoicesTable } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, and, gte, lte } = await import("drizzle-orm");
+      
+      // Build conditions array
+      const conditions: any[] = [eq(invoicesTable.organizationId, user.organizationId)];
+      if (startDate) {
+        conditions.push(gte(invoicesTable.periodStart, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(invoicesTable.periodEnd, new Date(endDate as string)));
+      }
+      
+      const invoiceList = await db.select()
+        .from(invoicesTable)
+        .where(and(...conditions));
+
+      if (format === "csv") {
+        // Generate CSV
+        const csvHeaders = [
+          "Invoice Number",
+          "Date",
+          "Period Start",
+          "Period End",
+          "Billing Cycle",
+          "Currency",
+          "Subtotal",
+          "Discount",
+          "Total",
+          "Status",
+          "Due Date",
+          "Paid Date"
+        ];
+
+        const csvRows = invoiceList.map(inv => [
+          inv.invoiceNumber,
+          inv.createdAt?.toISOString().split('T')[0] || '',
+          inv.periodStart.toISOString().split('T')[0],
+          inv.periodEnd.toISOString().split('T')[0],
+          inv.billingCycle,
+          inv.currencyCode,
+          (inv.subtotal / 100).toFixed(2),
+          (inv.discount || 0) / 100,
+          (inv.total / 100).toFixed(2),
+          inv.status || 'draft',
+          inv.dueDate?.toISOString().split('T')[0] || '',
+          inv.paidAt?.toISOString().split('T')[0] || ''
+        ]);
+
+        const csvContent = [
+          csvHeaders.join(','),
+          ...csvRows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="invoices-${new Date().toISOString().split('T')[0]}.csv"`);
+        res.send(csvContent);
+      } else {
+        // JSON format
+        res.json({
+          invoices: invoiceList.map(inv => ({
+            invoiceNumber: inv.invoiceNumber,
+            date: inv.createdAt?.toISOString(),
+            periodStart: inv.periodStart.toISOString(),
+            periodEnd: inv.periodEnd.toISOString(),
+            billingCycle: inv.billingCycle,
+            currency: inv.currencyCode,
+            subtotal: inv.subtotal / 100,
+            discount: (inv.discount || 0) / 100,
+            total: inv.total / 100,
+            status: inv.status,
+            dueDate: inv.dueDate?.toISOString(),
+            paidAt: inv.paidAt?.toISOString(),
+            lineItems: inv.lineItems
+          })),
+          total: invoiceList.reduce((sum, inv) => sum + inv.total, 0) / 100,
+          count: invoiceList.length
+        });
+      }
+    } catch (error: any) {
+      console.error("Error exporting invoices:", error);
+      res.status(500).json({ message: "Failed to export invoices", error: error.message });
+    }
+  });
+
+  // Get billing report
+  app.get("/api/billing/reports", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { startDate, endDate, type = "summary" } = req.query;
+      
+      const { invoices: invoicesTable, instanceSubscriptions } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, and, gte, lte } = await import("drizzle-orm");
+      
+      // Build date filter
+      const conditions: any[] = [eq(invoicesTable.organizationId, user.organizationId)];
+      if (startDate) {
+        conditions.push(gte(invoicesTable.periodStart, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(invoicesTable.periodEnd, new Date(endDate as string)));
+      }
+      
+      const invoiceList = await db.select()
+        .from(invoicesTable)
+        .where(and(...conditions));
+
+      // Get subscription info
+      const instanceSub = await storage.getInstanceSubscription(user.organizationId);
+      
+      if (type === "summary") {
+        const totalRevenue = invoiceList
+          .filter(inv => inv.status === "paid")
+          .reduce((sum, inv) => sum + inv.total, 0) / 100;
+        
+        const totalInvoices = invoiceList.length;
+        const paidInvoices = invoiceList.filter(inv => inv.status === "paid").length;
+        const pendingInvoices = invoiceList.filter(inv => inv.status === "draft" || inv.status === "sent").length;
+        const overdueInvoices = invoiceList.filter(inv => {
+          if (inv.status !== "paid" && inv.dueDate) {
+            return new Date(inv.dueDate) < new Date();
+          }
+          return false;
+        }).length;
+
+        // Group by currency
+        const revenueByCurrency = invoiceList
+          .filter(inv => inv.status === "paid")
+          .reduce((acc: any, inv) => {
+            const currency = inv.currencyCode;
+            if (!acc[currency]) {
+              acc[currency] = { total: 0, count: 0 };
+            }
+            acc[currency].total += inv.total / 100;
+            acc[currency].count += 1;
+            return acc;
+          }, {});
+
+        res.json({
+          period: {
+            start: startDate || null,
+            end: endDate || null
+          },
+          summary: {
+            totalRevenue,
+            totalInvoices,
+            paidInvoices,
+            pendingInvoices,
+            overdueInvoices,
+            revenueByCurrency
+          },
+          currentSubscription: instanceSub ? {
+            tier: instanceSub.currentTierId,
+            billingCycle: instanceSub.billingCycle,
+            status: instanceSub.subscriptionStatus
+          } : null
+        });
+      } else if (type === "detailed") {
+        res.json({
+          period: {
+            start: startDate || null,
+            end: endDate || null
+          },
+          invoices: invoiceList.map(inv => ({
+            invoiceNumber: inv.invoiceNumber,
+            date: inv.createdAt?.toISOString(),
+            periodStart: inv.periodStart.toISOString(),
+            periodEnd: inv.periodEnd.toISOString(),
+            billingCycle: inv.billingCycle,
+            currency: inv.currencyCode,
+            subtotal: inv.subtotal / 100,
+            discount: (inv.discount || 0) / 100,
+            total: inv.total / 100,
+            status: inv.status,
+            dueDate: inv.dueDate?.toISOString(),
+            paidAt: inv.paidAt?.toISOString(),
+            lineItems: inv.lineItems
+          }))
+        });
+      } else {
+        res.status(400).json({ message: "Invalid report type. Use 'summary' or 'detailed'" });
+      }
+    } catch (error: any) {
+      console.error("Error generating billing report:", error);
+      res.status(500).json({ message: "Failed to generate billing report", error: error.message });
+    }
+  });
+
+  // Get revenue report (admin only)
+  app.get("/api/admin/billing/revenue-report", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { startDate, endDate, organizationId, groupBy = "month" } = req.query;
+      
+      const { invoices: invoicesTable } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, and, gte, lte } = await import("drizzle-orm");
+      
+      let conditions: any[] = [];
+      if (organizationId) {
+        conditions.push(eq(invoicesTable.organizationId, organizationId as string));
+      }
+      if (startDate) {
+        conditions.push(gte(invoicesTable.periodStart, new Date(startDate as string)));
+      }
+      if (endDate) {
+        conditions.push(lte(invoicesTable.periodEnd, new Date(endDate as string)));
+      }
+      
+      const invoiceList = conditions.length > 0
+        ? await db.select().from(invoicesTable).where(and(...conditions))
+        : await db.select().from(invoicesTable);
+
+      // Filter paid invoices only
+      const paidInvoices = invoiceList.filter(inv => inv.status === "paid");
+
+      // Group revenue by period
+      const revenueByPeriod: Record<string, { revenue: number; count: number; currency: string }> = {};
+      
+      paidInvoices.forEach(inv => {
+        let periodKey: string;
+        if (groupBy === "month") {
+          periodKey = inv.periodStart.toISOString().slice(0, 7); // YYYY-MM
+        } else if (groupBy === "year") {
+          periodKey = inv.periodStart.toISOString().slice(0, 4); // YYYY
+        } else {
+          periodKey = inv.periodStart.toISOString().split('T')[0]; // YYYY-MM-DD
+        }
+
+        if (!revenueByPeriod[periodKey]) {
+          revenueByPeriod[periodKey] = { revenue: 0, count: 0, currency: inv.currencyCode };
+        }
+        revenueByPeriod[periodKey].revenue += inv.total / 100;
+        revenueByPeriod[periodKey].count += 1;
+      });
+
+      // Revenue by organization
+      const revenueByOrganization: Record<string, { revenue: number; count: number; currency: string }> = {};
+      paidInvoices.forEach(inv => {
+        if (!revenueByOrganization[inv.organizationId]) {
+          revenueByOrganization[inv.organizationId] = { revenue: 0, count: 0, currency: inv.currencyCode };
+        }
+        revenueByOrganization[inv.organizationId].revenue += inv.total / 100;
+        revenueByOrganization[inv.organizationId].count += 1;
+      });
+
+      // Get organization names
+      const orgIds = Object.keys(revenueByOrganization);
+      const orgs = await Promise.all(orgIds.map(id => storage.getOrganization(id)));
+      const orgMap: Record<string, string> = {};
+      orgs.forEach(org => {
+        if (org) orgMap[org.id] = org.name;
+      });
+
+      res.json({
+        period: {
+          start: startDate || null,
+          end: endDate || null
+        },
+        summary: {
+          totalRevenue: paidInvoices.reduce((sum, inv) => sum + inv.total, 0) / 100,
+          totalInvoices: paidInvoices.length,
+          revenueByPeriod: Object.entries(revenueByPeriod).map(([period, data]) => ({
+            period,
+            revenue: data.revenue,
+            count: data.count,
+            currency: data.currency
+          })),
+          revenueByOrganization: Object.entries(revenueByOrganization).map(([orgId, data]) => ({
+            organizationId: orgId,
+            organizationName: orgMap[orgId] || 'Unknown',
+            revenue: data.revenue,
+            count: data.count,
+            currency: data.currency
+          }))
+        }
+      });
+    } catch (error: any) {
+      console.error("Error generating revenue report:", error);
+      res.status(500).json({ message: "Failed to generate revenue report", error: error.message });
+    }
+  });
+
   // Generate Invoice
   app.post("/api/billing/invoices/generate", isAuthenticated, async (req: any, res) => {
     try {
@@ -21375,10 +22872,255 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       const { billingService } = await import("./billingService");
       await billingService.applyCreditNote(creditNoteId, invoiceId);
 
-      res.json({ success: true });
+      res.json({ success: true, message: "Credit note applied successfully" });
     } catch (error: any) {
       console.error("Error applying credit note:", error);
       res.status(500).json({ message: "Failed to apply credit note", error: error.message });
+    }
+  });
+
+  // Get Credit Notes for Organization (admin only)
+  app.get("/api/admin/billing/credit-notes", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { organizationId, status } = req.query;
+
+      if (!organizationId) {
+        return res.status(400).json({ message: "organizationId is required" });
+      }
+
+      const { billingService } = await import("./billingService");
+      const creditNotes = await billingService.getCreditNotes(
+        organizationId as string,
+        status as "issued" | "applied" | "cancelled" | undefined
+      );
+
+      res.json({
+        creditNotes: creditNotes.map(cn => ({
+          id: cn.id,
+          creditNoteNumber: cn.creditNoteNumber,
+          organizationId: cn.organizationId,
+          invoiceId: cn.invoiceId,
+          appliedToInvoiceId: cn.appliedToInvoiceId,
+          reason: cn.reason,
+          amount: cn.amount / 100, // Convert to major units
+          currency: cn.currencyCode,
+          description: cn.description,
+          status: cn.status,
+          createdAt: cn.createdAt?.toISOString(),
+          appliedAt: cn.appliedAt?.toISOString(),
+          createdBy: cn.createdBy
+        })),
+        total: creditNotes.reduce((sum, cn) => sum + cn.amount, 0) / 100,
+        count: creditNotes.length
+      });
+    } catch (error: any) {
+      console.error("Error fetching credit notes:", error);
+      res.status(500).json({ message: "Failed to fetch credit notes", error: error.message });
+    }
+  });
+
+  // Get Credit Notes for User's Organization
+  app.get("/api/billing/credit-notes", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { status } = req.query;
+
+      const { billingService } = await import("./billingService");
+      const creditNotes = await billingService.getCreditNotes(
+        user.organizationId,
+        status as "issued" | "applied" | "cancelled" | undefined
+      );
+
+      res.json({
+        creditNotes: creditNotes.map(cn => ({
+          id: cn.id,
+          creditNoteNumber: cn.creditNoteNumber,
+          invoiceId: cn.invoiceId,
+          appliedToInvoiceId: cn.appliedToInvoiceId,
+          reason: cn.reason,
+          amount: cn.amount / 100, // Convert to major units
+          currency: cn.currencyCode,
+          description: cn.description,
+          status: cn.status,
+          createdAt: cn.createdAt?.toISOString(),
+          appliedAt: cn.appliedAt?.toISOString()
+        })),
+        total: creditNotes.reduce((sum, cn) => sum + cn.amount, 0) / 100,
+        count: creditNotes.length
+      });
+    } catch (error: any) {
+      console.error("Error fetching credit notes:", error);
+      res.status(500).json({ message: "Failed to fetch credit notes", error: error.message });
+    }
+  });
+
+  // Get Single Credit Note
+  app.get("/api/billing/credit-notes/:creditNoteId", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.id);
+      if (!user?.organizationId) {
+        return res.status(400).json({ message: "User must belong to an organization" });
+      }
+
+      const { creditNoteId } = req.params;
+
+      const { billingService } = await import("./billingService");
+      const creditNote = await billingService.getCreditNoteById(creditNoteId);
+
+      if (!creditNote) {
+        return res.status(404).json({ message: "Credit note not found" });
+      }
+
+      // Verify organization ownership
+      if (creditNote.organizationId !== user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      res.json({
+        id: creditNote.id,
+        creditNoteNumber: creditNote.creditNoteNumber,
+        invoiceId: creditNote.invoiceId,
+        appliedToInvoiceId: creditNote.appliedToInvoiceId,
+        reason: creditNote.reason,
+        amount: creditNote.amount / 100,
+        currency: creditNote.currencyCode,
+        description: creditNote.description,
+        status: creditNote.status,
+        createdAt: creditNote.createdAt?.toISOString(),
+        appliedAt: creditNote.appliedAt?.toISOString()
+      });
+    } catch (error: any) {
+      console.error("Error fetching credit note:", error);
+      res.status(500).json({ message: "Failed to fetch credit note", error: error.message });
+    }
+  });
+
+  // Cancel Credit Note (admin only)
+  app.post("/api/admin/billing/credit-notes/:creditNoteId/cancel", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { creditNoteId } = req.params;
+
+      const { billingService } = await import("./billingService");
+      await billingService.cancelCreditNote(creditNoteId);
+
+      res.json({ success: true, message: "Credit note cancelled successfully" });
+    } catch (error: any) {
+      console.error("Error cancelling credit note:", error);
+      res.status(500).json({ message: "Failed to cancel credit note", error: error.message });
+    }
+  });
+
+  // Reconcile invoices with Stripe (admin only)
+  app.post("/api/admin/billing/reconcile", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { organizationId, startDate, endDate } = req.body;
+
+      const { reconciliationService } = await import("./reconciliationService");
+      const report = await reconciliationService.reconcileInvoices(
+        organizationId,
+        startDate ? new Date(startDate) : undefined,
+        endDate ? new Date(endDate) : undefined
+      );
+
+      res.json(report);
+    } catch (error: any) {
+      console.error("Error reconciling invoices:", error);
+      res.status(500).json({ message: "Failed to reconcile invoices", error: error.message });
+    }
+  });
+
+  // Get reconciliation summary (admin only)
+  app.get("/api/admin/billing/reconcile/summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { organizationId } = req.query;
+
+      const { reconciliationService } = await import("./reconciliationService");
+      const summary = await reconciliationService.getReconciliationSummary(
+        organizationId as string | undefined
+      );
+
+      res.json(summary);
+    } catch (error: any) {
+      console.error("Error getting reconciliation summary:", error);
+      res.status(500).json({ message: "Failed to get reconciliation summary", error: error.message });
+    }
+  });
+
+  // Get reconciliation report (admin only)
+  app.get("/api/admin/billing/reconcile/report", isAuthenticated, async (req: any, res) => {
+    try {
+      const adminUser = await storage.getAdminByEmail(req.user.email);
+      if (!adminUser) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { organizationId, startDate, endDate, format = "json" } = req.query;
+
+      const { reconciliationService } = await import("./reconciliationService");
+      const report = await reconciliationService.reconcileInvoices(
+        organizationId as string | undefined,
+        startDate ? new Date(startDate as string) : undefined,
+        endDate ? new Date(endDate as string) : undefined
+      );
+
+      if (format === "csv") {
+        // Generate CSV report
+        const csvRows: string[] = [];
+        
+        // Header
+        csvRows.push("Type,Severity,Description,DB Invoice ID,Stripe Invoice ID,DB Amount,Stripe Amount,DB Status,Stripe Status,Organization ID,Organization Name");
+        
+        // Discrepancies
+        for (const disc of report.discrepancies) {
+          csvRows.push([
+            disc.type,
+            disc.severity,
+            `"${disc.description}"`,
+            disc.dbInvoiceId || "",
+            disc.stripeInvoiceId || "",
+            disc.dbAmount?.toFixed(2) || "",
+            disc.stripeAmount?.toFixed(2) || "",
+            disc.dbStatus || "",
+            disc.stripeStatus || "",
+            disc.organizationId,
+            disc.organizationName || ""
+          ].join(","));
+        }
+
+        const csvContent = csvRows.join("\n");
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="reconciliation-${new Date().toISOString().split('T')[0]}.csv"`);
+        res.send(csvContent);
+      } else {
+        res.json(report);
+      }
+    } catch (error: any) {
+      console.error("Error generating reconciliation report:", error);
+      res.status(500).json({ message: "Failed to generate reconciliation report", error: error.message });
     }
   });
 
@@ -29797,59 +31539,7 @@ Recommendation: Obtain quotes from local contractors for ${itemDescription}.`;
   });
 
   // Stripe Webhook
-  app.post("/api/webhooks/stripe", express.raw({ type: 'application/json' }), async (req, res) => {
-    const signature = req.headers['stripe-signature'];
-    if (!signature) return res.status(400).send('Missing signature');
-
-    const stripe = await getUncachableStripeClient();
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-    let event;
-    try {
-      if (webhookSecret) {
-        event = stripe.webhooks.constructEvent(req.body, signature as string, webhookSecret);
-      } else {
-        // Fallback for dev without secret verification if needed (Not recommended for prod)
-        // But constructEvent REQUIRES secret. 
-        // If no secret, we can't verify. For now, assume secret exists or log warning.
-        console.warn("Missing STRIPE_WEBHOOK_SECRET");
-        return res.status(400).send("Configuration Error");
-      }
-    } catch (err: any) {
-      console.error(`Webhook Error: ${err.message}`);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
-    }
-
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as any;
-      const { organizationId, type, itemId } = session.metadata || {};
-
-      if (organizationId && type && itemId) {
-        try {
-          const sub = await storage.getInstanceSubscription(organizationId);
-          if (sub) {
-            if (type === 'module') {
-              await storage.toggleInstanceModule(sub.id, itemId, true);
-              console.log(`[StripeWebhook] Enabled module ${itemId} for org ${organizationId}`);
-            } else if (type === 'bundle') {
-              await storage.addInstanceBundle(sub.id, itemId);
-              console.log(`[StripeWebhook] Enabled bundle ${itemId} for org ${organizationId}`);
-
-              // Also enable constituent modules?
-              const bModules = await storage.getBundleModules(itemId);
-              for (const m of bModules) {
-                await storage.toggleInstanceModule(sub.id, m.moduleId, true);
-              }
-            }
-          }
-        } catch (e) {
-          console.error("[StripeWebhook] Error updating DB:", e);
-        }
-      }
-    }
-
-    res.json({ received: true });
-  });
+  // NOTE: Duplicate webhook handler removed - all webhook handling consolidated into /api/billing/webhook
 
   const httpServer = createServer(app);
 

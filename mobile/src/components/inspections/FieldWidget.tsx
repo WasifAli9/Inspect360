@@ -1028,15 +1028,12 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               safeField.type === 'auto_tenant_names' ? autoContext?.tenantNames :
                 autoContext?.inspectionDate) || '';
         return (
-          <View style={styles.autoFieldContainer}>
-            <Input
-              label={safeField.label}
-              value={autoValue}
-              editable={false}
-              style={styles.autoInput}
-            />
-            <Badge variant="secondary" size="sm">Auto</Badge>
-          </View>
+          <Input
+            label={safeField.label}
+            value={autoValue}
+            editable={false}
+            style={styles.autoInput}
+          />
         );
 
       case 'photo':
@@ -1633,13 +1630,7 @@ const styles = StyleSheet.create({
   signatureSaveButton: {
     flex: 1,
   },
-  autoFieldContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
   autoInput: {
-    flex: 1,
     backgroundColor: colors.muted.DEFAULT,
   },
   photoFieldContainer: {

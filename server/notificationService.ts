@@ -314,6 +314,395 @@ export class NotificationService {
       console.error("Error checking quota alerts:", error);
     }
   }
+
+  /**
+   * Send invoice generated notification
+   */
+  async sendInvoiceGeneratedNotification(
+    organizationId: string,
+    invoiceId: string,
+    amount: number,
+    currency: string,
+    invoiceNumber?: string,
+    dueDate?: Date
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "invoice_generated",
+        title: "New Invoice Generated",
+        message: `A new invoice${invoiceNumber ? ` (#${invoiceNumber})` : ''} for ${currency} ${(amount / 100).toFixed(2)} has been generated.${dueDate ? ` Due date: ${dueDate.toLocaleDateString()}.` : ''}`,
+        data: {
+          invoiceId,
+          invoiceNumber,
+          amount,
+          currency,
+          dueDate: dueDate?.toISOString(),
+          actionUrl: "/billing/invoices"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "invoice_generated",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending invoice generated notification:", error);
+    }
+  }
+
+  /**
+   * Send invoice paid notification
+   */
+  async sendInvoicePaidNotification(
+    organizationId: string,
+    invoiceId: string,
+    amount: number,
+    currency: string,
+    invoiceNumber?: string
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "invoice_paid",
+        title: "Invoice Paid",
+        message: `Your invoice${invoiceNumber ? ` #${invoiceNumber}` : ''} for ${currency} ${(amount / 100).toFixed(2)} has been paid successfully.`,
+        data: {
+          invoiceId,
+          invoiceNumber,
+          amount,
+          currency,
+          actionUrl: "/billing/invoices"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "invoice_paid",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending invoice paid notification:", error);
+    }
+  }
+
+  /**
+   * Send subscription renewed notification
+   */
+  async sendSubscriptionRenewedNotification(
+    organizationId: string,
+    renewalDate: Date,
+    amount: number,
+    currency: string,
+    billingCycle: "monthly" | "annual"
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "subscription_renewed",
+        title: "Subscription Renewed",
+        message: `Your ${billingCycle} subscription has been renewed. Next renewal: ${renewalDate.toLocaleDateString()}. Amount charged: ${currency} ${(amount / 100).toFixed(2)}.`,
+        data: {
+          renewalDate: renewalDate.toISOString(),
+          amount,
+          currency,
+          billingCycle,
+          actionUrl: "/billing"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "subscription_renewed",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending subscription renewed notification:", error);
+    }
+  }
+
+  /**
+   * Send subscription cancelled notification
+   */
+  async sendSubscriptionCancelledNotification(
+    organizationId: string,
+    cancellationDate: Date,
+    endDate: Date
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "subscription_cancelled",
+        title: "Subscription Cancelled",
+        message: `Your subscription has been cancelled. Access will continue until ${endDate.toLocaleDateString()}.`,
+        data: {
+          cancellationDate: cancellationDate.toISOString(),
+          endDate: endDate.toISOString(),
+          actionUrl: "/billing"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "subscription_cancelled",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending subscription cancelled notification:", error);
+    }
+  }
+
+  /**
+   * Send payment method updated notification
+   */
+  async sendPaymentMethodUpdatedNotification(
+    organizationId: string
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "payment_method_updated",
+        title: "Payment Method Updated",
+        message: "Your payment method has been successfully updated.",
+        data: {
+          actionUrl: "/billing"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "payment_method_updated",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending payment method updated notification:", error);
+    }
+  }
+
+  /**
+   * Send module purchased notification
+   */
+  async sendModulePurchasedNotification(
+    organizationId: string,
+    moduleName: string,
+    amount: number,
+    currency: string,
+    billingCycle: "monthly" | "annual"
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "module_purchased",
+        title: "Module Purchased",
+        message: `${moduleName} has been successfully purchased and activated. ${billingCycle === "annual" ? "Annual" : "Monthly"} billing: ${currency} ${(amount / 100).toFixed(2)}.`,
+        data: {
+          moduleName,
+          amount,
+          currency,
+          billingCycle,
+          actionUrl: "/marketplace"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "module_purchased",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending module purchased notification:", error);
+    }
+  }
+
+  /**
+   * Send bundle purchased notification
+   */
+  async sendBundlePurchasedNotification(
+    organizationId: string,
+    bundleName: string,
+    amount: number,
+    currency: string,
+    billingCycle: "monthly" | "annual"
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "bundle_purchased",
+        title: "Bundle Purchased",
+        message: `${bundleName} bundle has been successfully purchased and activated. ${billingCycle === "annual" ? "Annual" : "Monthly"} billing: ${currency} ${(amount / 100).toFixed(2)}.`,
+        data: {
+          bundleName,
+          amount,
+          currency,
+          billingCycle,
+          actionUrl: "/marketplace"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "bundle_purchased",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending bundle purchased notification:", error);
+    }
+  }
+
+  /**
+   * Send credit top-up notification
+   */
+  async sendCreditTopUpNotification(
+    organizationId: string,
+    credits: number,
+    amount: number,
+    currency: string
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "credit_topup",
+        title: "Credits Added",
+        message: `${credits} inspection credits have been added to your account for ${currency} ${(amount / 100).toFixed(2)}.`,
+        data: {
+          credits,
+          amount,
+          currency,
+          actionUrl: "/billing"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "credit_topup",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending credit top-up notification:", error);
+    }
+  }
+
+  /**
+   * Send subscription expiring soon notification (7 days before)
+   */
+  async sendSubscriptionExpiringNotification(
+    organizationId: string,
+    expirationDate: Date,
+    daysRemaining: number
+  ): Promise<void> {
+    try {
+      const org = await storage.getOrganization(organizationId);
+      if (!org || !org.ownerId) return;
+
+      const owner = await storage.getUser(org.ownerId);
+      if (!owner) return;
+
+      const notification = await storage.createNotification({
+        userId: owner.id,
+        organizationId,
+        type: "subscription_expiring",
+        title: "Subscription Expiring Soon",
+        message: `Your subscription will expire in ${daysRemaining} day(s) on ${expirationDate.toLocaleDateString()}. Please renew to continue service.`,
+        data: {
+          expirationDate: expirationDate.toISOString(),
+          daysRemaining,
+          actionUrl: "/billing"
+        }
+      });
+
+      sendNotificationToUser(owner.id, {
+        id: notification.id,
+        type: "subscription_expiring",
+        title: notification.title,
+        message: notification.message,
+        createdAt: notification.createdAt?.toISOString() || new Date().toISOString(),
+        isRead: false
+      });
+    } catch (error) {
+      console.error("Error sending subscription expiring notification:", error);
+    }
+  }
 }
 
 export const notificationService = new NotificationService();

@@ -1287,12 +1287,34 @@ export default function InspectionCaptureScreen() {
                               : block
                                 ? [block.address, block.city, block.state, block.postalCode].filter(Boolean).join(', ')
                                 : '',
-                            tenantNames: Array.isArray(tenants)
-                              ? tenants
-                                .filter((t: any) => t.status === 'active')
-                                .map((t: any) => t.tenantName || t.name || `${t?.firstName || ''} ${t?.lastName || ''}`)
-                                .filter(Boolean)
-                                .join(', ')
+                            tenantNames: Array.isArray(tenants) && tenants.length > 0
+                              ? (() => {
+                                  // Try to get tenant names from various possible data structures
+                                  const tenantNames = tenants
+                                    .map((t: any) => {
+                                      // Check various possible field names for tenant name
+                                      return t.tenantName || t.name || t.tenant?.name || t.tenant?.fullName || 
+                                             (t.firstName && t.lastName ? `${t.firstName} ${t.lastName}` : 
+                                             t.firstName || t.lastName || "");
+                                    })
+                                    .filter(Boolean);
+                                  
+                                  if (tenantNames.length > 0) {
+                                    return tenantNames.join(", ");
+                                  }
+                                  
+                                  // If no names found but tenants exist, check if they have any identifying info
+                                  const hasAnyTenant = tenants.some((t: any) => 
+                                    t.tenantName || t.name || t.tenant || t.firstName || t.lastName
+                                  );
+                                  
+                                  if (hasAnyTenant) {
+                                    // Return a generic message if we have tenant data but no names
+                                    return "Tenant assigned";
+                                  }
+                                  
+                                  return "";
+                                })()
                               : '',
                             inspectionDate: new Date(effectiveInspection?.scheduledDate || (effectiveInspection as any)?.startedAt || new Date().toISOString()).toISOString().split('T')[0],
                           }}

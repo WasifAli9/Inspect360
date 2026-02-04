@@ -2,7 +2,7 @@ import { billingService } from "./billingService";
 import { storage } from "./storage";
 import { db } from "./db";
 import { instanceSubscriptions } from "@shared/schema";
-import { eq, lte } from "drizzle-orm";
+import { eq, lte, and } from "drizzle-orm";
 
 /**
  * Monthly Reset Service
@@ -26,8 +26,8 @@ export class MonthlyResetService {
       if (instanceSub && instanceSub.subscriptionRenewalDate) {
         const { subscriptionService } = await import("./subscriptionService");
         
-        // Process rollover which expires all unused credits (no rollover)
-        await subscriptionService.processRollover(
+        // Process credit expiry which expires all unused credits (no rollover)
+        await subscriptionService.processCreditExpiry(
           organizationId,
           instanceSub.subscriptionRenewalDate
         );
@@ -36,7 +36,7 @@ export class MonthlyResetService {
         if (instanceSub.inspectionQuotaIncluded > 0 && instanceSub.subscriptionStatus === "active") {
           console.log(`[Monthly Reset] Resetting inspection quota for org ${organizationId} to ${instanceSub.inspectionQuotaIncluded}`);
           
-          // Expire all existing plan_inclusion batches (including any that weren't expired by processRollover)
+          // Expire all existing plan_inclusion batches (including any that weren't expired by processCreditExpiry)
           const existingBatches = await storage.getCreditBatchesByOrganization(organizationId);
           const planBatches = existingBatches.filter(b => 
             b.grantSource === 'plan_inclusion' && 

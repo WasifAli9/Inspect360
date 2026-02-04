@@ -120,6 +120,46 @@ app.use((req, res, next) => {
     // Use 0.0.0.0 to allow access from other devices on the same network (e.g., mobile phones)
     const host = process.env.HOST || "0.0.0.0";
 
+    // Setup monthly reset scheduler
+    // Check if scheduler should be enabled (can be disabled via env var for testing)
+    if (process.env.ENABLE_MONTHLY_RESET_SCHEDULER !== "false") {
+      try {
+        // Use setInterval to check for subscriptions that need reset daily
+        // This is more reliable than cron in serverless environments
+        const checkInterval = 24 * 60 * 60 * 1000; // 24 hours
+        const { monthlyResetService } = await import("./monthlyResetService");
+        
+        // Run immediately on startup to catch any missed resets
+        setImmediate(async () => {
+          try {
+            console.log("[Scheduler] Running initial monthly reset check...");
+            const result = await monthlyResetService.processMonthlyResets();
+            console.log(`[Scheduler] Initial check complete: ${result.processed} processed, ${result.errors} errors`);
+          } catch (error) {
+            console.error("[Scheduler] Error in initial monthly reset check:", error);
+          }
+        });
+
+        // Schedule daily checks
+        setInterval(async () => {
+          try {
+            console.log("[Scheduler] Running scheduled monthly reset check...");
+            const result = await monthlyResetService.processMonthlyResets();
+            console.log(`[Scheduler] Scheduled check complete: ${result.processed} processed, ${result.errors} errors`);
+          } catch (error) {
+            console.error("[Scheduler] Error in scheduled monthly reset check:", error);
+          }
+        }, checkInterval);
+
+        console.log("✅ Monthly reset scheduler initialized (runs daily)");
+      } catch (error) {
+        console.error("❌ Failed to initialize monthly reset scheduler:", error);
+        // Don't fail server startup if scheduler fails
+      }
+    } else {
+      console.log("⚠️ Monthly reset scheduler disabled (ENABLE_MONTHLY_RESET_SCHEDULER=false)");
+    }
+
     // Use traditional listen format for better Windows compatibility
     // Windows doesn't support reusePort option
     const totalStartupTime = Date.now() - startTime;

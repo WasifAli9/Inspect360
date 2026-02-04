@@ -222,8 +222,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         // Transform authentication errors to user-friendly messages
         if (error?.status === 401 || error?.status === 403) {
-          throw new Error('Email or password is incorrect. Please try again.');
+          const authError = new Error('Incorrect email or password. Please try again.');
+          (authError as any).status = error.status;
+          throw authError;
         }
+        
+        // Ensure error has a message
+        if (!error?.message) {
+          throw new Error('Login failed. Please try again.');
+        }
+        
         // Re-throw other errors as-is (they should already have user-friendly messages)
         throw error;
       }

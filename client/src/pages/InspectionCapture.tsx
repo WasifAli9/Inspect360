@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -178,7 +178,7 @@ export default function InspectionCapture() {
 
   // Load existing entries into state on mount and auto-populate property address
   useEffect(() => {
-    if (existingEntries) {
+    if (existingEntries && existingEntries.length > 0) {
       const entriesMap: Record<string, InspectionEntry> = {};
       existingEntries.forEach((entry: any) => {
         const key = `${entry.sectionRef}-${entry.fieldKey}`;
@@ -195,7 +195,19 @@ export default function InspectionCapture() {
         };
       });
       // Merge with existing entries to preserve any local changes, but prioritize server data
-      setEntries(prev => ({ ...prev, ...entriesMap }));
+      // Only update if there are actual changes to prevent infinite loops
+      setEntries(prev => {
+        const hasChanges = Object.keys(entriesMap).some(key => {
+          const newEntry = entriesMap[key];
+          const oldEntry = prev[key];
+          return !oldEntry || 
+            oldEntry.id !== newEntry.id ||
+            oldEntry.valueJson !== newEntry.valueJson ||
+            oldEntry.note !== newEntry.note ||
+            JSON.stringify(oldEntry.photos) !== JSON.stringify(newEntry.photos);
+        });
+        return hasChanges ? { ...prev, ...entriesMap } : prev;
+      });
     }
   }, [existingEntries]);
 
@@ -487,9 +499,14 @@ export default function InspectionCapture() {
 
 
 
-  // Auto-populate property address when property is loaded and template is available
+  // Auto-populate property address - use ref to track if already populated to prevent infinite loops
+  const addressPopulatedRef = React.useRef(false);
+  
   useEffect(() => {
     if (!property?.address || !templateStructure || !sections.length || !id) return;
+    
+    // If already populated, don't run again
+    if (addressPopulatedRef.current) return;
 
     // Check if entry already exists in existingEntries (from server)
     const hasExistingEntry = existingEntries.some((entry: any) => {
@@ -497,7 +514,10 @@ export default function InspectionCapture() {
       return labelLower.includes("property_address") || labelLower.includes("property_address");
     });
 
-    if (hasExistingEntry) return; // Don't overwrite existing entries
+    if (hasExistingEntry) {
+      addressPopulatedRef.current = true;
+      return; // Don't overwrite existing entries
+    }
 
     // Find the property address field in the General Information section
     const generalInfoSection = sections.find(section =>
@@ -524,7 +544,10 @@ export default function InspectionCapture() {
     if (!addressField) return;
 
     const entryKey = `${generalInfoSection.id}-${addressField.id}`;
-    const existingEntry = entries[entryKey];
+    
+    // Check current entries state without including it in dependencies
+    setEntries(prev => {
+      const existingEntry = prev[entryKey];
 
     // Only auto-populate if the field is empty
     if (!existingEntry || !existingEntry.valueJson) {
@@ -536,11 +559,8 @@ export default function InspectionCapture() {
         valueJson: property.address,
       };
 
-      // Update local state optimistically
-      setEntries(prev => ({
-        ...prev,
-        [entryKey]: entry,
-      }));
+        // Mark as populated
+        addressPopulatedRef.current = true;
 
       // Save to backend if online
       if (isOnline) {
@@ -556,8 +576,18 @@ export default function InspectionCapture() {
         });
         setPendingCount(offlineQueue.getPendingCount());
       }
-    }
-  }, [property, templateStructure, sections, entries, existingEntries, id, isOnline, updateEntry]);
+
+        return {
+          ...prev,
+          [entryKey]: entry,
+        };
+      }
+      
+      // Mark as populated if entry already exists
+      addressPopulatedRef.current = true;
+      return prev;
+    });
+  }, [property?.address, templateStructure, sections, existingEntries, id, isOnline, updateEntry]);
 
   // Handle field value change
   const handleFieldChange = (fieldKey: string, value: any, note?: string | undefined, photos?: string[] | undefined) => {
@@ -1014,9 +1044,28 @@ export default function InspectionCapture() {
               
               const getTenantNames = () => {
                 if (tenants && tenants.length > 0) {
-                  const activeAssignments = tenants.filter((t: any) => t.status === "active");
-                  if (activeAssignments.length > 0) {
-                    return activeAssignments.map((t: any) => t.tenantName || t.name).filter(Boolean).join(", ");
+                  // Try to get tenant names from various possible data structures
+                  const tenantNames = tenants
+                    .map((t: any) => {
+                      // Check various possible field names for tenant name
+                      return t.tenantName || t.name || t.tenant?.name || t.tenant?.fullName || 
+                             t.firstName && t.lastName ? `${t.firstName} ${t.lastName}` : 
+                             t.firstName || t.lastName || "";
+                    })
+                    .filter(Boolean);
+                  
+                  if (tenantNames.length > 0) {
+                    return tenantNames.join(", ");
+                  }
+                  
+                  // If no names found but tenants exist, check if they have any identifying info
+                  const hasAnyTenant = tenants.some((t: any) => 
+                    t.tenantName || t.name || t.tenant || t.firstName || t.lastName
+                  );
+                  
+                  if (hasAnyTenant) {
+                    // Return a generic message if we have tenant data but no names
+                    return "Tenant assigned";
                   }
                 }
                 return "";

@@ -1,0 +1,83 @@
+# EAS Build ignore file - reduces build archive size
+# Files and directories that are not needed for the build
+
+# Dependencies (will be installed during build)
+node_modules/
+
+# Build artifacts
+.expo/
+dist/
+build/
+*.log
+
+# Development files
+*.md
+!README.md
+.env.local
+.env.development
+.env.test
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed for build)
+*.md
+!README.md
+API_*.md
+*_GUIDE.md
+*_README.md
+*_SETUP.md
+*_FIX.md
+*_DEBUG.md
+*_MIGRATION.md
+COMPLIANCE_*.md
+DATABASE_*.md
+ENV_*.md
+IOS_*.md
+LOCAL_*.md
+LOGIN_*.md
+METRO_*.md
+PRIVACY_*.md
+README_*.md
+SETUP_*.md
+SSL_*.md
+STORE_*.md
+
+# Test files
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Git
+.git/
+.gitignore
+
+# Certificates (not needed in build)
+*.pem
+*.p12
+*.cer
+*.crt
+*.key
+*.p7b
+*.ca-bundle
+certs/
+*_cert/
+
+# Scripts (not needed for build)
+scripts/
+

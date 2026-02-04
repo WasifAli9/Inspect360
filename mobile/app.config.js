@@ -17,14 +17,19 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.inspect360.mobile",
-      buildNumber: "1",
+      // buildNumber is managed remotely when appVersionSource is "remote" in eas.json
       requiresFullScreen: false,
+      // Minimum iOS version supported
+      deploymentTarget: "13.4",
       infoPlist: {
         NSCameraUsageDescription: "This app needs access to your camera to capture inspection photos.",
         NSPhotoLibraryUsageDescription: "This app needs access to your photo library to select images for inspections.",
         NSPhotoLibraryAddUsageDescription: "This app needs access to save photos to your library.",
         UIViewControllerBasedStatusBarAppearance: true,
-        UIStatusBarStyle: "UIStatusBarStyleDefault"
+        UIStatusBarStyle: "UIStatusBarStyleDefault",
+        // Required for background sync - using "fetch" mode only
+        // "processing" mode requires BGTaskSchedulerPermittedIdentifiers which we don't need
+        UIBackgroundModes: ["fetch"]
       },
       config: {
         usesNonExemptEncryption: false

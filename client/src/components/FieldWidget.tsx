@@ -1326,44 +1326,35 @@ export function FieldWidget({
       case "auto_inspector":
         const inspectorValue = localValue || autoContext?.inspectorName || "";
         return (
-          <div className="flex items-center gap-2">
-            <Input
-              value={inspectorValue}
-              readOnly
-              className="bg-muted cursor-not-allowed"
-              data-testid={`input-auto-inspector-${field.id}`}
-            />
-            <Badge variant="secondary" className="whitespace-nowrap">Auto</Badge>
-          </div>
+          <Input
+            value={inspectorValue}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            data-testid={`input-auto-inspector-${field.id}`}
+          />
         );
 
       case "auto_address":
         const addressValue = localValue || autoContext?.address || "";
         return (
-          <div className="flex items-center gap-2">
-            <Input
-              value={addressValue}
-              readOnly
-              className="bg-muted cursor-not-allowed"
-              data-testid={`input-auto-address-${field.id}`}
-            />
-            <Badge variant="secondary" className="whitespace-nowrap">Auto</Badge>
-          </div>
+          <Input
+            value={addressValue}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            data-testid={`input-auto-address-${field.id}`}
+          />
         );
 
       case "auto_tenant_names":
         const tenantValue = localValue || autoContext?.tenantNames || "";
         return (
-          <div className="flex items-center gap-2">
-            <Input
-              value={tenantValue}
-              readOnly
-              className="bg-muted cursor-not-allowed"
-              placeholder="No tenant assigned"
-              data-testid={`input-auto-tenant-${field.id}`}
-            />
-            <Badge variant="secondary" className="whitespace-nowrap">Auto</Badge>
-          </div>
+          <Input
+            value={tenantValue}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            placeholder="No tenant assigned"
+            data-testid={`input-auto-tenant-${field.id}`}
+          />
         );
 
       case "auto_inspection_date":
@@ -1378,7 +1369,6 @@ export function FieldWidget({
               className="bg-muted cursor-not-allowed"
               data-testid={`input-auto-date-${field.id}`}
             />
-            <Badge variant="secondary" className="whitespace-nowrap">Auto</Badge>
           </div>
         );
 

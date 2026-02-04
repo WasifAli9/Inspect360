@@ -2,6 +2,37 @@ import { storage } from "./storage";
 import { type SubscriptionTier, type MarketplaceModule } from "@shared/schema";
 import { currencyService } from "./currencyService";
 
+/**
+ * CURRENCY CONVERSION STRATEGY
+ * 
+ * All prices in the database are stored in GBP (base currency).
+ * Currency conversion happens on-the-fly when prices are retrieved:
+ * 
+ * 1. Storage: All prices stored in GBP
+ *    - Tier pricing: Stored in GBP
+ *    - Module pricing: Stored in GBP
+ *    - Bundle pricing: Stored in GBP
+ *    - Add-on pack pricing: Stored in GBP
+ * 
+ * 2. Retrieval: Prices converted to instance currency when needed
+ *    - Instance subscription has `registrationCurrency` field
+ *    - When calculating prices, convert from GBP to instance currency
+ *    - Conversion uses `currencyService.convertFromGBP()`
+ * 
+ * 3. Usage:
+ *    - `calculateInstancePrice()`: Converts tier prices to instance currency
+ *    - `calculateModulePrice()`: Retrieves module pricing in instance currency
+ *    - `calculateBundlePrice()`: Converts bundle prices to instance currency
+ *    - All prices returned are in the instance's registration currency
+ * 
+ * 4. Invoice Generation:
+ *    - Uses `pricingService` methods which handle conversion automatically
+ *    - All prices in invoice are in instance currency
+ * 
+ * 5. Webhook Processing:
+ *    - Uses currency from subscription metadata or instance subscription
+ *    - Prices are already converted when stored in instance modules/bundles
+ */
 export class PricingService {
     // Detect the appropriate tier based on inspection count
     // New tier ranges:
@@ -402,7 +433,14 @@ export class PricingService {
         };
     }
 
-    // Calculate instance price with override priority
+    /**
+     * Calculate instance price (tier price) in instance currency
+     * 
+     * CURRENCY CONVERSION:
+     * - Retrieves tier pricing from database (stored in GBP)
+     * - Converts to instance's registration currency if needed
+     * - Returns price in instance currency (minor units: pence/cents)
+     */
     async calculateInstancePrice(
         organizationId: string,
         billingCycle: "monthly" | "annual"
@@ -437,7 +475,15 @@ export class PricingService {
         }
     }
 
-    // Calculate module price with override priority
+    /**
+     * Calculate module price with override priority
+     * 
+     * CURRENCY CONVERSION:
+     * - Retrieves module pricing from database (stored in GBP)
+     * - Converts to instance's registration currency if needed
+     * - Returns price in instance currency (minor units: pence/cents)
+     * - Module overrides are already in instance currency (set at override time)
+     */
     async calculateModulePrice(
         organizationId: string,
         moduleId: string,
@@ -462,12 +508,9 @@ export class PricingService {
         }
 
         // 2. Check if part of active bundle (bundle price takes precedence)
-        const activeBundles = await storage.getInstanceBundles(instanceSub.id);
-        for (const bundle of activeBundles.filter(b => b.isActive)) {
-            const bundleModules = await storage.getBundleModules(bundle.bundleId);
-            if (bundleModules.some(bm => bm.moduleId === moduleId)) {
-                return 0; // Module cost covered by bundle
-            }
+        const isInBundle = await this.isModuleInActiveBundle(instanceSub.id, moduleId);
+        if (isInBundle) {
+            return 0; // Module cost covered by bundle
         }
 
         // 3. Fall back to standard module pricing
@@ -481,6 +524,38 @@ export class PricingService {
         } else {
             return modulePricing?.priceAnnual || 0;
         }
+    }
+
+    /**
+     * Check if a module is part of an active bundle for an instance
+     * @param instanceId - Instance subscription ID
+     * @param moduleId - Module ID to check
+     * @returns true if module is in an active bundle, false otherwise
+     */
+    async isModuleInActiveBundle(instanceId: string, moduleId: string): Promise<boolean> {
+        const activeBundles = await storage.getInstanceBundles(instanceId);
+        for (const bundle of activeBundles.filter(b => b.isActive)) {
+            const bundleModules = await storage.getBundleModules(bundle.bundleId);
+            if (bundleModules.some(bm => bm.moduleId === moduleId)) {
+                return true; // Module is covered by bundle
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get all module IDs that are covered by active bundles for an instance
+     * @param instanceId - Instance subscription ID
+     * @returns Set of module IDs that are in active bundles
+     */
+    async getBundledModuleIds(instanceId: string): Promise<Set<string>> {
+        const coveredModuleIds = new Set<string>();
+        const activeBundles = await storage.getInstanceBundles(instanceId);
+        for (const bundle of activeBundles.filter(b => b.isActive)) {
+            const bundleModules = await storage.getBundleModules(bundle.bundleId);
+            bundleModules.forEach(bm => coveredModuleIds.add(bm.moduleId));
+        }
+        return coveredModuleIds;
     }
 
     // Check if module is available for instance

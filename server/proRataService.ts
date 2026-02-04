@@ -120,3 +120,57 @@ export function calculateProRata(
   };
 }
 
+/**
+ * Calculate pro-rata pricing with consistent date priority
+ * Always prioritizes instanceSubscriptions dates over legacy subscription dates
+ * 
+ * @param fullPrice - Full price in minor units (pence/cents)
+ * @param organizationId - Organization ID
+ * @param billingCycle - Billing cycle (monthly/annual)
+ * @param storage - Storage service instance
+ * @returns ProRataResult with prorated pricing, or null if no subscription found
+ */
+export async function calculateProRataWithPriority(
+  fullPrice: number,
+  organizationId: string,
+  billingCycle: "monthly" | "annual",
+  storage: any
+): Promise<{ result: ProRataResult; source: "instanceSubscriptions" | "legacySubscription" } | null> {
+  // Priority 1: Use instanceSubscriptions (source of truth - updated on tier changes)
+  const instanceSub = await storage.getInstanceSubscription(organizationId);
+  
+  if (instanceSub?.subscriptionStartDate && instanceSub?.subscriptionRenewalDate && 
+      instanceSub.billingCycle === billingCycle && instanceSub.subscriptionStatus === "active") {
+    const result = calculateProRata(
+      fullPrice,
+      instanceSub.subscriptionStartDate,
+      instanceSub.subscriptionRenewalDate,
+      billingCycle
+    );
+    
+    return { result, source: "instanceSubscriptions" };
+  }
+  
+  // Priority 2: Fall back to legacy subscription (only if instanceSubscriptions doesn't have data)
+  const existingSub = await storage.getSubscriptionByOrganization(organizationId);
+  
+  if (existingSub?.stripeSubscriptionId && existingSub.billingInterval === billingCycle) {
+    const startDate = existingSub.currentPeriodStart || existingSub.billingCycleAnchor || existingSub.createdAt;
+    const renewalDate = existingSub.currentPeriodEnd;
+    
+    if (startDate && renewalDate) {
+      const result = calculateProRata(
+        fullPrice,
+        startDate,
+        renewalDate,
+        billingCycle
+      );
+      
+      return { result, source: "legacySubscription" };
+    }
+  }
+  
+  // No subscription found - return null (no proration)
+  return null;
+}
+

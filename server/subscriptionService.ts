@@ -201,19 +201,19 @@ export class SubscriptionService {
   }
 
   /**
-   * Handle rollover logic at billing cycle start
-   * NOTE: Changed to expire all unused credits instead of rolling them over
-   * Unused credits from previous cycle are reset to zero - no rollover
+   * Process credit expiry at billing cycle end
+   * Expires all unused credits from the previous cycle - no rollover
+   * Credits are reset to zero at the start of each new billing cycle
    * @param organizationId - Organization to process
    * @param currentPeriodEnd - End of the current billing period
    */
-  async processRollover(organizationId: string, currentPeriodEnd: Date): Promise<void> {
+  async processCreditExpiry(organizationId: string, currentPeriodEnd: Date): Promise<void> {
     const now = new Date();
     
     // Get all batches for the organization
     const allBatches = await storage.getCreditBatchesByOrganization(organizationId);
 
-    // Expire ALL expired batches (both rolled and non-rolled) - NO rollover
+    // Expire ALL expired batches - no rollover
     // All unused credits from previous cycle will be reset to zero
     const expiredBatches = allBatches.filter(
       b => b.remainingQuantity > 0 && b.expiresAt && b.expiresAt <= now
@@ -232,7 +232,7 @@ export class SubscriptionService {
       });
     }
 
-    console.log(`[Rollover] Expired ${expiredBatches.length} batches with unused credits for org ${organizationId} (no rollover - credits reset to zero)`);
+    console.log(`[Credit Expiry] Expired ${expiredBatches.length} batches with unused credits for org ${organizationId} (no rollover - credits reset to zero)`);
   }
 
   /**
