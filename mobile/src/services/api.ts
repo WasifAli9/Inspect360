@@ -168,10 +168,15 @@ async function throwIfResNotOk(res: Response): Promise<void> {
     if (res.status === 401 || res.status === 403) {
       // For login endpoints, provide a simple message
       if (res.url?.includes('/api/login')) {
-        errorMessage = 'Email or password is incorrect. Please try again.';
+        errorMessage = 'Wrong credentials. Please try again.';
       } else {
         errorMessage = 'Unauthorized. Please log in again.';
       }
+    }
+    
+    // Provide user-friendly messages for server errors
+    if (res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) {
+      errorMessage = 'Server problem. Please try again sometime later.';
     }
 
     const error: ApiError = {
@@ -267,16 +272,17 @@ export async function apiRequest(
 
     // Handle abort (timeout)
     if (error.name === 'AbortError') {
-      throw new Error(`Request timeout. The server is not responding. Please check your internet connection.`);
+      throw new Error(`Server problem. Request timeout. Please try again sometime later.`);
     }
 
     // Provide more helpful error messages for network errors
     if (error.message?.includes('Failed to fetch') || 
         error.message?.includes('ERR_CONNECTION_REFUSED') ||
         error.message?.includes('Network request failed') ||
-        error.message?.includes('NetworkError')) {
+        error.message?.includes('NetworkError') ||
+        error.message?.includes('No network connection')) {
       throw new Error(
-        `Cannot connect to server. Please check your internet connection and ensure the server is accessible.`
+        `Server problem. Cannot connect to server. Please check your internet connection and try again later.`
       );
     }
     

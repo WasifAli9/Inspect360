@@ -181,20 +181,59 @@ export async function getStorageInfo(): Promise<{
 
 /**
  * Check if a path is a local offline path
+ * Handles both iOS and Android path formats
  */
 export function isLocalPath(path: string): boolean {
-  return path.startsWith(IMAGES_DIR) || path.startsWith('file://') && path.includes('offline_images');
+  if (!path) return false;
+  
+  // Check for offline_images directory (works on both iOS and Android)
+  if (path.includes('offline_images')) {
+    return true;
+  }
+  
+  // Check if it starts with the images directory
+  if (path.startsWith(IMAGES_DIR)) {
+    return true;
+  }
+  
+  // Check for file:// URIs that point to offline images
+  if (path.startsWith('file://') && path.includes('offline_images')) {
+    return true;
+  }
+  
+  // Check for Android content:// URIs (less common but possible)
+  if (path.startsWith('content://') && path.includes('offline_images')) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**
  * Convert local path to a format that can be used in React Native Image component
+ * Handles both iOS and Android path formats
  */
 export function getImageSource(localPath: string): { uri: string } {
+  if (!localPath) {
+    return { uri: '' };
+  }
+  
   // If it's already a file:// URI, use it directly
   if (localPath.startsWith('file://')) {
     return { uri: localPath };
   }
-  // Otherwise, add file:// prefix
+  
+  // If it's a content:// URI (Android), use it directly
+  if (localPath.startsWith('content://')) {
+    return { uri: localPath };
+  }
+  
+  // If it's an absolute path (iOS/Android), add file:// prefix
+  if (localPath.startsWith('/')) {
+    return { uri: `file://${localPath}` };
+  }
+  
+  // Otherwise, assume it's relative and add file:// prefix
   return { uri: `file://${localPath}` };
 }
 

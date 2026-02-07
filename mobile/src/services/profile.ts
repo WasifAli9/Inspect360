@@ -18,6 +18,7 @@ export interface UpdateProfileData {
   profileImageUrl?: string;
   skills?: string[];
   qualifications?: string[];
+  biometricEnabled?: boolean;
 }
 
 export interface ChangePasswordData {

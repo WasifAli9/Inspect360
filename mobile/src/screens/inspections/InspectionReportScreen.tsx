@@ -35,6 +35,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { format } from 'date-fns';
 import { inspectionsService } from '../../services/inspections';
+import { inspectionsOffline } from '../../services/offline/inspectionsOffline';
 import { getAPI_URL } from '../../services/api';
 import type { InspectionsStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
@@ -43,7 +44,8 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
-// No local database - all data from server
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { getImageSource, isLocalPath } from '../../services/offline/storage';
 
 const { width } = Dimensions.get('window');
 
@@ -59,6 +61,7 @@ const InspectionReportScreen = () => {
 
     const { inspectionId } = route.params;
     const { user } = useAuth();
+    const isOnline = useOnlineStatus();
     const [expandedPhotos, setExpandedPhotos] = useState<Record<string, boolean>>({});
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -67,7 +70,14 @@ const InspectionReportScreen = () => {
         queryKey: [`/api/inspections/${inspectionId}`, user?.id],
         queryFn: async () => {
             try {
-                return await inspectionsService.getInspection(inspectionId);
+                // Use offline service to support offline access
+                const result = await inspectionsOffline.getInspection(inspectionId, isOnline);
+                if (!result) {
+                    Alert.alert('Inspection not found', 'This inspection is not available.');
+                    navigation.goBack();
+                    return null as any;
+                }
+                return result;
             } catch (error: any) {
                 // If server says "not found", show error message
                 if (error?.status === 404 || String(error?.message || '').toLowerCase().includes('not found')) {
@@ -83,7 +93,11 @@ const InspectionReportScreen = () => {
 
     const { data: entries = [], isLoading: isEntriesLoading } = useQuery({
         queryKey: [`/api/inspections/${inspectionId}/entries`],
-        queryFn: () => inspectionsService.getInspectionEntries(inspectionId),
+        queryFn: async () => {
+            // Use offline service to support offline access
+            return await inspectionsOffline.getInspectionEntries(inspectionId, isOnline);
+        },
+        enabled: !!inspectionId,
     });
 
     const togglePhotoExpansion = (key: string) => {
@@ -707,11 +721,22 @@ const InspectionReportScreen = () => {
                                                                 <View style={[styles.photoExpansionContainer, { borderTopColor: themeColors.border.light }]}>
                                                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScrollView}>
                                                                         {entry.photos?.map((photo: string, photoIdx: number) => {
-                                                                            const photoUrl = photo.startsWith('http')
-                                                                                ? photo
-                                                                                : photo.startsWith('/')
-                                                                                    ? `${getAPI_URL()}${photo}`
-                                                                                    : `${getAPI_URL()}/objects/${photo}`;
+                                                                            // Handle both local and server images
+                                                                            let photoUrl: string;
+                                                                            if (isLocalPath(photo)) {
+                                                                                // Local offline image - use local path
+                                                                                const imageSource = getImageSource(photo);
+                                                                                photoUrl = imageSource.uri;
+                                                                            } else if (photo.startsWith('http')) {
+                                                                                // Full URL
+                                                                                photoUrl = photo;
+                                                                            } else if (photo.startsWith('/')) {
+                                                                                // Server path
+                                                                                photoUrl = `${getAPI_URL()}${photo}`;
+                                                                            } else {
+                                                                                // Object ID
+                                                                                photoUrl = `${getAPI_URL()}/objects/${photo}`;
+                                                                            }
                                                                             return (
                                                                                 <Image
                                                                                     key={photoIdx}

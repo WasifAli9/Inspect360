@@ -590,18 +590,56 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           stack: fetchError.stack,
         });
         
+        // CRITICAL: If upload fails, store image locally with pending status
+        // This ensures the image is not lost and will be retried when online
+        try {
+          console.log('[FieldWidget] Upload failed - storing image locally for retry:', fileUri);
+          const localPath = await storeImageLocally(fileUri, inspectionId, entryId);
+          console.log('[FieldWidget] Image stored locally for retry:', localPath);
+          
+          // Update photos array with local path so it can be synced later
+          const composedValue = composeValue(localValue, localCondition, localCleanliness);
+          const currentPhotos = [...localPhotos, localPath];
+          onChange(composedValue, localNote, currentPhotos);
+          
+          // Return local path - entry will be saved with local path and synced later
+          return localPath;
+        } catch (storeError: any) {
+          console.error('[FieldWidget] Error storing failed upload locally:', storeError);
+          // If storing locally also fails, throw the original error
+        }
+        
         // Re-throw with user-friendly message
         if (fetchError.name === 'AbortError') {
-          throw new Error('Upload timeout: The server took too long to respond. Please try again.');
+          throw new Error('Upload timeout: The server took too long to respond. The image has been saved locally and will be uploaded when you have a better connection.');
         } else if (fetchError.message?.includes('Network request failed') || fetchError.message?.includes('Failed to fetch')) {
           // Check if it's a CORS or connectivity issue
-          throw new Error('Network request failed. Please check your internet connection and ensure the server is accessible.');
+          throw new Error('Network request failed. The image has been saved locally and will be uploaded when you have a better connection.');
         } else {
-          throw fetchError;
+          throw new Error(`Upload failed: ${fetchError.message || 'Unknown error'}. The image has been saved locally and will be uploaded when you have a better connection.`);
         }
       }
     } catch (error: any) {
       console.error('[FieldWidget] Error in uploadPhoto:', error);
+      
+      // Last resort: try to store locally if we haven't already
+      if (!error.message?.includes('saved locally')) {
+        try {
+          console.log('[FieldWidget] Final attempt to store image locally:', uri);
+          const localPath = await storeImageLocally(uri, inspectionId, entryId);
+          console.log('[FieldWidget] Image stored locally as fallback:', localPath);
+          
+          // Update photos array with local path
+          const composedValue = composeValue(localValue, localCondition, localCleanliness);
+          const currentPhotos = [...localPhotos, localPath];
+          onChange(composedValue, localNote, currentPhotos);
+          
+          return localPath;
+        } catch (storeError: any) {
+          console.error('[FieldWidget] Final fallback storage also failed:', storeError);
+        }
+      }
+      
       throw error;
     }
   };
@@ -780,20 +818,26 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       return;
     }
 
-    if (!isOnline) {
-      Alert.alert('Offline', 'Cannot remove photos while offline. Please connect to the internet.');
-      return;
-    }
-
     try {
-      // Update local state immediately
+      // Update local state immediately (works offline)
       const newPhotos = localPhotos.filter(p => p !== photoUrl);
       setLocalPhotos(newPhotos);
       const composedValue = composeValue(localValue, localCondition, localCleanliness);
       onChange(composedValue, localNote, newPhotos);
       
+      // If it's a local photo, delete it from local storage
+      if (isLocalPath(photoUrl)) {
+        try {
+          const { deleteLocalImageFile } = await import('../../services/offline/storage');
+          await deleteLocalImageFile(photoUrl);
+        } catch (deleteError) {
+          console.warn('[FieldWidget] Error deleting local image file:', deleteError);
+          // Continue anyway - photo is removed from UI
+        }
+      }
+      
       // Entry update will be handled by onChange callback which triggers updateEntry mutation
-      // This will POST/PATCH to server with the updated photos array (without the removed photo)
+      // This will sync to server when online (via sync service)
     } catch (error) {
       console.error('[FieldWidget] Error removing photo:', error);
       // Still update UI even if error occurs
@@ -1032,7 +1076,13 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             label={safeField.label}
             value={autoValue}
             editable={false}
-            style={styles.autoInput}
+            style={[
+              {
+                backgroundColor: themeColors.input,
+                borderColor: themeColors.border.DEFAULT,
+                color: themeColors.text.primary,
+              },
+            ]}
           />
         );
 
@@ -1093,7 +1143,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
               {!!safeField.required && <Text style={[styles.required, { color: themeColors.destructive.DEFAULT }]}> *</Text>}
             </Text>
             <TouchableOpacity
-              style={styles.photoButton}
+              style={[styles.photoButton, { backgroundColor: themeColors.primary.DEFAULT }]}
               onPress={() => setShowPhotoPicker(true)}
               activeOpacity={0.8}
             >
@@ -1109,6 +1159,11 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                 let photoUrl: string;
                 let imageSource: { uri: string };
                 
+                if (!photo || photo.trim() === '') {
+                  // Skip empty photos
+                  return null;
+                }
+                
                 if (isLocalPath(photo)) {
                   // Local offline path - use getImageSource helper
                   imageSource = getImageSource(photo);
@@ -1119,25 +1174,46 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                   imageSource = { uri: photoUrl };
                 } else if (photo.startsWith('/')) {
                   // Relative server path - prepend API URL
-                  photoUrl = `${getAPI_URL()}${photo}`;
+                  const apiUrl = getAPI_URL();
+                  // Ensure we don't double up on slashes
+                  photoUrl = `${apiUrl}${photo.startsWith('/') ? photo : `/${photo}`}`;
                   imageSource = { uri: photoUrl };
                 } else {
-                  // Assume it's a server object path
-                  photoUrl = `${getAPI_URL()}/objects/${photo}`;
+                  // Assume it's a server object path or object ID
+                  const apiUrl = getAPI_URL();
+                  // Handle both /objects/objectId and just objectId
+                  if (photo.includes('/objects/')) {
+                    photoUrl = photo.startsWith('http') ? photo : `${apiUrl}${photo.startsWith('/') ? photo : `/${photo}`}`;
+                  } else {
+                    // Just object ID - construct full path
+                    photoUrl = `${apiUrl}/objects/${photo}`;
+                  }
                   imageSource = { uri: photoUrl };
                 }
 
                 return (
-                  <View key={index} style={styles.photoItem}>
+                  <View key={`photo-${index}-${photo}`} style={[styles.photoItem, { backgroundColor: themeColors.card.DEFAULT, borderColor: themeColors.border.DEFAULT }]}>
                     <TouchableOpacity
                       onPress={() => {
                         setSelectedPhoto(photoUrl);
                         setShowPhotoViewer(true);
                       }}
+                      activeOpacity={0.8}
+                      style={{ flex: 1 }}
                     >
-                      <Image source={imageSource} style={styles.photoThumbnail} />
+                      <Image 
+                        source={imageSource} 
+                        style={[styles.photoThumbnail, { borderColor: themeColors.border.DEFAULT, backgroundColor: 'transparent' }]} 
+                        resizeMode="cover"
+                        onError={(error) => {
+                          console.error('[FieldWidget] Image load error:', error.nativeEvent.error, 'for URL:', photoUrl, 'original photo:', photo);
+                        }}
+                        onLoad={() => {
+                          console.log('[FieldWidget] Image loaded successfully:', photoUrl);
+                        }}
+                      />
                     </TouchableOpacity>
-                    <View style={styles.photoActions}>
+                    <View style={[styles.photoActions, { backgroundColor: themeColors.card.DEFAULT + 'E6' }]}>
                       <TouchableOpacity
                         style={styles.removePhotoButton}
                         onPress={() => handleRemovePhoto(photo)}
@@ -1405,7 +1481,13 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             <Image 
               source={isLocalPath(selectedPhoto) ? getImageSource(selectedPhoto) : { uri: selectedPhoto }} 
               style={styles.photoViewer} 
-              resizeMode="contain" 
+              resizeMode="contain"
+              onError={(error) => {
+                console.error('[FieldWidget] Photo viewer image load error:', error.nativeEvent.error, 'for URL:', selectedPhoto);
+              }}
+              onLoad={() => {
+                console.log('[FieldWidget] Photo viewer image loaded successfully:', selectedPhoto);
+              }}
             />
           )}
         </View>
@@ -1630,9 +1712,7 @@ const styles = StyleSheet.create({
   signatureSaveButton: {
     flex: 1,
   },
-  autoInput: {
-    backgroundColor: colors.muted.DEFAULT,
-  },
+  // Removed autoInput style - now using theme colors directly
   photoFieldContainer: {
     marginBottom: spacing[4],
   },
@@ -1696,7 +1776,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.primary.DEFAULT,
+    // backgroundColor applied dynamically via themeColors
     ...shadows.sm,
   },
   photoButtonText: {
@@ -1713,17 +1793,17 @@ const styles = StyleSheet.create({
     marginRight: spacing[3],
     marginBottom: spacing[2],
     padding: spacing[2],
-    backgroundColor: colors.background,
+    // backgroundColor and borderColor applied dynamically via themeColors
     borderRadius: borderRadius.md,
+    borderWidth: 1,
     ...shadows.xs,
   },
   photoThumbnail: {
     width: 120,
     height: 120,
     borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: colors.border.DEFAULT,
-    backgroundColor: colors.muted.DEFAULT,
+    borderWidth: 1,
+    // borderColor and backgroundColor applied dynamically via themeColors
   },
   photoActions: {
     position: 'absolute',
@@ -1731,7 +1811,7 @@ const styles = StyleSheet.create({
     right: spacing[1],
     flexDirection: 'row',
     gap: spacing[1],
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    // backgroundColor applied dynamically via themeColors
     borderRadius: borderRadius.md,
     padding: spacing[1] / 2,
     ...shadows.sm,

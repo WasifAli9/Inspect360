@@ -12,6 +12,7 @@ import {
   getPendingEntries,
   addToSyncQueue,
 } from './database';
+import { isLocalPath } from './storage';
 
 /**
  * Offline-first wrapper for inspection service
@@ -341,8 +342,13 @@ export const inspectionsOffline = {
       lastError: null,
     });
 
+    // Check if entry has local image paths that need to be uploaded
+    const hasLocalImages = entry.photos?.some(photo => 
+      photo.startsWith('file://') || photo.includes('offline_images') || isLocalPath(photo)
+    ) || false;
+    
     // If online, try to sync immediately
-    if (isOnline) {
+    if (isOnline && !hasLocalImages) {
       try {
         const serverEntry = await inspectionsService.saveInspectionEntry(entry);
         // Update local DB with server response
@@ -363,6 +369,10 @@ export const inspectionsOffline = {
         console.error('[InspectionsOffline] Error saving entry to server:', error);
         // Entry remains in sync queue for retry
       }
+    } else if (isOnline && hasLocalImages) {
+      // Entry has local images - let sync service handle it
+      // Don't try to save immediately, let sync service upload images first
+      console.log('[InspectionsOffline] Entry has local images - will be synced by sync service');
     }
 
     return entryData;
@@ -519,8 +529,15 @@ export const inspectionsOffline = {
       lastError: null,
     });
 
-    // If online and entry has server ID, try to sync immediately
-    if (isOnline && localRecord.entryId) {
+    // Check if updates include local image paths that need to be uploaded
+    const hasLocalImages = updates.photos?.some((photo: string) => 
+      photo.startsWith('file://') || photo.includes('offline_images') || isLocalPath(photo)
+    ) || updatedEntry.photos?.some((photo: string) => 
+      photo.startsWith('file://') || photo.includes('offline_images') || isLocalPath(photo)
+    ) || false;
+    
+    // If online and entry has server ID, try to sync immediately (but only if no local images)
+    if (isOnline && localRecord.entryId && !hasLocalImages) {
       try {
         const serverEntry = await inspectionsService.updateInspectionEntry(localRecord.entryId, updates);
         // Update local DB with server response
@@ -541,6 +558,9 @@ export const inspectionsOffline = {
         console.error('[InspectionsOffline] Error updating entry on server:', error);
         // Entry remains in sync queue for retry
       }
+    } else if (isOnline && localRecord.entryId && hasLocalImages) {
+      // Entry has local images - let sync service handle it
+      console.log('[InspectionsOffline] Entry update has local images - will be synced by sync service');
     }
 
     return updatedEntry;

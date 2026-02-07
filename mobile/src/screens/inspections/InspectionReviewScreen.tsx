@@ -17,6 +17,7 @@ import {
 } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { inspectionsService } from '../../services/inspections';
+import { inspectionsOffline } from '../../services/offline/inspectionsOffline';
 import { apiRequestJson, getAPI_URL } from '../../services/api';
 import type { InspectionsStackParamList } from '../../navigation/types';
 import Card from '../../components/ui/Card';
@@ -25,6 +26,8 @@ import Badge from '../../components/ui/Badge';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { getImageSource, isLocalPath } from '../../services/offline/storage';
 
 type RoutePropType = RouteProp<InspectionsStackParamList, 'InspectionReview'>;
 type NavProp = NavigationProp<InspectionsStackParamList>;
@@ -37,10 +40,15 @@ export default function InspectionReviewScreen() {
   // Ensure themeColors is always defined - use default colors if theme not available
   const themeColors = (theme && theme.colors) ? theme.colors : colors;
   const { inspectionId } = route.params;
+  const isOnline = useOnlineStatus();
 
   const { data: inspection, isLoading } = useQuery({
     queryKey: [`/api/inspections/${inspectionId}`],
-    queryFn: () => inspectionsService.getInspection(inspectionId),
+    queryFn: async () => {
+      // Use offline service to support offline access
+      return await inspectionsOffline.getInspection(inspectionId, isOnline);
+    },
+    enabled: !!inspectionId,
   });
 
   // Fetch property details if inspection has a propertyId
@@ -408,9 +416,13 @@ export default function InspectionReviewScreen() {
                         <View style={styles.itemPhotoContainer}>
                           <Image
                             source={{
-                              uri: item.photoUrl.startsWith('/objects/')
-                                ? `${getAPI_URL()}${item.photoUrl}`
-                                : `${getAPI_URL()}/objects/${item.photoUrl}`
+                              uri: isLocalPath(item.photoUrl)
+                                ? getImageSource(item.photoUrl).uri
+                                : item.photoUrl.startsWith('/objects/')
+                                  ? `${getAPI_URL()}${item.photoUrl}`
+                                  : item.photoUrl.startsWith('http')
+                                    ? item.photoUrl
+                                    : `${getAPI_URL()}/objects/${item.photoUrl}`
                             }}
                             style={styles.itemPhoto}
                             resizeMode="cover"

@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authService } from '../services/auth';
 import { getAPI_URL } from '../services/api';
+import { biometricService } from '../services/biometric';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -14,11 +15,20 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refetchUser: () => void;
+  // Biometric credential storage
+  storeBiometricCredentials: (email: string, password: string, skipAuth?: boolean) => Promise<void>;
+  getBiometricCredentials: () => Promise<{ email: string; password: string } | null>;
+  clearBiometricCredentials: () => Promise<void>;
+  getStoredEmail: () => Promise<string | null>;
+  hasBiometricCredentials: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const USER_STORAGE_KEY = 'user_session';
+const BIOMETRIC_EMAIL_KEY = 'biometric_email';
+const BIOMETRIC_PASSWORD_KEY = 'biometric_password';
+const LAST_LOGIN_EMAIL_KEY = 'last_login_email';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -243,6 +253,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData);
       await setStorageItem(USER_STORAGE_KEY, JSON.stringify(userData));
       queryClient.setQueryData(['/api/auth/user'], userData);
+      
+      // Store last login email for auto-fill
+      const email = (loginMutation.variables as any)?.email;
+      if (email) {
+        await setStorageItem(LAST_LOGIN_EMAIL_KEY, email);
+      }
+      
+      // If user has biometricEnabled in profile, store credentials
+      // Note: We'll check this from the profile API in LoginScreen after login
+      // This is just a placeholder - actual storage happens in LoginScreen
+      
       // No local database - all data is stored on server only
       if (__DEV__) {
         console.log('[AuthContext] User state set, isAuthenticated should now be:', !!userData);
@@ -267,6 +288,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clear user state first
       setUser(null);
       await deleteStorageItem(USER_STORAGE_KEY);
+      
+      // Note: We don't clear biometric credentials on logout
+      // They should only be cleared when user disables biometric in profile
+      // This allows user to use biometric login after logout
       
       // Cancel all pending queries to prevent 401 errors
       queryClient.cancelQueries();
@@ -293,6 +318,133 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refetch();
   };
 
+  // Biometric credential storage functions
+  const storeBiometricCredentials = async (email: string, password: string, skipAuth: boolean = false) => {
+    try {
+      // Store email (readable without biometric for auto-fill)
+      await setStorageItem(BIOMETRIC_EMAIL_KEY, email);
+      // Store last login email (for auto-fill even if biometric disabled)
+      await setStorageItem(LAST_LOGIN_EMAIL_KEY, email);
+      
+      // Store password with biometric protection (requires authentication to read)
+      // On native platforms, SecureStore can use biometric protection
+      if (Platform.OS !== 'web') {
+        // Note: requireAuthentication only affects READING, not writing
+        // So storing with requireAuthentication: true won't prompt during storage
+        // When skipAuth is true, we've already authenticated, so no prompt during storage anyway
+        // Always use requireAuthentication: true for consistency when reading
+        // This ensures the password requires biometric when reading, regardless of how it was stored
+        await SecureStore.setItemAsync(BIOMETRIC_PASSWORD_KEY, password, {
+          requireAuthentication: true,
+          authenticationPrompt: 'Authenticate to access stored password',
+        });
+      } else {
+        // Web fallback - still use secure storage but without biometric
+        await setStorageItem(BIOMETRIC_PASSWORD_KEY, password);
+      }
+      
+      if (__DEV__) {
+        console.log('[AuthContext] Biometric credentials stored', skipAuth ? '(skipAuth=true)' : '');
+      }
+    } catch (error) {
+      console.error('[AuthContext] Error storing biometric credentials:', error);
+      throw error;
+    }
+  };
+
+  const getBiometricCredentials = async (): Promise<{ email: string; password: string } | null> => {
+    try {
+      // Get email (doesn't require biometric)
+      const email = await getStorageItem(BIOMETRIC_EMAIL_KEY);
+      if (!email) {
+        return null;
+      }
+
+      // Get password (requires biometric on native)
+      let password: string | null = null;
+      if (Platform.OS !== 'web') {
+        try {
+          password = await SecureStore.getItemAsync(BIOMETRIC_PASSWORD_KEY, {
+            requireAuthentication: true,
+            authenticationPrompt: 'Authenticate to login',
+          });
+        } catch (error: any) {
+          // If biometric authentication fails, return null
+          if (error?.message?.includes('cancel') || error?.message?.includes('User canceled')) {
+            if (__DEV__) {
+              console.log('[AuthContext] Biometric authentication cancelled');
+            }
+            return null;
+          }
+          throw error;
+        }
+      } else {
+        password = await getStorageItem(BIOMETRIC_PASSWORD_KEY);
+      }
+
+      if (!password) {
+        return null;
+      }
+
+      return { email, password };
+    } catch (error) {
+      console.error('[AuthContext] Error getting biometric credentials:', error);
+      return null;
+    }
+  };
+
+  const clearBiometricCredentials = async () => {
+    try {
+      await deleteStorageItem(BIOMETRIC_EMAIL_KEY);
+      await deleteStorageItem(BIOMETRIC_PASSWORD_KEY);
+      // Keep last_login_email for convenience (auto-fill even if biometric disabled)
+      if (__DEV__) {
+        console.log('[AuthContext] Biometric credentials cleared');
+      }
+    } catch (error) {
+      console.error('[AuthContext] Error clearing biometric credentials:', error);
+    }
+  };
+
+  const getStoredEmail = async (): Promise<string | null> => {
+    try {
+      // First try biometric email, then fall back to last login email
+      const biometricEmail = await getStorageItem(BIOMETRIC_EMAIL_KEY);
+      if (biometricEmail) {
+        return biometricEmail;
+      }
+      return await getStorageItem(LAST_LOGIN_EMAIL_KEY);
+    } catch (error) {
+      console.error('[AuthContext] Error getting stored email:', error);
+      return null;
+    }
+  };
+
+  const hasBiometricCredentials = async (): Promise<boolean> => {
+    try {
+      // Only check email - don't try to read password as it requires biometric
+      // This prevents any prompts when just checking if credentials exist
+      const email = await getStorageItem(BIOMETRIC_EMAIL_KEY);
+      if (!email) {
+        return false;
+      }
+      
+      // On native, we can't check if password exists without triggering biometric prompt
+      // So we assume if email exists, password is stored (we can't verify without prompting)
+      // The actual password retrieval will happen in getBiometricCredentials() with proper auth
+      if (Platform.OS !== 'web') {
+        // If email exists, assume password is stored (we can't check without prompting)
+        return true;
+      } else {
+        // Web: check if password exists (doesn't require biometric)
+        const password = await getStorageItem(BIOMETRIC_PASSWORD_KEY);
+        return !!password;
+      }
+    } catch (error) {
+      return false;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -302,6 +454,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         refetchUser,
+        storeBiometricCredentials,
+        getBiometricCredentials,
+        clearBiometricCredentials,
+        getStoredEmail,
+        hasBiometricCredentials,
       }}
     >
       {children}

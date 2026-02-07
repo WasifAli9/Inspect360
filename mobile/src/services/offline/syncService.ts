@@ -18,6 +18,7 @@ import {
   updateImageWithServerUrl,
   deleteLocalImageFile,
   getLocalImage,
+  isLocalPath,
 } from './storage';
 import { ConflictResolver } from './conflictResolver';
 import { getAPI_URL } from '../api';
@@ -263,8 +264,23 @@ export class SyncService {
 
             const serverUrl = await this.uploadImage(image.localPath);
             if (serverUrl) {
+              // Update image record with server URL
               await updateImageWithServerUrl(image.localPath, serverUrl);
+              // Map local path to server URL for entry updates
               imageUrlMap.set(image.localPath, serverUrl);
+              
+              // Also map any variations of the path (with/without file:// prefix)
+              const pathVariations = [
+                image.localPath,
+                image.localPath.replace('file://', ''),
+                `file://${image.localPath}`,
+              ];
+              pathVariations.forEach(path => {
+                if (path !== image.localPath) {
+                  imageUrlMap.set(path, serverUrl);
+                }
+              });
+              
               uploaded++;
               uploadSuccess = true;
               this.reportProgress({ completed: uploaded });
@@ -292,13 +308,81 @@ export class SyncService {
             inspectionId: image.inspectionId,
             error: lastError?.message,
           });
-          // Image remains pending for next sync attempt
+          // CRITICAL: Image remains pending for next sync attempt
+          // The image record stays in local_images with syncStatus='pending'
+          // It will be retried on the next sync
           // Don't increment failedCount here - it will be counted at the end
           // Don't block other images from uploading
         }
       }
 
-      // Step 2: Upload pending entries
+      // Step 2: Re-sync entries that had local images (now that images are uploaded)
+      // This ensures entries with local paths get updated with server URLs
+      if (imageUrlMap.size > 0) {
+        this.reportProgress({
+          total: totalItems,
+          completed: uploaded,
+          failed: failedCount,
+          currentOperation: 'Updating entries with uploaded images',
+        });
+        
+        // Get all entries that might have local image paths
+        const allEntries = await getPendingEntries();
+        for (const entryRecord of allEntries) {
+          try {
+            const entry = JSON.parse(entryRecord.data) as InspectionEntry;
+            let hasLocalPaths = false;
+            let needsUpdate = false;
+            
+            // Check if entry has local paths that were just uploaded
+            const updatedPhotos = entry.photos?.map(photo => {
+              if (isLocalPath(photo)) {
+                hasLocalPaths = true;
+                // Check if this local path was uploaded
+                for (const [localPath, serverUrl] of imageUrlMap.entries()) {
+                  const normalizedPhoto = photo.replace(/^file:\/\//, '');
+                  const normalizedLocalPath = localPath.replace(/^file:\/\//, '');
+                  if (photo === localPath || normalizedPhoto === normalizedLocalPath) {
+                    needsUpdate = true;
+                    return serverUrl; // Replace with server URL
+                  }
+                }
+              }
+              return photo; // Keep as-is
+            });
+            
+            // If entry was updated with server URLs, save it back
+            if (needsUpdate && updatedPhotos) {
+              const updatedEntry = {
+                ...entry,
+                photos: updatedPhotos,
+              };
+              // Check if there are still any local paths remaining
+              const stillHasLocalPaths = updatedPhotos.some((photo: string) => 
+                isLocalPath(photo)
+              );
+              
+              await saveInspectionEntry({
+                entryId: entryRecord.entryId,
+                inspectionId: entry.inspectionId,
+                sectionRef: entry.sectionRef,
+                fieldKey: entry.fieldKey,
+                data: JSON.stringify(updatedEntry),
+                syncStatus: stillHasLocalPaths ? 'pending' : entryRecord.syncStatus,
+                lastSyncedAt: stillHasLocalPaths ? entryRecord.lastSyncedAt : new Date().toISOString(),
+                serverUpdatedAt: entryRecord.serverUpdatedAt,
+                localUpdatedAt: entryRecord.localUpdatedAt,
+                isDeleted: 0,
+              });
+            }
+          } catch (error: any) {
+            console.error('[SyncService] Error updating entry with uploaded images:', error);
+            // Continue with other entries
+          }
+        }
+      }
+
+      // Step 3: Upload pending entries
       this.reportProgress({
         total: totalItems,
         completed: uploaded,
@@ -335,17 +419,37 @@ export class SyncService {
             entry.photos?.forEach(photo => {
               // Check if this is a local path that was uploaded
               let found = false;
-              for (const [localPath, serverUrl] of imageUrlMap.entries()) {
-                if (photo === localPath || photo.includes(localPath) || localPath.includes(photo)) {
-                  photosToSend.push(serverUrl);
-                  found = true;
-                  break;
+              let matchedServerUrl: string | null = null;
+              
+              // Try exact match first
+              if (imageUrlMap.has(photo)) {
+                matchedServerUrl = imageUrlMap.get(photo)!;
+                photosToSend.push(matchedServerUrl);
+                found = true;
+              } else {
+                // Try partial matches (path variations)
+                for (const [localPath, serverUrl] of imageUrlMap.entries()) {
+                  // Normalize paths for comparison (remove file:// prefix, handle both formats)
+                  const normalizedPhoto = photo.replace(/^file:\/\//, '');
+                  const normalizedLocalPath = localPath.replace(/^file:\/\//, '');
+                  
+                  if (photo === localPath || 
+                      normalizedPhoto === normalizedLocalPath ||
+                      photo.includes(normalizedLocalPath) || 
+                      normalizedLocalPath.includes(normalizedPhoto) ||
+                      photo.endsWith(normalizedLocalPath) ||
+                      normalizedLocalPath.endsWith(normalizedPhoto)) {
+                    matchedServerUrl = serverUrl;
+                    photosToSend.push(serverUrl);
+                    found = true;
+                    break;
+                  }
                 }
               }
               
               if (!found) {
                 // If it's a local path, keep it for retry (don't send to server yet)
-                if (photo.startsWith('file://') || photo.includes('offline_images')) {
+                if (photo.startsWith('file://') || photo.includes('offline_images') || isLocalPath(photo)) {
                   photosToKeep.push(photo);
                 } else {
                   // It's already a server URL, include it
@@ -367,14 +471,43 @@ export class SyncService {
                 entryRecord.entryId,
                 entryToSend
               );
-              // Merge server response with local paths for failed images
+              // Merge server response: replace local paths with server URLs, keep failed local paths
+              // First, replace any local paths that were successfully uploaded
+              const finalPhotos: string[] = [];
+              const remainingLocalPaths: string[] = [];
+              
+              // Process server entry photos (these are server URLs)
+              (serverEntry.photos || []).forEach(photo => {
+                finalPhotos.push(photo);
+              });
+              
+              // Process local paths that weren't uploaded yet
+              photosToKeep.forEach(localPath => {
+                // Check if this local path was uploaded in a later iteration
+                let wasUploaded = false;
+                for (const [path, serverUrl] of imageUrlMap.entries()) {
+                  const normalizedLocalPath = localPath.replace(/^file:\/\//, '');
+                  const normalizedPath = path.replace(/^file:\/\//, '');
+                  if (localPath === path || normalizedLocalPath === normalizedPath) {
+                    finalPhotos.push(serverUrl);
+                    wasUploaded = true;
+                    break;
+                  }
+                }
+                if (!wasUploaded) {
+                  remainingLocalPaths.push(localPath);
+                }
+              });
+              
+              // Add any remaining local paths that still need to be uploaded
+              finalPhotos.push(...remainingLocalPaths);
+              
               const mergedEntry: InspectionEntry = {
                 ...serverEntry,
-                photos: photosToKeep.length > 0 
-                  ? [...(serverEntry.photos || []), ...photosToKeep] // Add local paths back for retry
-                  : serverEntry.photos,
+                photos: finalPhotos,
               };
-              // Update local DB with merged entry (includes local paths for retry)
+              
+              // Update local DB with merged entry (server URLs + remaining local paths)
               // ALWAYS preserve local data - even if sync partially fails
               await saveInspectionEntry({
                 entryId: entryRecord.entryId,
@@ -382,8 +515,8 @@ export class SyncService {
                 sectionRef: entry.sectionRef,
                 fieldKey: entry.fieldKey,
                 data: JSON.stringify(mergedEntry),
-                syncStatus: photosToKeep.length > 0 ? 'pending' : 'synced', // Keep pending if images failed
-                lastSyncedAt: photosToKeep.length > 0 ? entryRecord.lastSyncedAt : new Date().toISOString(),
+                syncStatus: remainingLocalPaths.length > 0 ? 'pending' : 'synced', // Keep pending if images still need upload
+                lastSyncedAt: remainingLocalPaths.length > 0 ? entryRecord.lastSyncedAt : new Date().toISOString(),
                 serverUpdatedAt: (serverEntry as any).updatedAt || new Date().toISOString(),
                 localUpdatedAt: entryRecord.localUpdatedAt,
                 isDeleted: 0, // SQLite boolean (0 or 1)
@@ -391,14 +524,43 @@ export class SyncService {
             } else {
               // Create new entry
               const serverEntry = await inspectionsService.saveInspectionEntry(entryToSend);
-              // Merge server response with local paths for failed images
+              // Merge server response: replace local paths with server URLs, keep failed local paths
+              // First, replace any local paths that were successfully uploaded
+              const finalPhotos: string[] = [];
+              const remainingLocalPaths: string[] = [];
+              
+              // Process server entry photos (these are server URLs)
+              (serverEntry.photos || []).forEach(photo => {
+                finalPhotos.push(photo);
+              });
+              
+              // Process local paths that weren't uploaded yet
+              photosToKeep.forEach(localPath => {
+                // Check if this local path was uploaded in a later iteration
+                let wasUploaded = false;
+                for (const [path, serverUrl] of imageUrlMap.entries()) {
+                  const normalizedLocalPath = localPath.replace(/^file:\/\//, '');
+                  const normalizedPath = path.replace(/^file:\/\//, '');
+                  if (localPath === path || normalizedLocalPath === normalizedPath) {
+                    finalPhotos.push(serverUrl);
+                    wasUploaded = true;
+                    break;
+                  }
+                }
+                if (!wasUploaded) {
+                  remainingLocalPaths.push(localPath);
+                }
+              });
+              
+              // Add any remaining local paths that still need to be uploaded
+              finalPhotos.push(...remainingLocalPaths);
+              
               const mergedEntry: InspectionEntry = {
                 ...serverEntry,
-                photos: photosToKeep.length > 0 
-                  ? [...(serverEntry.photos || []), ...photosToKeep] // Add local paths back for retry
-                  : serverEntry.photos,
+                photos: finalPhotos,
               };
-              // Update local DB with merged entry (includes local paths for retry)
+              
+              // Update local DB with merged entry (server URLs + remaining local paths)
               // ALWAYS preserve local data - even if sync partially fails
               await saveInspectionEntry({
                 entryId: serverEntry.id,
@@ -406,8 +568,8 @@ export class SyncService {
                 sectionRef: entry.sectionRef,
                 fieldKey: entry.fieldKey,
                 data: JSON.stringify(mergedEntry),
-                syncStatus: photosToKeep.length > 0 ? 'pending' : 'synced', // Keep pending if images failed
-                lastSyncedAt: photosToKeep.length > 0 ? null : new Date().toISOString(),
+                syncStatus: remainingLocalPaths.length > 0 ? 'pending' : 'synced', // Keep pending if images still need upload
+                lastSyncedAt: remainingLocalPaths.length > 0 ? null : new Date().toISOString(),
                 serverUpdatedAt: (serverEntry as any).updatedAt || new Date().toISOString(),
                 localUpdatedAt: entryRecord.localUpdatedAt,
                 isDeleted: 0, // SQLite boolean (0 or 1)
@@ -441,6 +603,7 @@ export class SyncService {
           // CRITICAL: Ensure data is preserved locally even if sync fails
           // The entry remains in local DB with 'pending' status for next sync
           // Don't lose user data!
+          // If entry has local images, they will be retried on next sync
           
           // Don't increment failedCount here - it will be counted at the end
           // Don't block other entries from syncing

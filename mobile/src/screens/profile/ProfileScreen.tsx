@@ -12,6 +12,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,9 +20,10 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Upload, Plus, X, FileText, Trash2, User as UserIcon, Mail, Shield, LogOut } from 'lucide-react-native';
+import { Upload, Plus, X, FileText, Trash2, User as UserIcon, Mail, Shield, LogOut, Fingerprint } from 'lucide-react-native';
 import { profileService, type UpdateProfileData, type UserDocument } from '../../services/profile';
 import { apiRequestJson, getAPI_URL } from '../../services/api';
+import { biometricService } from '../../services/biometric';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Card from '../../components/ui/Card';
@@ -40,7 +42,7 @@ const DOCUMENT_TYPES = [
 ];
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, storeBiometricCredentials, clearBiometricCredentials, getStoredEmail } = useAuth();
   const isOnline = useOnlineStatus();
   const theme = useTheme();
   // Ensure themeColors is always defined - use default colors if theme not available
@@ -48,6 +50,12 @@ export default function ProfileScreen() {
   const { themeMode, setThemeMode, isDark } = theme;
   const insets = useSafeAreaInsets() || { top: 0, bottom: 0, left: 0, right: 0 };
   const queryClient = useQueryClient();
+  
+  // Biometric state
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState<string>('');
+  const [biometricStatus, setBiometricStatus] = useState<string>('Checking...');
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -62,6 +70,8 @@ export default function ProfileScreen() {
   const [documentType, setDocumentType] = useState('other');
   const [pendingDocFileUrl, setPendingDocFileUrl] = useState<string | null>(null);
   const [pendingDocFileExtension, setPendingDocFileExtension] = useState<string | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [biometricPassword, setBiometricPassword] = useState('');
 
   // Fetch current user profile
   const { data: profile, isLoading } = useQuery({
@@ -71,6 +81,33 @@ export default function ProfileScreen() {
       return response;
     },
   });
+
+  // Check biometric availability and status
+  useEffect(() => {
+    const checkBiometric = async () => {
+      const available = await biometricService.isBiometricAvailable();
+      const enrolled = await biometricService.isBiometricEnrolled();
+      setIsBiometricAvailable(available && enrolled);
+      
+      if (available && enrolled) {
+        const type = await biometricService.getBiometricTypeName();
+        setBiometricType(type);
+        setBiometricStatus(`Available (${type})`);
+      } else if (available && !enrolled) {
+        setBiometricStatus('Not enrolled - Please set up biometric authentication in device settings');
+      } else {
+        setBiometricStatus('Not available on this device');
+      }
+    };
+    checkBiometric();
+  }, []);
+
+  // Update biometric enabled state from profile
+  useEffect(() => {
+    if (profile) {
+      setBiometricEnabled(profile.biometricEnabled || false);
+    }
+  }, [profile]);
 
   // Fetch user documents
   const { data: documents = [], isLoading: documentsLoading } = useQuery<UserDocument[]>({
@@ -304,37 +341,17 @@ export default function ProfileScreen() {
       // We need to extract the objectId and construct: /objects/xxx
       let fileUrl: string;
 
-      try {
-        // Parse the upload URL to extract objectId
-        let urlToParse = uploadURL;
-        // If it's a relative URL, make it absolute for parsing
-        if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
-          urlToParse = `${getAPI_URL()}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
-        }
-
-        const urlObj = new URL(urlToParse);
-        const objectId = urlObj.searchParams.get('objectId');
-
-        if (objectId) {
-          // Construct the file URL as /objects/{objectId}
-          fileUrl = `/objects/${objectId}`;
+      // Use manual regex extraction (works in React Native)
+      const objectIdMatch = uploadURL.match(/[?&]objectId=([^&]+)/);
+      if (objectIdMatch && objectIdMatch[1]) {
+        fileUrl = `/objects/${objectIdMatch[1]}`;
+      } else {
+        // Fallback: try to extract from path if objectId not in query
+        const pathMatch = uploadURL.match(/\/objects\/([^?&\/]+)/);
+        if (pathMatch && pathMatch[1]) {
+          fileUrl = `/objects/${pathMatch[1]}`;
         } else {
-          // Fallback: try to extract from pathname if objectId not in query
-          const pathname = urlObj.pathname;
-          if (pathname.includes('/objects/')) {
-            const objectsIndex = pathname.indexOf('/objects/');
-            fileUrl = pathname.substring(objectsIndex);
-          } else {
-            throw new Error('Could not extract objectId from upload URL');
-          }
-        }
-      } catch (e) {
-        // If URL parsing fails, try manual extraction
-        const objectIdMatch = uploadURL.match(/[?&]objectId=([^&]+)/);
-        if (objectIdMatch && objectIdMatch[1]) {
-          fileUrl = `/objects/${objectIdMatch[1]}`;
-        } else {
-          console.error('Error extracting file URL from upload URL:', uploadURL, e);
+          console.error('Error extracting file URL from upload URL:', uploadURL);
           throw new Error('Failed to extract file URL from upload response');
         }
       }
@@ -471,37 +488,17 @@ export default function ProfileScreen() {
       // We need to extract the objectId and construct: /objects/xxx
       let fileUrl: string;
 
-      try {
-        // Parse the upload URL to extract objectId
-        let urlToParse = uploadURL;
-        // If it's a relative URL, make it absolute for parsing
-        if (!urlToParse.startsWith('http://') && !urlToParse.startsWith('https://')) {
-          urlToParse = `${getAPI_URL()}${urlToParse.startsWith('/') ? '' : '/'}${urlToParse}`;
-        }
-
-        const urlObj = new URL(urlToParse);
-        const objectId = urlObj.searchParams.get('objectId');
-
-        if (objectId) {
-          // Construct the file URL as /objects/{objectId}
-          fileUrl = `/objects/${objectId}`;
+      // Use manual regex extraction (works in React Native)
+      const objectIdMatch = uploadURL.match(/[?&]objectId=([^&]+)/);
+      if (objectIdMatch && objectIdMatch[1]) {
+        fileUrl = `/objects/${objectIdMatch[1]}`;
+      } else {
+        // Fallback: try to extract from path if objectId not in query
+        const pathMatch = uploadURL.match(/\/objects\/([^?&\/]+)/);
+        if (pathMatch && pathMatch[1]) {
+          fileUrl = `/objects/${pathMatch[1]}`;
         } else {
-          // Fallback: try to extract from pathname if objectId not in query
-          const pathname = urlObj.pathname;
-          if (pathname.includes('/objects/')) {
-            const objectsIndex = pathname.indexOf('/objects/');
-            fileUrl = pathname.substring(objectsIndex);
-          } else {
-            throw new Error('Could not extract objectId from upload URL');
-          }
-        }
-      } catch (e) {
-        // If URL parsing fails, try manual extraction
-        const objectIdMatch = uploadURL.match(/[?&]objectId=([^&]+)/);
-        if (objectIdMatch && objectIdMatch[1]) {
-          fileUrl = `/objects/${objectIdMatch[1]}`;
-        } else {
-          console.error('Error extracting file URL from upload URL:', uploadURL, e);
+          console.error('Error extracting file URL from upload URL:', uploadURL);
           throw new Error('Failed to extract file URL from upload response');
         }
       }
@@ -1078,6 +1075,129 @@ export default function ProfileScreen() {
             </View>
           </Card>
 
+          {/* Biometric Authentication */}
+          <Card style={styles.card}>
+            <View style={styles.cardHeader}>
+              <View>
+                <Text style={[styles.cardTitle, { color: themeColors.text.primary }]}>Biometric Authentication</Text>
+                <Text style={[styles.cardSubtitle, { color: themeColors.text.secondary }]}>
+                  Use {biometricType || 'biometric'} to login quickly
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.biometricContainer}>
+              <View style={[styles.biometricInfoRow, { borderBottomColor: themeColors.border.light }]}>
+                <View style={styles.biometricInfoLeft}>
+                  <View style={[styles.biometricIconContainer, { backgroundColor: `${themeColors.primary.DEFAULT}15` }]}>
+                    <Fingerprint size={20} color={themeColors.primary.DEFAULT} />
+                  </View>
+                  <View style={styles.biometricInfoText}>
+                    <Text style={[styles.biometricLabel, { color: themeColors.text.primary }]}>Status</Text>
+                    <Text style={[styles.biometricValue, { color: themeColors.text.secondary }]}>
+                      {biometricStatus}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.biometricToggleRow}>
+                <View style={styles.biometricToggleLeft}>
+                  <Text style={[styles.biometricToggleLabel, { color: themeColors.text.primary }]}>
+                    Enable Biometric Login
+                  </Text>
+                  <Text style={[styles.biometricToggleDescription, { color: themeColors.text.secondary }]}>
+                    Login quickly using {biometricType || 'your device biometric'} instead of entering password
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.biometricToggle,
+                    {
+                      backgroundColor: biometricEnabled ? themeColors.primary.DEFAULT : themeColors.border.DEFAULT,
+                    }
+                  ]}
+                  onPress={async () => {
+                    if (biometricEnabled) {
+                      // Disable biometric
+                      Alert.alert(
+                        'Disable Biometric Login',
+                        'Are you sure you want to disable biometric login? Your stored credentials will be cleared.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Disable',
+                            style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await clearBiometricCredentials();
+                                await updateMutation.mutateAsync({ biometricEnabled: false });
+                                setBiometricEnabled(false);
+                                Alert.alert('Success', 'Biometric login has been disabled');
+                              } catch (error: any) {
+                                Alert.alert('Error', error.message || 'Failed to disable biometric login');
+                              }
+                            },
+                          },
+                        ]
+                      );
+                    } else {
+                      // Enable biometric
+                      if (!isBiometricAvailable) {
+                        Alert.alert(
+                          'Biometric Not Available',
+                          'Biometric authentication is not available on this device or not enrolled. Please set up biometric authentication in your device settings.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
+
+                      // Test biometric authentication first
+                      const result = await biometricService.authenticateWithBiometric(
+                        'Authenticate to enable biometric login'
+                      );
+
+                      if (!result.success) {
+                        Alert.alert(
+                          'Authentication Failed',
+                          result.error || 'Biometric authentication failed. Please try again.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
+
+                      // Get stored email (from last login)
+                      const storedEmail = await getStoredEmail();
+                      if (!storedEmail) {
+                        Alert.alert(
+                          'No Email Found',
+                          'Please login with email and password first, then enable biometric login.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
+
+                      // Show password input modal
+                      setBiometricPassword('');
+                      setShowPasswordModal(true);
+                    }
+                  }}
+                  disabled={!isBiometricAvailable || updateMutation.isPending}
+                >
+                  <View
+                    style={[
+                      styles.biometricToggleThumb,
+                      {
+                        transform: [{ translateX: biometricEnabled ? 20 : 0 }],
+                        backgroundColor: themeColors.background,
+                      }
+                    ]}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Card>
+
           {/* Account Information */}
           <Card style={styles.card}>
             <View style={[styles.cardHeader, { borderBottomColor: themeColors.border.light }]}>
@@ -1168,6 +1288,98 @@ export default function ProfileScreen() {
               </Text>
             </View>
           </TouchableOpacity>
+
+          {/* Biometric Password Modal */}
+          <Modal
+            visible={showPasswordModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => {
+              setShowPasswordModal(false);
+              setBiometricPassword('');
+            }}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: themeColors.card.DEFAULT, borderColor: themeColors.border.DEFAULT }]}>
+                <View style={[styles.modalHeader, { borderBottomColor: themeColors.border.light }]}>
+                  <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>Enter Password</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowPasswordModal(false);
+                      setBiometricPassword('');
+                    }}
+                    style={[styles.modalCloseButton, { backgroundColor: themeColors.card.DEFAULT }]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.modalClose, { color: themeColors.text.secondary }]}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <Text style={[styles.modalSubtitle, { color: themeColors.text.secondary }]}>
+                    Enter your password to enable biometric login:
+                  </Text>
+                  <Input
+                    label="Password"
+                    value={biometricPassword}
+                    onChangeText={setBiometricPassword}
+                    placeholder="Enter your password"
+                    secureTextEntry
+                    autoFocus
+                  />
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonCancel, { borderColor: themeColors.border.DEFAULT }]}
+                      onPress={() => {
+                        setShowPasswordModal(false);
+                        setBiometricPassword('');
+                      }}
+                    >
+                      <Text style={[styles.modalButtonText, { color: themeColors.text.secondary }]}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonPrimary, { backgroundColor: themeColors.primary.DEFAULT }]}
+                      onPress={async () => {
+                        if (!biometricPassword || biometricPassword.length < 6) {
+                          Alert.alert('Error', 'Password must be at least 6 characters');
+                          return;
+                        }
+
+                        try {
+                          const storedEmail = await getStoredEmail();
+                          if (!storedEmail) {
+                            Alert.alert('Error', 'Email not found');
+                            setShowPasswordModal(false);
+                            return;
+                          }
+
+                          // Store credentials WITHOUT requiring authentication again
+                          // (user already authenticated with biometric before entering password)
+                          // skipAuth=true prevents the second biometric prompt when storing
+                          await storeBiometricCredentials(storedEmail, biometricPassword, true);
+                          
+                          // Update profile
+                          await updateMutation.mutateAsync({ biometricEnabled: true });
+                          setBiometricEnabled(true);
+                          setShowPasswordModal(false);
+                          setBiometricPassword('');
+                          Alert.alert('Success', 'Biometric login has been enabled');
+                        } catch (error: any) {
+                          Alert.alert('Error', error.message || 'Failed to enable biometric login');
+                        }
+                      }}
+                      disabled={updateMutation.isPending}
+                    >
+                      {updateMutation.isPending ? (
+                        <ActivityIndicator color={themeColors.primary.foreground} />
+                      ) : (
+                        <Text style={[styles.modalButtonText, { color: themeColors.primary.foreground }]}>Enable</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </Modal>
 
           {/* Document Form Modal */}
           <Modal
@@ -1570,6 +1782,34 @@ const styles = StyleSheet.create({
   modalBody: {
     gap: spacing[4],
   },
+  modalSubtitle: {
+    fontSize: typography.fontSize.sm,
+    marginBottom: spacing[2],
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[2],
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[4],
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  modalButtonCancel: {
+    borderWidth: 1,
+  },
+  modalButtonPrimary: {
+    // backgroundColor set dynamically
+  },
+  modalButtonText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+  },
   modalItem: {
     paddingVertical: spacing[4],
     paddingHorizontal: spacing[4],
@@ -1632,5 +1872,67 @@ const styles = StyleSheet.create({
   themeOptionText: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.medium,
+  },
+  biometricContainer: {
+    paddingVertical: spacing[2],
+  },
+  biometricInfoRow: {
+    paddingVertical: spacing[4],
+    borderBottomWidth: 1,
+  },
+  biometricInfoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  biometricIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing[3],
+  },
+  biometricInfoText: {
+    flex: 1,
+  },
+  biometricLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.medium,
+    marginBottom: spacing[1],
+  },
+  biometricValue: {
+    fontSize: typography.fontSize.sm,
+  },
+  biometricToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing[4],
+  },
+  biometricToggleLeft: {
+    flex: 1,
+    marginRight: spacing[4],
+  },
+  biometricToggleLabel: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing[1],
+  },
+  biometricToggleDescription: {
+    fontSize: typography.fontSize.sm,
+    lineHeight: 20,
+  },
+  biometricToggle: {
+    width: 50,
+    height: 30,
+    borderRadius: 15,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  biometricToggleThumb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    ...shadows.sm,
   },
 });

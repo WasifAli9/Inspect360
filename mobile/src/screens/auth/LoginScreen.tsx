@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,16 @@ import {
   useWindowDimensions,
   Dimensions,
   Alert,
+  Modal,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { Eye, EyeOff, AlertCircle } from 'lucide-react-native';
+import { Eye, EyeOff, AlertCircle, Fingerprint } from 'lucide-react-native';
+import { biometricService } from '../../services/biometric';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequestJson } from '../../services/api';
 import Logo from '../../components/ui/Logo';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { moderateScale, getButtonHeight, getFontSize } from '../../utils/responsive';
@@ -27,7 +31,22 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const { login, isLoading } = useAuth();
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState<string>('');
+  const [isBiometricPromptActive, setIsBiometricPromptActive] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState<string>('');
+  const [errorModalTitle, setErrorModalTitle] = useState<string>('Can\'t find account');
+  const passwordInputRef = useRef<TextInput>(null);
+  const { 
+    login, 
+    isLoading, 
+    getStoredEmail, 
+    getBiometricCredentials, 
+    storeBiometricCredentials,
+    hasBiometricCredentials 
+  } = useAuth();
   const theme = useTheme();
   const windowDimensions = useWindowDimensions();
   const screenWidth = windowDimensions?.width || Dimensions.get('window').width;
@@ -37,9 +56,187 @@ export default function LoginScreen() {
   const textPrimary = themeColors?.text?.primary || (theme?.theme === 'dark' ? '#fafafa' : '#0a0a0a');
   const textSecondary = themeColors?.text?.secondary || (theme?.theme === 'dark' ? '#a3a3a3' : '#737373');
 
+  // Fetch user profile to check biometricEnabled
+  const { data: profile } = useQuery({
+    queryKey: ['/api/auth/profile'],
+    queryFn: async () => {
+      try {
+        return await apiRequestJson<any>('GET', '/api/auth/profile');
+      } catch (error) {
+        // If not authenticated, return null
+        return null;
+      }
+    },
+    enabled: false, // Don't auto-fetch - we'll check after login
+    retry: false,
+  });
+
+  // Debug: Log modal state changes
+  useEffect(() => {
+    console.log('[LoginScreen] showErrorModal changed:', showErrorModal);
+    console.log('[LoginScreen] errorModalMessage:', errorModalMessage);
+    console.log('[LoginScreen] errorModalTitle:', errorModalTitle);
+  }, [showErrorModal, errorModalMessage, errorModalTitle]);
+
+  // Check biometric availability on mount
+  useEffect(() => {
+    const checkBiometric = async () => {
+      const available = await biometricService.isBiometricAvailable();
+      const enrolled = await biometricService.isBiometricEnrolled();
+      setIsBiometricAvailable(available && enrolled);
+      
+      if (available && enrolled) {
+        const type = await biometricService.getBiometricTypeName();
+        setBiometricType(type);
+      }
+    };
+    checkBiometric();
+  }, []);
+
+  // Auto-fill email on mount
+  useEffect(() => {
+    const loadStoredEmail = async () => {
+      const storedEmail = await getStoredEmail();
+      if (storedEmail) {
+        setEmail(storedEmail);
+      }
+    };
+    loadStoredEmail();
+  }, [getStoredEmail]);
+
+  // Check if user has biometric enabled (after login, we'll check profile)
+  // For now, we'll check if credentials are stored
+  useEffect(() => {
+    const checkBiometricStatus = async () => {
+      const hasCredentials = await hasBiometricCredentials();
+      if (hasCredentials) {
+        setBiometricEnabled(true);
+      }
+    };
+    checkBiometricStatus();
+  }, [hasBiometricCredentials]);
+
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+  };
+
+  const handleBiometricLogin = async () => {
+    // Prevent multiple simultaneous biometric prompts
+    if (isBiometricPromptActive) {
+      return;
+    }
+
+    try {
+      setIsBiometricPromptActive(true);
+      setError(null);
+      
+      // Verify email is entered and matches stored email
+      const enteredEmail = email.trim().toLowerCase();
+      if (!enteredEmail) {
+        setIsBiometricPromptActive(false);
+        setError('Please enter your email address.');
+        return;
+      }
+
+      // Get stored email first (doesn't require biometric)
+      const storedEmail = await getStoredEmail();
+      if (!storedEmail) {
+        setIsBiometricPromptActive(false);
+        setError('No biometric credentials found. Please enter your password.');
+        return;
+      }
+
+      // Verify entered email matches stored email
+      if (enteredEmail !== storedEmail.toLowerCase()) {
+        setIsBiometricPromptActive(false);
+        setError('Email does not match stored biometric credentials. Please enter your password.');
+        return;
+      }
+
+      // Get stored credentials (this will trigger biometric prompt)
+      const credentials = await getBiometricCredentials();
+      
+      if (!credentials) {
+        // Biometric was cancelled or failed - allow manual entry
+        setIsBiometricPromptActive(false);
+        return;
+      }
+
+      // Double-check email matches (security check)
+      if (credentials.email.toLowerCase() !== enteredEmail) {
+        setIsBiometricPromptActive(false);
+        setError('Email mismatch. Please enter your password.');
+        return;
+      }
+
+      // Auto-login with stored credentials (email already verified)
+      await login(credentials.email, credentials.password);
+      setIsBiometricPromptActive(false);
+    } catch (err: any) {
+      console.error('[LoginScreen] Biometric login error:', err);
+      setIsBiometricPromptActive(false);
+      // If biometric login fails, allow manual password entry
+      const errorMessage = 'Biometric authentication failed. Please enter your password.';
+      setError(errorMessage);
+      setErrorModalMessage(errorMessage);
+      setShowErrorModal(true);
+    }
+  };
+
+  const handlePasswordFocus = async () => {
+    // Prevent triggering if biometric prompt is already active
+    if (isBiometricPromptActive) {
+      return;
+    }
+
+    // Verify email is entered before triggering biometric
+    const enteredEmail = email.trim().toLowerCase();
+    if (!enteredEmail) {
+      return; // Don't trigger biometric if no email entered
+    }
+
+    // If biometric is enabled and credentials are stored, trigger biometric
+    if (biometricEnabled && isBiometricAvailable) {
+      const storedEmail = await getStoredEmail();
+      // Only trigger if email matches stored email
+      if (storedEmail && enteredEmail === storedEmail.toLowerCase()) {
+        const hasCredentials = await hasBiometricCredentials();
+        if (hasCredentials) {
+          // Small delay to allow field to focus first
+          setTimeout(() => {
+            handleBiometricLogin();
+          }, 300);
+        }
+      }
+    }
+  };
+
+  const handleEmailChange = async (text: string) => {
+    setEmail(text);
+    // Clear error when user starts typing
+    if (error) {
+      setError(null);
+    }
+    
+    // Prevent triggering if biometric prompt is already active
+    if (isBiometricPromptActive) {
+      return;
+    }
+    
+    // If email matches stored email and biometric is enabled, trigger biometric
+    if (biometricEnabled && isBiometricAvailable && text.trim()) {
+      const storedEmail = await getStoredEmail();
+      if (storedEmail && text.trim().toLowerCase() === storedEmail.toLowerCase()) {
+        const hasCredentials = await hasBiometricCredentials();
+        if (hasCredentials) {
+          // Small delay to allow user to finish typing
+          setTimeout(() => {
+            handleBiometricLogin();
+          }, 500);
+        }
+      }
+    }
   };
 
   const handleLogin = async () => {
@@ -69,8 +266,28 @@ export default function LoginScreen() {
 
     try {
       console.log('[LoginScreen] Calling login function');
-      await login(email.trim().toLowerCase(), password);
+      const loginEmail = email.trim().toLowerCase();
+      await login(loginEmail, password);
       console.log('[LoginScreen] Login function completed successfully');
+      
+      // After successful login, check if user has biometricEnabled in profile
+      // and store credentials if enabled
+      try {
+        const userProfile = await apiRequestJson<any>('GET', '/api/auth/profile');
+        if (userProfile?.biometricEnabled) {
+          // Store credentials for biometric login
+          await storeBiometricCredentials(loginEmail, password);
+          setBiometricEnabled(true);
+          console.log('[LoginScreen] Biometric credentials stored');
+        } else {
+          // Clear credentials if biometric is disabled
+          setBiometricEnabled(false);
+        }
+      } catch (profileError) {
+        console.error('[LoginScreen] Error checking profile:', profileError);
+        // Continue even if profile check fails
+      }
+      
       // Clear error on success
       setError(null);
       // Navigation happens automatically via AppNavigator when isAuthenticated changes
@@ -83,31 +300,99 @@ export default function LoginScreen() {
       });
       
       // Determine user-friendly error message based on error type
-      let errorMessage = 'Incorrect credentials. Please try again.';
+      let errorMessage = 'Wrong credentials. Please try again.';
 
-      // Handle specific error cases
+      // Handle authentication errors (wrong password/email)
       if (err?.status === 401 || err?.status === 403) {
-        errorMessage = 'Incorrect email or password. Please try again.';
-      } else if (err?.status === 400) {
+        errorMessage = 'Wrong credentials. Please try again.';
+      } 
+      // Handle bad request errors
+      else if (err?.status === 400) {
         errorMessage = err?.message || 'Invalid request. Please check your credentials.';
-      } else if (err?.status === 500 || err?.status === 502 || err?.status === 503) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (err?.name === 'AbortError' || err?.message?.includes('timeout')) {
-        errorMessage = 'Request timeout. Please check your internet connection and try again.';
-      } else if (err?.message?.includes('Failed to fetch') || 
-                 err?.message?.includes('Network request failed') ||
-                 err?.message?.includes('ERR_CONNECTION_REFUSED') ||
-                 err?.message?.includes('NetworkError')) {
-        errorMessage = 'Cannot connect to server. Please check your internet connection.';
-      } else if (err?.message?.includes('SSL') || err?.message?.includes('certificate')) {
+      } 
+      // Handle server errors (500, 502, 503, 504)
+      else if (err?.status === 500 || err?.status === 502 || err?.status === 503 || err?.status === 504) {
+        errorMessage = 'Server problem. Please try again sometime later.';
+      } 
+      // Handle timeout errors
+      else if (err?.name === 'AbortError' || err?.message?.includes('timeout') || err?.message?.includes('Timeout')) {
+        errorMessage = 'Request timeout. Server is taking too long to respond. Please try again later.';
+      } 
+      // Handle network connection errors
+      else if (err?.message?.includes('Failed to fetch') || 
+               err?.message?.includes('Network request failed') ||
+               err?.message?.includes('ERR_CONNECTION_REFUSED') ||
+               err?.message?.includes('NetworkError') ||
+               err?.message?.includes('Network request failed') ||
+               err?.message?.includes('No network connection') ||
+               err?.message?.includes('Cannot connect to server')) {
+        errorMessage = 'Server problem. Cannot connect to server. Please check your internet connection and try again later.';
+      } 
+      // Handle SSL/Certificate errors
+      else if (err?.message?.includes('SSL') || err?.message?.includes('certificate') || err?.message?.includes('CERT')) {
         errorMessage = 'Connection security error. Please contact support.';
-      } else if (err?.message) {
-        // Use the error message if it's user-friendly
+      } 
+      // Handle access denied errors
+      else if (err?.message?.includes('Access denied') || err?.message?.includes('This app is only for inspectors')) {
+        errorMessage = err.message;
+      }
+      // Use the error message from API if it's user-friendly
+      else if (err?.message && (
+        err.message.includes('Email or password') ||
+        err.message.includes('Incorrect') ||
+        err.message.includes('Invalid') ||
+        err.message.includes('Wrong')
+      )) {
+        errorMessage = err.message;
+      }
+      // For any other error, provide a generic message
+      else if (err?.message) {
         errorMessage = err.message;
       }
 
       console.log('[LoginScreen] Setting error message:', errorMessage);
+      console.log('[LoginScreen] Error object:', {
+        status: err?.status,
+        message: err?.message,
+        name: err?.name,
+        error: err,
+      });
+      
+      // Ensure error is set and visible
       setError(errorMessage);
+      
+      // Determine modal title based on error type
+      let modalTitle = 'Can\'t find account';
+      if (err?.status === 401 || err?.status === 403) {
+        modalTitle = 'Wrong credentials';
+      } else if (err?.status === 500 || err?.status === 502 || err?.status === 503 || err?.status === 504) {
+        modalTitle = 'Server error';
+      } else if (err?.message?.includes('Failed to fetch') || 
+                 err?.message?.includes('Network request failed') ||
+                 err?.message?.includes('ERR_CONNECTION_REFUSED') ||
+                 err?.message?.includes('Cannot connect to server') ||
+                 err?.message?.includes('No network connection')) {
+        modalTitle = 'Connection error';
+      } else if (err?.name === 'AbortError' || err?.message?.includes('timeout')) {
+        modalTitle = 'Connection timeout';
+      }
+      
+      // Show error in modal for ALL login errors (wrong credentials, server errors, network issues, etc.)
+      // This ensures users always see a clear modal for login failures
+      console.log('[LoginScreen] Setting modal state:', {
+        message: errorMessage,
+        title: modalTitle,
+        showModal: true,
+      });
+      
+      // Set modal state immediately
+      setErrorModalMessage(errorMessage);
+      setErrorModalTitle(modalTitle);
+      setShowErrorModal(true);
+      console.log('[LoginScreen] Modal state set, showErrorModal should be true');
+      
+      // Clear password field for security (but keep email)
+      setPassword('');
     }
   };
 
@@ -158,9 +443,9 @@ export default function LoginScreen() {
                     placeholderTextColor={themeColors.text.muted}
                     value={email}
                     onChangeText={(text) => {
-                      setEmail(text);
-                      // Clear error when user starts typing
-                      if (error) {
+                      handleEmailChange(text);
+                      // Only clear error if user is actively typing (not on initial load)
+                      if (error && text.length > 0) {
                         setError(null);
                       }
                     }}
@@ -176,39 +461,56 @@ export default function LoginScreen() {
                   <Text style={[styles.label, { color: textPrimary }]}>Password</Text>
                   <View style={styles.passwordContainer}>
                     <TextInput
+                      ref={passwordInputRef}
                       style={[styles.passwordInput, {
                         borderColor: error && !password.trim() ? themeColors.destructive.DEFAULT : themeColors.border.DEFAULT,
                         backgroundColor: themeColors.input,
                         color: themeColors.text.primary
                       }]}
-                      placeholder="Enter your password"
+                      placeholder={biometricEnabled && isBiometricAvailable ? `Use ${biometricType} or enter password` : "Enter your password"}
                       placeholderTextColor={themeColors.text.muted}
                       value={password}
                       onChangeText={(text) => {
                         setPassword(text);
-                        // Clear error when user starts typing
-                        if (error) {
+                        // Only clear error if user is actively typing (not on initial load)
+                        if (error && text.length > 0) {
                           setError(null);
                         }
                       }}
+                      onFocus={handlePasswordFocus}
                       secureTextEntry={!showPassword}
                       editable={!isLoading}
                       onSubmitEditing={handleLogin}
                       autoComplete="password"
                       textContentType="password"
                     />
-                    <TouchableOpacity
-                      style={styles.eyeButton}
-                      onPress={() => setShowPassword(!showPassword)}
-                      disabled={!!isLoading}
-                    >
-                      {showPassword ? (
-                        <EyeOff size={20} color={themeColors.text.secondary} />
-                      ) : (
-                        <Eye size={20} color={themeColors.text.secondary} />
-                      )}
-                    </TouchableOpacity>
+                    {biometricEnabled && isBiometricAvailable ? (
+                      <TouchableOpacity
+                        style={styles.biometricButton}
+                        onPress={handleBiometricLogin}
+                        disabled={!!isLoading}
+                      >
+                        <Fingerprint size={20} color={themeColors.primary.DEFAULT} />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.eyeButton}
+                        onPress={() => setShowPassword(!showPassword)}
+                        disabled={!!isLoading}
+                      >
+                        {showPassword ? (
+                          <EyeOff size={20} color={themeColors.text.secondary} />
+                        ) : (
+                          <Eye size={20} color={themeColors.text.secondary} />
+                        )}
+                      </TouchableOpacity>
+                    )}
                   </View>
+                  {biometricEnabled && isBiometricAvailable && (
+                    <Text style={[styles.biometricHint, { color: themeColors.text.muted }]}>
+                      Tap {biometricType} icon or password field to login with {biometricType}
+                    </Text>
+                  )}
                 </View>
 
                 <TouchableOpacity
@@ -228,7 +530,7 @@ export default function LoginScreen() {
                   }]}>
                     <View style={styles.errorContent}>
                       <AlertCircle size={16} color={themeColors.destructive.DEFAULT} style={styles.errorIcon} />
-                      <Text style={[styles.errorText, { color: themeColors.destructive.DEFAULT }]}>{error}</Text>
+                    <Text style={[styles.errorText, { color: themeColors.destructive.DEFAULT }]}>{error}</Text>
                     </View>
                   </View>
                 )}
@@ -268,6 +570,60 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Error Modal - Shows for wrong credentials, server errors, and connection issues */}
+      <Modal
+        visible={showErrorModal}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => {
+          console.log('[LoginScreen] Modal onRequestClose called');
+          setShowErrorModal(false);
+          setError(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              console.log('[LoginScreen] Modal overlay pressed');
+              setShowErrorModal(false);
+              setError(null);
+            }}
+          />
+          <View
+            style={[styles.modalContainer, {
+              backgroundColor: themeColors.card.DEFAULT,
+              borderColor: themeColors.border.DEFAULT,
+            }]}
+          >
+            <Text style={[styles.modalTitle, { color: themeColors.text.primary }]}>
+              {errorModalTitle}
+            </Text>
+            <Text style={[styles.modalMessage, { color: themeColors.text.secondary }]}>
+              {errorModalMessage || 'We couldn\'t log you in. Please check your credentials and try again.'}
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary, {
+                  backgroundColor: themeColors.primary.DEFAULT,
+                }]}
+                onPress={() => {
+                  console.log('[LoginScreen] TRY AGAIN button pressed');
+                  setShowErrorModal(false);
+                  setError(null);
+                }}
+              >
+                <Text style={[styles.modalButtonText, { color: themeColors.primary.foreground }]}>
+                  TRY AGAIN
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -359,6 +715,16 @@ const styles = StyleSheet.create({
     right: spacing[3],
     padding: spacing[1],
   },
+  biometricButton: {
+    position: 'absolute',
+    right: spacing[3],
+    padding: spacing[1],
+  },
+  biometricHint: {
+    fontSize: typography.fontSize.xs,
+    marginTop: spacing[1],
+    fontStyle: 'italic',
+  },
   forgotPassword: {
     alignSelf: 'flex-end',
     marginBottom: spacing[4],
@@ -388,6 +754,69 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'left',
     fontWeight: typography.fontWeight.medium,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing[4],
+  },
+  modalOverlayTouchable: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  modalContainer: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: moderateScale(borderRadius.lg, 0.2, Dimensions.get('window').width),
+    padding: moderateScale(spacing[6], 0.3, Dimensions.get('window').width),
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: moderateScale(typography.fontSize.xl, 0.3, Dimensions.get('window').width),
+    fontWeight: typography.fontWeight.bold,
+    marginBottom: moderateScale(spacing[3], 0.3, Dimensions.get('window').width),
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: moderateScale(typography.fontSize.base, 0.3, Dimensions.get('window').width),
+    lineHeight: moderateScale(22, 0.3, Dimensions.get('window').width),
+    marginBottom: moderateScale(spacing[6], 0.3, Dimensions.get('window').width),
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: moderateScale(spacing[3], 0.3, Dimensions.get('window').width),
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: moderateScale(spacing[3], 0.3, Dimensions.get('window').width),
+    paddingHorizontal: moderateScale(spacing[4], 0.3, Dimensions.get('window').width),
+    borderRadius: moderateScale(borderRadius.md, 0.2, Dimensions.get('window').width),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonPrimary: {
+    minHeight: moderateScale(44, 0.3, Dimensions.get('window').width),
+  },
+  modalButtonText: {
+    fontSize: moderateScale(typography.fontSize.sm, 0.3, Dimensions.get('window').width),
+    fontWeight: typography.fontWeight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });
 
