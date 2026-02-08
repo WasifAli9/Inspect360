@@ -2496,11 +2496,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`[Module Toggle] Customer ID: ${org.stripeCustomerId}`);
           
           // Get all active subscriptions with expanded product data
+          // Note: Cannot expand more than 4 levels, so we'll fetch product data separately if needed
           const subscriptions = await stripe.subscriptions.list({
             customer: org.stripeCustomerId,
             status: "active",
             limit: 100,
-            expand: ['data.items.data.price.product'] // Expand product data for better matching
+            expand: ['data.items.data.price'] // Only expand to price level, fetch product separately
           });
           
           console.log(`[Module Toggle] Found ${subscriptions.data.length} active subscriptions to check`);
@@ -2525,10 +2526,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
               let productName = '';
               const product = item.price?.product;
               
+              // Method 1: Get from product object (if expanded)
               if (typeof product === 'object' && product && 'name' in product) {
                 productName = product.name || '';
+              } else if (typeof product === 'string') {
+                // Product is just an ID, need to fetch it separately
+                try {
+                  const productObj = await stripe.products.retrieve(product);
+                  productName = productObj.name || '';
+                } catch (e) {
+                  // If fetch fails, continue with other methods
+                  console.log(`[Module Toggle] Could not fetch product ${product}, trying other methods`);
+                }
               }
               
+              // Method 2: Get from price nickname
               if (!productName && item.price?.nickname) {
                 productName = item.price.nickname;
               }
@@ -18696,6 +18708,27 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
             }
           });
           
+          // CRITICAL: Update subscription metadata from checkout session metadata
+          // Stripe doesn't automatically transfer checkout session metadata to subscription metadata
+          if (session.subscription) {
+            try {
+              console.log(`[Process Session] Updating module subscription ${session.subscription} metadata from checkout session`);
+              const stripe = await getUncachableStripeClient();
+              await stripe.subscriptions.update(session.subscription as string, {
+                metadata: {
+                  ...session.metadata,
+                  // Ensure type and moduleId are set for identification
+                  type: "module_purchase",
+                  moduleId: moduleId,
+                }
+              });
+              console.log(`[Process Session] ✅ Successfully updated module subscription metadata`);
+            } catch (metadataError: any) {
+              console.error(`[Process Session] ⚠️  Failed to update module subscription metadata:`, metadataError.message);
+              // Continue even if metadata update fails
+            }
+          }
+          
           // Log proration information
           if (isProrated === "true" && fullPrice && proratedPrice && remainingDays) {
             // Get currency from subscription or organization, fallback to GBP
@@ -19116,7 +19149,11 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       // Handle the new 2026 Subscription Model (Tier based)
       if (tierId) {
         try {
+          console.log(`[Process Session] ========================================`);
           console.log(`[Process Session] Processing 2026 Model Tier: ${tierId} for org ${user.organizationId}`);
+          console.log(`[Process Session] Session ID: ${sessionId}`);
+          console.log(`[Process Session] Session subscription ID: ${session.subscription}`);
+          console.log(`[Process Session] ========================================`);
 
           const tiers = await storage.getSubscriptionTiers();
           const tier = tiers.find(t => t.id === tierId);
@@ -19127,16 +19164,19 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
           // IMPORTANT: Cancel all existing active Stripe subscriptions for this organization
           // This ensures only the latest plan is active, preventing double billing on renewal
           const tierOrg = await storage.getOrganization(user.organizationId);
-          if (tierOrg?.stripeCustomerId) {
+          if (!tierOrg?.stripeCustomerId) {
+            console.warn(`[Process Session] ⚠️  Organization ${user.organizationId} has no stripeCustomerId - cannot cancel old subscriptions`);
+          } else {
             try {
               console.log(`[Process Session] Looking for subscriptions for customer: ${tierOrg.stripeCustomerId}`);
               console.log(`[Process Session] New subscription ID from session: ${session.subscription}`);
               
               // Get ALL subscriptions (not just active) to catch edge cases
+              // Note: Cannot expand more than 4 levels, so we'll fetch product data separately if needed
               const allSubscriptions = await stripe.subscriptions.list({
                 customer: tierOrg.stripeCustomerId,
                 limit: 100,
-                expand: ['data.items.data.price.product'] // Expand product data for better matching
+                expand: ['data.items.data.price'] // Only expand to price level, fetch product separately
               });
               
               console.log(`[Process Session] Found ${allSubscriptions.data.length} total subscriptions for customer ${tierOrg.stripeCustomerId}`);
@@ -19184,10 +19224,19 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                   // Try multiple ways to get the product name
                   let productName = '';
                   
-                  // Method 1: Get from product object
+                  // Method 1: Get from product object (if expanded)
                   const product = item.price?.product;
                   if (typeof product === 'object' && product && 'name' in product) {
                     productName = product.name || '';
+                  } else if (typeof product === 'string') {
+                    // Product is just an ID, need to fetch it separately
+                    try {
+                      const productObj = await stripe.products.retrieve(product);
+                      productName = productObj.name || '';
+                    } catch (e) {
+                      // If fetch fails, continue with other methods
+                      console.log(`[Process Session] Could not fetch product ${product}, trying other methods`);
+                    }
                   }
                   
                   // Method 2: Get from price nickname
@@ -19270,15 +19319,53 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 if (isTierSubscription && !isModuleSubscription) {
                   console.log(`[Process Session] 🚫 CANCELLING tier subscription ${sub.id} for org ${user.organizationId}`);
                   console.log(`[Process Session]    Reason: ${hasTierMetadata ? 'metadata' : hasTierProductName ? 'product name' : 'Inspect360+Plan pattern'}`);
+                  console.log(`[Process Session]    Subscription details:`, {
+                    id: sub.id,
+                    status: sub.status,
+                    cancel_at_period_end: (sub as any).cancel_at_period_end,
+                    current_period_end: sub.current_period_end,
+                    items: sub.items.data.map((item: any) => ({
+                      product: typeof item.price?.product === 'object' ? (item.price.product as any)?.name : item.price?.product,
+                      price: item.price?.id
+                    }))
+                  });
+                  
                   try {
+                    // Check if already scheduled to cancel
+                    if ((sub as any).cancel_at_period_end === true) {
+                      console.log(`[Process Session] ⚠️  Subscription ${sub.id} is already scheduled to cancel at period end`);
+                      // Force immediate cancellation instead
+                      console.log(`[Process Session]    Forcing immediate cancellation...`);
+                    }
+                    
+                    // Cancel immediately (not at period end) since this is a replacement subscription
                     const cancelResult = await stripe.subscriptions.cancel(sub.id);
                     console.log(`[Process Session] ✅ Successfully cancelled tier subscription ${sub.id}`);
-                    console.log(`[Process Session]    Cancel result status: ${cancelResult.status}`);
+                    console.log(`[Process Session]    Cancel result:`, {
+                      id: cancelResult.id,
+                      status: cancelResult.status,
+                      canceled_at: cancelResult.canceled_at,
+                      cancel_at_period_end: cancelResult.cancel_at_period_end
+                    });
                   } catch (cancelError: any) {
                     console.error(`[Process Session] ❌ Failed to cancel subscription ${sub.id}:`, cancelError.message);
                     console.error(`[Process Session]    Error type: ${cancelError.type}`);
                     console.error(`[Process Session]    Error code: ${cancelError.code}`);
+                    console.error(`[Process Session]    Error message: ${cancelError.message}`);
                     console.error(`[Process Session]    Full error:`, JSON.stringify(cancelError, null, 2));
+                    
+                    // Try alternative: schedule cancellation at period end if immediate cancel fails
+                    if (cancelError.code !== 'resource_missing') {
+                      try {
+                        console.log(`[Process Session]    Attempting to schedule cancellation at period end instead...`);
+                        await stripe.subscriptions.update(sub.id, {
+                          cancel_at_period_end: true
+                        });
+                        console.log(`[Process Session]    ✅ Scheduled cancellation at period end as fallback`);
+                      } catch (updateError: any) {
+                        console.error(`[Process Session]    ❌ Fallback cancellation also failed:`, updateError.message);
+                      }
+                    }
                     // Continue with new subscription creation even if cancellation fails
                   }
                 } else if (isModuleSubscription) {
@@ -19286,16 +19373,50 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
                 } else {
                   console.log(`[Process Session] ⚠️  Preserving unknown subscription ${sub.id} (not identified as tier or module)`);
                   console.log(`[Process Session]    This subscription will NOT be cancelled. If this is a tier subscription, please check the logs above.`);
+                  console.log(`[Process Session]    To help debug, here's what we found:`, {
+                    metadata: subMetadata,
+                    productNames: foundProductNames,
+                    hasTierMetadata,
+                    hasTierProductName,
+                    hasInspect360Plan
+                  });
                 }
               }
+              
+              // Final summary
+              console.log(`[Process Session] ========================================`);
+              console.log(`[Process Session] Cancellation check complete for org ${user.organizationId}`);
+              console.log(`[Process Session] ========================================`);
             } catch (listError: any) {
-              console.error(`[Process Session] Error listing subscriptions:`, listError.message);
+              console.error(`[Process Session] ❌ Error listing subscriptions:`, listError.message);
+              console.error(`[Process Session]    Full error:`, JSON.stringify(listError, null, 2));
               // Continue with new subscription creation even if listing fails
             }
           }
 
           // Update Instance Subscriptions table
           const existingInstanceSub = await storage.getInstanceSubscription(user.organizationId);
+          
+          // CRITICAL: Update subscription metadata from checkout session metadata
+          // Stripe doesn't automatically transfer checkout session metadata to subscription metadata
+          if (session.subscription) {
+            try {
+              console.log(`[Process Session] Updating subscription ${session.subscription} metadata from checkout session`);
+              await stripe.subscriptions.update(session.subscription as string, {
+                metadata: {
+                  ...session.metadata,
+                  // Ensure type is set for identification
+                  type: "tier_subscription",
+                  tierId: tierId,
+                  planCode: tier.code, // Use tier variable that's already defined in scope
+                }
+              });
+              console.log(`[Process Session] ✅ Successfully updated subscription metadata`);
+            } catch (metadataError: any) {
+              console.error(`[Process Session] ⚠️  Failed to update subscription metadata:`, metadataError.message);
+              // Continue even if metadata update fails
+            }
+          }
           
           // Get renewal date from Stripe subscription if available (source of truth)
           // Use Stripe's current_period_end to ensure accuracy (matches actual billing cycle)
