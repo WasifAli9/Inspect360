@@ -68,6 +68,7 @@ export default function InspectionCapture() {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [entries, setEntries] = useState<Record<string, InspectionEntry>>({});
   const [repeatableCounts, setRepeatableCounts] = useState<Record<string, number>>({}); // Track counts for repeatable sections
+  const repeatableCountsInitialized = React.useRef(false); // Track if we've initialized default counts
   const isOnline = useOnlineStatus();
   const [pendingCount, setPendingCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -180,61 +181,90 @@ export default function InspectionCapture() {
 
   // Load existing entries into state on mount and auto-populate property address
   useEffect(() => {
-    if (existingEntries && existingEntries.length > 0) {
-      const entriesMap: Record<string, InspectionEntry> = {};
-      const countsMap: Record<string, number> = {};
+    if (!existingEntries) return;
+    
+    const entriesMap: Record<string, InspectionEntry> = {};
+    const countsMap: Record<string, number> = {};
+    
+    // FIRST PASS: Extract repeatable counts from saved count entries
+    // This must happen before processing regular entries to ensure counts are available
+    existingEntries.forEach((entry: any) => {
+      // Check if this is a repeatable count entry
+      if (entry.fieldKey && entry.fieldKey.startsWith('__repeatable_count_')) {
+        const sectionId = entry.fieldKey.replace('__repeatable_count_', '');
+        const count = typeof entry.valueJson === 'number' ? entry.valueJson : parseInt(String(entry.valueJson || 1), 10);
+        countsMap[sectionId] = Math.max(1, count); // Ensure at least 1
+        // Don't add count entries to entriesMap - they're metadata only
+      }
+    });
+    
+    // SECOND PASS: Process regular entries and extract instance counts as fallback
+    existingEntries.forEach((entry: any) => {
+      const key = `${entry.sectionRef}-${entry.fieldKey}`;
       
-      existingEntries.forEach((entry: any) => {
-        const key = `${entry.sectionRef}-${entry.fieldKey}`;
-        entriesMap[key] = {
-          id: entry.id,
-          sectionRef: entry.sectionRef,
-          fieldKey: entry.fieldKey,
-          fieldType: entry.fieldType,
-          valueJson: entry.valueJson,
-          note: entry.note || undefined,
-          photos: entry.photos || [],
-          maintenanceFlag: entry.maintenanceFlag,
-          markedForReview: entry.markedForReview,
-        };
-        
-        // Extract repeatable instance count from sectionRef (e.g., "Bedrooms/Bedroom 1" -> 1)
-        // Check if sectionRef contains instance pattern like "SectionName/InstanceName N"
-        const sectionRefParts = entry.sectionRef.split('/');
-        if (sectionRefParts.length > 1) {
-          const instancePart = sectionRefParts[1];
-          const match = instancePart.match(/(\d+)$/); // Extract number at end
-          if (match) {
-            const instanceNum = parseInt(match[1], 10);
-            const baseSectionId = sectionRefParts[0];
-            // Track max instance number for each repeatable section
-            if (!countsMap[baseSectionId] || instanceNum > countsMap[baseSectionId]) {
-              countsMap[baseSectionId] = instanceNum;
-            }
-          }
-        }
-      });
-      
-      // Set repeatable counts
-      if (Object.keys(countsMap).length > 0) {
-        setRepeatableCounts(prev => ({ ...prev, ...countsMap }));
+      // Skip count entries (already processed)
+      if (entry.fieldKey && entry.fieldKey.startsWith('__repeatable_count_')) {
+        return;
       }
       
-      // Merge with existing entries to preserve any local changes, but prioritize server data
-      // Only update if there are actual changes to prevent infinite loops
-      setEntries(prev => {
-        const hasChanges = Object.keys(entriesMap).some(key => {
-          const newEntry = entriesMap[key];
-          const oldEntry = prev[key];
-          return !oldEntry || 
-            oldEntry.id !== newEntry.id ||
-            oldEntry.valueJson !== newEntry.valueJson ||
-            oldEntry.note !== newEntry.note ||
-            JSON.stringify(oldEntry.photos) !== JSON.stringify(newEntry.photos);
+      entriesMap[key] = {
+        id: entry.id,
+        sectionRef: entry.sectionRef,
+        fieldKey: entry.fieldKey,
+        fieldType: entry.fieldType,
+        valueJson: entry.valueJson,
+        note: entry.note || undefined,
+        photos: entry.photos || [],
+        maintenanceFlag: entry.maintenanceFlag,
+        markedForReview: entry.markedForReview,
+      };
+      
+      // Extract repeatable instance count from sectionRef (e.g., "Bedrooms/Bedroom 1" -> 1)
+      // This is a fallback if no count entry exists
+      const sectionRefParts = entry.sectionRef.split('/');
+      if (sectionRefParts.length > 1) {
+        const instancePart = sectionRefParts[1];
+        const match = instancePart.match(/(\d+)$/); // Extract number at end
+        if (match) {
+          const instanceNum = parseInt(match[1], 10);
+          const baseSectionId = sectionRefParts[0];
+          // Track max instance number for each repeatable section (fallback if no count entry exists)
+          if (!countsMap[baseSectionId] || instanceNum > countsMap[baseSectionId]) {
+            countsMap[baseSectionId] = instanceNum;
+          }
+        }
+      }
+    });
+    
+    // Set repeatable counts FIRST - this ensures counts are available before entries are processed
+    // Use functional update to merge with existing counts
+    if (Object.keys(countsMap).length > 0) {
+      repeatableCountsInitialized.current = true; // Mark as initialized from saved data
+      setRepeatableCounts(prev => {
+        const merged = { ...prev };
+        Object.keys(countsMap).forEach(sectionId => {
+          // Always use the saved count from entries (it's persisted)
+          merged[sectionId] = countsMap[sectionId];
         });
-        return hasChanges ? { ...prev, ...entriesMap } : prev;
+        return merged;
       });
     }
+    
+    // THEN set entries - counts are now available so fields will render correctly
+    // Merge with existing entries to preserve any local changes, but prioritize server data
+    // Only update if there are actual changes to prevent infinite loops
+    setEntries(prev => {
+      const hasChanges = Object.keys(entriesMap).some(key => {
+        const newEntry = entriesMap[key];
+        const oldEntry = prev[key];
+        return !oldEntry || 
+          oldEntry.id !== newEntry.id ||
+          oldEntry.valueJson !== newEntry.valueJson ||
+          oldEntry.note !== newEntry.note ||
+          JSON.stringify(oldEntry.photos) !== JSON.stringify(newEntry.photos);
+      });
+      return hasChanges ? { ...prev, ...entriesMap } : prev;
+    });
   }, [existingEntries]);
 
   // Parse template structure from snapshot and migrate old templates
@@ -299,6 +329,44 @@ export default function InspectionCapture() {
       });
     },
   });
+
+  // Initialize repeatable sections to 1 by default (only if not already set from entries)
+  useEffect(() => {
+    if (sections.length > 0 && existingEntries && existingEntries.length === 0 && !repeatableCountsInitialized.current) {
+      // Only set defaults if we have no existing entries (new inspection) and haven't initialized yet
+      const defaultCounts: Record<string, number> = {};
+      sections.forEach(section => {
+        if (section.repeatable && !repeatableCounts[section.id]) {
+          defaultCounts[section.id] = 1;
+        }
+      });
+      if (Object.keys(defaultCounts).length > 0) {
+        repeatableCountsInitialized.current = true;
+        setRepeatableCounts(prev => ({ ...prev, ...defaultCounts }));
+        // Also save the default counts
+        Object.keys(defaultCounts).forEach(sectionId => {
+          const countFieldKey = `__repeatable_count_${sectionId}`;
+          const countEntry: InspectionEntry = {
+            sectionRef: sectionId,
+            fieldKey: countFieldKey,
+            fieldType: 'number',
+            valueJson: defaultCounts[sectionId],
+          };
+          if (isOnline) {
+            updateEntry.mutate(countEntry);
+          } else {
+            offlineQueue.enqueue({
+              inspectionId: id!,
+              sectionRef: sectionId,
+              fieldKey: countFieldKey,
+              fieldType: 'number',
+              valueJson: defaultCounts[sectionId],
+            });
+          }
+        });
+      }
+    }
+  }, [sections, existingEntries, repeatableCounts, isOnline, updateEntry, id]);
 
   // Server-side copy mutation
   const copyFromCheckIn = useMutation({
@@ -625,19 +693,51 @@ export default function InspectionCapture() {
   // Handle repeatable count change
   const handleRepeatableCountChange = (sectionId: string, count: number) => {
     const newCount = Math.max(1, Math.min(50, count)); // Limit between 1 and 50
+    const prevCount = repeatableCounts[sectionId] ?? 1;
+    
     setRepeatableCounts(prev => ({
       ...prev,
       [sectionId]: newCount,
     }));
     
+    // Save repeatable count as a special entry to persist it
+    const countFieldKey = `__repeatable_count_${sectionId}`;
+    const countEntryKey = `${sectionId}-${countFieldKey}`;
+    const countEntry: InspectionEntry = {
+      sectionRef: sectionId,
+      fieldKey: countFieldKey,
+      fieldType: 'number',
+      valueJson: newCount,
+    };
+    
+    // Update local state
+    setEntries(prev => ({
+      ...prev,
+      [countEntryKey]: countEntry,
+    }));
+    
+    // Save to backend
+    if (isOnline) {
+      updateEntry.mutate(countEntry);
+    } else {
+      offlineQueue.enqueue({
+        inspectionId: id!,
+        sectionRef: sectionId,
+        fieldKey: countFieldKey,
+        fieldType: 'number',
+        valueJson: newCount,
+      });
+      setPendingCount(offlineQueue.getPendingCount());
+    }
+    
     // If count is reduced, remove entries for instances beyond the new count
-    if (newCount < (prev[sectionId] ?? 1)) {
+    if (newCount < prevCount) {
       setEntries(prev => {
         const updated = { ...prev };
         const section = sections.find(s => s.id === sectionId);
         if (section) {
           // Remove entries for instances beyond new count
-          for (let i = newCount + 1; i <= (prev[sectionId] ?? 1); i++) {
+          for (let i = newCount + 1; i <= prevCount; i++) {
             const instanceName = `${section.title} ${i}`;
             section.fields.forEach(field => {
               const entryKey = `${sectionId}/${instanceName}-${field.id}`;

@@ -571,6 +571,162 @@ function generateInspectionHTML(
     </span>`;
   };
 
+  // Helper function to extract repeatable instances from entries
+  const getRepeatableInstances = (sectionId: string): string[] => {
+    const instanceSet = new Set<string>();
+    entries.forEach((entry) => {
+      if (entry.sectionRef.startsWith(`${sectionId}/`)) {
+        const instanceName = entry.sectionRef.split('/')[1];
+        if (instanceName) {
+          instanceSet.add(instanceName);
+        }
+      }
+    });
+    // Sort instances by number (e.g., "Bedroom 1", "Bedroom 2", ...)
+    return Array.from(instanceSet).sort((a, b) => {
+      const numA = parseInt(a.match(/\d+$/)?.[0] || '0', 10);
+      const numB = parseInt(b.match(/\d+$/)?.[0] || '0', 10);
+      return numA - numB;
+    });
+  };
+
+  // Helper function to render a field row (used for both repeatable and non-repeatable sections)
+  const renderFieldRow = (
+    field: TemplateField,
+    sectionRef: string,
+    fieldCounter: number,
+    sectionIndex: number,
+    sectionHasCondition: boolean,
+    sectionHasCleanliness: boolean
+  ): { rowHTML: string; photoHTML: string } => {
+    const fieldKey = field.id || field.key || field.label;
+    const key = `${sectionRef}-${fieldKey}`;
+    const entry = entriesMap.get(key);
+    const fieldRef = `${sectionIndex + 1}.${fieldCounter}`;
+
+    // Extract data from entry - condition/cleanliness are stored inside valueJson
+    // Support both 'value' and 'valueJson' for backward compatibility
+    const valueData = (entry as any)?.valueJson ?? (entry as any)?.value;
+    const note = entry?.note;
+    const photos = entry?.photos || [];
+
+    // Parse value to extract condition, cleanliness, and description
+    let condition: string | null = null;
+    let cleanliness: string | null = null;
+    let description: string | null = null;
+
+    if (valueData !== undefined && valueData !== null) {
+      if (typeof valueData === 'object' && !Array.isArray(valueData)) {
+        // Extract from structured object (for fields with condition/cleanliness)
+        condition = (valueData as any).condition || null;
+        cleanliness = (valueData as any).cleanliness || null;
+        description = (valueData as any).value || null;
+      } else if (typeof valueData === 'string') {
+        description = valueData;
+      } else if (typeof valueData === 'boolean') {
+        description = valueData ? 'Yes' : 'No';
+      } else {
+        description = String(valueData);
+      }
+    }
+
+    // Get scores for ratings
+    const conditionScore = getConditionScore(condition);
+    const cleanlinessScore = getCleanlinessScore(cleanliness);
+    const photoCount = photos.length;
+
+    // Determine description value
+    let descriptionValue = '-';
+    if (description !== null && description !== '') {
+      if (typeof description === 'string') {
+        descriptionValue = description.length > 50 ? description.substring(0, 50) + '...' : description;
+      } else {
+        descriptionValue = String(description);
+      }
+    }
+
+    let rowHTML = `
+      <tr>
+        <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; color: #00D5CC; font-weight: 500;">
+          ${escapeHtml(field.label)}
+        </td>
+        <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; color: #666;">
+          ${escapeHtml(descriptionValue)}
+        </td>
+        ${sectionHasCondition ? `
+          <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+            ${field.includeCondition && condition ? formatRating(condition, conditionScore) : '<span style="color: #999;">-</span>'}
+          </td>
+        ` : ''}
+        ${sectionHasCleanliness ? `
+          <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+            ${field.includeCleanliness && cleanliness ? formatRating(cleanliness, cleanlinessScore) : '<span style="color: #999;">-</span>'}
+          </td>
+        ` : ''}
+        <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+          ${photoCount > 0 ? `<span style="color: #00D5CC; font-weight: 500;">${photoCount} photo${photoCount > 1 ? 's' : ''}</span>` : '<span style="color: #999;">-</span>'}
+        </td>
+      </tr>
+    `;
+
+    // Add note row if exists
+    if (note) {
+      const colspan = 2 + (sectionHasCondition ? 1 : 0) + (sectionHasCleanliness ? 1 : 0) + 1;
+      rowHTML += `
+        <tr>
+          <td colspan="${colspan}" style="padding: 8px 16px; border-bottom: 1px solid #e5e7eb; background: #fef3c7;">
+            <div style="display: flex; align-items: flex-start; gap: 8px;">
+              <span style="font-weight: 500; color: #92400e; font-size: 13px;">Note:</span>
+              <span style="color: #78350f; font-size: 13px;">${formatText(note)}</span>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    // Build photo gallery for this field
+    let photoHTML = '';
+    if (photoCount > 0) {
+      photoHTML = `
+        <div style="margin-top: 20px; page-break-inside: avoid;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding-left: 4px;">
+            <span style="font-size: 16px;">&#128247;</span>
+            <span style="font-weight: 600; color: #333; font-size: 15px;">${escapeHtml(field.label)} Photos</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+            ${photos.map((photo, photoIndex) => `
+              <div style="width: 300px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: white;">
+                <div style="height: 200px; background: #f9fafb; position: relative;">
+                  <img src="${sanitizeUrl(photo, baseUrl)}" alt="Photo" style="width: 100%; height: 100%; object-fit: cover;" />
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px; border-top: 1px solid #e5e7eb;">
+                  <tr>
+                    <td style="padding: 8px 12px; color: #666; width: 60%;">Provided by</td>
+                    <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">Inspector</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 12px; color: #666;">Captured (Certified by inspector)</td>
+                    <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">${escapeHtml(formattedDate)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 12px; color: #666;">Added</td>
+                    <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">${escapeHtml(formattedDate)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 12px; color: #666;">Reference</td>
+                    <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">${fieldRef}.${photoIndex + 1}</td>
+                  </tr>
+                </table>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    return { rowHTML, photoHTML };
+  };
+
   // Generate sections HTML - Table format matching UI
   let sectionsHTML = "";
   sections.forEach((section, sectionIndex) => {
@@ -583,164 +739,133 @@ function generateInspectionHTML(
       if (field.includeCleanliness) sectionHasCleanliness = true;
     });
 
-    // Build table rows for ALL fields (even empty ones)
-    let tableRowsHTML = '';
-    let photosGalleryHTML = '';
-    let fieldCounter = 0;
-
-    section.fields.forEach((field) => {
-      fieldCounter++;
-      // Use field.id first (matching frontend logic), then fall back to field.key
-      const fieldKey = field.id || field.key || field.label;
-      const key = `${section.id}-${fieldKey}`;
-      const entry = entriesMap.get(key);
-
-      // Extract data from entry - condition/cleanliness are stored inside value
-      const valueData = entry?.value;
-      const note = entry?.note;
-      const photos = entry?.photos || [];
-      const fieldRef = `${sectionIndex + 1}.${fieldCounter}`;
-
-      // Parse value to extract condition, cleanliness, and description
-      let condition: string | null = null;
-      let cleanliness: string | null = null;
-      let description: string | null = null;
-
-      if (valueData !== undefined && valueData !== null) {
-        if (typeof valueData === 'object' && !Array.isArray(valueData)) {
-          // Extract from structured object (for fields with condition/cleanliness)
-          condition = (valueData as any).condition || null;
-          cleanliness = (valueData as any).cleanliness || null;
-          description = (valueData as any).value || null;
-        } else if (typeof valueData === 'string') {
-          description = valueData;
-        } else if (typeof valueData === 'boolean') {
-          description = valueData ? 'Yes' : 'No';
-        } else {
-          description = String(valueData);
-        }
+    // Check if this is a repeatable section
+    if (section.repeatable) {
+      // Extract all instances for this repeatable section
+      const instances = getRepeatableInstances(section.id);
+      
+      if (instances.length === 0) {
+        // No instances found, skip this section
+        return;
       }
 
-      // Get scores for ratings
-      const conditionScore = getConditionScore(condition);
-      const cleanlinessScore = getCleanlinessScore(cleanliness);
-      const photoCount = photos.length;
+      // Render each instance separately with photos inline
+      let sectionHTML = '';
+      
+      instances.forEach((instanceName, instanceIndex) => {
+        const instanceSectionRef = `${section.id}/${instanceName}`;
+        let instanceTableRowsHTML = '';
+        let instancePhotosGalleryHTML = '';
+        let fieldCounter = 0;
 
-      // Determine description value
-      let descriptionValue = '-';
-      if (description !== null && description !== '') {
-        if (typeof description === 'string') {
-          descriptionValue = description.length > 50 ? description.substring(0, 50) + '...' : description;
-        } else {
-          descriptionValue = String(description);
-        }
-      }
-
-      tableRowsHTML += `
-        <tr>
-          <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; color: #00D5CC; font-weight: 500;">
-            ${escapeHtml(field.label)}
-          </td>
-          <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; color: #666;">
-            ${escapeHtml(descriptionValue)}
-          </td>
-          ${sectionHasCondition ? `
-            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">
-              ${field.includeCondition && condition ? formatRating(condition, conditionScore) : '<span style="color: #999;">-</span>'}
-            </td>
-          ` : ''}
-          ${sectionHasCleanliness ? `
-            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">
-              ${field.includeCleanliness && cleanliness ? formatRating(cleanliness, cleanlinessScore) : '<span style="color: #999;">-</span>'}
-            </td>
-          ` : ''}
-          <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">
-            ${photoCount > 0 ? `<span style="color: #00D5CC; font-weight: 500;">${photoCount} photo${photoCount > 1 ? 's' : ''}</span>` : '<span style="color: #999;">-</span>'}
-          </td>
-        </tr>
-      `;
-
-      // Add note row if exists
-      if (note) {
-        const colspan = 2 + (sectionHasCondition ? 1 : 0) + (sectionHasCleanliness ? 1 : 0) + 1;
-        tableRowsHTML += `
+        // Add instance header row
+        const instanceHeaderColspan = 2 + (sectionHasCondition ? 1 : 0) + (sectionHasCleanliness ? 1 : 0) + 1;
+        instanceTableRowsHTML += `
           <tr>
-            <td colspan="${colspan}" style="padding: 8px 16px; border-bottom: 1px solid #e5e7eb; background: #fef3c7;">
-              <div style="display: flex; align-items: flex-start; gap: 8px;">
-                <span style="font-weight: 500; color: #92400e; font-size: 13px;">Note:</span>
-                <span style="color: #78350f; font-size: 13px;">${formatText(note)}</span>
-              </div>
+            <td colspan="${instanceHeaderColspan}" style="padding: 12px 16px; border-bottom: 2px solid #00D5CC; background: #f0fdfa; font-weight: 600; color: #00D5CC;">
+              ${escapeHtml(instanceName)}
             </td>
           </tr>
         `;
-      }
 
-      // Build photo gallery for this field (matching UI layout)
-      if (photoCount > 0) {
-        photosGalleryHTML += `
-          <div style="margin-top: 20px; page-break-inside: avoid;">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding-left: 4px;">
-              <span style="font-size: 16px;">&#128247;</span>
-              <span style="font-weight: 600; color: #333; font-size: 15px;">${escapeHtml(field.label)} Photos</span>
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 20px;">
-              ${photos.map((photo, photoIndex) => `
-                <div style="width: 300px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: white;">
-                  <div style="height: 200px; background: #f9fafb; position: relative;">
-                    <img src="${sanitizeUrl(photo, baseUrl)}" alt="Photo" style="width: 100%; height: 100%; object-fit: cover;" />
-                  </div>
-                  <table style="width: 100%; border-collapse: collapse; font-size: 12px; border-top: 1px solid #e5e7eb;">
-                    <tr>
-                      <td style="padding: 8px 12px; color: #666; width: 60%;">Provided by</td>
-                      <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">Inspector</td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 8px 12px; color: #666;">Captured (Certified by inspector)</td>
-                      <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">${escapeHtml(formattedDate)}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 8px 12px; color: #666;">Added</td>
-                      <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">${escapeHtml(formattedDate)}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 8px 12px; color: #666;">Reference</td>
-                      <td style="padding: 8px 12px; color: #333; font-weight: 500; text-align: right;">${fieldRef}.${photoIndex + 1}</td>
-                    </tr>
-                  </table>
-                </div>
-              `).join('')}
-            </div>
+        // Render fields for this instance
+        section.fields.forEach((field) => {
+          fieldCounter++;
+          const { rowHTML, photoHTML } = renderFieldRow(
+            field,
+            instanceSectionRef,
+            fieldCounter,
+            sectionIndex,
+            sectionHasCondition,
+            sectionHasCleanliness
+          );
+          instanceTableRowsHTML += rowHTML;
+          if (photoHTML) {
+            instancePhotosGalleryHTML += photoHTML;
+          }
+        });
+
+        // Build HTML for this instance: table + photos immediately after
+        sectionHTML += `
+          <div style="margin-bottom: 24px; page-break-inside: avoid;">
+            <table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+              <thead>
+                <tr style="background: #f9fafb;">
+                  <th style="padding: 12px 16px; text-align: left; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Room/Space</th>
+                  <th style="padding: 12px 16px; text-align: left; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Description</th>
+                  ${sectionHasCondition ? '<th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Condition</th>' : ''}
+                  ${sectionHasCleanliness ? '<th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Cleanliness</th>' : ''}
+                  <th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Photos</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${instanceTableRowsHTML}
+              </tbody>
+            </table>
+            ${instancePhotosGalleryHTML}
           </div>
         `;
-      }
-    });
+      });
 
-    // Build section HTML with table format - always include all sections
-    sectionsHTML += `
-      <div style="margin-bottom: 32px; page-break-inside: avoid;">
-        <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px;">
-          ${escapeHtml(section.title)}
-        </h2>
-        ${section.description ? `<p style="color: #666; margin-bottom: 12px; font-size: 14px;">${escapeHtml(section.description)}</p>` : ""}
-        
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background: #f9fafb;">
-              <th style="padding: 12px 16px; text-align: left; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Room/Space</th>
-              <th style="padding: 12px 16px; text-align: left; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Description</th>
-              ${sectionHasCondition ? '<th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Condition</th>' : ''}
-              ${sectionHasCleanliness ? '<th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Cleanliness</th>' : ''}
-              <th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Photos</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRowsHTML}
-          </tbody>
-        </table>
+      // Build section HTML with all instances (each with inline photos)
+      sectionsHTML += `
+        <div style="margin-bottom: 32px; page-break-inside: avoid;">
+          <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px;">
+            ${escapeHtml(section.title)}
+          </h2>
+          ${section.description ? `<p style="color: #666; margin-bottom: 12px; font-size: 14px;">${escapeHtml(section.description)}</p>` : ""}
+          ${sectionHTML}
+        </div>
+      `;
+    } else {
+      // Non-repeatable section - use existing logic
+      let tableRowsHTML = '';
+      let photosGalleryHTML = '';
+      let fieldCounter = 0;
 
-        ${photosGalleryHTML}
-      </div>
-    `;
+      section.fields.forEach((field) => {
+        fieldCounter++;
+        const { rowHTML, photoHTML } = renderFieldRow(
+          field,
+          section.id,
+          fieldCounter,
+          sectionIndex,
+          sectionHasCondition,
+          sectionHasCleanliness
+        );
+        tableRowsHTML += rowHTML;
+        if (photoHTML) {
+          photosGalleryHTML += photoHTML;
+        }
+      });
+
+      // Build section HTML with table format - always include all sections
+      sectionsHTML += `
+        <div style="margin-bottom: 32px; page-break-inside: avoid;">
+          <h2 style="font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 16px;">
+            ${escapeHtml(section.title)}
+          </h2>
+          ${section.description ? `<p style="color: #666; margin-bottom: 12px; font-size: 14px;">${escapeHtml(section.description)}</p>` : ""}
+          
+          <table style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+            <thead>
+              <tr style="background: #f9fafb;">
+                <th style="padding: 12px 16px; text-align: left; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Room/Space</th>
+                <th style="padding: 12px 16px; text-align: left; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Description</th>
+                ${sectionHasCondition ? '<th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Condition</th>' : ''}
+                ${sectionHasCleanliness ? '<th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Cleanliness</th>' : ''}
+                <th style="padding: 12px 16px; text-align: center; font-weight: 500; color: #666; font-size: 13px; border-bottom: 1px solid #e5e7eb;">Photos</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRowsHTML}
+            </tbody>
+          </table>
+
+          ${photosGalleryHTML}
+        </div>
+      `;
+    }
   });
 
   // Build cover page HTML conditionally - with custom title/subtitle support
