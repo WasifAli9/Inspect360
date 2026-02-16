@@ -7269,18 +7269,68 @@ Remember: Only analyze "${inspectionPointTitle}" in the "${category}" - nothing 
       console.log("[InspectAI] Sending to OpenAI - Photo URLs:", photoUrls.length, "photos");
       console.log("[InspectAI] Content structure:", JSON.stringify(content.map(c => ({ type: c.type, hasUrl: !!c.image_url })), null, 2));
 
-      // Call OpenAI Vision API using Responses API
-      // Set max_output_tokens to 10000 to allow for very detailed analysis
-      const response = await getOpenAI().responses.create({
-        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        input: [
-          {
-            role: "user",
-            content: normalizeApiContent(content)
+      // Retry logic for OpenAI API calls with exponential backoff
+      const maxRetries = 3;
+      const baseDelay = 1000; // 1 second base delay
+      let lastError: any = null;
+      let response: any = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          // Call OpenAI Vision API using Responses API
+          // Set max_output_tokens to 10000 to allow for very detailed analysis
+          response = await Promise.race([
+            getOpenAI().responses.create({
+              model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+              input: [
+                {
+                  role: "user",
+                  content: normalizeApiContent(content)
+                }
+              ],
+              max_output_tokens: 10000, // Increased to 10000 to allow very detailed responses
+            }),
+            // Add timeout of 60 seconds
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error("Request timeout: OpenAI API did not respond within 60 seconds")), 60000)
+            )
+          ]) as any;
+          
+          // Success - break out of retry loop
+          break;
+        } catch (error: any) {
+          lastError = error;
+          const errorMessage = error?.message || String(error);
+          const isConnectionError = 
+            errorMessage.includes("Connection error") ||
+            errorMessage.includes("ECONNREFUSED") ||
+            errorMessage.includes("ETIMEDOUT") ||
+            errorMessage.includes("ENOTFOUND") ||
+            errorMessage.includes("timeout") ||
+            error?.code === "ECONNREFUSED" ||
+            error?.code === "ETIMEDOUT";
+
+          // Only retry on connection errors
+          if (isConnectionError && attempt < maxRetries) {
+            const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff: 1s, 2s, 4s
+            console.warn(`[InspectAI] Connection error on attempt ${attempt}/${maxRetries}. Retrying in ${delay}ms...`, {
+              error: errorMessage,
+              attempt,
+              maxRetries
+            });
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          } else {
+            // Not a connection error or max retries reached - throw immediately
+            throw error;
           }
-        ],
-        max_output_tokens: 10000, // Increased to 10000 to allow very detailed responses
-      });
+        }
+      }
+
+      // If we still don't have a response after retries, throw the last error
+      if (!response && lastError) {
+        throw lastError;
+      }
 
       // Check if response is incomplete due to token limit
       if (response.status === "incomplete") {
@@ -7403,13 +7453,24 @@ Remember: Only analyze "${inspectionPointTitle}" in the "${category}" - nothing 
       });
 
       // Return more specific error message
-      const userMessage = errorMessage.includes("OpenAI")
-        ? "AI service returned an error. Please try again."
-        : errorMessage.includes("credits")
-          ? "Insufficient credits for AI analysis"
-          : errorMessage.includes("unexpected response format") || errorMessage.includes("empty analysis")
-            ? "AI service returned an invalid response. Please try again."
-            : "Failed to analyze field. Please try again.";
+      const isConnectionError = 
+        errorMessage.includes("Connection error") ||
+        errorMessage.includes("ECONNREFUSED") ||
+        errorMessage.includes("ETIMEDOUT") ||
+        errorMessage.includes("ENOTFOUND") ||
+        errorMessage.includes("timeout") ||
+        error?.code === "ECONNREFUSED" ||
+        error?.code === "ETIMEDOUT";
+
+      const userMessage = isConnectionError
+        ? "Unable to connect to AI service. Please check your internet connection and try again."
+        : errorMessage.includes("OpenAI")
+          ? "AI service returned an error. Please try again."
+          : errorMessage.includes("credits")
+            ? "Insufficient credits for AI analysis"
+            : errorMessage.includes("unexpected response format") || errorMessage.includes("empty analysis")
+              ? "AI service returned an invalid response. Please try again."
+              : "Failed to analyze field. Please try again.";
 
       res.status(500).json({ message: userMessage });
     }

@@ -651,7 +651,7 @@ const InspectionReportScreen = () => {
                                                                     <Text style={[styles.instanceTitle, { color: themeColors.primary.DEFAULT, borderBottomColor: themeColors.border.light }]}>
                                                                         {instanceName}
                                                                     </Text>
-                                                                    {section.fields.map((field: any, fieldIdx: number) => {
+                                                {section.fields.map((field: any, fieldIdx: number) => {
                                                                         const entry = getEntryValue(section.id, field.id || field.key || field.label, instanceName);
                                                                         const entryKey = `${section.id}/${instanceName}-${field.id || field.key || field.label}`;
                                                                         const photoKey = `photos-${entryKey}`;
@@ -791,137 +791,137 @@ const InspectionReportScreen = () => {
                                                 ) : (
                                                     // Render normally for non-repeatable sections
                                                     section.fields.map((field: any, fieldIdx: number) => {
-                                                        const entry = getEntryValue(section.id, field.id || field.key || field.label);
-                                                        const entryKey = `${section.id}-${field.id || field.key || field.label}`;
-                                                        const photoKey = `photos-${entryKey}`;
-                                                        const isPhotoExpanded = expandedPhotos[photoKey];
+                                                    const entry = getEntryValue(section.id, field.id || field.key || field.label);
+                                                    const entryKey = `${section.id}-${field.id || field.key || field.label}`;
+                                                    const photoKey = `photos-${entryKey}`;
+                                                    const isPhotoExpanded = expandedPhotos[photoKey];
 
-                                                        if (!entry) return null;
+                                                    if (!entry) return null;
 
-                                                        let condition: string | number | null = null;
-                                                        let cleanliness: string | number | null = null;
-                                                        let description = '';
+                                                    let condition: string | number | null = null;
+                                                    let cleanliness: string | number | null = null;
+                                                    let description = '';
 
-                                                        if (entry.valueJson) {
-                                                            if (typeof entry.valueJson === 'object' && !Array.isArray(entry.valueJson)) {
-                                                                condition = entry.valueJson.condition || null;
-                                                                cleanliness = entry.valueJson.cleanliness || null;
-                                                                description = entry.valueJson.value || '';
-                                                            } else if (typeof entry.valueJson === 'string') {
-                                                                description = entry.valueJson;
-                                                            }
+                                                    if (entry.valueJson) {
+                                                        if (typeof entry.valueJson === 'object' && !Array.isArray(entry.valueJson)) {
+                                                            condition = entry.valueJson.condition || null;
+                                                            cleanliness = entry.valueJson.cleanliness || null;
+                                                            description = entry.valueJson.value || '';
+                                                        } else if (typeof entry.valueJson === 'string') {
+                                                            description = entry.valueJson;
                                                         }
+                                                    }
 
-                                                        const photoCount = entry.photos?.length || 0;
+                                                    const photoCount = entry.photos?.length || 0;
 
-                                                        return (
+                                                    return (
                                                             <View key={field.id || field.key || field.label} style={[styles.tableRow, { borderBottomColor: themeColors.border.light, backgroundColor: themeColors.card.DEFAULT }]}>
-                                                                <View style={[styles.tableCell, { width: width * 0.25 }]}>
-                                                                    <TouchableOpacity
-                                                                        onPress={() => photoCount > 0 && togglePhotoExpansion(photoKey)}
-                                                                        activeOpacity={photoCount > 0 ? 0.7 : 1}
-                                                                    >
-                                                                        <Text style={[
-                                                                            styles.roomSpaceText,
-                                                                            { color: photoCount > 0 ? themeColors.primary.DEFAULT : themeColors.text.primary },
-                                                                            photoCount > 0 && styles.roomSpaceLink
-                                                                        ]} numberOfLines={2}>
-                                                                            {field.label}
-                                                                        </Text>
-                                                                    </TouchableOpacity>
-                                                                </View>
-                                                                <View style={[styles.tableCell, {
-                                                                    width: width * (sectionHasCondition && sectionHasCleanliness ? 0.35 : sectionHasCondition || sectionHasCleanliness ? 0.40 : 0.50)
-                                                                }]}>
-                                                                    <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
-                                                                        {description || entry.note || '-'}
+                                                            <View style={[styles.tableCell, { width: width * 0.25 }]}>
+                                                                <TouchableOpacity
+                                                                    onPress={() => photoCount > 0 && togglePhotoExpansion(photoKey)}
+                                                                    activeOpacity={photoCount > 0 ? 0.7 : 1}
+                                                                >
+                                                                    <Text style={[
+                                                                        styles.roomSpaceText,
+                                                                        { color: photoCount > 0 ? themeColors.primary.DEFAULT : themeColors.text.primary },
+                                                                        photoCount > 0 && styles.roomSpaceLink
+                                                                    ]} numberOfLines={2}>
+                                                                        {field.label}
                                                                     </Text>
-                                                                </View>
-                                                                {sectionHasCondition && (
-                                                                    <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
-                                                                        {field.includeCondition && condition !== null && condition !== undefined ? (
-                                                                            <View style={styles.conditionRow}>
-                                                                                <View style={[styles.conditionDot, { backgroundColor: getConditionColor(condition) }]} />
-                                                                                <Text style={[styles.conditionText, { color: themeColors.text.primary }]} numberOfLines={1}>
-                                                                                    {formatCondition(condition)}
-                                                                                </Text>
-                                                                                <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
-                                                                                    ({getConditionScore(condition)})
-                                                                                </Text>
-                                                                            </View>
-                                                                        ) : (
-                                                                            <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
-                                                                        )}
-                                                                    </View>
-                                                                )}
-                                                                {sectionHasCleanliness && (
-                                                                    <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
-                                                                        {field.includeCleanliness && cleanliness !== null && cleanliness !== undefined ? (
-                                                                            <View style={styles.conditionRow}>
-                                                                                <View style={[styles.conditionDot, { backgroundColor: getCleanlinessColor(cleanliness) }]} />
-                                                                                <Text style={[styles.conditionText, { color: themeColors.text.primary }]} numberOfLines={1}>
-                                                                                    {formatCleanliness(cleanliness)}
-                                                                                </Text>
-                                                                                <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
-                                                                                    ({getCleanlinessScore(cleanliness)})
-                                                                                </Text>
-                                                                            </View>
-                                                                        ) : (
-                                                                            <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
-                                                                        )}
-                                                                    </View>
-                                                                )}
-                                                                <View style={[styles.tableCell, { width: width * 0.10, alignItems: 'center', justifyContent: 'center' }]}>
-                                                                    {photoCount > 0 ? (
-                                                                        <TouchableOpacity
-                                                                            onPress={() => togglePhotoExpansion(photoKey)}
-                                                                            style={styles.photoButton}
-                                                                            activeOpacity={0.7}
-                                                                        >
-                                                                            <Camera size={12} color={themeColors.primary.DEFAULT} />
-                                                                            <Text style={[styles.photoCountText, { color: themeColors.text.primary }]} numberOfLines={1}>
-                                                                                {photoCount}
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                            <View style={[styles.tableCell, {
+                                                                width: width * (sectionHasCondition && sectionHasCleanliness ? 0.35 : sectionHasCondition || sectionHasCleanliness ? 0.40 : 0.50)
+                                                            }]}>
+                                                                <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
+                                                                    {description || entry.note || '-'}
+                                                                </Text>
+                                                            </View>
+                                                            {sectionHasCondition && (
+                                                                <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
+                                                                    {field.includeCondition && condition !== null && condition !== undefined ? (
+                                                                        <View style={styles.conditionRow}>
+                                                                            <View style={[styles.conditionDot, { backgroundColor: getConditionColor(condition) }]} />
+                                                                            <Text style={[styles.conditionText, { color: themeColors.text.primary }]} numberOfLines={1}>
+                                                                                {formatCondition(condition)}
                                                                             </Text>
-                                                                        </TouchableOpacity>
+                                                                            <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
+                                                                                ({getConditionScore(condition)})
+                                                                            </Text>
+                                                                        </View>
                                                                     ) : (
                                                                         <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
                                                                     )}
                                                                 </View>
-
-                                                                {/* Expanded Photos */}
-                                                                {isPhotoExpanded && photoCount > 0 && (
-                                                                    <View style={[styles.photoExpansionContainer, { borderTopColor: themeColors.border.light }]}>
-                                                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScrollView}>
-                                                                            {entry.photos?.map((photo: string, photoIdx: number) => {
-                                                                                // Handle both local and server images
-                                                                                let photoUrl: string;
-                                                                                if (isLocalPath(photo)) {
-                                                                                    // Local offline image - use local path
-                                                                                    const imageSource = getImageSource(photo);
-                                                                                    photoUrl = imageSource.uri;
-                                                                                } else if (photo.startsWith('http')) {
-                                                                                    // Full URL
-                                                                                    photoUrl = photo;
-                                                                                } else if (photo.startsWith('/')) {
-                                                                                    // Server path
-                                                                                    photoUrl = `${getAPI_URL()}${photo}`;
-                                                                                } else {
-                                                                                    // Object ID
-                                                                                    photoUrl = `${getAPI_URL()}/objects/${photo}`;
-                                                                                }
-                                                                                return (
-                                                                                    <Image
-                                                                                        key={photoIdx}
-                                                                                        source={{ uri: photoUrl }}
-                                                                                        style={styles.photoThumbnail as ImageStyle}
-                                                                                    />
-                                                                                );
-                                                                            })}
-                                                                        </ScrollView>
-                                                                    </View>
+                                                            )}
+                                                            {sectionHasCleanliness && (
+                                                                <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
+                                                                    {field.includeCleanliness && cleanliness !== null && cleanliness !== undefined ? (
+                                                                        <View style={styles.conditionRow}>
+                                                                            <View style={[styles.conditionDot, { backgroundColor: getCleanlinessColor(cleanliness) }]} />
+                                                                            <Text style={[styles.conditionText, { color: themeColors.text.primary }]} numberOfLines={1}>
+                                                                                {formatCleanliness(cleanliness)}
+                                                                            </Text>
+                                                                            <Text style={[styles.scoreText, { color: themeColors.text.muted }]}>
+                                                                                ({getCleanlinessScore(cleanliness)})
+                                                                            </Text>
+                                                                        </View>
+                                                                    ) : (
+                                                                        <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
+                                                                    )}
+                                                                </View>
+                                                            )}
+                                                            <View style={[styles.tableCell, { width: width * 0.10, alignItems: 'center', justifyContent: 'center' }]}>
+                                                                {photoCount > 0 ? (
+                                                                    <TouchableOpacity
+                                                                        onPress={() => togglePhotoExpansion(photoKey)}
+                                                                        style={styles.photoButton}
+                                                                        activeOpacity={0.7}
+                                                                    >
+                                                                        <Camera size={12} color={themeColors.primary.DEFAULT} />
+                                                                        <Text style={[styles.photoCountText, { color: themeColors.text.primary }]} numberOfLines={1}>
+                                                                            {photoCount}
+                                                                        </Text>
+                                                                    </TouchableOpacity>
+                                                                ) : (
+                                                                    <Text style={[styles.emptyText, { color: themeColors.text.muted }]}>-</Text>
                                                                 )}
                                                             </View>
-                                                        );
+
+                                                            {/* Expanded Photos */}
+                                                            {isPhotoExpanded && photoCount > 0 && (
+                                                                <View style={[styles.photoExpansionContainer, { borderTopColor: themeColors.border.light }]}>
+                                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScrollView}>
+                                                                        {entry.photos?.map((photo: string, photoIdx: number) => {
+                                                                            // Handle both local and server images
+                                                                            let photoUrl: string;
+                                                                            if (isLocalPath(photo)) {
+                                                                                // Local offline image - use local path
+                                                                                const imageSource = getImageSource(photo);
+                                                                                photoUrl = imageSource.uri;
+                                                                            } else if (photo.startsWith('http')) {
+                                                                                // Full URL
+                                                                                photoUrl = photo;
+                                                                            } else if (photo.startsWith('/')) {
+                                                                                // Server path
+                                                                                photoUrl = `${getAPI_URL()}${photo}`;
+                                                                            } else {
+                                                                                // Object ID
+                                                                                photoUrl = `${getAPI_URL()}/objects/${photo}`;
+                                                                            }
+                                                                            return (
+                                                                                <Image
+                                                                                    key={photoIdx}
+                                                                                    source={{ uri: photoUrl }}
+                                                                                    style={styles.photoThumbnail as ImageStyle}
+                                                                                />
+                                                                            );
+                                                                        })}
+                                                                    </ScrollView>
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    );
                                                     })
                                                 )}
                                             </View>

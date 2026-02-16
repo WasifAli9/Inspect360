@@ -271,11 +271,33 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     onChange(composedValue, localNote, localPhotos);
   };
 
+  // Debounce note changes to prevent lag - only save after user stops typing
+  const noteDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   const handleNoteChange = (newNote: string) => {
+    // Update local state immediately for responsive UI
     setLocalNote(newNote);
-    const composedValue = composeValue(localValue, localCondition, localCleanliness);
-    onChange(composedValue, newNote, localPhotos);
+    
+    // Clear existing timeout
+    if (noteDebounceTimeoutRef.current) {
+      clearTimeout(noteDebounceTimeoutRef.current);
+    }
+    
+    // Debounce the save operation - wait 800ms after user stops typing
+    noteDebounceTimeoutRef.current = setTimeout(() => {
+      const composedValue = composeValue(localValue, localCondition, localCleanliness);
+      onChange(composedValue, newNote, localPhotos);
+    }, 800);
   };
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (noteDebounceTimeoutRef.current) {
+        clearTimeout(noteDebounceTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleConditionChange = (conditionValue: string) => {
     try {
