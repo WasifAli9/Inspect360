@@ -16739,6 +16739,116 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
+  // Audio transcription endpoint using OpenAI Whisper API
+  app.post("/api/audio/transcribe", isAuthenticated, upload.single('audio'), async (req: any, res: any) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No audio file uploaded" });
+      }
+
+      // Validate audio file type
+      const allowedMimeTypes = [
+        'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/webm', 
+        'audio/ogg', 'audio/m4a', 'audio/x-m4a', 'audio/mp4'
+      ];
+      
+      if (!allowedMimeTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({ 
+          error: "Invalid audio format. Supported formats: MP3, WAV, WebM, OGG, M4A, MP4" 
+        });
+      }
+
+      // Check file size (max 25MB for Whisper API)
+      const maxSize = 25 * 1024 * 1024; // 25MB
+      if (req.file.size > maxSize) {
+        return res.status(400).json({ 
+          error: "Audio file too large. Maximum size is 25MB" 
+        });
+      }
+
+      // Get OpenAI client
+      const openaiClient = getOpenAI();
+
+      // Create a File object for OpenAI API
+      // Node.js 18+ has native File support, but we'll handle both cases
+      let audioFile: any;
+      
+      // Check if File is available (Node.js 18+)
+      if (typeof File !== 'undefined' && typeof globalThis.File !== 'undefined') {
+        audioFile = new File(
+          [req.file.buffer],
+          req.file.originalname || 'audio.webm',
+          { type: req.file.mimetype }
+        );
+      } else {
+        // Fallback for older Node.js: create a File-like object
+        // OpenAI SDK accepts objects with stream() method
+        const { Readable } = await import('stream');
+        const stream = Readable.from(req.file.buffer);
+        audioFile = {
+          stream: () => stream,
+          arrayBuffer: async () => {
+            if (req.file.buffer instanceof Buffer) {
+              return req.file.buffer.buffer.slice(
+                req.file.buffer.byteOffset,
+                req.file.buffer.byteOffset + req.file.buffer.byteLength
+              );
+            }
+            return req.file.buffer;
+          },
+          text: async () => '',
+          size: req.file.size,
+          type: req.file.mimetype,
+          name: req.file.originalname || 'audio.webm',
+          lastModified: Date.now(),
+        };
+      }
+
+      // Call OpenAI Whisper API for transcription
+      const transcription = await openaiClient.audio.transcriptions.create({
+        file: audioFile as any,
+        model: "whisper-1",
+        language: "en", // Optional: specify language for better accuracy
+        response_format: "text"
+      });
+
+      // Extract transcribed text
+      // Whisper API with response_format: "text" returns a string directly
+      const transcribedText = typeof transcription === 'string' 
+        ? transcription 
+        : (transcription as any)?.text || String(transcription || '').trim();
+
+      if (!transcribedText || transcribedText.trim().length === 0) {
+        return res.status(500).json({ 
+          error: "Transcription returned empty result" 
+        });
+      }
+
+      res.json({ 
+        text: transcribedText.trim() 
+      });
+    } catch (error: any) {
+      console.error("Error in audio transcription:", error);
+      
+      // Handle specific OpenAI errors
+      if (error?.message?.includes('OpenAI') || error?.status === 401) {
+        return res.status(500).json({ 
+          error: "OpenAI API error. Please check your API configuration." 
+        });
+      }
+      
+      if (error?.status === 413 || error?.message?.includes('too large')) {
+        return res.status(400).json({ 
+          error: "Audio file too large. Maximum size is 25MB" 
+        });
+      }
+
+      res.status(500).json({ 
+        error: error?.message || "Failed to transcribe audio" 
+      });
+    }
+  });
+
   // Handle PUT requests (for Uppy AwsS3 plugin - raw body, not multer)
   // IMPORTANT: This endpoint must ALWAYS return JSON on errors to prevent HTML parsing errors in Uppy
   app.put("/api/objects/upload-direct", async (req: any, res: any) => {

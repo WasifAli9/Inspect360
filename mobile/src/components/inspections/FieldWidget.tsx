@@ -10,6 +10,7 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  ImageStyle,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -19,7 +20,8 @@ import Card from '../ui/Card';
 import Button from '../ui/Button';
 import DatePicker from '../ui/DatePicker';
 import Select from '../ui/Select';
-import { Star, Camera as CameraIcon, Image as ImageIcon, X, Sparkles, Wrench, Trash2, Calendar, Clock, Eye, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { Star, Camera as CameraIcon, Image as ImageIcon, X, Sparkles, Wrench, Trash2, Calendar, Clock, Eye, CheckCircle2, AlertCircle, Mic, Square } from 'lucide-react-native';
+import { Audio } from 'expo-av';
 import { inspectionsService } from '../../services/inspections';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { storeImageLocally, getImageSource, isLocalPath } from '../../services/offline/storage';
@@ -137,6 +139,14 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   const [localMarkedForReview, setLocalMarkedForReview] = useState(!!markedForReview);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [showPhotoViewer, setShowPhotoViewer] = useState(false);
+  
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [hasRecorded, setHasRecorded] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [analyzingField, setAnalyzingField] = useState(false);
   const [analyzingPhoto, setAnalyzingPhoto] = useState<string | null>(null);
@@ -227,6 +237,20 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   useEffect(() => {
     setLocalMarkedForReview(!!markedForReview);
   }, [markedForReview]);
+
+  // Cleanup recording timer and audio recording on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      if (recordingRef.current) {
+        recordingRef.current.stopAndUnloadAsync().catch(() => {
+          // Ignore errors during cleanup
+        });
+      }
+    };
+  }, []);
 
   // Auto-populate auto fields
   useEffect(() => {
@@ -915,9 +939,14 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         return;
       }
 
-      setLocalNote(result.analysis);
+      // Prepend AI analysis to existing notes (append before existing data)
+      const existingNote = localNote || '';
+      const newNote = existingNote 
+        ? `${result.analysis}\n\n${existingNote}`
+        : result.analysis;
+      setLocalNote(newNote);
       const composedValue = composeValue(localValue, localCondition, localCleanliness);
-      onChange(composedValue, result.analysis, localPhotos);
+      onChange(composedValue, newNote, localPhotos);
 
       queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
       Alert.alert('AI Analysis Complete', 'Analysis has been added to the notes field');
@@ -1075,7 +1104,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
             </Text>
             {localValue ? (
               <View style={styles.signaturePreview}>
-                <Image source={{ uri: localValue }} style={styles.signatureImage} />
+                <Image source={{ uri: localValue }} style={styles.signatureImage as ImageStyle} />
                 <Button
                   title="Clear"
                   onPress={() => {
@@ -1163,7 +1192,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                         ? `${getAPI_URL()}${photoUrl}`
                         : `${getAPI_URL()}/objects/${photoUrl}`
                   }}
-                  style={styles.checkInPhoto}
+                  style={styles.checkInPhoto as ImageStyle}
                 />
               ))}
             </ScrollView>
@@ -1255,7 +1284,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                     >
                       <Image 
                         source={imageSource} 
-                        style={[styles.photoThumbnail, { borderColor: themeColors.border.DEFAULT, backgroundColor: themeColors.muted?.DEFAULT || themeColors.card.DEFAULT }]} 
+                        style={[styles.photoThumbnail, { borderColor: themeColors.border.DEFAULT, backgroundColor: themeColors.muted?.DEFAULT || themeColors.card.DEFAULT }] as ImageStyle} 
                         resizeMode="cover"
                         onError={(error) => {
                           const errorMsg = error?.nativeEvent?.error || 'Unknown error';
@@ -1400,7 +1429,288 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         </Card>
       )}
 
-      {/* Notes - now shown for ALL field types including photo fields */}
+      {/* Voice Recording - only shown for photo fields, BEFORE notes */}
+      {(safeField.type === 'photo' || safeField.type === 'photo_array') && (
+        <View style={styles.notesContainer}>
+          <Text style={[styles.notesLabel, { color: themeColors.text.secondary }]}>Voice Recording</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            {!isRecording && !hasRecorded && (
+              <Button
+                title="Start Recording"
+                onPress={async () => {
+                  try {
+                    // Request audio permissions
+                    const { status } = await Audio.requestPermissionsAsync();
+                    if (status !== 'granted') {
+                      Alert.alert(
+                        'Permission Required',
+                        'Microphone permission is required to record voice notes.',
+                        [{ text: 'OK' }]
+                      );
+                      return;
+                    }
+
+                    // Set audio mode for recording
+                    await Audio.setAudioModeAsync({
+                      allowsRecordingIOS: true,
+                      playsInSilentModeIOS: true,
+                    });
+
+                    // Create and start recording
+                    const { recording } = await Audio.Recording.createAsync(
+                      Audio.RecordingOptionsPresets.HIGH_QUALITY
+                    );
+                    
+                    recordingRef.current = recording;
+                    setIsRecording(true);
+                    setRecordingTime(0);
+                    setHasRecorded(false);
+                    
+                    // Start timer
+                    recordingTimerRef.current = setInterval(() => {
+                      setRecordingTime(prev => prev + 1);
+                    }, 1000);
+                  } catch (error: any) {
+                    Alert.alert(
+                      'Recording Failed',
+                      error.message || 'Could not start recording. Please try again.'
+                    );
+                  }
+                }}
+                variant="outline"
+                icon={<Mic size={16} color={themeColors.primary.DEFAULT} />}
+                style={{ flex: 1, minWidth: 120 }}
+              />
+            )}
+            
+            {isRecording && (
+              <>
+                <Button
+                  title={`Stop (${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')})`}
+                  onPress={async () => {
+                    try {
+                      if (recordingRef.current) {
+                        await recordingRef.current.stopAndUnloadAsync();
+                        setIsRecording(false);
+                        setHasRecorded(true);
+                        if (recordingTimerRef.current) {
+                          clearInterval(recordingTimerRef.current);
+                          recordingTimerRef.current = null;
+                        }
+                      }
+                    } catch (error: any) {
+                      Alert.alert('Error', 'Failed to stop recording');
+                    }
+                  }}
+                  variant="destructive"
+                  icon={<Square size={16} color="#fff" />}
+                  style={{ flex: 1, minWidth: 120 }}
+                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' }} />
+                  <Text style={{ fontSize: 12, color: themeColors.text.secondary }}>Recording...</Text>
+                </View>
+              </>
+            )}
+            
+            {hasRecorded && !isRecording && (
+              <View style={{ flexDirection: 'row', gap: 8, flex: 1, flexWrap: 'wrap' }}>
+                <Button
+                  title={isTranscribing ? "Transcribing..." : "Convert to Text"}
+                  onPress={async () => {
+                    if (!recordingRef.current) {
+                      Alert.alert('Error', 'No recording available');
+                      return;
+                    }
+
+                    // Check network status
+                    if (!isOnline) {
+                      Alert.alert(
+                        'No Internet Connection',
+                        'An internet connection is required to transcribe audio. Please check your network and try again.'
+                      );
+                      return;
+                    }
+                    
+                    setIsTranscribing(true);
+                    
+                    // Retry logic with exponential backoff
+                    const maxRetries = 3;
+                    let lastError: any = null;
+                    
+                    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                      try {
+                        const uri = recordingRef.current.getURI();
+                        if (!uri) {
+                          throw new Error('No recording URI available');
+                        }
+
+                        // Read file info to verify it exists and check size
+                        const fileInfo = await FileSystem.getInfoAsync(uri);
+                        if (!fileInfo.exists) {
+                          throw new Error('Recording file not found');
+                        }
+
+                        // Check file size (max 25MB for Whisper API)
+                        const maxSize = 25 * 1024 * 1024; // 25MB
+                        if (fileInfo.size && fileInfo.size > maxSize) {
+                          throw new Error(`Audio file is too large (${Math.round(fileInfo.size / 1024 / 1024)}MB). Maximum size is 25MB. Please record a shorter audio.`);
+                        }
+
+                        // Create FormData for upload (React Native format)
+                        const formData = new FormData();
+                        // React Native FormData format - ensure URI is properly formatted
+                        const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+                        
+                        // Determine audio format based on platform and file extension
+                        const audioType = Platform.OS === 'ios' 
+                          ? 'audio/m4a' 
+                          : uri.endsWith('.m4a') 
+                            ? 'audio/m4a' 
+                            : uri.endsWith('.mp4')
+                              ? 'audio/mp4'
+                              : 'audio/m4a'; // Default to m4a
+                        
+                        const fileName = uri.split('/').pop() || 'recording.m4a';
+                        
+                        formData.append('audio', {
+                          uri: fileUri,
+                          type: audioType,
+                          name: fileName,
+                        } as any);
+
+                        // Upload and transcribe with timeout
+                        const apiUrl = getAPI_URL();
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+                        
+                        console.log('[Voice Recording] Starting transcription upload:', {
+                          apiUrl: `${apiUrl}/api/audio/transcribe`,
+                          fileUri: fileUri.substring(0, 50) + '...',
+                          fileSize: fileInfo.size,
+                          audioType,
+                          attempt,
+                        });
+                        
+                        try {
+                          const response = await fetch(`${apiUrl}/api/audio/transcribe`, {
+                            method: 'POST',
+                            body: formData,
+                            headers: {
+                              'Accept': 'application/json',
+                              // Don't set Content-Type - let fetch set it with boundary for FormData
+                            },
+                            credentials: 'include',
+                            signal: controller.signal,
+                          });
+
+                          clearTimeout(timeoutId);
+
+                          if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                            throw new Error(errorData.error || errorData.message || `Server error: ${response.status}`);
+                          }
+
+                          const result = await response.json();
+                          
+                          if (result.text) {
+                            // Append transcribed text to notes with "Inspector Comments:" header
+                            const existingNote = localNote || '';
+                            const transcribedText = `Inspector Comments: ${result.text}`;
+                            const newNote = existingNote 
+                              ? `${existingNote}\n\n${transcribedText}`
+                              : transcribedText;
+                            
+                            setLocalNote(newNote);
+                            handleNoteChange(newNote);
+                            
+                            Alert.alert(
+                              'Transcription Complete',
+                              'Voice recording has been converted to text and added to notes.'
+                            );
+                            
+                            // Reset recording state
+                            setHasRecorded(false);
+                            recordingRef.current = null;
+                            setIsTranscribing(false);
+                            return; // Success - exit retry loop
+                          } else {
+                            throw new Error('No transcription text received');
+                          }
+                        } catch (fetchError: any) {
+                          clearTimeout(timeoutId);
+                          console.error(`[Voice Recording] Fetch error on attempt ${attempt}:`, {
+                            name: fetchError.name,
+                            message: fetchError.message,
+                            stack: fetchError.stack,
+                          });
+                          
+                          if (fetchError.name === 'AbortError') {
+                            throw new Error('Request timeout. The audio file may be too large or the connection is slow.');
+                          }
+                          
+                          // Handle network errors specifically
+                          if (fetchError.message?.includes('Network request failed') || 
+                              fetchError.message?.includes('Failed to fetch') ||
+                              fetchError.message?.includes('NetworkError')) {
+                            throw new Error('Network request failed. Please check your internet connection and try again.');
+                          }
+                          
+                          throw fetchError;
+                        }
+                      } catch (error: any) {
+                        lastError = error;
+                        console.error(`Transcription attempt ${attempt} failed:`, error);
+                        
+                        // If this is the last attempt, show error
+                        if (attempt === maxRetries) {
+                          break;
+                        }
+                        
+                        // Wait before retrying (exponential backoff)
+                        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                        await new Promise<void>(resolve => setTimeout(() => resolve(), delay));
+                      }
+                    }
+                    
+                    // All retries failed
+                    setIsTranscribing(false);
+                    const errorMessage = lastError?.message || 'Failed to transcribe audio';
+                    const isNetworkError = errorMessage.includes('Network') || 
+                                          errorMessage.includes('timeout') ||
+                                          errorMessage.includes('Failed to fetch');
+                    
+                    Alert.alert(
+                      'Transcription Failed',
+                      isNetworkError
+                        ? 'Network error occurred. Please check your internet connection and try again.'
+                        : errorMessage + '. Please try again.'
+                    );
+                  }}
+                  disabled={isTranscribing}
+                  loading={isTranscribing}
+                  variant="default"
+                  icon={!isTranscribing ? <Sparkles size={16} color="#fff" /> : undefined}
+                  style={{ flex: 1, minWidth: 120 }}
+                />
+                <Button
+                  title="Cancel"
+                  onPress={() => {
+                    setHasRecorded(false);
+                    recordingRef.current = null;
+                    setRecordingTime(0);
+                  }}
+                  variant="outline"
+                  icon={<X size={16} color={themeColors.text.secondary} />}
+                />
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Notes - only shown for photo fields */}
+      {(safeField.type === 'photo' || safeField.type === 'photo_array') && (
       <View style={styles.notesContainer}>
         <Text style={[styles.notesLabel, { color: themeColors.text.secondary }]}>Notes (optional)</Text>
         <Input
@@ -1419,9 +1729,10 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           </View>
         )}
       </View>
+      )}
 
-      {/* Maintenance Logging */}
-      {localPhotos.length > 0 && onLogMaintenance && (
+      {/* Maintenance Logging - only shown for photo fields */}
+      {(safeField.type === 'photo' || safeField.type === 'photo_array') && localPhotos.length > 0 && onLogMaintenance && (
         <TouchableOpacity
           style={styles.maintenanceButton}
           onPress={() => onLogMaintenance?.(safeField.label, localPhotos)}
@@ -1539,7 +1850,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           {selectedPhoto && (
             <Image 
               source={isLocalPath(selectedPhoto) ? getImageSource(selectedPhoto) : { uri: selectedPhoto }} 
-              style={styles.photoViewer} 
+              style={styles.photoViewer as ImageStyle} 
               resizeMode="contain" 
               onError={(error) => {
                 console.error('[FieldWidget] Photo viewer image load error:', error.nativeEvent.error, 'for URL:', selectedPhoto);
@@ -1923,7 +2234,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   aiButtonDisabled: {
-    backgroundColor: colors.muted || '#9CA3AF',
+    backgroundColor: (typeof colors.muted === 'string' ? colors.muted : colors.muted?.DEFAULT) || '#9CA3AF',
     opacity: 0.6,
     borderRadius: borderRadius.lg,
     gap: spacing[2],

@@ -635,13 +635,20 @@ function generateInspectionHTML(
     const cleanlinessScore = getCleanlinessScore(cleanliness);
     const photoCount = photos.length;
 
-    // Determine description value
-    let descriptionValue = '-';
+    // Determine description value - check if it's a signature (base64 image)
+    const isSignature = field.type === 'signature' || 
+                       (typeof description === 'string' && description.startsWith('data:image'));
+    
+    let descriptionHTML = '-';
     if (description !== null && description !== '') {
-      if (typeof description === 'string') {
-        descriptionValue = description.length > 50 ? description.substring(0, 50) + '...' : description;
+      if (isSignature && typeof description === 'string') {
+        // Render signature as image
+        descriptionHTML = `<img src="${description}" alt="Signature" style="max-width: 200px; max-height: 80px; border: 1px solid #e5e7eb; border-radius: 4px;" />`;
+      } else if (typeof description === 'string') {
+        const descriptionValue = description.length > 50 ? description.substring(0, 50) + '...' : description;
+        descriptionHTML = escapeHtml(descriptionValue);
       } else {
-        descriptionValue = String(description);
+        descriptionHTML = escapeHtml(String(description));
       }
     }
 
@@ -651,7 +658,7 @@ function generateInspectionHTML(
           ${escapeHtml(field.label)}
         </td>
         <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; color: #666;">
-          ${escapeHtml(descriptionValue)}
+          ${descriptionHTML}
         </td>
         ${sectionHasCondition ? `
           <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb; text-align: center;">

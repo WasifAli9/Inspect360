@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye, Wrench, ZoomIn } from "lucide-react";
+import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye, Wrench, ZoomIn, Mic, Square, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -107,6 +107,16 @@ export function FieldWidget({
     notes?: string;
   } | null>(null);
   const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
+  
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [hasRecorded, setHasRecorded] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -161,6 +171,19 @@ export function FieldWidget({
   useEffect(() => {
     setLocalPhotos(photos || []);
   }, [photos]);
+
+  // Cleanup recording timer and media recorder on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setLocalMarkedForReview(markedForReview || false);
@@ -427,8 +450,11 @@ export function FieldWidget({
         return;
       }
 
-      // Auto-populate the notes field with the AI analysis
-      const newNote = analysis;
+      // Auto-populate the notes field with the AI analysis (prepend to existing notes)
+      const existingNote = localNote || '';
+      const newNote = existingNote 
+        ? `${analysis}\n\n${existingNote}`
+        : analysis;
       setLocalNote(newNote);
       const composedValue = composeValue(localValue, localCondition, localCleanliness);
       onChange(composedValue, newNote, localPhotos);
@@ -1834,8 +1860,8 @@ export function FieldWidget({
         </div>
       )}
 
-      {/* Log Maintenance Button - available for all fields during inspection */}
-      {inspectionId && onLogMaintenance && (
+      {/* Log Maintenance Button - only available for photo fields */}
+      {inspectionId && onLogMaintenance && (field.type === "photo" || field.type === "photo_array") && (
         <div className="pt-2">
           <Button
             type="button"
@@ -1853,21 +1879,208 @@ export function FieldWidget({
         </div>
       )}
 
-      {/* Optional notes */}
-      <div className="pt-2">
-        <Label htmlFor={`note-${field.id}`} className="text-sm font-bold text-muted-foreground">
-          Notes (optional)
-        </Label>
-        <Textarea
-          id={`note-${field.id}`}
-          value={localNote}
-          onChange={(e) => handleNoteChange(e.target.value)}
-          placeholder="Add any observations or notes..."
-          rows={2}
-          className="mt-1"
-          data-testid={`textarea-note-${field.id}`}
-        />
-      </div>
+      {/* Voice Recording - only shown for photo fields, BEFORE notes */}
+      {(field.type === "photo" || field.type === "photo_array") && (
+        <div className="pt-2 space-y-2">
+          <Label className="text-sm font-bold text-muted-foreground">
+            Voice Recording
+          </Label>
+          <div className="flex items-center gap-2">
+            {!isRecording && !hasRecorded && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const mediaRecorder = new MediaRecorder(stream, {
+                      mimeType: 'audio/webm;codecs=opus'
+                    });
+                    
+                    mediaRecorderRef.current = mediaRecorder;
+                    audioChunksRef.current = [];
+                    
+                    mediaRecorder.ondataavailable = (event) => {
+                      if (event.data.size > 0) {
+                        audioChunksRef.current.push(event.data);
+                      }
+                    };
+                    
+                    mediaRecorder.onstop = () => {
+                      stream.getTracks().forEach(track => track.stop());
+                    };
+                    
+                    mediaRecorder.start();
+                    setIsRecording(true);
+                    setRecordingTime(0);
+                    setHasRecorded(false);
+                    
+                    // Start timer
+                    recordingTimerRef.current = setInterval(() => {
+                      setRecordingTime(prev => prev + 1);
+                    }, 1000);
+                  } catch (error: any) {
+                    toast({
+                      title: "Recording Failed",
+                      description: error.message || "Could not access microphone. Please check permissions.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                data-testid={`button-start-recording-${field.id}`}
+              >
+                <Mic className="w-4 h-4 mr-2" />
+                Start Recording
+              </Button>
+            )}
+            
+            {isRecording && (
+              <>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => {
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+                      mediaRecorderRef.current.stop();
+                      setIsRecording(false);
+                      setHasRecorded(true);
+                      if (recordingTimerRef.current) {
+                        clearInterval(recordingTimerRef.current);
+                        recordingTimerRef.current = null;
+                      }
+                    }
+                  }}
+                  data-testid={`button-stop-recording-${field.id}`}
+                >
+                  <Square className="w-4 h-4 mr-2" />
+                  Stop ({Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')})
+                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-sm text-muted-foreground">Recording...</span>
+                </div>
+              </>
+            )}
+            
+            {hasRecorded && !isRecording && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="default"
+                  onClick={async () => {
+                    if (audioChunksRef.current.length === 0) {
+                      toast({
+                        title: "No Recording",
+                        description: "Please record audio first.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    
+                    setIsTranscribing(true);
+                    try {
+                      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                      const formData = new FormData();
+                      formData.append('audio', audioBlob, 'recording.webm');
+                      
+                      // Use fetch directly for FormData (apiRequest always uses JSON)
+                      const response = await fetch('/api/audio/transcribe', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include',
+                      });
+                      
+                      if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                        throw new Error(errorData.error || errorData.message || 'Transcription failed');
+                      }
+                      
+                      const result = await response.json();
+                      
+                      if (result.text) {
+                        // Append transcribed text to notes with "Inspector Comments:" header
+                        const existingNote = localNote || '';
+                        const transcribedText = `Inspector Comments: ${result.text}`;
+                        const newNote = existingNote 
+                          ? `${existingNote}\n\n${transcribedText}`
+                          : transcribedText;
+                        
+                        setLocalNote(newNote);
+                        handleNoteChange(newNote);
+                        
+                        toast({
+                          title: "Transcription Complete",
+                          description: "Voice recording has been converted to text and added to notes.",
+                        });
+                        
+                        // Reset recording state
+                        setHasRecorded(false);
+                        audioChunksRef.current = [];
+                      } else {
+                        throw new Error("No transcription text received");
+                      }
+                    } catch (error: any) {
+                      console.error("Transcription error:", error);
+                      toast({
+                        title: "Transcription Failed",
+                        description: error.message || "Failed to transcribe audio. Please try again.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsTranscribing(false);
+                    }
+                  }}
+                  disabled={isTranscribing}
+                  data-testid={`button-transcribe-${field.id}`}
+                >
+                  {isTranscribing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Transcribing...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Convert to Text
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setHasRecorded(false);
+                    audioChunksRef.current = [];
+                    setRecordingTime(0);
+                  }}
+                  data-testid={`button-cancel-recording-${field.id}`}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Optional notes - only shown for photo fields */}
+      {(field.type === "photo" || field.type === "photo_array") && (
+        <div className="pt-2">
+          <Label htmlFor={`note-${field.id}`} className="text-sm font-bold text-muted-foreground">
+            Notes (optional)
+          </Label>
+          <Textarea
+            id={`note-${field.id}`}
+            value={localNote}
+            onChange={(e) => handleNoteChange(e.target.value)}
+            placeholder="Add any observations or notes..."
+            rows={2}
+            className="mt-1"
+            data-testid={`textarea-note-${field.id}`}
+          />
+        </div>
+      )}
 
       {/* Mark for Review - Only for Check Out inspections WITH photos */}
       {isCheckOut && localPhotos.length > 0 && (

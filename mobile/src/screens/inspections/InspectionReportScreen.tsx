@@ -7,9 +7,9 @@ import {
     TouchableOpacity,
     Image,
     Dimensions,
-    Share,
     Alert,
     ImageStyle,
+    Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -22,8 +22,8 @@ import {
     User as UserIcon,
     FileText,
     Camera,
-    Share2,
     Printer,
+    Share2,
     ChevronDown,
     ChevronUp,
     AlertTriangle,
@@ -111,16 +111,6 @@ const InspectionReportScreen = () => {
         }));
     };
 
-    const handleShare = async () => {
-        try {
-            if (!inspection) return;
-            await Share.share({
-                message: `Inspection Report for ${inspection.property?.name || inspection.block?.name || 'Property'}\nStatus: ${inspection.status}\nType: ${inspection.type}`,
-            });
-        } catch (error) {
-            Alert.alert('Error sharing report');
-        }
-    };
 
     const handlePrint = async () => {
         if (!inspection) return;
@@ -179,15 +169,41 @@ const InspectionReportScreen = () => {
                     mimeType: 'application/pdf',
                     dialogTitle: 'Save Inspection PDF',
                 });
-                Alert.alert('PDF Generated', 'Your inspection report has been saved and is ready to share.');
+                // PDF sharing dialog will handle user notification
             } else {
-                Alert.alert('PDF Generated', `PDF saved to: ${fileUri}`);
+                // PDF saved silently without alert
             }
         } catch (error: any) {
             console.error('Error generating PDF:', error);
             Alert.alert('Error', error.message || 'Failed to generate PDF report. Please try again.');
         } finally {
             setIsGeneratingPDF(false);
+        }
+    };
+
+    const handleOpenMap = async () => {
+        if (!propertyOrBlock?.address) {
+            Alert.alert('No Address', 'Address is not available for this property.');
+            return;
+        }
+
+        const address = propertyOrBlock.address;
+        // Encode the address for URL
+        const encodedAddress = encodeURIComponent(address);
+        
+        // Try to open in Google Maps app first, fallback to web
+        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+        
+        try {
+            const canOpen = await Linking.canOpenURL(googleMapsUrl);
+            if (canOpen) {
+                await Linking.openURL(googleMapsUrl);
+            } else {
+                Alert.alert('Error', 'Unable to open Google Maps. Please install Google Maps app.');
+            }
+        } catch (error) {
+            console.error('Error opening map:', error);
+            Alert.alert('Error', 'Failed to open Google Maps. Please try again.');
         }
     };
 
@@ -354,10 +370,7 @@ const InspectionReportScreen = () => {
                         style={[styles.iconButton, isGeneratingPDF && styles.iconButtonDisabled]}
                         disabled={isGeneratingPDF}
                     >
-                        <Printer size={24} color={isGeneratingPDF ? themeColors.text.muted : themeColors.primary.DEFAULT} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleShare} style={styles.iconButton}>
-                        <Share2 size={24} color={themeColors.primary.DEFAULT} />
+                        <Share2 size={24} color={isGeneratingPDF ? themeColors.text.muted : themeColors.primary.DEFAULT} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -395,9 +408,17 @@ const InspectionReportScreen = () => {
                             <Text style={[styles.infoLabel, { color: themeColors.text.secondary }]}>Property Address</Text>
                             <View style={styles.infoValueRow}>
                                 <MapPin size={16} color={themeColors.primary.DEFAULT} />
-                                <Text style={[styles.infoValue, { color: themeColors.text.primary }]} numberOfLines={2}>
+                                <Text style={[styles.infoValue, { color: themeColors.text.primary, flex: 1 }]} numberOfLines={2}>
                                     {propertyOrBlock?.address || 'No address'}
                                 </Text>
+                                {propertyOrBlock?.address && (
+                                    <TouchableOpacity
+                                        onPress={handleOpenMap}
+                                        style={[styles.mapButton, { backgroundColor: themeColors.primary.DEFAULT }]}
+                                    >
+                                        <Text style={[styles.mapButtonText, { color: themeColors.primary.foreground || '#ffffff' }]}>Map</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </View>
                         <View style={styles.infoItem}>
@@ -672,6 +693,10 @@ const InspectionReportScreen = () => {
                                                                                 description = entry.valueJson;
                                                                             }
                                                                         }
+                                                                        
+                                                                        // Check if this is a signature field (base64 image data)
+                                                                        const isSignature = field.type === 'signature' || 
+                                                                                           (typeof description === 'string' && description.startsWith('data:image'));
 
                                                                         const photoCount = entry.photos?.length || 0;
 
@@ -694,9 +719,17 @@ const InspectionReportScreen = () => {
                                                                                 <View style={[styles.tableCell, {
                                                                                     width: width * (sectionHasCondition && sectionHasCleanliness ? 0.35 : sectionHasCondition || sectionHasCleanliness ? 0.40 : 0.50)
                                                                                 }]}>
-                                                                                    <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
-                                                                                        {description || entry.note || '-'}
-                                                                                    </Text>
+                                                                                    {isSignature && description ? (
+                                                                                        <Image
+                                                                                            source={{ uri: description }}
+                                                                                            style={styles.signatureImage as ImageStyle}
+                                                                                            resizeMode="contain"
+                                                                                        />
+                                                                                    ) : (
+                                                                                        <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
+                                                                                            {description || entry.note || '-'}
+                                                                                        </Text>
+                                                                                    )}
                                                                                 </View>
                                                                                 {sectionHasCondition && (
                                                                                     <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
@@ -811,6 +844,10 @@ const InspectionReportScreen = () => {
                                                             description = entry.valueJson;
                                                         }
                                                     }
+                                                    
+                                                    // Check if this is a signature field (base64 image data)
+                                                    const isSignature = field.type === 'signature' || 
+                                                                       (typeof description === 'string' && description.startsWith('data:image'));
 
                                                     const photoCount = entry.photos?.length || 0;
 
@@ -833,9 +870,17 @@ const InspectionReportScreen = () => {
                                                             <View style={[styles.tableCell, {
                                                                 width: width * (sectionHasCondition && sectionHasCleanliness ? 0.35 : sectionHasCondition || sectionHasCleanliness ? 0.40 : 0.50)
                                                             }]}>
-                                                                <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
-                                                                    {description || entry.note || '-'}
-                                                                </Text>
+                                                                {isSignature && description ? (
+                                                                    <Image
+                                                                        source={{ uri: description }}
+                                                                        style={styles.signatureImage as ImageStyle}
+                                                                        resizeMode="contain"
+                                                                    />
+                                                                ) : (
+                                                                    <Text style={[styles.descriptionText, { color: themeColors.text.secondary }]} numberOfLines={3}>
+                                                                        {description || entry.note || '-'}
+                                                                    </Text>
+                                                                )}
                                                             </View>
                                                             {sectionHasCondition && (
                                                                 <View style={[styles.tableCell, { width: width * 0.15, alignItems: 'center', justifyContent: 'center' }]}>
@@ -1020,6 +1065,16 @@ const styles = StyleSheet.create({
         fontWeight: typography.fontWeight.medium,
         flex: 1,
     },
+    mapButton: {
+        paddingHorizontal: spacing[3],
+        paddingVertical: spacing[1],
+        borderRadius: borderRadius.md,
+        marginLeft: spacing[2],
+    },
+    mapButtonText: {
+        fontSize: typography.fontSize.sm,
+        fontWeight: typography.fontWeight.semibold,
+    },
     notesContainer: {
         marginTop: spacing[4],
         padding: spacing[3],
@@ -1168,6 +1223,13 @@ const styles = StyleSheet.create({
     descriptionText: {
         fontSize: typography.fontSize.xs - 1,
         lineHeight: (typography.fontSize.xs - 1) * 1.4,
+    },
+    signatureImage: {
+        width: 200,
+        height: 80,
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
     },
     conditionRow: {
         flexDirection: 'row',

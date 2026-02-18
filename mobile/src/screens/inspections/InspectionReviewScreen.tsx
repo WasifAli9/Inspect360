@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, Alert, Linking } from 'react-native';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute, useNavigation, CommonActions } from '@react-navigation/native';
 import type { RouteProp, NavigationProp } from '@react-navigation/native';
@@ -145,6 +145,32 @@ export default function InspectionReviewScreen() {
     return property?.name || block?.name || 'Unknown';
   };
 
+  const handleOpenMap = async () => {
+    const address = getPropertyAddress();
+    if (!address) {
+      Alert.alert('No Address', 'Address is not available for this property.');
+      return;
+    }
+
+    // Encode the address for URL
+    const encodedAddress = encodeURIComponent(address);
+    
+    // Try to open in Google Maps app first, fallback to web
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+    
+    try {
+      const canOpen = await Linking.canOpenURL(googleMapsUrl);
+      if (canOpen) {
+        await Linking.openURL(googleMapsUrl);
+      } else {
+        Alert.alert('Error', 'Unable to open Google Maps. Please install Google Maps app.');
+      }
+    } catch (error) {
+      console.error('Error opening map:', error);
+      Alert.alert('Error', 'Failed to open Google Maps. Please try again.');
+    }
+  };
+
   if (isLoading) {
     return <LoadingSpinner />;
   }
@@ -275,7 +301,17 @@ export default function InspectionReviewScreen() {
                   <MapPin size={16} color={themeColors.text.secondary} />
                   <Text style={[styles.propertyName, { color: themeColors.text.primary }]}>{getPropertyName()}</Text>
                 </View>
-                <Text style={[styles.propertyAddress, { color: themeColors.text.secondary }]}>{getPropertyAddress()}</Text>
+                <View style={[styles.cardInfoRow, { marginTop: spacing[1] }]}>
+                  <Text style={[styles.propertyAddress, { color: themeColors.text.secondary, flex: 1 }]}>{getPropertyAddress()}</Text>
+                  {getPropertyAddress() && (
+                    <TouchableOpacity
+                      onPress={handleOpenMap}
+                      style={[styles.mapButton, { backgroundColor: themeColors.primary.DEFAULT }]}
+                    >
+                      <Text style={[styles.mapButtonText, { color: themeColors.primary.foreground || '#ffffff' }]}>Map</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
               {clerk && (
                 <View style={styles.clerkSection}>
@@ -541,6 +577,16 @@ const styles = StyleSheet.create({
   propertyAddress: {
     fontSize: typography.fontSize.sm,
     marginLeft: 24, // Icon width + gap
+  },
+  mapButton: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.md,
+    marginLeft: spacing[2],
+  },
+  mapButtonText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
   },
   clerkSection: {
     marginTop: spacing[3],

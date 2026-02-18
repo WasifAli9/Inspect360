@@ -25,6 +25,7 @@ export default {
         NSCameraUsageDescription: "This app needs access to your camera to capture inspection photos.",
         NSPhotoLibraryUsageDescription: "This app needs access to your photo library to select images for inspections.",
         NSPhotoLibraryAddUsageDescription: "This app needs access to save photos to your library.",
+        NSMicrophoneUsageDescription: "This app needs access to your microphone to record voice notes for inspections.",
         NSFaceIDUsageDescription: "Use Face ID to login quickly and securely.",
         NSBiometricUsageDescription: "Use biometric authentication to login quickly and securely.",
         UIViewControllerBasedStatusBarAppearance: true,
@@ -45,6 +46,7 @@ export default {
       package: "com.inspect360.mobile",
       permissions: [
         "CAMERA",
+        "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "ACCESS_NETWORK_STATE",

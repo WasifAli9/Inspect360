@@ -11,6 +11,7 @@ import {
   FlatList,
   TextInput,
   Dimensions,
+  Linking,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
@@ -423,6 +424,31 @@ export default function InspectionsListScreen() {
       console.error('[InspectionsList] Refresh error:', error);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleOpenMap = async (address: string) => {
+    if (!address || address === 'No location') {
+      Alert.alert('No Address', 'Address is not available for this inspection.');
+      return;
+    }
+
+    // Encode the address for URL
+    const encodedAddress = encodeURIComponent(address);
+    
+    // Try to open in Google Maps app first, fallback to web
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
+    
+    try {
+      const canOpen = await Linking.canOpenURL(googleMapsUrl);
+      if (canOpen) {
+        await Linking.openURL(googleMapsUrl);
+      } else {
+        Alert.alert('Error', 'Unable to open Google Maps. Please install Google Maps app.');
+      }
+    } catch (error) {
+      console.error('Error opening map:', error);
+      Alert.alert('Error', 'Failed to open Google Maps. Please try again.');
     }
   };
 
@@ -852,9 +878,17 @@ export default function InspectionsListScreen() {
                     {/* Address */}
                     <View style={styles.infoRow}>
                       <MapPin size={14} color={themeColors.text.secondary} />
-                      <Text style={[styles.infoText, { color: themeColors.text.secondary }]}>
+                      <Text style={[styles.infoText, { color: themeColors.text.secondary, flex: 1 }]}>
                         {inspection.property?.address || inspection.block?.address || 'No location'}
                       </Text>
+                      {(inspection.property?.address || inspection.block?.address) && (
+                        <TouchableOpacity
+                          onPress={() => handleOpenMap(inspection.property?.address || inspection.block?.address || '')}
+                          style={[styles.mapButton, { backgroundColor: themeColors.primary.DEFAULT }]}
+                        >
+                          <Text style={[styles.mapButtonText, { color: themeColors.primary.foreground || '#ffffff' }]}>Map</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     {/* Type */}
@@ -1185,6 +1219,16 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: typography.fontSize.sm,
     flex: 1,
+  },
+  mapButton: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.md,
+    marginLeft: spacing[2],
+  },
+  mapButtonText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
   },
   actionButtons: {
     flexDirection: 'row',
