@@ -766,12 +766,15 @@ export default function InspectionCapture() {
     // Check if this is a photo removal operation (photos array passed but possibly empty)
     const isPhotoRemoval = photos !== undefined && existingEntry?.photos && existingEntry.photos.length > 0;
 
-    // Only save if there's a value or note/photos, OR if we're removing photos
+    // Only save if there's a value or note/photos/audioUrl, OR if we're removing photos
     // But for progress calculation, only count as complete if value exists
+    // Check if valueJson contains audioUrl (for voice notes)
+    const hasAudioUrl = value && typeof value === 'object' && 'audioUrl' in value && (value as any).audioUrl;
+    
     if (value === null || value === undefined) {
-      // If only notes/photos without value, still save but don't count as complete
+      // If only notes/photos/audioUrl without value, still save but don't count as complete
       // Also save if we're removing photos (to persist the removal)
-      if (!note && (!photos || photos.length === 0) && !isPhotoRemoval) {
+      if (!note && (!photos || photos.length === 0) && !isPhotoRemoval && !hasAudioUrl) {
         return; // Nothing to save
       }
     }

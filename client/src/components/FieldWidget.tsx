@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye, Wrench, ZoomIn, Mic, Square, Loader2 } from "lucide-react";
+import { Star, Upload, Calendar, Clock, MapPin, X, Image as ImageIcon, Sparkles, Trash2, Save, Eye, Wrench, ZoomIn, Mic, Square, Loader2, Play } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -90,6 +90,39 @@ export function FieldWidget({
   const [localNote, setLocalNote] = useState(note || "");
   const [localPhotos, setLocalPhotos] = useState<string[]>(photos || []);
   const [localMarkedForReview, setLocalMarkedForReview] = useState(markedForReview || false);
+  // Initialize audioUrl from valueJson if it exists
+  const initialAudioUrl = (value && typeof value === 'object' && 'audioUrl' in value) ? (value as any).audioUrl : null;
+  const [audioUrl, setAudioUrl] = useState<string | null>(initialAudioUrl);
+  
+  // Update audioUrl when value prop changes (e.g., when entries load from database)
+  useEffect(() => {
+    if (value && typeof value === 'object' && value !== null) {
+      // Check for audioUrl in value object (works for both condition/cleanliness fields and regular fields)
+      if ('audioUrl' in value && (value as any).audioUrl && typeof (value as any).audioUrl === 'string') {
+        const newAudioUrl = (value as any).audioUrl;
+        // Always update if it's different (even if audioUrl state exists, use the one from database)
+        setAudioUrl((prevAudioUrl) => {
+          if (newAudioUrl !== prevAudioUrl) {
+            return newAudioUrl;
+          }
+          return prevAudioUrl;
+        });
+      }
+      // Don't clear audioUrl if value object exists but doesn't have audioUrl
+      // (audioUrl might have been set from a previous value and not yet saved)
+    } else if (value === null || value === undefined) {
+      // Only clear audioUrl if value is explicitly null/undefined
+      // This prevents clearing when value is a string or other non-object type
+      setAudioUrl((prevAudioUrl) => {
+        if (prevAudioUrl) {
+          return null;
+        }
+        return prevAudioUrl;
+      });
+    }
+    // Note: We don't clear audioUrl if value is a string or other type
+    // because audioUrl is stored in valueJson object, not in the value itself
+  }, [value, field.includeCondition, field.includeCleanliness]);
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoUploadProgress, setPhotoUploadProgress] = useState(0);
@@ -113,6 +146,9 @@ export function FieldWidget({
   const [recordingTime, setRecordingTime] = useState(0);
   const [hasRecorded, setHasRecorded] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -237,32 +273,59 @@ export function FieldWidget({
     }
   }, [field.type, autoContext, value, onChange]);
 
-  const composeValue = (val: any, condition?: string, cleanliness?: string) => {
+  const composeValue = (val: any, condition?: string, cleanliness?: string, audioUrl?: string | null) => {
     if (field.includeCondition || field.includeCleanliness) {
-      return {
+      const result: any = {
         value: val,
         ...(field.includeCondition && { condition }),
         ...(field.includeCleanliness && { cleanliness }),
       };
+      // Always include audioUrl if it exists (even if null, we want to preserve it)
+      if (audioUrl !== undefined && audioUrl !== null) {
+        result.audioUrl = audioUrl;
+      }
+      return result;
+    }
+    // If no condition/cleanliness, store audioUrl in valueJson
+    // For photo fields, val might be null or a string, so we need to wrap it in an object if audioUrl exists
+    if (audioUrl) {
+      // If val is already an object, merge audioUrl into it
+      if (typeof val === 'object' && val !== null) {
+        return { ...val, audioUrl };
+      }
+      // If val is null, undefined, or a primitive, create an object with value and audioUrl
+      return { value: val !== undefined && val !== null ? val : null, audioUrl };
+    }
+    // If no audioUrl but val is already an object with audioUrl, preserve it
+    if (typeof val === 'object' && val !== null && 'audioUrl' in val) {
+      return val; // Preserve existing audioUrl even if audioUrl param is not provided
     }
     return val;
   };
 
   const handleValueChange = (newValue: any) => {
     setLocalValue(newValue);
-    const composedValue = composeValue(newValue, localCondition, localCleanliness);
+    const composedValue = composeValue(newValue, localCondition, localCleanliness, audioUrl);
+    onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
+  };
+  
+  // Update onChange calls to include audioUrl
+  const updateEntryWithAudio = (newAudioUrl?: string | null) => {
+    // Use provided audioUrl or current state
+    const urlToUse = newAudioUrl !== undefined ? newAudioUrl : audioUrl;
+    const composedValue = composeValue(localValue, localCondition, localCleanliness, urlToUse);
     onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
   };
 
   const handleConditionChange = (condition: string) => {
     setLocalCondition(condition);
-    const composedValue = composeValue(localValue, condition, localCleanliness);
+    const composedValue = composeValue(localValue, condition, localCleanliness, audioUrl);
     onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
   };
 
   const handleCleanlinessChange = (cleanliness: string) => {
     setLocalCleanliness(cleanliness);
-    const composedValue = composeValue(localValue, localCondition, cleanliness);
+    const composedValue = composeValue(localValue, localCondition, cleanliness, audioUrl);
     onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
   };
 
@@ -280,7 +343,7 @@ export function FieldWidget({
     
     // Debounce the save operation - wait 800ms after user stops typing
     noteDebounceTimeoutRef.current = setTimeout(() => {
-      const composedValue = composeValue(localValue, localCondition, localCleanliness);
+      const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
       onChange(composedValue, newNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
     }, 800);
   };
@@ -329,7 +392,7 @@ export function FieldWidget({
         }
 
         // Trigger onChange with AI-suggested values (use suggestion values directly, not stale state)
-        const composedValue = composeValue(localValue, newCondition, newCleanliness);
+        const composedValue = composeValue(localValue, newCondition, newCleanliness, audioUrl);
         onChange(composedValue, localNote || undefined, currentPhotos);
 
         toast({
@@ -378,7 +441,7 @@ export function FieldWidget({
       // Schedule the onChange call after state update with the new photos
       // Using setTimeout to ensure we have the latest state
       setTimeout(() => {
-        const composedValue = composeValue(localValue, localCondition, localCleanliness);
+        const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
         onChange(composedValue, localNote || undefined, newPhotos);
         
         // Invalidate inspection entries to ensure report page gets updated photos
@@ -405,7 +468,7 @@ export function FieldWidget({
   const handlePhotoRemove = (photoUrl: string) => {
     const newPhotos = localPhotos.filter((p) => p !== photoUrl);
     setLocalPhotos(newPhotos);
-    const composedValue = composeValue(localValue, localCondition, localCleanliness);
+    const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
     // Always pass the photos array (even if empty) to ensure the removal is saved
     onChange(composedValue, localNote || undefined, newPhotos);
     
@@ -456,7 +519,7 @@ export function FieldWidget({
         ? `${analysis}\n\n${existingNote}`
         : analysis;
       setLocalNote(newNote);
-      const composedValue = composeValue(localValue, localCondition, localCleanliness);
+      const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
       onChange(composedValue, newNote, localPhotos);
 
       // Invalidate organization query to update credit balance on dashboard and billing pages
@@ -1939,7 +2002,7 @@ export function FieldWidget({
                 <Button
                   type="button"
                   variant="destructive"
-                  onClick={() => {
+                  onClick={async () => {
                     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                       mediaRecorderRef.current.stop();
                       setIsRecording(false);
@@ -1948,12 +2011,61 @@ export function FieldWidget({
                         clearInterval(recordingTimerRef.current);
                         recordingTimerRef.current = null;
                       }
+                      
+                      // Upload audio immediately after stopping recording to save it to database
+                      if (audioChunksRef.current.length > 0) {
+                        setIsUploadingAudio(true);
+                        try {
+                          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                          
+                          // Upload the audio file to the server
+                          const uploadFormData = new FormData();
+                          uploadFormData.append('file', audioBlob, 'voice-note.webm');
+                          
+                          const uploadResponse = await fetch('/api/objects/upload-file', {
+                            method: 'POST',
+                            body: uploadFormData,
+                            credentials: 'include',
+                          });
+                          
+                          if (!uploadResponse.ok) {
+                            throw new Error('Failed to upload audio file');
+                          }
+                          
+                          const uploadResult = await uploadResponse.json();
+                          const uploadedAudioUrl = uploadResult.url || uploadResult.objectId;
+                          
+                          if (!uploadedAudioUrl) {
+                            throw new Error('No audio URL returned from upload');
+                          }
+                          
+                          // Store the audio URL and save to database immediately
+                          setAudioUrl(uploadedAudioUrl);
+                          // Pass the audioUrl directly to avoid race condition with async state update
+                          updateEntryWithAudio(uploadedAudioUrl);
+                          
+                          toast({
+                            title: "Voice Note Saved",
+                            description: "Your voice note has been saved. You can transcribe it later or listen to it anytime.",
+                          });
+                        } catch (error: any) {
+                          console.error("Error uploading audio:", error);
+                          toast({
+                            title: "Upload Failed",
+                            description: "Voice note recorded but not saved. Please try transcribing it to save.",
+                            variant: "destructive",
+                          });
+                        } finally {
+                          setIsUploadingAudio(false);
+                        }
+                      }
                     }
                   }}
                   data-testid={`button-stop-recording-${field.id}`}
+                  disabled={isUploadingAudio}
                 >
                   <Square className="w-4 h-4 mr-2" />
-                  Stop ({Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')})
+                  {isUploadingAudio ? "Saving..." : `Stop (${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')})`}
                 </Button>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
@@ -1968,7 +2080,8 @@ export function FieldWidget({
                   type="button"
                   variant="default"
                   onClick={async () => {
-                    if (audioChunksRef.current.length === 0) {
+                    // Check if we have audio chunks (for transcription) or audio URL (already uploaded)
+                    if (audioChunksRef.current.length === 0 && !audioUrl) {
                       toast({
                         title: "No Recording",
                         description: "Please record audio first.",
@@ -1979,23 +2092,66 @@ export function FieldWidget({
                     
                     setIsTranscribing(true);
                     try {
-                      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                      const formData = new FormData();
-                      formData.append('audio', audioBlob, 'recording.webm');
+                      let audioBlob: Blob;
                       
-                      // Use fetch directly for FormData (apiRequest always uses JSON)
-                      const response = await fetch('/api/audio/transcribe', {
+                      // If audio is already uploaded, we still need the blob for transcription
+                      // But we can skip the upload step
+                      if (audioChunksRef.current.length > 0) {
+                        audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                        
+                        // Only upload if not already uploaded
+                        if (!audioUrl) {
+                          setIsUploadingAudio(true);
+                          const uploadFormData = new FormData();
+                          uploadFormData.append('file', audioBlob, 'voice-note.webm');
+                          
+                          const uploadResponse = await fetch('/api/objects/upload-file', {
+                            method: 'POST',
+                            body: uploadFormData,
+                            credentials: 'include',
+                          });
+                          
+                          if (!uploadResponse.ok) {
+                            throw new Error('Failed to upload audio file');
+                          }
+                          
+                          const uploadResult = await uploadResponse.json();
+                          const uploadedAudioUrl = uploadResult.url || uploadResult.objectId;
+                          
+                          if (!uploadedAudioUrl) {
+                            throw new Error('No audio URL returned from upload');
+                          }
+                          
+                          // Store the audio URL
+                          setAudioUrl(uploadedAudioUrl);
+                          setIsUploadingAudio(false);
+                          // Pass the audioUrl directly to avoid race condition with async state update
+                          updateEntryWithAudio(uploadedAudioUrl);
+                        }
+                      } else if (audioUrl) {
+                        // Audio already uploaded, fetch it for transcription
+                        const response = await fetch(audioUrl);
+                        audioBlob = await response.blob();
+                      } else {
+                        throw new Error('No audio available for transcription');
+                      }
+                      
+                      // Now transcribe the audio
+                      const transcribeFormData = new FormData();
+                      transcribeFormData.append('audio', audioBlob, 'recording.webm');
+                      
+                      const transcribeResponse = await fetch('/api/audio/transcribe', {
                         method: 'POST',
-                        body: formData,
+                        body: transcribeFormData,
                         credentials: 'include',
                       });
                       
-                      if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                      if (!transcribeResponse.ok) {
+                        const errorData = await transcribeResponse.json().catch(() => ({ error: transcribeResponse.statusText }));
                         throw new Error(errorData.error || errorData.message || 'Transcription failed');
                       }
                       
-                      const result = await response.json();
+                      const result = await transcribeResponse.json();
                       
                       if (result.text) {
                         // Append transcribed text to notes with "Inspector Comments:" header
@@ -2008,12 +2164,15 @@ export function FieldWidget({
                         setLocalNote(newNote);
                         handleNoteChange(newNote);
                         
+                        // Update entry with audio URL
+                        updateEntryWithAudio();
+                        
                         toast({
                           title: "Transcription Complete",
-                          description: "Voice recording has been converted to text and added to notes.",
+                          description: "Voice recording has been converted to text and added to notes. Audio is saved for playback.",
                         });
                         
-                        // Reset recording state
+                        // Keep the recording state but mark as transcribed
                         setHasRecorded(false);
                         audioChunksRef.current = [];
                       } else {
@@ -2028,6 +2187,7 @@ export function FieldWidget({
                       });
                     } finally {
                       setIsTranscribing(false);
+                      setIsUploadingAudio(false);
                     }
                   }}
                   disabled={isTranscribing}
@@ -2036,7 +2196,7 @@ export function FieldWidget({
                   {isTranscribing ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Transcribing...
+                      {isUploadingAudio ? 'Uploading...' : 'Transcribing...'}
                     </>
                   ) : (
                     <>
@@ -2052,12 +2212,71 @@ export function FieldWidget({
                     setHasRecorded(false);
                     audioChunksRef.current = [];
                     setRecordingTime(0);
+                    // Clear audio URL from database if it was saved
+                    if (audioUrl) {
+                      setAudioUrl(null);
+                      // Update entry to remove audioUrl
+                      const composedValue = composeValue(localValue, localCondition, localCleanliness, null);
+                      onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
+                    }
                   }}
                   data-testid={`button-cancel-recording-${field.id}`}
                 >
                   <X className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
+              </div>
+            )}
+            
+            {/* Audio playback button - show if audio URL exists */}
+            {audioUrl && (
+              <div className="flex items-center gap-2 mt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (audioPlayerRef.current) {
+                      if (isPlayingAudio) {
+                        audioPlayerRef.current.pause();
+                        setIsPlayingAudio(false);
+                      } else {
+                        audioPlayerRef.current.play();
+                        setIsPlayingAudio(true);
+                      }
+                    } else {
+                      const audio = new Audio(audioUrl);
+                      audioPlayerRef.current = audio;
+                      audio.onended = () => {
+                        setIsPlayingAudio(false);
+                        audioPlayerRef.current = null;
+                      };
+                      audio.onerror = () => {
+                        toast({
+                          title: "Playback Failed",
+                          description: "Could not play audio. The file may be unavailable.",
+                          variant: "destructive",
+                        });
+                        setIsPlayingAudio(false);
+                        audioPlayerRef.current = null;
+                      };
+                      audio.play();
+                      setIsPlayingAudio(true);
+                    }
+                  }}
+                >
+                  {isPlayingAudio ? (
+                    <>
+                      <Square className="w-4 h-4 mr-2" />
+                      Pause
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Play Voice Note
+                    </>
+                  )}
+                </Button>
+                <audio ref={audioPlayerRef} src={audioUrl} style={{ display: 'none' }} />
               </div>
             )}
           </div>
