@@ -5,6 +5,8 @@ import ExcelJS from "exceljs";
 import { createServer, type Server } from "http";
 import { randomUUID, createHash } from "crypto";
 import { promises as fs } from "fs";
+import path from "path";
+import os from "os";
 import { storage } from "./storage";
 import { getUncachableStripeClient, getStripeSecretKey } from "./stripeClient";
 
@@ -356,7 +358,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission, getObjectAclPolicy } from "./objectAcl";
 import { db } from "./db";
 import { eq, and, lt, gt, desc, inArray, or, sql } from "drizzle-orm";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import multer from "multer";
@@ -5944,7 +5946,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fetch inspection items
       const items = await storage.getInspectionItems(id);
-      console.log(`[GET /api/inspections/:id] Fetched ${items.length} items for inspection ${id}`);
 
       // Fetch related data
       let property = null;
@@ -5969,7 +5970,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         clerk,
       };
 
-      console.log(`[GET /api/inspections/:id] Returning inspection with ${response.items.length} items`);
       res.json(response);
     } catch (error) {
       console.error("Error fetching inspection:", error);
@@ -16247,6 +16247,8 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
       const entries = await storage.getInspectionEntries(inspectionId);
+      
+      
       res.json(entries);
     } catch (error) {
       console.error("Error fetching inspection entries:", error);
@@ -16313,6 +16315,16 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       }
       const validatedData = insertInspectionEntrySchema.parse(req.body);
 
+      // Debug: Log valueJson structure
+      if (validatedData.valueJson && typeof validatedData.valueJson === 'object' && 'audioUrl' in validatedData.valueJson) {
+        console.log('[Server] Saving entry with audioUrl:', {
+          sectionRef: validatedData.sectionRef,
+          fieldKey: validatedData.fieldKey,
+          valueJson: validatedData.valueJson,
+          audioUrl: (validatedData.valueJson as any).audioUrl
+        });
+      }
+
       // Check if an entry already exists for this inspection, section, and field
       // This allows updating existing entries instead of creating duplicates
       const existingEntries = await storage.getInspectionEntries(validatedData.inspectionId);
@@ -16327,10 +16339,26 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       if (existingEntry?.id) {
         // Update existing entry
         entry = await storage.updateInspectionEntry(existingEntry.id, validatedData);
+        // Debug: Log what was saved
+        if (entry.valueJson && typeof entry.valueJson === 'object' && 'audioUrl' in entry.valueJson) {
+          console.log('[Server] Updated entry with audioUrl:', {
+            id: entry.id,
+            valueJson: entry.valueJson,
+            audioUrl: (entry.valueJson as any).audioUrl
+          });
+        }
         res.json(entry);
       } else {
         // Create new entry
         entry = await storage.createInspectionEntry(validatedData);
+        // Debug: Log what was saved
+        if (entry.valueJson && typeof entry.valueJson === 'object' && 'audioUrl' in entry.valueJson) {
+          console.log('[Server] Created entry with audioUrl:', {
+            id: entry.id,
+            valueJson: entry.valueJson,
+            audioUrl: (entry.valueJson as any).audioUrl
+          });
+        }
         res.status(201).json(entry);
       }
     } catch (error) {
@@ -16739,22 +16767,134 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     }
   });
 
-  // Audio transcription endpoint using OpenAI Whisper API
+  // Helper: convert audio buffer to MP3 when Whisper rejects format (mobile M4A compatibility)
+  async function convertToMp3(inputBuffer: Buffer, inputExt: string): Promise<Buffer> {
+    const ffmpegPath = (await import("ffmpeg-static"))?.default;
+    if (!ffmpegPath) throw new Error("ffmpeg not available");
+    const ffmpegMod = await import("fluent-ffmpeg");
+    const ffmpeg = (ffmpegMod as any).default ?? ffmpegMod;
+    (ffmpeg as any).setFfmpegPath(ffmpegPath);
+    const inputPath = path.join(os.tmpdir(), `whisper-in-${randomUUID()}.${inputExt}`);
+    const outputPath = path.join(os.tmpdir(), `whisper-out-${randomUUID()}.mp3`);
+    await fs.writeFile(inputPath, inputBuffer);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .noVideo()
+          .audioCodec('libmp3lame')
+          .audioBitrate(128)
+          .format('mp3')
+          .save(outputPath)
+          .on('end', () => resolve())
+          .on('error', (err: Error) => reject(err));
+      });
+      const mp3Buffer = await fs.readFile(outputPath);
+      return mp3Buffer;
+    } finally {
+      await fs.unlink(inputPath).catch(() => {});
+      await fs.unlink(outputPath).catch(() => {});
+    }
+  }
+
+  // Audio transcription via base64 (avoids multipart/FormData binary corruption on mobile)
+  app.post("/api/audio/transcribe-base64", isAuthenticated, async (req: any, res: any) => {
+    try {
+      const { audioBase64, fileName: reqFileName } = req.body || {};
+      if (!audioBase64 || typeof audioBase64 !== 'string') {
+        return res.status(400).json({ error: "Missing audioBase64 in request body" });
+      }
+      const buffer = Buffer.from(audioBase64, 'base64');
+      const fileName = (reqFileName && typeof reqFileName === 'string' && reqFileName.toLowerCase().endsWith('.m4a'))
+        ? reqFileName
+        : 'recording.m4a';
+      const size = buffer.length;
+      if (size > 25 * 1024 * 1024) {
+        return res.status(400).json({ error: "Audio file too large. Maximum size is 25MB" });
+      }
+      console.log('[Transcribe-base64] Received:', { size, fileName });
+      const openaiClient = getOpenAI();
+      let transcription: any;
+      try {
+        const audioFile = await toFile(buffer, 'audio.m4a', { type: 'audio/mp4' });
+        transcription = await openaiClient.audio.transcriptions.create({
+          file: audioFile,
+          model: "whisper-1",
+          language: "en",
+          response_format: "text"
+        });
+      } catch (firstErr: any) {
+        const isInvalidFormat = (firstErr?.message || '').toLowerCase().includes('invalid file format') || (firstErr?.message || '').toLowerCase().includes('unrecognized file format');
+        if (isInvalidFormat) {
+          console.log('[Transcribe-base64] Format rejected, converting to MP3');
+          const mp3Buffer = await convertToMp3(buffer, 'm4a');
+          const mp3File = await toFile(mp3Buffer, 'audio.mp3', { type: 'audio/mpeg' });
+          transcription = await openaiClient.audio.transcriptions.create({
+            file: mp3File,
+            model: "whisper-1",
+            language: "en",
+            response_format: "text"
+          });
+        } else {
+          throw firstErr;
+        }
+      }
+      const transcribedText = typeof transcription === 'string'
+        ? transcription
+        : (transcription as any)?.text || String(transcription || '').trim();
+      if (!transcribedText || transcribedText.trim().length === 0) {
+        return res.status(500).json({ error: "Transcription returned empty result" });
+      }
+      res.json({ text: transcribedText.trim() });
+    } catch (error: any) {
+      console.error("Error in audio transcription (base64):", error);
+      if (error?.message?.includes('OpenAI') || error?.status === 401) {
+        return res.status(500).json({ error: "OpenAI API error. Please check your API configuration." });
+      }
+      if (error?.status === 413 || error?.message?.includes('too large')) {
+        return res.status(400).json({ error: "Audio file too large. Maximum size is 25MB" });
+      }
+      const msg = error?.message || "Failed to transcribe audio";
+      const isFormatError = msg.toLowerCase().includes('invalid file format') || msg.toLowerCase().includes('unrecognized file format');
+      res.status(500).json({ error: isFormatError ? "Invalid audio format. Please ensure the recording is in a supported format (M4A, MP3, WAV). Try recording again." : msg });
+    }
+  });
+
+  // Audio transcription endpoint using OpenAI Whisper API (multipart/form-data)
   app.post("/api/audio/transcribe", isAuthenticated, upload.single('audio'), async (req: any, res: any) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No audio file uploaded" });
       }
 
-      // Validate audio file type
+      console.log('[Transcribe] Received file:', {
+        mimetype: req.file.mimetype,
+        originalname: req.file.originalname,
+        size: req.file.size,
+        encoding: req.file.encoding,
+        fieldname: req.file.fieldname,
+      });
+
+      // Validate audio file type - accept both audio/m4a and audio/mp4 (they're the same format)
       const allowedMimeTypes = [
         'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/webm', 
-        'audio/ogg', 'audio/m4a', 'audio/x-m4a', 'audio/mp4'
+        'audio/ogg', 'audio/m4a', 'audio/x-m4a', 'audio/mp4',
+        'audio/flac', 'audio/oga', 'audio/mpga', 'audio/mpeg',
+        'application/octet-stream' // Sometimes multer detects M4A as this
       ];
       
-      if (!allowedMimeTypes.includes(req.file.mimetype)) {
+      // Normalize MIME type for validation (accept both m4a and mp4 as they're the same)
+      const normalizedMimeType = req.file.mimetype.toLowerCase();
+      const isValidMimeType = allowedMimeTypes.some(type => 
+        normalizedMimeType === type.toLowerCase() || 
+        (normalizedMimeType === 'audio/m4a' && type === 'audio/mp4') ||
+        (normalizedMimeType === 'audio/mp4' && type === 'audio/m4a') ||
+        (normalizedMimeType === 'application/octet-stream' && (req.file.originalname?.toLowerCase().endsWith('.m4a') || req.file.originalname?.toLowerCase().endsWith('.mp4')))
+      );
+      
+      if (!isValidMimeType) {
+        console.error('[Transcribe] Invalid MIME type:', req.file.mimetype);
         return res.status(400).json({ 
-          error: "Invalid audio format. Supported formats: MP3, WAV, WebM, OGG, M4A, MP4" 
+          error: `Invalid audio format: ${req.file.mimetype}. Supported formats: MP3, WAV, WebM, OGG, M4A, MP4, FLAC` 
         });
       }
 
@@ -16769,48 +16909,118 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
       // Get OpenAI client
       const openaiClient = getOpenAI();
 
-      // Create a File object for OpenAI API
-      // Node.js 18+ has native File support, but we'll handle both cases
-      let audioFile: any;
+      // Map MIME types to OpenAI-compatible formats
+      // OpenAI supports: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm
+      // IMPORTANT: OpenAI checks the file extension in the filename, so .m4a files need .m4a extension
+      // The MIME type can be audio/mp4 or audio/m4a for .m4a files, but extension must be .m4a
+      const mimeTypeMap: Record<string, { mimeType: string; extension: string }> = {
+        'audio/mpeg': { mimeType: 'audio/mpeg', extension: 'mp3' },
+        'audio/mp3': { mimeType: 'audio/mpeg', extension: 'mp3' },
+        'audio/mp4': { mimeType: 'audio/mp4', extension: 'm4a' }, // Use audio/mp4 MIME type with .m4a extension (OpenAI accepts this)
+        'audio/m4a': { mimeType: 'audio/mp4', extension: 'm4a' },
+        'audio/x-m4a': { mimeType: 'audio/mp4', extension: 'm4a' },
+        'audio/wav': { mimeType: 'audio/wav', extension: 'wav' },
+        'audio/x-wav': { mimeType: 'audio/wav', extension: 'wav' },
+        'audio/webm': { mimeType: 'audio/webm', extension: 'webm' },
+        'audio/ogg': { mimeType: 'audio/ogg', extension: 'ogg' },
+        'audio/oga': { mimeType: 'audio/ogg', extension: 'oga' },
+        'audio/flac': { mimeType: 'audio/flac', extension: 'flac' },
+      };
+
+      // Normalize MIME type and get proper extension
+      // Handle application/octet-stream by checking filename extension
+      let detectedMimeType = req.file.mimetype.toLowerCase();
+      if (detectedMimeType === 'application/octet-stream' || !detectedMimeType.startsWith('audio/')) {
+        const fileExt = req.file.originalname?.toLowerCase().split('.').pop() || '';
+        if (fileExt === 'm4a' || fileExt === 'mp4') {
+          detectedMimeType = 'audio/mp4';
+        } else if (fileExt === 'mp3') {
+          detectedMimeType = 'audio/mpeg';
+        } else if (fileExt === 'wav') {
+          detectedMimeType = 'audio/wav';
+        } else if (fileExt === 'webm') {
+          detectedMimeType = 'audio/webm';
+        } else if (fileExt === 'ogg' || fileExt === 'oga') {
+          detectedMimeType = 'audio/ogg';
+        } else if (fileExt === 'flac') {
+          detectedMimeType = 'audio/flac';
+        }
+      }
       
-      // Check if File is available (Node.js 18+)
-      if (typeof File !== 'undefined' && typeof globalThis.File !== 'undefined') {
-        audioFile = new File(
-          [req.file.buffer],
-          req.file.originalname || 'audio.webm',
-          { type: req.file.mimetype }
-        );
-      } else {
-        // Fallback for older Node.js: create a File-like object
-        // OpenAI SDK accepts objects with stream() method
-        const { Readable } = await import('stream');
-        const stream = Readable.from(req.file.buffer);
-        audioFile = {
-          stream: () => stream,
-          arrayBuffer: async () => {
-            if (req.file.buffer instanceof Buffer) {
-              return req.file.buffer.buffer.slice(
-                req.file.buffer.byteOffset,
-                req.file.buffer.byteOffset + req.file.buffer.byteLength
-              );
-            }
-            return req.file.buffer;
-          },
-          text: async () => '',
-          size: req.file.size,
-          type: req.file.mimetype,
-          name: req.file.originalname || 'audio.webm',
-          lastModified: Date.now(),
-        };
+      const normalized = mimeTypeMap[detectedMimeType] || 
+        mimeTypeMap[req.file.mimetype] || 
+        { mimeType: 'audio/mp4', extension: 'm4a' }; // Default to audio/mp4 with .m4a extension for mobile recordings
+
+      // Ensure filename has correct extension that matches what OpenAI expects
+      let fileName = req.file.originalname || `audio.${normalized.extension}`;
+      const currentExt = fileName.toLowerCase().split('.').pop() || '';
+      
+      // If current extension is not the normalized one, replace it
+      if (currentExt !== normalized.extension.toLowerCase()) {
+        const baseName = fileName.replace(/\.[^/.]+$/, '');
+        fileName = `${baseName}.${normalized.extension}`;
       }
 
-      // Call OpenAI Whisper API for transcription
-      const transcription = await openaiClient.audio.transcriptions.create({
-        file: audioFile as any,
-        model: "whisper-1",
-        language: "en", // Optional: specify language for better accuracy
-        response_format: "text"
+      console.log('[Transcribe] Normalized audio file:', {
+        originalMimeType: req.file.mimetype,
+        normalizedMimeType: normalized.mimeType,
+        originalName: req.file.originalname,
+        normalizedName: fileName,
+        extension: normalized.extension,
+        size: req.file.size,
+        bufferLength: req.file.buffer?.length || 0,
       });
+
+      // Use toFile() from OpenAI SDK - ensures correct File object with proper filename
+      // Whisper API infers format from file extension, so filename must have correct extension
+      let transcription: any;
+      const tmpPath = path.join(os.tmpdir(), `whisper-${randomUUID()}.${normalized.extension}`);
+
+      const transcribeWithFile = async (fileInput: any) => {
+        return openaiClient.audio.transcriptions.create({
+          file: fileInput,
+          model: "whisper-1",
+          language: "en",
+          response_format: "text"
+        });
+      };
+
+      try {
+        const audioFile = await toFile(req.file.buffer, fileName, { type: normalized.mimeType });
+        console.log('[Transcribe] Created File via toFile:', {
+          name: audioFile.name,
+          type: audioFile.type,
+          size: audioFile.size,
+        });
+        transcription = await transcribeWithFile(audioFile);
+      } catch (firstError: any) {
+        const isInvalidFormat = (firstError?.message || '').toLowerCase().includes('invalid file format') ||
+          (firstError?.message || '').toLowerCase().includes('unrecognized file format');
+        if (isInvalidFormat) {
+          // Fallback 1: temp file + stream (fixes binary issues)
+          console.log('[Transcribe] Format rejected, retrying with temp file');
+          await fs.writeFile(tmpPath, req.file.buffer);
+          try {
+            const { createReadStream } = await import('fs');
+            transcription = await transcribeWithFile(createReadStream(tmpPath));
+          } catch (streamErr: any) {
+            const stillInvalid = (streamErr?.message || '').toLowerCase().includes('invalid file format') || (streamErr?.message || '').toLowerCase().includes('unrecognized file format');
+            if (stillInvalid) {
+              // Fallback 2: convert to MP3 (mobile M4A compatibility)
+              console.log('[Transcribe] Still rejected, converting to MP3');
+              const mp3Buffer = await convertToMp3(req.file.buffer, normalized.extension);
+              const mp3File = await toFile(mp3Buffer, 'audio.mp3', { type: 'audio/mpeg' });
+              transcription = await transcribeWithFile(mp3File);
+            } else {
+              throw streamErr;
+            }
+          } finally {
+            await fs.unlink(tmpPath).catch(() => {});
+          }
+        } else {
+          throw firstError;
+        }
+      }
 
       // Extract transcribed text
       // Whisper API with response_format: "text" returns a string directly
@@ -16843,8 +17053,16 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
         });
       }
 
+      // User-friendly message for common Whisper API format errors
+      const msg = error?.message || "Failed to transcribe audio";
+      const isFormatError = msg.toLowerCase().includes('invalid file format') ||
+        msg.toLowerCase().includes('unrecognized file format');
+      const userMessage = isFormatError
+        ? "Invalid audio format. Please ensure the recording is in a supported format (M4A, MP3, WAV). Try recording again."
+        : msg;
+
       res.status(500).json({ 
-        error: error?.message || "Failed to transcribe audio" 
+        error: userMessage 
       });
     }
   });
@@ -16998,6 +17216,39 @@ Provide 3-5 brief, practical suggestions for resolving this issue. Focus on what
     console.error('[upload-direct] PUT request to unmatched route:', req.path);
     res.set('Content-Type', 'application/json');
     res.status(404).json({ error: "Upload endpoint not found" });
+  });
+
+  // Audio upload via base64 (avoids FormData binary corruption on mobile - fixes silent playback on web)
+  app.post("/api/objects/upload-audio-base64", isAuthenticated, async (req: any, res) => {
+    res.set('Content-Type', 'application/json');
+    try {
+      const { fileBase64, fileName = 'voice-note.m4a', mimeType = 'audio/mp4' } = req.body || {};
+      if (!fileBase64 || typeof fileBase64 !== 'string') {
+        return res.status(400).json({ error: "Missing fileBase64 in request body" });
+      }
+      const buffer = Buffer.from(fileBase64, 'base64');
+      if (buffer.length > 25 * 1024 * 1024) {
+        return res.status(400).json({ error: "Audio file too large. Maximum 25MB" });
+      }
+      const objectId = (req.query.objectId as string) || randomUUID();
+      const objectStorageService = new ObjectStorageService();
+      const normalizedPath = await objectStorageService.saveUploadedFile(objectId, buffer, mimeType);
+      const userId = req.user?.claims?.sub || req.user?.id;
+      if (userId) {
+        try {
+          await objectStorageService.trySetObjectEntityAclPolicy(normalizedPath, {
+            owner: userId,
+            visibility: "public",
+          });
+        } catch (e) {
+          console.warn("Failed to set ACL for audio upload:", e);
+        }
+      }
+      res.json({ url: normalizedPath, path: normalizedPath, objectId });
+    } catch (error: any) {
+      console.error("Error in upload-audio-base64:", error);
+      res.status(500).json({ error: error.message || "Failed to upload audio" });
+    }
   });
 
   // File upload endpoint using multer

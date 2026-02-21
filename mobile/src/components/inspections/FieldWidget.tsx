@@ -21,7 +21,7 @@ import Button from '../ui/Button';
 import DatePicker from '../ui/DatePicker';
 import Select from '../ui/Select';
 import { Star, Camera as CameraIcon, Image as ImageIcon, X, Sparkles, Wrench, Trash2, Calendar, Clock, Eye, CheckCircle2, AlertCircle, Mic, Square, Play } from 'lucide-react-native';
-import { Audio } from 'expo-av';
+import { requestRecordingPermissionsAsync, RecordingPresets, createAudioPlayer, AudioModule } from 'expo-audio';
 import { inspectionsService } from '../../services/inspections';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { storeImageLocally, getImageSource, isLocalPath } from '../../services/offline/storage';
@@ -118,6 +118,11 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   // Parse value and ensure boolean fields are actual booleans
   const parseValue = (val: any) => {
     if (val === null || val === undefined) return val;
+    // If val is an object with 'value' property (e.g., { value: null, audioUrl: "..." }),
+    // extract the value part for local state
+    if (val && typeof val === 'object' && 'value' in val && !('condition' in val) && !('cleanliness' in val)) {
+      return val.value;
+    }
     // If it's a string "true" or "false", convert to boolean
     if (typeof val === 'string') {
       if (val.toLowerCase() === 'true') return true;
@@ -139,27 +144,29 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
   const [localMarkedForReview, setLocalMarkedForReview] = useState(!!markedForReview);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [showPhotoViewer, setShowPhotoViewer] = useState(false);
+  const [showSignature, setShowSignature] = useState(false);
+
+  // Initialize audioUrl from valueJson if it exists (before using it in useState)
+  const initialAudioUrl = (value && typeof value === 'object' && 'audioUrl' in value) ? (value as any).audioUrl : null;
   
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [hasRecorded, setHasRecorded] = useState(false);
+  const [hasRecorded, setHasRecorded] = useState(!!initialAudioUrl);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
-  // Initialize audioUrl from valueJson if it exists
-  const initialAudioUrl = (value && typeof value === 'object' && 'audioUrl' in value) ? (value as any).audioUrl : null;
   const [audioUrl, setAudioUrl] = useState<string | null>(initialAudioUrl); // Store uploaded audio URL
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const [sound, setSound] = useState<any>(null);
+  const recordingRef = useRef<any>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [analyzingField, setAnalyzingField] = useState(false);
   const [analyzingPhoto, setAnalyzingPhoto] = useState<string | null>(null);
   const [uploadingPhotos, setUploadingPhotos] = useState<Record<string, boolean>>({});
-  const [showSignature, setShowSignature] = useState(false);
   const [aiAnalyses, setAiAnalyses] = useState<Record<string, any>>({});
   const autoSaveTriggeredRef = useRef(false);
+  const audioUrlRef = useRef<string | null>(initialAudioUrl);
   const signatureRef = useRef<any>(null);
 
   // Fetch check-in reference for check-out inspections
@@ -213,13 +220,17 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           if (newAudioUrl && typeof newAudioUrl === 'string') {
             setAudioUrl((prevAudioUrl) => {
               if (newAudioUrl !== prevAudioUrl) {
+                audioUrlRef.current = newAudioUrl;
                 return newAudioUrl;
               }
               return prevAudioUrl;
             });
+            setHasRecorded(true);
           } else if (newAudioUrl === null || newAudioUrl === undefined) {
             // If audioUrl is explicitly null/undefined in valueJson, clear it
+            audioUrlRef.current = null;
             setAudioUrl(null);
+            setHasRecorded(false);
           }
         }
         // Don't clear audioUrl if value object exists but doesn't have audioUrl
@@ -232,18 +243,24 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           if (newAudioUrl && typeof newAudioUrl === 'string') {
             setAudioUrl((prevAudioUrl) => {
               if (newAudioUrl !== prevAudioUrl) {
+                audioUrlRef.current = newAudioUrl;
                 return newAudioUrl;
               }
               return prevAudioUrl;
             });
+            setHasRecorded(true);
           } else if (newAudioUrl === null || newAudioUrl === undefined) {
             // If audioUrl is explicitly null/undefined in valueJson, clear it
+            audioUrlRef.current = null;
             setAudioUrl(null);
+            setHasRecorded(false);
           }
         } else if (value === null || value === undefined) {
           // Only clear audioUrl if value is explicitly null/undefined
+          setHasRecorded(false);
           setAudioUrl((prevAudioUrl) => {
             if (prevAudioUrl) {
+              audioUrlRef.current = null;
               return null;
             }
             return prevAudioUrl;
@@ -293,9 +310,12 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         clearInterval(recordingTimerRef.current);
       }
       if (recordingRef.current) {
-        recordingRef.current.stopAndUnloadAsync().catch(() => {
+        recordingRef.current.stop().catch(() => {
           // Ignore errors during cleanup
         });
+      }
+      if (sound) {
+        sound.remove();
       }
     };
   }, []);
@@ -339,29 +359,29 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       return;
     }
     setLocalValue(newValue);
-    const composedValue = composeValue(newValue, localCondition, localCleanliness, audioUrl);
+    const composedValue = composeValue(newValue, localCondition, localCleanliness, audioUrlRef.current);
     onChange(composedValue, localNote, localPhotos);
   };
 
   // Debounce note changes to prevent lag - only save after user stops typing
   const noteDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   const handleNoteChange = (newNote: string) => {
     // Update local state immediately for responsive UI
     setLocalNote(newNote);
-    
+
     // Clear existing timeout
     if (noteDebounceTimeoutRef.current) {
       clearTimeout(noteDebounceTimeoutRef.current);
     }
-    
+
     // Debounce the save operation - wait 800ms after user stops typing
     noteDebounceTimeoutRef.current = setTimeout(() => {
-      const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
-      onChange(composedValue, newNote, localPhotos);
+      const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrlRef.current);
+    onChange(composedValue, newNote, localPhotos);
     }, 800);
   };
-  
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -379,7 +399,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         : undefined;
       
       setLocalCondition(validCondition);
-      const composedValue = composeValue(localValue, validCondition, localCleanliness, audioUrl);
+      const composedValue = composeValue(localValue, validCondition, localCleanliness, audioUrlRef.current);
       onChange(composedValue, localNote, localPhotos);
     } catch (error) {
       console.error('[FieldWidget] Error handling condition change:', error);
@@ -395,7 +415,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         : undefined;
       
       setLocalCleanliness(validCleanliness);
-      const composedValue = composeValue(localValue, localCondition, validCleanliness, audioUrl);
+      const composedValue = composeValue(localValue, localCondition, validCleanliness, audioUrlRef.current);
       onChange(composedValue, localNote, localPhotos);
     } catch (error) {
       console.error('[FieldWidget] Error handling cleanliness change:', error);
@@ -403,9 +423,11 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     }
   };
 
-  const composeValue = (val: any, condition?: string, cleanliness?: string, audioUrl?: string | null) => {
+  const composeValue = (val: any, condition?: string, cleanliness?: string, explicitAudioUrl?: string | null) => {
     const includeCondition = !!safeField.includeCondition;
     const includeCleanliness = !!safeField.includeCleanliness;
+    const currentAudioUrl = explicitAudioUrl !== undefined ? explicitAudioUrl : audioUrlRef.current;
+
     if (includeCondition || includeCleanliness) {
       // Ensure we only include condition/cleanliness if they have valid string values
       // This prevents undefined/null from causing sync errors
@@ -422,23 +444,23 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
       if (includeCleanliness && cleanliness && typeof cleanliness === 'string' && cleanliness.trim() !== '') {
         result.cleanliness = cleanliness.trim();
       }
-      
+
       // Always include audioUrl if it exists (even if null, we want to preserve it)
-      if (audioUrl !== undefined && audioUrl !== null) {
-        result.audioUrl = audioUrl;
+      if (currentAudioUrl !== undefined && currentAudioUrl !== null) {
+        result.audioUrl = currentAudioUrl;
       }
       
       return result;
     }
     // If no condition/cleanliness, store audioUrl in valueJson
     // For photo fields, val might be null or a string, so we need to wrap it in an object if audioUrl exists
-    if (audioUrl) {
+    if (currentAudioUrl) {
       // If val is already an object, merge audioUrl into it
       if (typeof val === 'object' && val !== null) {
-        return { ...val, audioUrl };
+        return { ...val, audioUrl: currentAudioUrl };
       }
       // If val is null, undefined, or a primitive, create an object with value and audioUrl
-      return { value: val !== undefined && val !== null ? val : null, audioUrl };
+      return { value: val !== undefined && val !== null ? val : null, audioUrl: currentAudioUrl };
     }
     // If no audioUrl but val is already an object with audioUrl, preserve it
     if (typeof val === 'object' && val !== null && 'audioUrl' in val) {
@@ -692,12 +714,12 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         clearTimeout(timeoutId);
         
         // Extract error message with better fallbacks
-        const errorMessage = fetchError?.message || 
-                            fetchError?.error?.message || 
-                            fetchError?.toString() || 
-                            String(fetchError) || 
-                            'Unknown upload error';
-        
+        const errorMessage = fetchError?.message ||
+          fetchError?.error?.message ||
+          fetchError?.toString() ||
+          String(fetchError) ||
+          'Unknown upload error';
+
         // Log detailed error for debugging
         console.error('[FieldWidget] Upload error:', errorMessage, {
           name: fetchError?.name || 'Unknown',
@@ -1008,7 +1030,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
 
       // Prepend AI analysis to existing notes (append before existing data)
       const existingNote = localNote || '';
-      const newNote = existingNote 
+      const newNote = existingNote
         ? `${result.analysis}\n\n${existingNote}`
         : result.analysis;
       setLocalNote(newNote);
@@ -1318,7 +1340,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                     // Already has /objects/ in it
                     if (photo.startsWith('http')) {
                       photoUrl = photo;
-                    } else {
+                  } else {
                       // Remove leading slash if present, then add to apiUrl
                       const normalizedPath = photo.startsWith('/') ? photo : `/${photo}`;
                       photoUrl = `${apiUrl.replace(/\/$/, '')}${normalizedPath}`;
@@ -1329,7 +1351,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                   }
                   imageSource = { uri: photoUrl };
                 }
-                
+
                 // Log for debugging web portal images
                 if (__DEV__ && !isLocalPath(photo)) {
                   console.log('[FieldWidget] Image URL constructed:', {
@@ -1351,7 +1373,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
                     >
                       <Image 
                         source={imageSource} 
-                        style={[styles.photoThumbnail, { borderColor: themeColors.border.DEFAULT, backgroundColor: themeColors.muted?.DEFAULT || themeColors.card.DEFAULT }] as ImageStyle} 
+                        style={[styles.photoThumbnail, { borderColor: themeColors.border.DEFAULT, backgroundColor: themeColors.muted?.DEFAULT || themeColors.card.DEFAULT }] as ImageStyle}
                         resizeMode="cover"
                         onError={(error) => {
                           const errorMsg = error?.nativeEvent?.error || 'Unknown error';
@@ -1496,476 +1518,370 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
         </Card>
       )}
 
-      {/* Voice Recording - only shown for photo fields, BEFORE notes */}
+      {/* ── Voice Recording ─ premium card ──────────────────────────────── */}
       {(safeField.type === 'photo' || safeField.type === 'photo_array') && (
-        <View style={styles.notesContainer}>
-          <Text style={[styles.notesLabel, { color: themeColors.text.secondary }]}>Voice Recording</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            {!isRecording && !hasRecorded && (
-              <Button
-                title="Start Recording"
-                onPress={async () => {
-                  try {
-                    // Request audio permissions
-                    const { status } = await Audio.requestPermissionsAsync();
-                    if (status !== 'granted') {
-                      Alert.alert(
-                        'Permission Required',
-                        'Microphone permission is required to record voice notes.',
-                        [{ text: 'OK' }]
-                      );
-                      return;
-                    }
+        <View style={[voiceCardStyles.card, { borderColor: themeColors.border.DEFAULT, backgroundColor: themeColors.card.DEFAULT }]}>
 
-                    // Set audio mode for recording
-                    await Audio.setAudioModeAsync({
-                      allowsRecordingIOS: true,
-                      playsInSilentModeIOS: true,
-                    });
+          {/* ── Header ── */}
+          <View style={voiceCardStyles.headerRow}>
+            <View style={[voiceCardStyles.iconCircle, { backgroundColor: themeColors.primary.DEFAULT + '20' }]}>
+              <Mic size={13} color={themeColors.primary.DEFAULT} />
+            </View>
+            <Text style={[voiceCardStyles.headerLabel, { color: themeColors.text.primary }]}>Voice Recording</Text>
 
-                    // Create and start recording
-                    const { recording } = await Audio.Recording.createAsync(
-                      Audio.RecordingOptionsPresets.HIGH_QUALITY
-                    );
-                    
-                    recordingRef.current = recording;
-                    setIsRecording(true);
-                    setRecordingTime(0);
-                    setHasRecorded(false);
-                    
-                    // Start timer
-                    recordingTimerRef.current = setInterval(() => {
-                      setRecordingTime(prev => prev + 1);
-                    }, 1000);
-                  } catch (error: any) {
-                    Alert.alert(
-                      'Recording Failed',
-                      error.message || 'Could not start recording. Please try again.'
-                    );
-                  }
-                }}
-                variant="outline"
-                icon={<Mic size={16} color={themeColors.primary.DEFAULT} />}
-                style={{ flex: 1, minWidth: 120 }}
-              />
-            )}
-            
+            {/* Status badge */}
             {isRecording && (
-              <>
-                <Button
-                  title={isUploadingAudio ? "Saving..." : `Stop (${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')})`}
-                  onPress={async () => {
-                    try {
-                      if (recordingRef.current) {
-                        const uri = recordingRef.current.getURI();
-                        await recordingRef.current.stopAndUnloadAsync();
-                        setIsRecording(false);
-                        setHasRecorded(true);
-                        if (recordingTimerRef.current) {
-                          clearInterval(recordingTimerRef.current);
-                          recordingTimerRef.current = null;
-                        }
-                        
-                        // Upload audio immediately after stopping recording to save it to database
-                        if (uri) {
-                          setIsUploadingAudio(true);
-                          try {
-                            // Read file info
-                            const fileInfo = await FileSystem.getInfoAsync(uri);
-                            if (!fileInfo.exists) {
-                              throw new Error('Recording file not found');
-                            }
-                            
-                            // Determine audio format
-                            const audioType = Platform.OS === 'ios' 
-                              ? 'audio/m4a' 
-                              : uri.endsWith('.m4a') 
-                                ? 'audio/m4a' 
-                                : uri.endsWith('.mp4')
-                                  ? 'audio/mp4'
-                                  : 'audio/m4a';
-                            
-                            const fileName = uri.split('/').pop() || 'recording.m4a';
-                            const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
-                            
-                            // Upload audio file
-                            const uploadFormData = new FormData();
-                            uploadFormData.append('file', {
-                              uri: fileUri,
-                              type: audioType,
-                              name: fileName,
-                            } as any);
-                            
-                            const apiUrl = getAPI_URL();
-                            const uploadResponse = await fetch(`${apiUrl}/api/objects/upload-file`, {
-                              method: 'POST',
-                              body: uploadFormData,
-                              headers: {
-                                'Accept': 'application/json',
-                              },
-                              credentials: 'include',
-                            });
-                            
-                            if (!uploadResponse.ok) {
-                              throw new Error('Failed to upload audio file');
-                            }
-                            
-                            const uploadResult = await uploadResponse.json();
-                            const uploadedAudioUrl = uploadResult.url || uploadResult.objectId;
-                            
-                            if (!uploadedAudioUrl) {
-                              throw new Error('No audio URL returned from upload');
-                            }
-                            
-                            // Store the audio URL and save to database immediately
-                            setAudioUrl(uploadedAudioUrl);
-                            const composedValue = composeValue(localValue, localCondition, localCleanliness, uploadedAudioUrl);
-                            onChange(composedValue, localNote, localPhotos);
-                            
-                            Alert.alert(
-                              'Voice Note Saved',
-                              'Your voice note has been saved. You can transcribe it later or listen to it anytime.'
-                            );
-                          } catch (error: any) {
-                            console.error('[FieldWidget] Error uploading audio:', error);
-                            Alert.alert(
-                              'Upload Failed',
-                              'Voice note recorded but not saved. Please try transcribing it to save.'
-                            );
-                          } finally {
-                            setIsUploadingAudio(false);
-                          }
-                        }
-                      }
-                    } catch (error: any) {
-                      Alert.alert('Error', 'Failed to stop recording');
-                    }
-                  }}
-                  variant="destructive"
-                  icon={<Square size={16} color="#fff" />}
-                  style={{ flex: 1, minWidth: 120 }}
-                  disabled={isUploadingAudio}
-                />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' }} />
-                  <Text style={{ fontSize: 12, color: themeColors.text.secondary }}>Recording...</Text>
-                </View>
-              </>
-            )}
-            
-            {hasRecorded && !isRecording && (
-              <View style={{ flexDirection: 'row', gap: 8, flex: 1, flexWrap: 'wrap' }}>
-                <Button
-                  title={isTranscribing ? (isUploadingAudio ? "Uploading..." : "Transcribing...") : "Convert to Text"}
-                  onPress={async () => {
-                    // Check if we have a recording or already uploaded audio
-                    if (!recordingRef.current && !audioUrl) {
-                      Alert.alert('Error', 'No recording available');
-                      return;
-                    }
-
-                    // Check network status
-                    if (!isOnline) {
-                      Alert.alert(
-                        'No Internet Connection',
-                        'An internet connection is required to transcribe audio. Please check your network and try again.'
-                      );
-                      return;
-                    }
-                    
-                    setIsTranscribing(true);
-                    
-                    // Retry logic with exponential backoff
-                    const maxRetries = 3;
-                    let lastError: any = null;
-                    
-                    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                      try {
-                        let uri: string | null = null;
-                        
-                        // If we have a recording, use it; otherwise use the already uploaded audio URL
-                        if (recordingRef.current) {
-                          uri = recordingRef.current.getURI();
-                          if (!uri) {
-                            throw new Error('No recording URI available');
-                          }
-                        } else if (audioUrl) {
-                          // Audio already uploaded, download it to a local file for transcription
-                          try {
-                            const downloadResult = await FileSystem.downloadAsync(
-                              audioUrl,
-                              FileSystem.documentDirectory + `temp-audio-${Date.now()}.m4a`
-                            );
-                            if (downloadResult.uri) {
-                              uri = downloadResult.uri;
-                            } else {
-                              throw new Error('Failed to download audio for transcription');
-                            }
-                          } catch (downloadError: any) {
-                            throw new Error(`Failed to download audio: ${downloadError.message}`);
-                          }
-                        } else {
-                          throw new Error('No audio available for transcription');
-                        }
-
-                        // Read file info to verify it exists and check size
-                        const fileInfo = await FileSystem.getInfoAsync(uri);
-                        if (!fileInfo.exists) {
-                          throw new Error('Recording file not found');
-                        }
-
-                        // Check file size (max 25MB for Whisper API)
-                        const maxSize = 25 * 1024 * 1024; // 25MB
-                        if (fileInfo.size && fileInfo.size > maxSize) {
-                          throw new Error(`Audio file is too large (${Math.round(fileInfo.size / 1024 / 1024)}MB). Maximum size is 25MB. Please record a shorter audio.`);
-                        }
-
-                        // Create FormData for upload (React Native format)
-                        const formData = new FormData();
-                        // React Native FormData format - ensure URI is properly formatted
-                        const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
-                        
-                        // Determine audio format based on platform and file extension
-                        const audioType = Platform.OS === 'ios' 
-                          ? 'audio/m4a' 
-                          : uri.endsWith('.m4a') 
-                            ? 'audio/m4a' 
-                            : uri.endsWith('.mp4')
-                              ? 'audio/mp4'
-                              : 'audio/m4a'; // Default to m4a
-                        
-                        const fileName = uri.split('/').pop() || 'recording.m4a';
-                        
-                        formData.append('audio', {
-                          uri: fileUri,
-                          type: audioType,
-                          name: fileName,
-                        } as any);
-
-                        // First, upload the audio file to the server
-                        const apiUrl = getAPI_URL();
-                        setIsUploadingAudio(true);
-                        
-                        // Upload audio file
-                        const uploadFormData = new FormData();
-                        uploadFormData.append('file', {
-                          uri: fileUri,
-                          type: audioType,
-                          name: fileName,
-                        } as any);
-                        
-                        const uploadResponse = await fetch(`${apiUrl}/api/objects/upload-file`, {
-                          method: 'POST',
-                          body: uploadFormData,
-                          headers: {
-                            'Accept': 'application/json',
-                          },
-                          credentials: 'include',
-                        });
-                        
-                        if (!uploadResponse.ok) {
-                          throw new Error('Failed to upload audio file');
-                        }
-                        
-                        const uploadResult = await uploadResponse.json();
-                        const uploadedAudioUrl = uploadResult.url || uploadResult.objectId;
-                        
-                        if (!uploadedAudioUrl) {
-                          throw new Error('No audio URL returned from upload');
-                        }
-                        
-                        // Store the audio URL
-                        setAudioUrl(uploadedAudioUrl);
-                        setIsUploadingAudio(false);
-                        
-                        // Now transcribe the audio
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-                        
-                        console.log('[Voice Recording] Starting transcription:', {
-                          apiUrl: `${apiUrl}/api/audio/transcribe`,
-                          fileUri: fileUri.substring(0, 50) + '...',
-                          fileSize: fileInfo.size,
-                          audioType,
-                          attempt,
-                        });
-                        
-                        try {
-                          const response = await fetch(`${apiUrl}/api/audio/transcribe`, {
-                            method: 'POST',
-                            body: formData,
-                            headers: {
-                              'Accept': 'application/json',
-                              // Don't set Content-Type - let fetch set it with boundary for FormData
-                            },
-                            credentials: 'include',
-                            signal: controller.signal,
-                          });
-
-                          clearTimeout(timeoutId);
-
-                          if (!response.ok) {
-                            const errorData = await response.json().catch(() => ({ error: response.statusText }));
-                            throw new Error(errorData.error || errorData.message || `Server error: ${response.status}`);
-                          }
-
-                          const result = await response.json();
-                          
-                          if (result.text) {
-                            // Append transcribed text to notes with "Inspector Comments:" header
-                            const existingNote = localNote || '';
-                            const transcribedText = `Inspector Comments: ${result.text}`;
-                            const newNote = existingNote 
-                              ? `${existingNote}\n\n${transcribedText}`
-                              : transcribedText;
-                            
-                            setLocalNote(newNote);
-                            handleNoteChange(newNote);
-                            
-                            // Update entry with audio URL
-                            const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
-                            onChange(composedValue, newNote, localPhotos);
-                            
-                            Alert.alert(
-                              'Transcription Complete',
-                              'Voice recording has been converted to text and added to notes. Audio is saved for playback.'
-                            );
-                            
-                            // Keep the recording state but mark as transcribed
-                            setHasRecorded(false);
-                            recordingRef.current = null;
-                            setIsTranscribing(false);
-                            return; // Success - exit retry loop
-                          } else {
-                            throw new Error('No transcription text received');
-                          }
-                        } catch (fetchError: any) {
-                          clearTimeout(timeoutId);
-                          console.error(`[Voice Recording] Fetch error on attempt ${attempt}:`, {
-                            name: fetchError.name,
-                            message: fetchError.message,
-                            stack: fetchError.stack,
-                          });
-                          
-                          if (fetchError.name === 'AbortError') {
-                            throw new Error('Request timeout. The audio file may be too large or the connection is slow.');
-                          }
-                          
-                          // Handle network errors specifically
-                          if (fetchError.message?.includes('Network request failed') || 
-                              fetchError.message?.includes('Failed to fetch') ||
-                              fetchError.message?.includes('NetworkError')) {
-                            throw new Error('Network request failed. Please check your internet connection and try again.');
-                          }
-                          
-                          throw fetchError;
-                        }
-                      } catch (error: any) {
-                        lastError = error;
-                        console.error(`Transcription attempt ${attempt} failed:`, error);
-                        
-                        // If this is the last attempt, show error
-                        if (attempt === maxRetries) {
-                          break;
-                        }
-                        
-                        // Wait before retrying (exponential backoff)
-                        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-                        await new Promise<void>(resolve => setTimeout(() => resolve(), delay));
-                      }
-                    }
-                    
-                    // All retries failed
-                    setIsTranscribing(false);
-                    const errorMessage = lastError?.message || 'Failed to transcribe audio';
-                    const isNetworkError = errorMessage.includes('Network') || 
-                                          errorMessage.includes('timeout') ||
-                                          errorMessage.includes('Failed to fetch');
-                    
-                    Alert.alert(
-                      'Transcription Failed',
-                      isNetworkError
-                        ? 'Network error occurred. Please check your internet connection and try again.'
-                        : errorMessage + '. Please try again.'
-                    );
-                  }}
-                  disabled={isTranscribing}
-                  loading={isTranscribing}
-                  variant="default"
-                  icon={!isTranscribing ? <Sparkles size={16} color="#fff" /> : undefined}
-                  style={{ flex: 1, minWidth: 120 }}
-                />
-                <Button
-                  title="Cancel"
-                  onPress={() => {
-                    setHasRecorded(false);
-                    recordingRef.current = null;
-                    setRecordingTime(0);
-                    // Clear audio URL from database if it was saved
-                    if (audioUrl) {
-                      setAudioUrl(null);
-                      // Update entry to remove audioUrl
-                      const composedValue = composeValue(localValue, localCondition, localCleanliness, null);
-                      onChange(composedValue, localNote, localPhotos);
-                    }
-                  }}
-                  variant="outline"
-                  icon={<X size={16} color={themeColors.text.secondary} />}
-                />
+              <View style={[voiceCardStyles.badge, { backgroundColor: '#ef444420' }]}>
+                <View style={[voiceCardStyles.badgeDot, { backgroundColor: '#ef4444' }]} />
+                <Text style={[voiceCardStyles.badgeText, { color: '#ef4444' }]}>
+                  {`${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')}`}
+                </Text>
               </View>
             )}
-            
-            {/* Audio playback button - show if audio URL exists */}
-            {audioUrl && (
-              <View style={{ marginTop: 8 }}>
-                <Button
-                  title={isPlayingAudio ? "Pause" : "Play Voice Note"}
-                  onPress={async () => {
-                    try {
-                      if (sound) {
-                        const status = await sound.getStatusAsync();
-                        if (status.isLoaded && status.isPlaying) {
-                          await sound.pauseAsync();
-                          setIsPlayingAudio(false);
-                        } else {
-                          await sound.playAsync();
-                          setIsPlayingAudio(true);
-                        }
-                      } else {
-                        const { sound: newSound } = await Audio.Sound.createAsync(
-                          { uri: audioUrl },
-                          { shouldPlay: true }
-                        );
-                        setSound(newSound);
-                        setIsPlayingAudio(true);
-                        
-                        newSound.setOnPlaybackStatusUpdate((status) => {
-                          if (status.isLoaded && status.didJustFinish) {
-                            setIsPlayingAudio(false);
-                            newSound.unloadAsync();
-                            setSound(null);
-                          }
-                        });
-                      }
-                    } catch (error: any) {
-                      console.error('[FieldWidget] Error playing audio:', error);
-                      Alert.alert(
-                        'Playback Failed',
-                        'Could not play audio. The file may be unavailable.'
-                      );
-                      setIsPlayingAudio(false);
-                      if (sound) {
-                        await sound.unloadAsync();
-                        setSound(null);
-                      }
-                    }
-                  }}
-                  variant="outline"
-                  icon={isPlayingAudio ? <Square size={16} color={themeColors.text.secondary} /> : <Play size={16} color={themeColors.text.secondary} />}
-                />
+            {hasRecorded && !isRecording && (
+              <View style={[voiceCardStyles.badge, { backgroundColor: '#16a34a20' }]}>
+                <View style={[voiceCardStyles.badgeDot, { backgroundColor: '#16a34a' }]} />
+                <Text style={[voiceCardStyles.badgeText, { color: '#16a34a' }]}>Recorded</Text>
+              </View>
+            )}
+            {audioUrl && !hasRecorded && !isRecording && (
+              <View style={[voiceCardStyles.badge, { backgroundColor: themeColors.primary.DEFAULT + '20' }]}>
+                <View style={[voiceCardStyles.badgeDot, { backgroundColor: themeColors.primary.DEFAULT }]} />
+                <Text style={[voiceCardStyles.badgeText, { color: themeColors.primary.DEFAULT }]}>Saved</Text>
               </View>
             )}
           </View>
+
+          {/* ── Start Recording (idle) ── */}
+          {!isRecording && !hasRecorded && (
+            <TouchableOpacity
+              style={[voiceCardStyles.fullBtn, { backgroundColor: themeColors.primary.DEFAULT }]}
+              activeOpacity={0.85}
+              onPress={async () => {
+                try {
+                  const { status } = await requestRecordingPermissionsAsync();
+                  if (status !== 'granted') {
+                    Alert.alert('Permission Required', 'Microphone permission is required to record voice notes.');
+                    return;
+                  }
+                  const recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+                  await recorder.prepareToRecordAsync();
+                  recorder.record();
+                  recordingRef.current = recorder;
+                  setIsRecording(true);
+                  setRecordingTime(0);
+                  setHasRecorded(false);
+                  recordingTimerRef.current = setInterval(() => {
+                    setRecordingTime(prev => prev + 1);
+                  }, 1000);
+                } catch (error: any) {
+                  Alert.alert('Recording Failed', error.message || 'Could not start recording. Please try again.');
+                }
+              }}
+            >
+              <Mic size={16} color="#fff" />
+              <Text style={voiceCardStyles.fullBtnText}>Start Recording</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* ── Stop Recording (active) ── */}
+          {isRecording && (
+            <TouchableOpacity
+              style={[voiceCardStyles.fullBtn, { backgroundColor: '#dc2626' }, isUploadingAudio && voiceCardStyles.disabledBtn]}
+              activeOpacity={0.85}
+              disabled={isUploadingAudio}
+              onPress={async () => {
+                try {
+                  if (recordingRef.current) {
+                    await recordingRef.current.stop();
+                    const uri = recordingRef.current.uri;
+                    setIsRecording(false);
+                    setHasRecorded(true);
+                    if (recordingTimerRef.current) {
+                      clearInterval(recordingTimerRef.current);
+                      recordingTimerRef.current = null;
+                    }
+
+                    if (uri) {
+                      setIsUploadingAudio(true);
+                      try {
+                        const fileInfo = await FileSystem.getInfoAsync(uri);
+                        if (!fileInfo.exists) throw new Error('Recording file not found');
+
+                        // Use audio/mp4 for M4A files as OpenAI expects this MIME type
+                        const audioType = Platform.OS === 'ios' ? 'audio/mp4' : uri.endsWith('.m4a') ? 'audio/mp4' : uri.endsWith('.mp4') ? 'audio/mp4' : 'audio/mp4';
+                        const fileName = uri.split('/').pop() || 'recording.m4a';
+                        // Ensure filename has .m4a extension
+                        const finalFileName = fileName.toLowerCase().endsWith('.m4a') ? fileName : fileName.replace(/\.[^/.]+$/, '') + '.m4a';
+                        const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+
+                        const apiUrl = getAPI_URL();
+                        const fileBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
+                        const uploadResponse = await fetch(`${apiUrl}/api/objects/upload-audio-base64`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ fileBase64, fileName: finalFileName, mimeType: audioType }),
+                        });
+
+                        if (!uploadResponse.ok) throw new Error('Failed to upload audio file');
+
+                        const text = await uploadResponse.text();
+                        let uploadResult: any;
+                        try {
+                          uploadResult = text ? JSON.parse(text) : {};
+                        } catch {
+                          throw new Error(text.startsWith('<') ? 'Server returned an error page. Restart the server and try again.' : 'Invalid server response');
+                        }
+                        const uploadedAudioUrl = uploadResult?.url || uploadResult?.objectId;
+
+                        if (!uploadedAudioUrl) throw new Error('No audio URL returned from upload');
+
+                        audioUrlRef.current = uploadedAudioUrl;
+                        setAudioUrl(uploadedAudioUrl);
+                        let composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrlRef.current);
+                        if (uploadedAudioUrl && (!composedValue || typeof composedValue !== 'object' || !('audioUrl' in composedValue))) {
+                          composedValue = typeof composedValue === 'object' && composedValue !== null
+                            ? { ...composedValue, audioUrl: uploadedAudioUrl }
+                            : { value: composedValue, audioUrl: uploadedAudioUrl };
+                        }
+                        onChange(composedValue, localNote, localPhotos);
+                      } catch (error: any) {
+                        console.error('[FieldWidget] Error uploading audio:', error);
+                        Alert.alert('Upload Failed', 'Voice note recorded but not saved. Please try transcribing it to save.');
+                      } finally {
+                        setIsUploadingAudio(false);
+                      }
+                    }
+                  }
+                } catch (error: any) {
+                  Alert.alert('Error', 'Failed to stop recording');
+                }
+              }}
+            >
+              <Square size={16} color="#fff" />
+              <Text style={voiceCardStyles.fullBtnText}>
+                {isUploadingAudio ? "Saving..." : `Stop Recording (${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')})`}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* ── Post-record actions ── */}
+          {hasRecorded && !isRecording && (
+            <View style={voiceCardStyles.rowPair}>
+              <TouchableOpacity
+                style={[voiceCardStyles.halfBtn, { backgroundColor: themeColors.primary.DEFAULT }, (isTranscribing || isUploadingAudio) && voiceCardStyles.disabledBtn]}
+                activeOpacity={0.85}
+                disabled={isTranscribing || isUploadingAudio}
+                onPress={async () => {
+                  if (!recordingRef.current && !audioUrl) {
+                    Alert.alert('Error', 'No recording available');
+                    return;
+                  }
+
+                  if (!isOnline) {
+                    Alert.alert('No Internet Connection', 'An internet connection is required to transcribe audio.');
+                    return;
+                  }
+
+                  setIsTranscribing(true);
+                  const maxRetries = 3;
+                  let lastError: any = null;
+
+                  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                      let uri: string | null = null;
+                      if (recordingRef.current) {
+                        // Get URI from the recorder
+                        uri = recordingRef.current.uri;
+                        if (!uri) {
+                          throw new Error('Recording URI not available. Please record again.');
+                        }
+                      } else if (audioUrl) {
+                        // Download from server if we have an audioUrl
+                        try {
+                          const resolvedUrl = audioUrl.startsWith('http') ? audioUrl : `${getAPI_URL()}${audioUrl}`;
+                          console.log('[FieldWidget] Downloading audio for transcription:', resolvedUrl.substring(0, 100));
+                          const dl = await FileSystem.downloadAsync(resolvedUrl, FileSystem.documentDirectory + `temp-audio-${Date.now()}.m4a`);
+                          if (dl.uri) {
+                            uri = dl.uri;
+                            console.log('[FieldWidget] Audio downloaded successfully:', uri.substring(0, 50));
+                          } else {
+                            throw new Error('Download failed - no URI returned');
+                          }
+                        } catch (downloadError: any) {
+                          console.error('[FieldWidget] Error downloading audio:', downloadError);
+                          throw new Error(`Failed to download audio: ${downloadError.message || 'Unknown error'}`);
+                        }
+                      } else {
+                        throw new Error('No recording available. Please record audio first.');
+                      }
+
+                      if (!uri) throw new Error('No audio file available');
+                      
+                      const fileInfo = await FileSystem.getInfoAsync(uri);
+                      if (!fileInfo.exists) {
+                        throw new Error('Audio file not found. Please record again.');
+                      }
+                      if (fileInfo.size && fileInfo.size > 25 * 1024 * 1024) {
+                        throw new Error(`Audio file too large (${Math.round(fileInfo.size / 1024 / 1024)}MB). Maximum size is 25MB.`);
+                      }
+                      
+                      console.log('[FieldWidget] Audio file ready for transcription:', {
+                        uri: uri.substring(0, 50) + '...',
+                        size: fileInfo.size,
+                        exists: fileInfo.exists,
+                      });
+
+                      const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+                      // Use audio/mp4 for M4A files
+                      const audioType = Platform.OS === 'ios' ? 'audio/mp4' : uri.endsWith('.m4a') ? 'audio/mp4' : uri.endsWith('.mp4') ? 'audio/mp4' : 'audio/mp4';
+                      const fileName = uri.split('/').pop() || 'recording.m4a';
+                      const finalFileName = fileName.toLowerCase().endsWith('.m4a') ? fileName : fileName.replace(/\.[^/.]+$/, '') + '.m4a';
+
+                      const apiUrl = getAPI_URL();
+                      setIsUploadingAudio(true);
+                      const fileBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
+                      const uploadResponse = await fetch(`${apiUrl}/api/objects/upload-audio-base64`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ fileBase64, fileName: finalFileName, mimeType: audioType }),
+                      });
+
+                      if (!uploadResponse.ok) throw new Error('Upload failed');
+                      const text = await uploadResponse.text();
+                      let uploadResult: any;
+                      try {
+                        uploadResult = text ? JSON.parse(text) : {};
+                      } catch {
+                        throw new Error(text.startsWith('<') ? 'Server returned an error page. Restart the server and try again.' : 'Invalid server response');
+                      }
+                      const uploadedAudioUrl = uploadResult?.url || uploadResult?.objectId;
+                      audioUrlRef.current = uploadedAudioUrl;
+                      setAudioUrl(uploadedAudioUrl);
+                      setIsUploadingAudio(false);
+
+                      // Use base64 endpoint (reliable on mobile); server converts to MP3 if Whisper rejects M4A
+                      const audioBase64 = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
+                      const response = await fetch(`${apiUrl}/api/audio/transcribe-base64`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ audioBase64, fileName: 'recording.m4a' }),
+                      });
+                      const transcribeText = await response.text();
+                      let result: any;
+                      try { result = JSON.parse(transcribeText); } catch {
+                        throw new Error(transcribeText.startsWith('<') ? 'Server returned an error page. Please try again or check your connection.' : 'Transcription failed');
+                      }
+                      if (!response.ok) {
+                        throw new Error(result?.error || result?.message || `Server error: ${response.status}`);
+                      }
+
+                      if (result.text) {
+                        const existingNote = localNote || '';
+                        const transcribedText = `Inspector Comments: ${result.text}`;
+                        const newNote = existingNote ? `${existingNote}\n\n${transcribedText}` : transcribedText;
+                        setLocalNote(newNote);
+                        handleNoteChange(newNote);
+                        onChange(composeValue(localValue, localCondition, localCleanliness, uploadedAudioUrl), newNote, localPhotos);
+                        Alert.alert('Transcription Complete', 'Speech converted to text and added to notes.');
+                        setHasRecorded(false);
+                        recordingRef.current = null;
+                        setIsTranscribing(false);
+                        return;
+                      } else {
+                        throw new Error('No text received');
+                      }
+                    } catch (error: any) {
+                      lastError = error;
+                      console.error(`[FieldWidget] Transcription attempt ${attempt} failed:`, {
+                        error: error.message,
+                        stack: error.stack,
+                      });
+                      if (attempt === maxRetries) break;
+                      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000 * Math.pow(2, attempt - 1)));
+                    }
+                  }
+
+                  setIsTranscribing(false);
+                  const errorMessage = lastError?.message || 'Could not convert speech to text.';
+                  console.error('[FieldWidget] Transcription failed after all retries:', errorMessage);
+                  Alert.alert('Transcription Failed', errorMessage);
+                }}
+              >
+                <Sparkles size={15} color="#fff" />
+                <Text style={voiceCardStyles.halfBtnText}>
+                  {isTranscribing ? "Transcribing..." : "Convert to Text"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[voiceCardStyles.halfBtn, voiceCardStyles.outlineBtn, { borderColor: themeColors.border.DEFAULT }]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setHasRecorded(false);
+                  recordingRef.current = null;
+                  setRecordingTime(0);
+                  if (audioUrlRef.current) {
+                    audioUrlRef.current = null;
+                    setAudioUrl(null);
+                    onChange(composeValue(localValue, localCondition, localCleanliness, null), localNote, localPhotos);
+                  }
+                }}
+              >
+                <X size={15} color={themeColors.text.secondary} />
+                <Text style={[voiceCardStyles.halfBtnText, { color: themeColors.text.secondary }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── Playback ── */}
+          {audioUrl && (
+            <TouchableOpacity
+              style={[voiceCardStyles.playBtn, { borderColor: themeColors.primary.DEFAULT + '60', backgroundColor: themeColors.primary.DEFAULT + '10' }]}
+              activeOpacity={0.85}
+              onPress={async () => {
+                try {
+                  if (sound) {
+                    if (sound.playing) {
+                      sound.pause();
+                      setIsPlayingAudio(false);
+                    } else {
+                      sound.play();
+                      setIsPlayingAudio(true);
+                    }
+                  } else {
+                    const resolvedAudioUri = audioUrl.startsWith('http') ? audioUrl : `${getAPI_URL()}${audioUrl}`;
+                    const newSound = createAudioPlayer({ uri: resolvedAudioUri });
+                    setSound(newSound);
+                    newSound.play();
+                    setIsPlayingAudio(true);
+                    // Listen for playback completion
+                    const checkStatus = setInterval(() => {
+                      if (newSound.currentStatus.didJustFinish) {
+                        setIsPlayingAudio(false);
+                        newSound.remove();
+                        setSound(null);
+                        clearInterval(checkStatus);
+                      }
+                    }, 100);
+                  }
+                } catch (error: any) {
+                  console.error('[FieldWidget] Error playing audio:', error);
+                  Alert.alert('Playback Failed', 'Could not play audio.');
+                  setIsPlayingAudio(false);
+                  if (sound) { sound.remove(); setSound(null); }
+                }
+              }}
+            >
+              {isPlayingAudio ? <Square size={16} color={themeColors.primary.DEFAULT} /> : <Play size={16} color={themeColors.primary.DEFAULT} />}
+              <Text style={[voiceCardStyles.playBtnText, { color: themeColors.primary.DEFAULT }]}>
+                {isPlayingAudio ? "Pause Recording" : "Play Voice Note"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -2110,7 +2026,7 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
           {selectedPhoto && (
             <Image 
               source={isLocalPath(selectedPhoto) ? getImageSource(selectedPhoto) : { uri: selectedPhoto }} 
-              style={styles.photoViewer as ImageStyle} 
+              style={styles.photoViewer as ImageStyle}
               resizeMode="contain" 
               onError={(error) => {
                 console.error('[FieldWidget] Photo viewer image load error:', error.nativeEvent.error, 'for URL:', selectedPhoto);
@@ -2125,6 +2041,110 @@ function FieldWidgetComponent(props: FieldWidgetProps) {
     </Card>
   );
 }
+
+const voiceCardStyles = StyleSheet.create({
+  card: {
+    padding: spacing[4],
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    marginTop: spacing[2],
+    marginBottom: spacing[4],
+    ...shadows.sm,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing[4],
+    gap: spacing[2],
+  },
+  iconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerLabel: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+    flex: 1,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.full,
+    gap: spacing[1],
+  },
+  badgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: typography.fontWeight.bold,
+    textTransform: 'uppercase',
+  },
+  fullBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.md,
+    gap: spacing[2],
+    width: '100%',
+  },
+  fullBtnText: {
+    color: '#fff',
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  rowPair: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    width: '100%',
+  },
+  halfBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.md,
+    gap: spacing[2],
+  },
+  halfBtnText: {
+    color: '#fff',
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  outlineBtn: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+  },
+  playBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[4],
+    minHeight: 48,
+    borderRadius: borderRadius.md,
+    marginTop: spacing[3],
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    gap: spacing[2],
+    width: '100%',
+  },
+  playBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+  },
+  disabledBtn: {
+    opacity: 0.6,
+  },
+});
 
 const styles = StyleSheet.create({
   card: {

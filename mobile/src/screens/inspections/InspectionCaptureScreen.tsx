@@ -1134,72 +1134,72 @@ export default function InspectionCaptureScreen() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="none" // Prevent keyboard from dismissing when scrolling
             >
-            {/* Copy from Previous Check-In (only for check-out inspections) */}
-            {effectiveInspection?.type === 'check_out' && (
-              <Card style={[
-                styles.copyCard,
-                {
-                  backgroundColor: themeColors.primary.light || `${themeColors.primary.DEFAULT}15`,
-                  borderColor: themeColors.primary.DEFAULT,
+        {/* Copy from Previous Check-In (only for check-out inspections) */}
+        {effectiveInspection?.type === 'check_out' && (
+          <Card style={[
+            styles.copyCard,
+            {
+              backgroundColor: themeColors.primary.light || `${themeColors.primary.DEFAULT}15`,
+              borderColor: themeColors.primary.DEFAULT,
                   marginBottom: spacing[4], // Add spacing below the card
-                }
-              ]}>
-                <Text style={[styles.copyCardTitle, { color: themeColors.text.primary }]}>Copy from Previous Check-In</Text>
-                {checkInData ? (
-                  <>
-                    <Text style={[styles.copyCardSubtext, { color: themeColors.text.secondary }]}>
-                      Copy data from the most recent check-in inspection ({checkInData.inspection.scheduledDate ? new Date(checkInData.inspection.scheduledDate).toLocaleDateString() : 'N/A'})
-                    </Text>
-                    <View style={styles.copyOptions}>
-                      <TouchableOpacity
-                        style={styles.checkboxRow}
-                        onPress={() => setCopyImages(!copyImages)}
-                        disabled={!!copyFromCheckIn.isPending}
-                      >
-                        <View style={[
-                          styles.checkbox,
-                          { borderColor: themeColors.primary.DEFAULT },
-                          copyImages && { backgroundColor: themeColors.primary.DEFAULT }
-                        ]}>
-                          {copyImages && <Check size={16} color={themeColors.primary.foreground || '#fff'} />}
-                        </View>
-                        <Text style={[styles.checkboxLabel, { color: themeColors.text.primary }]}>Copy Images</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.checkboxRow}
-                        onPress={() => setCopyNotes(!copyNotes)}
-                        disabled={!!copyFromCheckIn.isPending}
-                      >
-                        <View style={[
-                          styles.checkbox,
-                          { borderColor: themeColors.primary.DEFAULT },
-                          copyNotes && { backgroundColor: themeColors.primary.DEFAULT }
-                        ]}>
-                          {copyNotes && <Check size={16} color={themeColors.primary.foreground || '#fff'} />}
-                        </View>
-                        <Text style={[styles.checkboxLabel, { color: themeColors.text.primary }]}>Copy Notes</Text>
-                      </TouchableOpacity>
+            }
+          ]}>
+            <Text style={[styles.copyCardTitle, { color: themeColors.text.primary }]}>Copy from Previous Check-In</Text>
+            {checkInData ? (
+              <>
+                <Text style={[styles.copyCardSubtext, { color: themeColors.text.secondary }]}>
+                  Copy data from the most recent check-in inspection ({checkInData.inspection.scheduledDate ? new Date(checkInData.inspection.scheduledDate).toLocaleDateString() : 'N/A'})
+                </Text>
+                <View style={styles.copyOptions}>
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    onPress={() => setCopyImages(!copyImages)}
+                    disabled={!!copyFromCheckIn.isPending}
+                  >
+                    <View style={[
+                      styles.checkbox,
+                      { borderColor: themeColors.primary.DEFAULT },
+                      copyImages && { backgroundColor: themeColors.primary.DEFAULT }
+                    ]}>
+                      {copyImages && <Check size={16} color={themeColors.primary.foreground || '#fff'} />}
                     </View>
-                    {(copyImages || copyNotes) && (
-                      <View style={styles.copySuccess}>
-                        <CheckCircle2 size={16} color={themeColors.success || '#34C759'} />
-                        <Text style={[styles.copySuccessText, { color: themeColors.success || themeColors.primary.DEFAULT }]}>
-                          {copyImages && copyNotes
-                            ? 'Images and notes copied from check-in inspection'
-                            : copyImages
-                              ? 'Images copied from check-in inspection'
-                              : 'Notes copied from check-in inspection'}
-                        </Text>
-                      </View>
-                    )}
-                  </>
-                ) : (
-                  <Text style={[styles.copyCardSubtext, { color: themeColors.text.secondary }]}>
-                    No previous check-in inspection found for this property.
-                  </Text>
+                    <Text style={[styles.checkboxLabel, { color: themeColors.text.primary }]}>Copy Images</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    onPress={() => setCopyNotes(!copyNotes)}
+                    disabled={!!copyFromCheckIn.isPending}
+                  >
+                    <View style={[
+                      styles.checkbox,
+                      { borderColor: themeColors.primary.DEFAULT },
+                      copyNotes && { backgroundColor: themeColors.primary.DEFAULT }
+                    ]}>
+                      {copyNotes && <Check size={16} color={themeColors.primary.foreground || '#fff'} />}
+                    </View>
+                    <Text style={[styles.checkboxLabel, { color: themeColors.text.primary }]}>Copy Notes</Text>
+                  </TouchableOpacity>
+                </View>
+                {(copyImages || copyNotes) && (
+                  <View style={styles.copySuccess}>
+                    <CheckCircle2 size={16} color={themeColors.success || '#34C759'} />
+                    <Text style={[styles.copySuccessText, { color: themeColors.success || themeColors.primary.DEFAULT }]}>
+                      {copyImages && copyNotes
+                        ? 'Images and notes copied from check-in inspection'
+                        : copyImages
+                          ? 'Images copied from check-in inspection'
+                          : 'Notes copied from check-in inspection'}
+                    </Text>
+                  </View>
                 )}
-              </Card>
+              </>
+            ) : (
+              <Text style={[styles.copyCardSubtext, { color: themeColors.text.secondary }]}>
+                No previous check-in inspection found for this property.
+              </Text>
             )}
+          </Card>
+        )}
 
             {/* Quick Actions Row */}
             <View style={styles.quickActionsRow}>
@@ -1733,8 +1733,8 @@ export default function InspectionCaptureScreen() {
                 <Text style={[styles.errorText, { color: themeColors.text.primary }]}>No section selected</Text>
               </View>
             )}
-            </ScrollView>
-          </KeyboardAvoidingView>
+          </ScrollView>
+        </KeyboardAvoidingView>
         </View>
         {/* Footer Navigation - Always visible, positioned above keyboard */}
         <View style={[

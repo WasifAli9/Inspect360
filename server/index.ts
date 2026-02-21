@@ -43,9 +43,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Use JSON parser for all routes except Stripe webhook which needs raw body
+// Increase limit for transcribe-base64 (base64 audio can be ~35MB for 25MB audio)
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/webhooks/stripe') {
     next();
+  } else if (req.path === '/api/audio/transcribe-base64' || req.path === '/api/objects/upload-audio-base64') {
+    express.json({ limit: '35mb' })(req, res, next);
   } else {
     express.json()(req, res, next);
   }

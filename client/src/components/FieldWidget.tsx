@@ -55,13 +55,13 @@ interface FieldWidgetProps {
   onLogMaintenance?: (fieldLabel: string, photos: string[]) => void;
 }
 
-export function FieldWidget({ 
-  field, 
-  value, 
-  note, 
-  photos, 
-  inspectionId, 
-  entryId, 
+export function FieldWidget({
+  field,
+  value,
+  note,
+  photos,
+  inspectionId,
+  entryId,
   isCheckOut,
   markedForReview,
   sectionName,
@@ -80,6 +80,11 @@ export function FieldWidget({
         cleanliness: val.cleanliness,
       };
     }
+    // For non-condition/cleanliness fields, if val is an object with 'value' property,
+    // extract it (this handles { value: null, audioUrl: "..." } case)
+    if (val && typeof val === 'object' && 'value' in val) {
+      return { value: val.value, condition: undefined, cleanliness: undefined };
+    }
     return { value: val, condition: undefined, cleanliness: undefined };
   };
 
@@ -93,36 +98,68 @@ export function FieldWidget({
   // Initialize audioUrl from valueJson if it exists
   const initialAudioUrl = (value && typeof value === 'object' && 'audioUrl' in value) ? (value as any).audioUrl : null;
   const [audioUrl, setAudioUrl] = useState<string | null>(initialAudioUrl);
-  
+
+  // Debug: Log initial state
+  console.log('[FieldWidget] Initial render:', {
+    fieldId: field.id,
+    value,
+    parsed,
+    initialAudioUrl,
+    audioUrl
+  });
+
   // Update audioUrl when value prop changes (e.g., when entries load from database)
   useEffect(() => {
-    if (value && typeof value === 'object' && value !== null) {
-      // Check for audioUrl in value object (works for both condition/cleanliness fields and regular fields)
-      if ('audioUrl' in value && (value as any).audioUrl && typeof (value as any).audioUrl === 'string') {
-        const newAudioUrl = (value as any).audioUrl;
-        // Always update if it's different (even if audioUrl state exists, use the one from database)
+    console.log('[FieldWidget] Value changed:', {
+      fieldId: field.id,
+      value,
+      valueType: typeof value,
+      isObject: value && typeof value === 'object',
+      hasAudioUrl: value && typeof value === 'object' && 'audioUrl' in value,
+      audioUrl: value && typeof value === 'object' ? (value as any).audioUrl : null
+    });
+
+    // Check if value is an object with audioUrl (even if value.value is null)
+    if (value && typeof value === 'object' && value !== null && 'audioUrl' in value) {
+      const newAudioUrl = (value as any).audioUrl;
+      console.log('[FieldWidget] Found audioUrl in value:', newAudioUrl);
+      if (newAudioUrl && typeof newAudioUrl === 'string') {
+        // Always update if it's different (use the one from database)
         setAudioUrl((prevAudioUrl) => {
           if (newAudioUrl !== prevAudioUrl) {
+            console.log('[FieldWidget] Setting audioUrl from database:', newAudioUrl);
+            audioUrlRef.current = newAudioUrl;
             return newAudioUrl;
           }
           return prevAudioUrl;
         });
+        setHasRecorded(true);
+      } else if (newAudioUrl === null || newAudioUrl === undefined) {
+        // If audioUrl is explicitly null/undefined in valueJson, clear it
+        console.log('[FieldWidget] Clearing audioUrl (null/undefined in value)');
+        audioUrlRef.current = null;
+        setAudioUrl(null);
+        setHasRecorded(false);
       }
-      // Don't clear audioUrl if value object exists but doesn't have audioUrl
-      // (audioUrl might have been set from a previous value and not yet saved)
     } else if (value === null || value === undefined) {
-      // Only clear audioUrl if value is explicitly null/undefined
+      // Only clear audioUrl if value is explicitly null/undefined (not an object)
       // This prevents clearing when value is a string or other non-object type
+      console.log('[FieldWidget] Value is null/undefined, checking if should clear audioUrl');
+      setHasRecorded(false);
       setAudioUrl((prevAudioUrl) => {
         if (prevAudioUrl) {
+          console.log('[FieldWidget] Clearing audioUrl (value is null/undefined)');
+          audioUrlRef.current = null;
           return null;
         }
         return prevAudioUrl;
       });
+    } else {
+      console.log('[FieldWidget] Value is not an object with audioUrl, keeping current audioUrl state');
     }
     // Note: We don't clear audioUrl if value is a string or other type
     // because audioUrl is stored in valueJson object, not in the value itself
-  }, [value, field.includeCondition, field.includeCleanliness]);
+  }, [value, field.includeCondition, field.includeCleanliness, field.id]);
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoUploadProgress, setPhotoUploadProgress] = useState(0);
@@ -140,19 +177,20 @@ export function FieldWidget({
     notes?: string;
   } | null>(null);
   const [enlargedPhoto, setEnlargedPhoto] = useState<string | null>(null);
-  
+
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [hasRecorded, setHasRecorded] = useState(false);
+  const [hasRecorded, setHasRecorded] = useState(!!initialAudioUrl);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const audioUrlRef = useRef<string | null>(initialAudioUrl);
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
+
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -174,20 +212,20 @@ export function FieldWidget({
   const checkInEntry = checkInReference?.checkInEntries?.find((entry: any) => {
     // Direct match on fieldRef (if it exists)
     if (entry.fieldRef === field.id) return true;
-    
+
     // Try field key mapping: convert check-out field key to check-in field key
     // e.g., "field_checkout_entry_door_condition" -> "field_checkin_entry_door_condition"
     const checkOutFieldKey = field.id || field.key || "";
     const mappedCheckInFieldKey = checkOutFieldKey.replace(/field_checkout_/g, "field_checkin_");
     const entryFieldKey = entry.fieldKey || entry.fieldRef || "";
-    
+
     // Match if entry's fieldKey matches the mapped check-in field key
     if (entryFieldKey.toLowerCase() === mappedCheckInFieldKey.toLowerCase()) return true;
-    
+
     // Also try reverse: if entry has check-in field key, map it to check-out and compare
     const mappedCheckOutFieldKey = entryFieldKey.replace(/field_checkin_/g, "field_checkout_");
     if (checkOutFieldKey.toLowerCase() === mappedCheckOutFieldKey.toLowerCase()) return true;
-    
+
     return false;
   });
   const checkInPhotos = checkInEntry?.photos || [];
@@ -240,10 +278,10 @@ export function FieldWidget({
   useEffect(() => {
     if (!autoContext) return;
     if (autoSaveTriggeredRef.current) return; // Only trigger once per field instance
-    
+
     const isAutoField = field.type.startsWith("auto_");
     if (!isAutoField) return;
-    
+
     // Get the auto-populated value
     let autoValue = "";
     switch (field.type) {
@@ -260,7 +298,7 @@ export function FieldWidget({
         autoValue = autoContext.inspectionDate || "";
         break;
     }
-    
+
     // Only auto-save if there's no existing saved value (not localValue, but original value prop)
     // and we have an auto value to populate
     if (!value && autoValue) {
@@ -273,7 +311,10 @@ export function FieldWidget({
     }
   }, [field.type, autoContext, value, onChange]);
 
-  const composeValue = (val: any, condition?: string, cleanliness?: string, audioUrl?: string | null) => {
+  const composeValue = (val: any, condition?: string, cleanliness?: string, explicitAudioUrl?: string | null) => {
+    // If explicitAudioUrl is not provided, use the latest known audioUrl from ref
+    const currentAudioUrl = explicitAudioUrl !== undefined ? explicitAudioUrl : audioUrlRef.current;
+
     if (field.includeCondition || field.includeCleanliness) {
       const result: any = {
         value: val,
@@ -281,20 +322,20 @@ export function FieldWidget({
         ...(field.includeCleanliness && { cleanliness }),
       };
       // Always include audioUrl if it exists (even if null, we want to preserve it)
-      if (audioUrl !== undefined && audioUrl !== null) {
-        result.audioUrl = audioUrl;
+      if (currentAudioUrl !== undefined && currentAudioUrl !== null) {
+        result.audioUrl = currentAudioUrl;
       }
       return result;
     }
     // If no condition/cleanliness, store audioUrl in valueJson
     // For photo fields, val might be null or a string, so we need to wrap it in an object if audioUrl exists
-    if (audioUrl) {
+    if (currentAudioUrl) {
       // If val is already an object, merge audioUrl into it
       if (typeof val === 'object' && val !== null) {
-        return { ...val, audioUrl };
+        return { ...val, audioUrl: currentAudioUrl };
       }
       // If val is null, undefined, or a primitive, create an object with value and audioUrl
-      return { value: val !== undefined && val !== null ? val : null, audioUrl };
+      return { value: val !== undefined && val !== null ? val : null, audioUrl: currentAudioUrl };
     }
     // If no audioUrl but val is already an object with audioUrl, preserve it
     if (typeof val === 'object' && val !== null && 'audioUrl' in val) {
@@ -308,12 +349,37 @@ export function FieldWidget({
     const composedValue = composeValue(newValue, localCondition, localCleanliness, audioUrl);
     onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
   };
-  
+
   // Update onChange calls to include audioUrl
   const updateEntryWithAudio = (newAudioUrl?: string | null) => {
-    // Use provided audioUrl or current state
-    const urlToUse = newAudioUrl !== undefined ? newAudioUrl : audioUrl;
-    const composedValue = composeValue(localValue, localCondition, localCleanliness, urlToUse);
+    // Use provided audioUrl or current state/ref
+    const urlToUse = newAudioUrl !== undefined ? newAudioUrl : audioUrlRef.current;
+    console.log('[FieldWidget] updateEntryWithAudio called:', {
+      newAudioUrl,
+      audioUrl,
+      urlToUse,
+      localValue,
+      fieldId: field.id
+    });
+
+    // Always ensure audioUrl is included in the composed value
+    let composedValue = composeValue(localValue, localCondition, localCleanliness, urlToUse);
+    console.log('[FieldWidget] composeValue result:', composedValue);
+
+    // Double-check: if urlToUse exists but composeValue didn't include it, force it
+    if (urlToUse && (!composedValue || typeof composedValue !== 'object' || !('audioUrl' in composedValue))) {
+      console.log('[FieldWidget] Forcing audioUrl into composedValue');
+      composedValue = typeof composedValue === 'object' && composedValue !== null
+        ? { ...composedValue, audioUrl: urlToUse }
+        : { value: composedValue, audioUrl: urlToUse };
+      console.log('[FieldWidget] Final composedValue with forced audioUrl:', composedValue);
+    }
+
+    console.log('[FieldWidget] Calling onChange with:', {
+      value: composedValue,
+      note: localNote || undefined,
+      photos: localPhotos.length > 0 ? localPhotos : undefined
+    });
     onChange(composedValue, localNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
   };
 
@@ -331,23 +397,23 @@ export function FieldWidget({
 
   // Debounce note changes to prevent lag - only save after user stops typing
   const noteDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   const handleNoteChange = (newNote: string) => {
     // Update local state immediately for responsive UI
     setLocalNote(newNote);
-    
+
     // Clear existing timeout
     if (noteDebounceTimeoutRef.current) {
       clearTimeout(noteDebounceTimeoutRef.current);
     }
-    
+
     // Debounce the save operation - wait 800ms after user stops typing
     noteDebounceTimeoutRef.current = setTimeout(() => {
-      const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
+      const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrlRef.current);
       onChange(composedValue, newNote || undefined, localPhotos.length > 0 ? localPhotos : undefined);
     }, 800);
   };
-  
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -437,13 +503,13 @@ export function FieldWidget({
     // Use functional updater to handle concurrent uploads correctly
     setLocalPhotos(prevPhotos => {
       const newPhotos = [...prevPhotos, photoUrl];
-      
+
       // Schedule the onChange call after state update with the new photos
       // Using setTimeout to ensure we have the latest state
       setTimeout(() => {
         const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
         onChange(composedValue, localNote || undefined, newPhotos);
-        
+
         // Invalidate inspection entries to ensure report page gets updated photos
         if (inspectionId) {
           queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
@@ -455,10 +521,10 @@ export function FieldWidget({
           triggerAiConditionSuggestion(photoUrl, newPhotos);
         }
       }, 0);
-      
+
       return newPhotos;
     });
-    
+
     toast({
       title: "Success",
       description: "Photo uploaded successfully",
@@ -471,7 +537,7 @@ export function FieldWidget({
     const composedValue = composeValue(localValue, localCondition, localCleanliness, audioUrl);
     // Always pass the photos array (even if empty) to ensure the removal is saved
     onChange(composedValue, localNote || undefined, newPhotos);
-    
+
     // Invalidate inspection entries to ensure report page gets updated photos
     if (inspectionId) {
       queryClient.invalidateQueries({ queryKey: [`/api/inspections/${inspectionId}/entries`] });
@@ -515,7 +581,7 @@ export function FieldWidget({
 
       // Auto-populate the notes field with the AI analysis (prepend to existing notes)
       const existingNote = localNote || '';
-      const newNote = existingNote 
+      const newNote = existingNote
         ? `${analysis}\n\n${existingNote}`
         : analysis;
       setLocalNote(newNote);
@@ -559,26 +625,26 @@ export function FieldWidget({
           // Calculate new dimensions while maintaining aspect ratio
           let width = img.width;
           let height = img.height;
-          
+
           if (width > maxWidth || height > maxHeight) {
             const ratio = Math.min(maxWidth / width, maxHeight / height);
             width = width * ratio;
             height = height * ratio;
           }
-          
+
           // Create canvas and compress
           const canvas = document.createElement('canvas');
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
-          
+
           if (!ctx) {
             reject(new Error('Failed to get canvas context'));
             return;
           }
-          
+
           ctx.drawImage(img, 0, 0, width, height);
-          
+
           canvas.toBlob(
             (blob) => {
               if (!blob) {
@@ -613,7 +679,7 @@ export function FieldWidget({
     try {
       for (let i = 0; i < files.length; i++) {
         let file = files[i];
-        
+
         // Compress image if it's an image file and larger than 1MB
         if (file.type.startsWith('image/') && file.size > 1024 * 1024) {
           try {
@@ -816,7 +882,7 @@ export function FieldWidget({
             }
 
             const data = await response.json();
-            
+
             if (!data.uploadURL) {
               throw new Error("Invalid upload URL response");
             }
@@ -831,16 +897,16 @@ export function FieldWidget({
             // Validate URL
             try {
               const urlObj = new URL(uploadURL);
-              
+
               // Extract objectId from upload URL and store in metadata for fallback
               const objectId = urlObj.searchParams.get('objectId');
               if (objectId) {
-                uppy.setFileMeta(file.id, { 
+                uppy.setFileMeta(file.id, {
                   originalUploadURL: uploadURL,
                   objectId: objectId,
                 });
               } else {
-                uppy.setFileMeta(file.id, { 
+                uppy.setFileMeta(file.id, {
                   originalUploadURL: uploadURL,
                 });
               }
@@ -865,15 +931,15 @@ export function FieldWidget({
     // Intercept uploads when offline
     uppy.on("upload", async (data) => {
       const file = data.file;
-      
+
       // Check if this is an offline upload
       if (file?.meta?.isOffline || !navigator.onLine) {
         // Cancel the Uppy upload
         uppy.cancelUpload(file.id);
-        
+
         try {
           console.log('[FieldWidget] Handling offline upload for:', file.name);
-          
+
           // Get the file object
           const fileData = file.data;
           if (!fileData) {
@@ -921,7 +987,7 @@ export function FieldWidget({
 
             toast({
               title: navigator.onLine ? "Upload Successful" : "Saved Offline",
-              description: navigator.onLine 
+              description: navigator.onLine
                 ? "Photo uploaded successfully"
                 : "Photo will upload when connection is restored",
             });
@@ -949,7 +1015,7 @@ export function FieldWidget({
       if (!navigator.onLine || error?.message?.includes('network') || error?.message?.includes('fetch')) {
         try {
           console.log('[FieldWidget] Handling offline upload for:', file.name);
-          
+
           // Get the file object
           const fileData = file.data;
           if (!fileData) {
@@ -992,7 +1058,7 @@ export function FieldWidget({
 
             toast({
               title: navigator.onLine ? "Upload Successful" : "Saved Offline",
-              description: navigator.onLine 
+              description: navigator.onLine
                 ? "Photo uploaded successfully"
                 : "Photo will upload when connection is restored",
             });
@@ -1021,18 +1087,18 @@ export function FieldWidget({
     uppy.on("upload-success", async (file: any, response: any) => {
       // Extract the file URL from the PUT response using the utility function
       let uploadUrl = extractFileUrlFromUploadResponse(file, response);
-      
+
       // If extraction failed, try to use objectId from metadata as fallback
       if (!uploadUrl && file?.meta?.objectId) {
         uploadUrl = `/objects/${file.meta.objectId}`;
         console.log('[FieldWidget] Using objectId fallback:', uploadUrl);
       }
-      
+
       if (uploadUrl) {
         // Add photo immediately - don't wait for ACL setting
         // uploadUrl is already normalized to a relative path starting with /objects/
         handlePhotoAdd(uploadUrl);
-        
+
         // Set ACL to public in the background (non-blocking)
         // This allows OpenAI to access the photo for AI analysis
         const absolutePhotoUrl = `${window.location.origin}${uploadUrl}`;
@@ -1042,22 +1108,22 @@ export function FieldWidget({
           credentials: "include",
           body: JSON.stringify({ photoUrl: absolutePhotoUrl }),
         })
-        .then(async (aclResponse) => {
-          if (aclResponse.ok) {
-            const { objectPath } = await aclResponse.json();
-            // If objectPath is different, we could update it, but usually it's the same
-            if (objectPath && objectPath !== uploadUrl) {
-              console.log('[FieldWidget] ACL set, objectPath:', objectPath);
+          .then(async (aclResponse) => {
+            if (aclResponse.ok) {
+              const { objectPath } = await aclResponse.json();
+              // If objectPath is different, we could update it, but usually it's the same
+              if (objectPath && objectPath !== uploadUrl) {
+                console.log('[FieldWidget] ACL set, objectPath:', objectPath);
+              }
+            } else {
+              const errorData = await aclResponse.json().catch(() => ({ error: "Unknown error" }));
+              console.warn('[FieldWidget] ACL setting failed (non-blocking):', errorData.error || `Status ${aclResponse.status}`);
             }
-          } else {
-            const errorData = await aclResponse.json().catch(() => ({ error: "Unknown error" }));
-            console.warn('[FieldWidget] ACL setting failed (non-blocking):', errorData.error || `Status ${aclResponse.status}`);
-          }
-        })
-        .catch((err) => {
-          // Log but don't block - photo is already added
-          console.warn('[FieldWidget] Error setting photo ACL (non-blocking):', err);
-        });
+          })
+          .catch((err) => {
+            // Log but don't block - photo is already added
+            console.warn('[FieldWidget] Error setting photo ACL (non-blocking):', err);
+          });
       } else {
         // Enhanced debugging - log the full structure to help diagnose
         console.error('[FieldWidget] No upload URL found in response. Debug info:', {
@@ -1203,7 +1269,7 @@ export function FieldWidget({
           }
 
           const data = await response.json();
-          
+
           if (!data.uploadURL) {
             throw new Error("Invalid upload URL response");
           }
@@ -1239,36 +1305,36 @@ export function FieldWidget({
     uppy.on("upload-success", (file: any, response: any) => {
       // Extract the file URL from the PUT response
       let uploadUrl: string | null = null;
-      
+
       // Check file.response.body (most reliable location)
       if (file?.response?.body) {
         try {
-          const body = typeof file.response.body === 'string' 
-            ? JSON.parse(file.response.body) 
+          const body = typeof file.response.body === 'string'
+            ? JSON.parse(file.response.body)
             : file.response.body;
           uploadUrl = body?.url || body?.uploadURL;
         } catch (e) {
           // Not JSON
         }
       }
-      
+
       // Fallback: check response.body
       if (!uploadUrl && response?.body) {
         try {
-          const body = typeof response.body === 'string' 
-            ? JSON.parse(response.body) 
+          const body = typeof response.body === 'string'
+            ? JSON.parse(response.body)
             : response.body;
           uploadUrl = body?.url || body?.uploadURL;
         } catch (e) {
           // Not JSON
         }
       }
-      
+
       // Fallback: check top-level properties
       if (!uploadUrl) {
         uploadUrl = response?.uploadURL || response?.url || file?.response?.uploadURL || file?.response?.url;
       }
-      
+
       if (uploadUrl) {
         const videoUrl = uploadUrl.split("?")[0];
         handleValueChange(videoUrl);
@@ -1312,7 +1378,7 @@ export function FieldWidget({
         imageUrl: photoUrl,
         context: `Analyze this photo for ${field.label}. Provide a detailed assessment of the condition, noting any issues, damage, or concerns.`,
       });
-      
+
       const result = await response.json();
 
       setAiAnalyses((prev) => ({
@@ -1386,11 +1452,10 @@ export function FieldWidget({
                 data-testid={`button-rating-${rating}-${field.id}`}
               >
                 <Star
-                  className={`w-8 h-8 ${
-                    (localValue || 0) >= rating
-                      ? "fill-primary text-primary"
-                      : "text-muted-foreground"
-                  }`}
+                  className={`w-8 h-8 ${(localValue || 0) >= rating
+                    ? "fill-primary text-primary"
+                    : "text-muted-foreground"
+                    }`}
                 />
               </button>
             ))}
@@ -1563,7 +1628,7 @@ export function FieldWidget({
                           onClick={() => setEnlargedPhoto(photoUrl)}
                           data-testid={`img-photo-${index}`}
                         />
-                        <div 
+                        <div
                           className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none"
                         >
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded-full p-2">
@@ -1592,9 +1657,9 @@ export function FieldWidget({
                               AI Analysis
                             </p>
                             <p className="text-muted-foreground whitespace-pre-wrap">
-                              {aiAnalyses[photoUrl].resultJson?.analysis || 
-                               aiAnalyses[photoUrl].resultJson?.content ||
-                               "Analysis completed"}
+                              {aiAnalyses[photoUrl].resultJson?.analysis ||
+                                aiAnalyses[photoUrl].resultJson?.content ||
+                                "Analysis completed"}
                             </p>
                           </div>
                         </div>
@@ -1701,9 +1766,9 @@ export function FieldWidget({
               <Card>
                 <CardContent className="p-4">
                   <div className="space-y-3">
-                    <img 
-                      src={localValue} 
-                      alt="Signature" 
+                    <img
+                      src={localValue}
+                      alt="Signature"
                       className="w-full h-40 object-contain border rounded bg-background"
                       data-testid={`img-signature-${field.id}`}
                     />
@@ -1766,35 +1831,35 @@ export function FieldWidget({
       case "auto_inspector":
         const inspectorValue = localValue || autoContext?.inspectorName || "";
         return (
-            <Input
-              value={inspectorValue}
-              readOnly
-              className="bg-muted cursor-not-allowed"
-              data-testid={`input-auto-inspector-${field.id}`}
-            />
+          <Input
+            value={inspectorValue}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            data-testid={`input-auto-inspector-${field.id}`}
+          />
         );
 
       case "auto_address":
         const addressValue = localValue || autoContext?.address || "";
         return (
-            <Input
-              value={addressValue}
-              readOnly
-              className="bg-muted cursor-not-allowed"
-              data-testid={`input-auto-address-${field.id}`}
-            />
+          <Input
+            value={addressValue}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            data-testid={`input-auto-address-${field.id}`}
+          />
         );
 
       case "auto_tenant_names":
         const tenantValue = localValue || autoContext?.tenantNames || "";
         return (
-            <Input
-              value={tenantValue}
-              readOnly
-              className="bg-muted cursor-not-allowed"
-              placeholder="No tenant assigned"
-              data-testid={`input-auto-tenant-${field.id}`}
-            />
+          <Input
+            value={tenantValue}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            placeholder="No tenant assigned"
+            data-testid={`input-auto-tenant-${field.id}`}
+          />
         );
 
       case "auto_inspection_date":
@@ -1916,7 +1981,7 @@ export function FieldWidget({
             {analyzingField ? "Analyzing..." : "InspectAI"}
           </Button>
           <p className="text-xs text-muted-foreground mt-1">
-            {analyzingField 
+            {analyzingField
               ? "Analyzing images with AI..."
               : "Use AI to analyze all photos and generate a detailed inspection report"}
           </p>
@@ -1959,25 +2024,25 @@ export function FieldWidget({
                     const mediaRecorder = new MediaRecorder(stream, {
                       mimeType: 'audio/webm;codecs=opus'
                     });
-                    
+
                     mediaRecorderRef.current = mediaRecorder;
                     audioChunksRef.current = [];
-                    
+
                     mediaRecorder.ondataavailable = (event) => {
                       if (event.data.size > 0) {
                         audioChunksRef.current.push(event.data);
                       }
                     };
-                    
+
                     mediaRecorder.onstop = () => {
                       stream.getTracks().forEach(track => track.stop());
                     };
-                    
+
                     mediaRecorder.start();
                     setIsRecording(true);
                     setRecordingTime(0);
                     setHasRecorded(false);
-                    
+
                     // Start timer
                     recordingTimerRef.current = setInterval(() => {
                       setRecordingTime(prev => prev + 1);
@@ -1996,7 +2061,7 @@ export function FieldWidget({
                 Start Recording
               </Button>
             )}
-            
+
             {isRecording && (
               <>
                 <Button
@@ -2011,39 +2076,40 @@ export function FieldWidget({
                         clearInterval(recordingTimerRef.current);
                         recordingTimerRef.current = null;
                       }
-                      
+
                       // Upload audio immediately after stopping recording to save it to database
                       if (audioChunksRef.current.length > 0) {
                         setIsUploadingAudio(true);
                         try {
                           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                          
+
                           // Upload the audio file to the server
                           const uploadFormData = new FormData();
                           uploadFormData.append('file', audioBlob, 'voice-note.webm');
-                          
+
                           const uploadResponse = await fetch('/api/objects/upload-file', {
                             method: 'POST',
                             body: uploadFormData,
                             credentials: 'include',
                           });
-                          
+
                           if (!uploadResponse.ok) {
                             throw new Error('Failed to upload audio file');
                           }
-                          
+
                           const uploadResult = await uploadResponse.json();
                           const uploadedAudioUrl = uploadResult.url || uploadResult.objectId;
-                          
+
                           if (!uploadedAudioUrl) {
                             throw new Error('No audio URL returned from upload');
                           }
-                          
+
                           // Store the audio URL and save to database immediately
+                          audioUrlRef.current = uploadedAudioUrl;
                           setAudioUrl(uploadedAudioUrl);
                           // Pass the audioUrl directly to avoid race condition with async state update
                           updateEntryWithAudio(uploadedAudioUrl);
-                          
+
                           toast({
                             title: "Voice Note Saved",
                             description: "Your voice note has been saved. You can transcribe it later or listen to it anytime.",
@@ -2073,7 +2139,7 @@ export function FieldWidget({
                 </div>
               </>
             )}
-            
+
             {hasRecorded && !isRecording && (
               <div className="flex items-center gap-2">
                 <Button
@@ -2089,40 +2155,41 @@ export function FieldWidget({
                       });
                       return;
                     }
-                    
+
                     setIsTranscribing(true);
                     try {
                       let audioBlob: Blob;
-                      
+
                       // If audio is already uploaded, we still need the blob for transcription
                       // But we can skip the upload step
                       if (audioChunksRef.current.length > 0) {
                         audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                        
+
                         // Only upload if not already uploaded
                         if (!audioUrl) {
                           setIsUploadingAudio(true);
                           const uploadFormData = new FormData();
                           uploadFormData.append('file', audioBlob, 'voice-note.webm');
-                          
+
                           const uploadResponse = await fetch('/api/objects/upload-file', {
                             method: 'POST',
                             body: uploadFormData,
                             credentials: 'include',
                           });
-                          
+
                           if (!uploadResponse.ok) {
                             throw new Error('Failed to upload audio file');
                           }
-                          
+
                           const uploadResult = await uploadResponse.json();
                           const uploadedAudioUrl = uploadResult.url || uploadResult.objectId;
-                          
+
                           if (!uploadedAudioUrl) {
                             throw new Error('No audio URL returned from upload');
                           }
-                          
+
                           // Store the audio URL
+                          audioUrlRef.current = uploadedAudioUrl;
                           setAudioUrl(uploadedAudioUrl);
                           setIsUploadingAudio(false);
                           // Pass the audioUrl directly to avoid race condition with async state update
@@ -2135,43 +2202,43 @@ export function FieldWidget({
                       } else {
                         throw new Error('No audio available for transcription');
                       }
-                      
+
                       // Now transcribe the audio
                       const transcribeFormData = new FormData();
                       transcribeFormData.append('audio', audioBlob, 'recording.webm');
-                      
+
                       const transcribeResponse = await fetch('/api/audio/transcribe', {
                         method: 'POST',
                         body: transcribeFormData,
                         credentials: 'include',
                       });
-                      
+
                       if (!transcribeResponse.ok) {
                         const errorData = await transcribeResponse.json().catch(() => ({ error: transcribeResponse.statusText }));
                         throw new Error(errorData.error || errorData.message || 'Transcription failed');
                       }
-                      
+
                       const result = await transcribeResponse.json();
-                      
+
                       if (result.text) {
                         // Append transcribed text to notes with "Inspector Comments:" header
                         const existingNote = localNote || '';
                         const transcribedText = `Inspector Comments: ${result.text}`;
-                        const newNote = existingNote 
+                        const newNote = existingNote
                           ? `${existingNote}\n\n${transcribedText}`
                           : transcribedText;
-                        
+
                         setLocalNote(newNote);
                         handleNoteChange(newNote);
-                        
+
                         // Update entry with audio URL
                         updateEntryWithAudio();
-                        
+
                         toast({
                           title: "Transcription Complete",
                           description: "Voice recording has been converted to text and added to notes. Audio is saved for playback.",
                         });
-                        
+
                         // Keep the recording state but mark as transcribed
                         setHasRecorded(false);
                         audioChunksRef.current = [];
@@ -2213,7 +2280,8 @@ export function FieldWidget({
                     audioChunksRef.current = [];
                     setRecordingTime(0);
                     // Clear audio URL from database if it was saved
-                    if (audioUrl) {
+                    if (audioUrlRef.current) {
+                      audioUrlRef.current = null;
                       setAudioUrl(null);
                       // Update entry to remove audioUrl
                       const composedValue = composeValue(localValue, localCondition, localCleanliness, null);
@@ -2227,7 +2295,7 @@ export function FieldWidget({
                 </Button>
               </div>
             )}
-            
+
             {/* Audio playback button - show if audio URL exists */}
             {audioUrl && (
               <div className="flex items-center gap-2 mt-2">
@@ -2314,8 +2382,8 @@ export function FieldWidget({
             }}
             data-testid={`checkbox-mark-review-${field.id}`}
           />
-          <Label 
-            htmlFor={`mark-review-${field.id}`} 
+          <Label
+            htmlFor={`mark-review-${field.id}`}
             className="text-sm font-medium cursor-pointer"
           >
             Mark for Comparison Report

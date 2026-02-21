@@ -199,6 +199,7 @@ export default function InspectionCapture() {
     });
     
     // SECOND PASS: Process regular entries and extract instance counts as fallback
+    console.log('[InspectionCapture] Loading entries, total count:', existingEntries.length);
     existingEntries.forEach((entry: any) => {
       const key = `${entry.sectionRef}-${entry.fieldKey}`;
       
@@ -206,6 +207,17 @@ export default function InspectionCapture() {
       if (entry.fieldKey && entry.fieldKey.startsWith('__repeatable_count_')) {
         return;
       }
+      
+      // Debug: Log all entries to see their structure
+      console.log('[InspectionCapture] Processing entry:', {
+        key,
+        sectionRef: entry.sectionRef,
+        fieldKey: entry.fieldKey,
+        valueJson: entry.valueJson,
+        valueJsonType: typeof entry.valueJson,
+        isObject: entry.valueJson && typeof entry.valueJson === 'object',
+        hasAudioUrl: entry.valueJson && typeof entry.valueJson === 'object' && 'audioUrl' in entry.valueJson
+      });
       
       entriesMap[key] = {
         id: entry.id,
@@ -218,6 +230,17 @@ export default function InspectionCapture() {
         maintenanceFlag: entry.maintenanceFlag,
         markedForReview: entry.markedForReview,
       };
+      
+      // Debug: Log entries with audioUrl
+      if (entry.valueJson && typeof entry.valueJson === 'object' && 'audioUrl' in entry.valueJson) {
+        console.log('[InspectionCapture] ✓ Loaded entry with audioUrl:', {
+          key,
+          sectionRef: entry.sectionRef,
+          fieldKey: entry.fieldKey,
+          valueJson: entry.valueJson,
+          audioUrl: (entry.valueJson as any).audioUrl
+        });
+      }
       
       // Extract repeatable instance count from sectionRef (e.g., "Bedrooms/Bedroom 1" -> 1)
       // This is a fallback if no count entry exists
@@ -814,6 +837,7 @@ export default function InspectionCapture() {
     }
 
     const entry: InspectionEntry = {
+      id: existingEntry?.id, // Include ID if entry exists (for update)
       sectionRef,
       fieldKey,
       fieldType: field.type,
@@ -822,6 +846,19 @@ export default function InspectionCapture() {
       photos,
       markedForReview: existingEntry?.markedForReview || false,
     };
+
+    // Debug: Log when saving entry with audioUrl
+    if (value && typeof value === 'object' && 'audioUrl' in value) {
+      console.log('[InspectionCapture] Saving entry with audioUrl:', {
+        entryKey,
+        entryId: entry.id,
+        sectionRef,
+        fieldKey,
+        valueJson: value,
+        audioUrl: (value as any).audioUrl,
+        existingEntryId: existingEntry?.id
+      });
+    }
 
     // Update local state optimistically
     setEntries(prev => ({
