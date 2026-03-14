@@ -307,6 +307,11 @@ export async function apiRequestJson<T>(
 ): Promise<T> {
   const res = await apiRequest(method, url, data, options);
   
+  // 204 No Content (e.g. successful DELETE) has no body and may not send application/json
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   // Check content type
   const contentType = res.headers.get('content-type') || '';
   
