@@ -14,6 +14,7 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
+  ActionSheetIOS,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -155,12 +156,6 @@ export default function AssetInventoryListScreen() {
   const [filterLocation, setFilterLocation] = useState<string>('all');
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
-  const [showConditionPicker, setShowConditionPicker] = useState(false);
-  const [showCleanlinessPicker, setShowCleanlinessPicker] = useState(false);
-  const [showLocationPicker, setShowLocationPicker] = useState(false);
-  const [showPropertyPicker, setShowPropertyPicker] = useState(false);
-  const [showBlockPicker, setShowBlockPicker] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<Partial<AssetInventory>>({});
@@ -191,6 +186,124 @@ export default function AssetInventoryListScreen() {
     blocks?.forEach(b => locs.push({ id: b.id, name: b.name, type: 'block' }));
     return locs;
   }, [properties, blocks]);
+
+  // Simple dropdowns: native ActionSheet on iOS, Alert on Android (reliable on both)
+  const openCategoryPicker = () => {
+    const options = isDialogOpen ? assetCategories : ['All Categories', ...assetCategories];
+    if (Platform.OS === 'ios' && ActionSheetIOS?.showActionSheetWithOptions) {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', ...options], cancelButtonIndex: 0 },
+        (i) => {
+          if (i === 0) return;
+          const chosen = options[i - 1];
+          if (isDialogOpen) setFormData({ ...formData, category: chosen === 'All Categories' ? undefined : chosen });
+          else setFilterCategory(chosen === 'All Categories' ? 'all' : chosen);
+        }
+      );
+    } else {
+      Alert.alert('Select Category', '', [
+        { text: 'Cancel', style: 'cancel' },
+        ...options.map((opt) => ({
+          text: opt,
+          onPress: () => {
+            if (isDialogOpen) setFormData({ ...formData, category: opt === 'All Categories' ? undefined : opt });
+            else setFilterCategory(opt === 'All Categories' ? 'all' : opt);
+          },
+        })),
+      ]);
+    }
+  };
+
+  const openConditionPicker = () => {
+    const keys = isDialogOpen ? Object.keys(conditionLabels) : ['all', ...Object.keys(conditionLabels)];
+    const labels = isDialogOpen ? Object.keys(conditionLabels).map(k => conditionLabels[k]) : ['All Conditions', ...Object.keys(conditionLabels).map(k => conditionLabels[k])];
+    if (Platform.OS === 'ios' && ActionSheetIOS?.showActionSheetWithOptions) {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', ...labels], cancelButtonIndex: 0 },
+        (i) => {
+          if (i === 0) return;
+          const key = keys[i - 1];
+          if (isDialogOpen) setFormData({ ...formData, condition: key as any });
+          else setFilterCondition(key === 'all' ? 'all' : key);
+        }
+      );
+    } else {
+      Alert.alert('Select Condition', '', [
+        { text: 'Cancel', style: 'cancel' },
+        ...labels.map((_, i) => ({
+          text: labels[i],
+          onPress: () => {
+            const key = keys[i];
+            if (isDialogOpen) setFormData({ ...formData, condition: key as any });
+            else setFilterCondition(key === 'all' ? 'all' : key);
+          },
+        })),
+      ]);
+    }
+  };
+
+  const openCleanlinessPicker = () => {
+    const keys = Object.keys(cleanlinessLabels);
+    const labels = keys.map(k => cleanlinessLabels[k]);
+    if (Platform.OS === 'ios' && ActionSheetIOS?.showActionSheetWithOptions) {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', ...labels], cancelButtonIndex: 0 },
+        (i) => { if (i > 0) setFormData({ ...formData, cleanliness: keys[i - 1] as any }); }
+      );
+    } else {
+      Alert.alert('Select Cleanliness', '', [
+        { text: 'Cancel', style: 'cancel' },
+        ...labels.map((_, i) => ({ text: labels[i], onPress: () => setFormData({ ...formData, cleanliness: keys[i] as any }) })),
+      ]);
+    }
+  };
+
+  const openLocationPicker = () => {
+    const items = [{ id: 'all', name: 'All Locations', type: 'property' as const }, ...locations];
+    if (Platform.OS === 'ios' && ActionSheetIOS?.showActionSheetWithOptions) {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', ...items.map(i => i.name)], cancelButtonIndex: 0 },
+        (i) => { if (i > 0) setFilterLocation(items[i - 1].id === 'all' ? 'all' : items[i - 1].id); }
+      );
+    } else {
+      Alert.alert('Select Location', '', [
+        { text: 'Cancel', style: 'cancel' },
+        ...items.map(item => ({ text: item.name, onPress: () => setFilterLocation(item.id === 'all' ? 'all' : item.id) })),
+      ]);
+    }
+  };
+
+  const openPropertyPicker = () => {
+    const items = [{ id: '', name: 'None', address: '', status: 'active' } as Property, ...properties];
+    const names = items.map(p => p.id === '' ? 'None' : (p.name || p.address || p.id));
+    if (Platform.OS === 'ios' && ActionSheetIOS?.showActionSheetWithOptions) {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', ...names], cancelButtonIndex: 0 },
+        (i) => { if (i > 0) setFormData({ ...formData, propertyId: items[i - 1].id || null, blockId: items[i - 1].id ? undefined : formData.blockId }); }
+      );
+    } else {
+      Alert.alert('Select Property', '', [
+        { text: 'Cancel', style: 'cancel' },
+        ...items.map((p, i) => ({ text: names[i], onPress: () => setFormData({ ...formData, propertyId: p.id || null, blockId: p.id ? undefined : formData.blockId }) })),
+      ]);
+    }
+  };
+
+  const openBlockPicker = () => {
+    const items = [{ id: '', name: 'None' }, ...blocks];
+    const names = items.map(b => b.name || 'None');
+    if (Platform.OS === 'ios' && ActionSheetIOS?.showActionSheetWithOptions) {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['Cancel', ...names], cancelButtonIndex: 0 },
+        (i) => { if (i > 0) setFormData({ ...formData, blockId: items[i - 1].id || null, propertyId: items[i - 1].id ? undefined : formData.propertyId }); }
+      );
+    } else {
+      Alert.alert('Select Block', '', [
+        { text: 'Cancel', style: 'cancel' },
+        ...items.map((b, i) => ({ text: names[i], onPress: () => setFormData({ ...formData, blockId: b.id || null, propertyId: b.id ? undefined : formData.propertyId }) })),
+      ]);
+    }
+  };
 
   // Auto-filter by block or property if in route params (only if explicitly provided)
   useEffect(() => {
@@ -574,7 +687,7 @@ export default function AssetInventoryListScreen() {
                 },
                 filterCategory !== 'all' && { borderColor: themeColors.primary.DEFAULT }
               ]}
-              onPress={() => setShowCategoryPicker(true)}
+              onPress={openCategoryPicker}
             >
               <Text style={[
                 styles.filterChipText,
@@ -592,7 +705,7 @@ export default function AssetInventoryListScreen() {
                 },
                 filterCondition !== 'all' && { borderColor: themeColors.primary.DEFAULT }
               ]}
-              onPress={() => setShowConditionPicker(true)}
+              onPress={openConditionPicker}
             >
               <Text style={[
                 styles.filterChipText,
@@ -610,7 +723,7 @@ export default function AssetInventoryListScreen() {
                 },
                 filterLocation !== 'all' && { borderColor: themeColors.primary.DEFAULT }
               ]}
-              onPress={() => setShowLocationPicker(true)}
+              onPress={openLocationPicker}
             >
               <Text style={[
                 styles.filterChipText,
@@ -899,7 +1012,7 @@ export default function AssetInventoryListScreen() {
                           backgroundColor: themeColors.input,
                         }
                       ]}
-                      onPress={() => setShowCategoryPicker(true)}
+                      onPress={openCategoryPicker}
                     >
                       <Text style={[
                         styles.dropdownText,
@@ -918,7 +1031,7 @@ export default function AssetInventoryListScreen() {
                           backgroundColor: themeColors.input,
                         }
                       ]}
-                      onPress={() => setShowConditionPicker(true)}
+                      onPress={openConditionPicker}
                     >
                       <Text style={[
                         styles.dropdownText,
@@ -939,7 +1052,7 @@ export default function AssetInventoryListScreen() {
                           backgroundColor: themeColors.input,
                         }
                       ]}
-                      onPress={() => setShowCleanlinessPicker(true)}
+                      onPress={openCleanlinessPicker}
                     >
                       <Text style={[
                         styles.dropdownText,
@@ -973,7 +1086,7 @@ export default function AssetInventoryListScreen() {
                           backgroundColor: themeColors.input,
                         }
                       ]}
-                      onPress={() => setShowPropertyPicker(true)}
+                      onPress={openPropertyPicker}
                     >
                       <Text style={[
                         styles.dropdownText,
@@ -994,7 +1107,7 @@ export default function AssetInventoryListScreen() {
                           backgroundColor: themeColors.input,
                         }
                       ]}
-                      onPress={() => setShowBlockPicker(true)}
+                      onPress={openBlockPicker}
                     >
                       <Text style={[
                         styles.dropdownText,
@@ -1200,228 +1313,6 @@ export default function AssetInventoryListScreen() {
         </View>
       </Modal>
 
-      {/* Filter Pickers - use overFullScreen on iOS so they appear above the Add Asset modal */}
-      {/* Category Picker */}
-      <Modal
-        visible={showCategoryPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCategoryPicker(false)}
-        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
-      >
-        <TouchableOpacity activeOpacity={1} style={styles.modalOverlay} onPress={() => setShowCategoryPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]} onPress={() => {}}>
-            <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Category</Text>
-            <FlatList
-              data={isDialogOpen ? assetCategories : ['all', ...assetCategories]}
-              showsVerticalScrollIndicator={true}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
-                  onPress={() => {
-                    if (isDialogOpen) {
-                      // Update form data when dialog is open
-                      setFormData({ ...formData, category: item });
-                    } else {
-                      // Update filter when not in dialog
-                      setFilterCategory(item === 'all' ? 'all' : item);
-                    }
-                    setShowCategoryPicker(false);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{item === 'all' ? 'All Categories' : item}</Text>
-                  {((isDialogOpen && formData.category === item) || (!isDialogOpen && (filterCategory === item || (item === 'all' && filterCategory === 'all')))) && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Condition Picker */}
-      <Modal
-        visible={showConditionPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowConditionPicker(false)}
-        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
-      >
-        <TouchableOpacity activeOpacity={1} style={styles.modalOverlay} onPress={() => setShowConditionPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]} onPress={() => {}}>
-            <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Condition</Text>
-            <FlatList
-              data={isDialogOpen ? Object.keys(conditionLabels) : ['all', ...Object.keys(conditionLabels)]}
-              showsVerticalScrollIndicator={true}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
-                  onPress={() => {
-                    if (item === 'all') {
-                      setFilterCondition('all');
-                    } else {
-                      // For form, set condition; for filter, set filterCondition
-                      if (isDialogOpen) {
-                        setFormData({ ...formData, condition: item as any });
-                      } else {
-                        setFilterCondition(item);
-                      }
-                    }
-                    setShowConditionPicker(false);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
-                    {item === 'all' ? 'All Conditions' : conditionLabels[item]}
-                  </Text>
-                  {((isDialogOpen && formData.condition === item) || (!isDialogOpen && (filterCondition === item || (item === 'all' && filterCondition === 'all')))) && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Cleanliness Picker */}
-      <Modal
-        visible={showCleanlinessPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCleanlinessPicker(false)}
-        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
-      >
-        <TouchableOpacity activeOpacity={1} style={styles.modalOverlay} onPress={() => setShowCleanlinessPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]} onPress={() => {}}>
-            <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Cleanliness</Text>
-            <FlatList
-              data={Object.keys(cleanlinessLabels)}
-              showsVerticalScrollIndicator={true}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
-                  onPress={() => {
-                    setFormData({ ...formData, cleanliness: item as any });
-                    setShowCleanlinessPicker(false);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
-                    {cleanlinessLabels[item]}
-                  </Text>
-                  {formData.cleanliness === item && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Location Picker */}
-      <Modal
-        visible={showLocationPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowLocationPicker(false)}
-        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
-      >
-        <TouchableOpacity activeOpacity={1} style={styles.modalOverlay} onPress={() => setShowLocationPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]} onPress={() => {}}>
-            <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Location</Text>
-            <FlatList
-              data={[{ id: 'all', name: 'All Locations', type: 'property' as const }, ...locations]}
-              showsVerticalScrollIndicator={true}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
-                  onPress={() => {
-                    setFilterLocation(item.id === 'all' ? 'all' : item.id);
-                    setShowLocationPicker(false);
-                  }}
-                >
-                  {item.type === 'property' ? <Home size={16} color={themeColors.text.secondary} /> : <Building2 size={16} color={themeColors.text.secondary} />}
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{item.name}</Text>
-                  {(filterLocation === item.id || (item.id === 'all' && filterLocation === 'all')) && (
-                    <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Property Picker (for form) */}
-      <Modal
-        visible={showPropertyPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowPropertyPicker(false)}
-        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
-      >
-        <TouchableOpacity activeOpacity={1} style={styles.modalOverlay} onPress={() => setShowPropertyPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]} onPress={() => {}}>
-            <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Property</Text>
-            <FlatList
-              data={[{ id: '', name: 'None', address: '', status: 'active' } as Property, ...properties]}
-              showsVerticalScrollIndicator={true}
-              keyExtractor={(item) => item.id || 'none'}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
-                  onPress={() => {
-                    setFormData({ ...formData, propertyId: item.id || null, blockId: item.id ? undefined : formData.blockId });
-                    setShowPropertyPicker(false);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>
-                    {item.id === '' ? 'None' : (item.name || item.address)}
-                  </Text>
-                  {formData.propertyId === item.id && <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />}
-                </TouchableOpacity>
-              )}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Block Picker (for form) */}
-      <Modal
-        visible={showBlockPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowBlockPicker(false)}
-        presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
-      >
-        <TouchableOpacity activeOpacity={1} style={styles.modalOverlay} onPress={() => setShowBlockPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.pickerModal, { backgroundColor: themeColors.card.DEFAULT }]} onPress={() => {}}>
-            <Text style={[styles.pickerTitle, { color: themeColors.text.primary, borderBottomColor: themeColors.border.light }]}>Select Block</Text>
-            <FlatList
-              data={[{ id: '', name: 'None' }, ...blocks]}
-              showsVerticalScrollIndicator={true}
-              keyExtractor={(item) => item.id || 'none'}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.pickerItem, { borderBottomColor: themeColors.border.light }]}
-                  onPress={() => {
-                    setFormData({ ...formData, blockId: item.id || null, propertyId: item.id ? undefined : formData.propertyId });
-                    setShowBlockPicker(false);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, { color: themeColors.text.primary }]}>{item.name || 'None'}</Text>
-                  {formData.blockId === item.id && <CheckCircle2 size={20} color={themeColors.primary.DEFAULT} />}
-                </TouchableOpacity>
-              )}
-            />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
@@ -1713,6 +1604,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+  },
+  pickerOverlayTouchable: {
+    flex: 1,
   },
   pickerModal: {
     // backgroundColor applied dynamically via themeColors
